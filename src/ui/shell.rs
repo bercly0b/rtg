@@ -1,78 +1,66 @@
-use std::time::Duration;
-
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 
-use crate::usecases::context::AppContext;
+use crate::{
+    infra::stubs::{NoopOpener, StubStorageAdapter},
+    usecases::{
+        context::AppContext,
+        contracts::{AppEventSource, ShellOrchestrator},
+        shell::DefaultShellOrchestrator,
+    },
+};
 
-use super::{state::AppState, terminal::TerminalSession, view};
-
-const EVENT_POLL_TIMEOUT: Duration = Duration::from_millis(100);
+use super::{event_source::CrosstermEventSource, terminal::TerminalSession, view};
 
 pub fn start(context: &AppContext) -> Result<()> {
     tracing::info!(
         log_level = %context.config.logging.level,
         telegram_adapter = ?context.telegram,
-        cache_adapter = ?context.cache,
         "starting TUI shell"
     );
 
     let mut terminal = TerminalSession::new()?;
-    let mut state = AppState::default();
+    let mut source = CrosstermEventSource;
+    let mut orchestrator = DefaultShellOrchestrator::new(StubStorageAdapter::default(), NoopOpener);
 
-    while state.is_running() {
-        terminal.draw(|frame| view::render(frame, &state))?;
+    while orchestrator.state().is_running() {
+        terminal.draw(|frame| view::render(frame, orchestrator.state()))?;
 
-        if !event::poll(EVENT_POLL_TIMEOUT)? {
-            continue;
-        }
-
-        if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
-                handle_key_event(&mut state, key.code, key.modifiers);
-            }
+        if let Some(event) = source.next_event()? {
+            orchestrator.handle_event(event)?;
         }
     }
 
     Ok(())
 }
 
-fn handle_key_event(state: &mut AppState, code: KeyCode, modifiers: KeyModifiers) {
-    if code == KeyCode::Char('q')
-        || (code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL))
-    {
-        state.stop();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        domain::events::AppEvent, ui::event_source::MockEventSource,
+        usecases::shell::DefaultShellOrchestrator,
+    };
 
     #[test]
-    fn stops_on_q() {
-        let mut state = AppState::default();
+    fn mock_source_produces_quit_event() {
+        let mut source = MockEventSource::from(vec![AppEvent::QuitRequested]);
+        let event = source.next_event().expect("must read mock event");
 
-        handle_key_event(&mut state, KeyCode::Char('q'), KeyModifiers::NONE);
-
-        assert!(!state.is_running());
+        assert_eq!(event, Some(AppEvent::QuitRequested));
     }
 
     #[test]
-    fn stops_on_ctrl_c() {
-        let mut state = AppState::default();
+    fn orchestrator_stops_on_quit_from_source() {
+        let mut source = MockEventSource::from(vec![AppEvent::QuitRequested]);
+        let mut orchestrator =
+            DefaultShellOrchestrator::new(StubStorageAdapter::default(), NoopOpener);
 
-        handle_key_event(&mut state, KeyCode::Char('c'), KeyModifiers::CONTROL);
+        if let Some(event) = source.next_event().expect("must read mock event") {
+            orchestrator
+                .handle_event(event)
+                .expect("must handle quit event");
+        }
 
-        assert!(!state.is_running());
-    }
-
-    #[test]
-    fn keeps_running_for_other_keys() {
-        let mut state = AppState::default();
-
-        handle_key_event(&mut state, KeyCode::Char('x'), KeyModifiers::NONE);
-
-        assert!(state.is_running());
+        assert!(!orchestrator.state().is_running());
     }
 }

@@ -1,7 +1,7 @@
 //! UI layer: rendering and interaction entry points (CLI/TUI).
 
+mod event_source;
 pub mod shell;
-mod state;
 mod terminal;
 mod view;
 
