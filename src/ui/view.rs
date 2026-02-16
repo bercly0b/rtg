@@ -4,9 +4,9 @@ use ratatui::{
     Frame,
 };
 
-use super::state::AppState;
+use crate::domain::shell_state::ShellState;
 
-pub fn render(frame: &mut Frame<'_>, state: &AppState) {
+pub fn render(frame: &mut Frame<'_>, state: &ShellState) {
     let [content_area, status_area] = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
@@ -27,7 +27,7 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
     frame.render_widget(status, status_area);
 }
 
-fn status_line(state: &AppState) -> String {
+fn status_line(state: &ShellState) -> String {
     let mode = if state.is_running() {
         "running"
     } else {

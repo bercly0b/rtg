@@ -36,4 +36,18 @@ The current code is intentionally minimal and focused on structure so the projec
   - start TUI shell entrypoint (`src/ui/shell.rs`, placeholder for now)
 - Extension points are added via stub adapters in app context:
   - `telegram::TelegramAdapter::stub()`
-  - `usecases::context::CacheAdapter::stub()`
+
+## Layer contracts and stubs (Task 5)
+
+- Usecase contracts:
+  - `usecases::contracts::AppEventSource`
+  - `usecases::contracts::ShellOrchestrator`
+- Infra contracts:
+  - `infra::contracts::ConfigAdapter`
+  - `infra::contracts::StorageAdapter`
+  - `infra::contracts::ExternalOpener`
+- Stub implementations for shell-only runtime:
+  - `infra::stubs::{StubConfigAdapter, StubStorageAdapter, NoopOpener}`
+  - `ui::event_source::MockEventSource` (tests)
+
+Data-flow note: `docs/phase1-layer-data-flow.md`

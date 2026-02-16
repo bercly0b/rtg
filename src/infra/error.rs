@@ -18,4 +18,6 @@ pub enum AppError {
     },
     #[error("failed to initialize logging: {0}")]
     LoggingInit(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
