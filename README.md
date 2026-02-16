@@ -1,53 +1,99 @@
-# rtg
+# RTG
 
-RTG is a Rust-based Telegram client project (CLI + TUI).
+RTG is an early-stage Rust Telegram client focused on a terminal-first experience (CLI + TUI).
 
-## Current bootstrap status
+The codebase is intentionally structured around clear architectural boundaries to support iterative development without mixing responsibilities.
 
-This repository now contains a minimal Rust workspace skeleton with explicit module boundaries.
+## Overview
 
-## Module boundaries
+Current scope includes:
+- CLI entrypoint and bootstrap flow
+- basic TUI shell/event loop skeleton
+- domain/usecase/infra contracts with stub adapters
+- configuration + logging baseline
 
-- `src/ui` — presentation layer (CLI/TUI rendering and input handling)
-- `src/domain` — domain entities and business rules
-- `src/telegram` — Telegram API integration and update mapping
-- `src/usecases` — application workflows orchestrating domain + integrations
-- `src/infra` — infrastructure adapters (config, storage, OS/openers, logging)
+Layer boundaries:
+- `src/ui` — terminal rendering and input handling
+- `src/domain` — domain entities and typed events/state
+- `src/telegram` — Telegram integration boundary
+- `src/usecases` — application orchestration
+- `src/infra` — config/logging/storage/opener adapters
 
-The current code is intentionally minimal and focused on structure so the project can evolve incrementally without mixing responsibilities.
+## Prerequisites
 
-## Infra baseline (Task 2)
+- Rust toolchain (stable), including:
+  - `cargo`
+  - `rustfmt` (usually via `rustup component add rustfmt`)
+  - `clippy` (usually via `rustup component add clippy`)
 
-- Config loader in `src/infra/config`:
-  - default values are provided in code
-  - optional overrides are loaded from `config.toml` when file exists
-- Tracing logging initialization in `src/infra/logging.rs`
-- Typed app errors in `src/infra/error.rs` (`thiserror`) with `anyhow` at app boundary (`main`)
-- Example configuration file: `config.example.toml`
+## Installation
 
-## CLI + bootstrap (Task 3)
+```bash
+git clone https://github.com/bercly0b/rtg.git
+cd rtg
+```
 
-- CLI is implemented with `clap` (`src/cli.rs`)
-- `rtg` defaults to `run` command, explicit `rtg run` is also supported
-- Bootstrap pipeline is isolated in `src/usecases/bootstrap.rs`:
-  - load config
-  - init logging
-  - build app context
-  - start TUI shell entrypoint (`src/ui/shell.rs`, placeholder for now)
-- Extension points are added via stub adapters in app context:
-  - `telegram::TelegramAdapter::stub()`
+Optional local configuration:
 
-## Layer contracts and stubs (Task 5)
+```bash
+cp config.example.toml config.toml
+```
 
-- Usecase contracts:
-  - `usecases::contracts::AppEventSource`
-  - `usecases::contracts::ShellOrchestrator`
-- Infra contracts:
-  - `infra::contracts::ConfigAdapter`
-  - `infra::contracts::StorageAdapter`
-  - `infra::contracts::ExternalOpener`
-- Stub implementations for shell-only runtime:
-  - `infra::stubs::{StubConfigAdapter, StubStorageAdapter, NoopOpener}`
-  - `ui::event_source::MockEventSource` (tests)
+## Build
 
-Data-flow note: `docs/phase1-layer-data-flow.md`
+```bash
+cargo build
+```
+
+## Run
+
+Default run mode:
+
+```bash
+cargo run
+```
+
+Explicit subcommand:
+
+```bash
+cargo run -- run
+```
+
+Custom config path:
+
+```bash
+cargo run -- --config ./config.toml
+```
+
+## Configuration
+
+Example config is provided in `config.example.toml`:
+- `[logging]` — tracing verbosity (`trace|debug|info|warn|error`)
+- `[telegram]` — placeholder fields for Telegram API credentials
+
+If `config.toml` is missing, the app falls back to built-in defaults.
+
+## Controls
+
+In the current TUI shell:
+- `q` — quit
+- `Ctrl+C` — quit
+
+## Development
+
+Quality gate commands (local and CI baseline):
+
+```bash
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test
+cargo check
+```
+
+## Contributing
+
+Please read:
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- [`docs/phase1-layer-data-flow.md`](docs/phase1-layer-data-flow.md)
+
+For now, contributions should keep changes focused and aligned with existing layer boundaries.

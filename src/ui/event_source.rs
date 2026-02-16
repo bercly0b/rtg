@@ -62,3 +62,19 @@ impl AppEventSource for MockEventSource {
         Ok(self.queue.pop_front())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mock_event_source_returns_none_when_queue_is_exhausted() {
+        let mut source = MockEventSource::from(vec![AppEvent::Tick]);
+
+        assert_eq!(
+            source.next_event().expect("first event must be read"),
+            Some(AppEvent::Tick)
+        );
+        assert_eq!(source.next_event().expect("queue must be empty"), None);
+    }
+}
