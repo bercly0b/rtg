@@ -19,7 +19,7 @@ pub fn run(cli: Cli) -> Result<()> {
     );
 
     match cli.command_or_default() {
-        Command::Run => ui::shell::start(&context),
+        Command::Run => ui::shell::start(&context)?,
     }
 
     Ok(())
