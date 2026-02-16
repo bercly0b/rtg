@@ -1,0 +1,11 @@
+# RTG example configuration
+# Copy this file to `config.toml` and adjust values.
+
+[logging]
+# Tracing level: trace | debug | info | warn | error
+level = "info"
+
+[telegram]
+# Telegram app credentials from https://my.telegram.org
+api_id = 123456
+api_hash = "your-api-hash"
