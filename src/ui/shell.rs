@@ -1,10 +1,8 @@
 use anyhow::Result;
 
-use crate::{
-    usecases::{
-        context::AppContext,
-        contracts::{AppEventSource, ShellOrchestrator},
-    },
+use crate::usecases::{
+    context::AppContext,
+    contracts::{AppEventSource, ShellOrchestrator},
 };
 
 use super::{terminal::TerminalSession, view};

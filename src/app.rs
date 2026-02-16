@@ -21,7 +21,11 @@ pub fn run(cli: Cli) -> Result<()> {
     match cli.command_or_default() {
         Command::Run => {
             let mut shell = bootstrap::compose_shell();
-            ui::shell::start(&context, shell.event_source.as_mut(), shell.orchestrator.as_mut())?
+            ui::shell::start(
+                &context,
+                shell.event_source.as_mut(),
+                shell.orchestrator.as_mut(),
+            )?
         }
     }
 
