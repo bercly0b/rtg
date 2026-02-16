@@ -1,17 +1,17 @@
 use anyhow::Result;
 
-use crate::{
-    infra::stubs::{NoopOpener, StubStorageAdapter},
-    usecases::{
-        context::AppContext,
-        contracts::{AppEventSource, ShellOrchestrator},
-        shell::DefaultShellOrchestrator,
-    },
+use crate::usecases::{
+    context::AppContext,
+    contracts::{AppEventSource, ShellOrchestrator},
 };
 
-use super::{event_source::CrosstermEventSource, terminal::TerminalSession, view};
+use super::{terminal::TerminalSession, view};
 
-pub fn start(context: &AppContext) -> Result<()> {
+pub fn start(
+    context: &AppContext,
+    event_source: &mut dyn AppEventSource,
+    orchestrator: &mut dyn ShellOrchestrator,
+) -> Result<()> {
     tracing::info!(
         log_level = %context.config.logging.level,
         telegram_adapter = ?context.telegram,
@@ -19,13 +19,11 @@ pub fn start(context: &AppContext) -> Result<()> {
     );
 
     let mut terminal = TerminalSession::new()?;
-    let mut source = CrosstermEventSource;
-    let mut orchestrator = DefaultShellOrchestrator::new(StubStorageAdapter::default(), NoopOpener);
 
     while orchestrator.state().is_running() {
         terminal.draw(|frame| view::render(frame, orchestrator.state()))?;
 
-        if let Some(event) = source.next_event()? {
+        if let Some(event) = event_source.next_event()? {
             orchestrator.handle_event(event)?;
         }
     }
@@ -37,7 +35,9 @@ pub fn start(context: &AppContext) -> Result<()> {
 mod tests {
     use super::*;
     use crate::{
-        domain::events::AppEvent, ui::event_source::MockEventSource,
+        domain::events::AppEvent,
+        infra::stubs::{NoopOpener, StubStorageAdapter},
+        ui::event_source::MockEventSource,
         usecases::shell::DefaultShellOrchestrator,
     };
 
