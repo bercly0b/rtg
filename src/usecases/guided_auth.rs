@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use crate::infra::secrets::sanitize_error_code;
+use crate::{domain::status::AuthConnectivityStatus, infra::secrets::sanitize_error_code};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryPolicy {
@@ -52,6 +52,10 @@ pub trait TelegramAuthClient {
         code: &str,
     ) -> Result<SignInOutcome, AuthBackendError>;
     fn verify_password(&mut self, password: &str) -> Result<(), AuthBackendError>;
+
+    fn auth_status_snapshot(&self) -> Option<AuthConnectivityStatus> {
+        None
+    }
 
     fn persist_authorized_session(&mut self, session_path: &Path) -> Result<(), AuthBackendError> {
         persist_session_marker(session_path).map_err(|source| AuthBackendError::Transient {
@@ -112,6 +116,7 @@ pub fn run_guided_auth(
     retry_policy: &RetryPolicy,
 ) -> io::Result<GuidedAuthOutcome> {
     terminal.print_line("No valid session found. Starting guided authentication.")?;
+    print_status_snapshot(terminal, auth_client, "start")?;
 
     let Some(phone) = collect_phone(terminal, retry_policy.phone_attempts)? else {
         return Ok(GuidedAuthOutcome::ExitWithGuidance);
@@ -134,10 +139,13 @@ pub fn run_guided_auth(
     }
 
     if let Err(err) = auth_client.persist_authorized_session(session_path) {
+        print_status_snapshot(terminal, auth_client, "session-persist")?;
         let _ = handle_backend_error(terminal, err, 1, 1, "session-persist")?;
         terminal.print_line("Failed to persist session safely. Please retry login.")?;
         return Ok(GuidedAuthOutcome::ExitWithGuidance);
     }
+
+    print_status_snapshot(terminal, auth_client, "session-persist")?;
 
     if let Err(source) = clear_policy_invalid_marker(session_path) {
         let _ = handle_backend_error(
@@ -194,14 +202,17 @@ fn request_code(
     for attempt in 1..=attempts {
         match auth_client.request_login_code(phone) {
             Ok(token) => {
+                print_status_snapshot(terminal, auth_client, "start")?;
                 terminal
                     .print_line("Code has been sent in Telegram. Continue to the next step.")?;
                 return Ok(Some(token));
             }
             Err(err) => {
+                print_status_snapshot(terminal, auth_client, "start")?;
                 if !handle_backend_error(terminal, err, attempt, attempts, "phone")? {
                     return Ok(None);
                 }
+                terminal.print_line("Action: retry(start)")?;
             }
         }
     }
@@ -232,11 +243,16 @@ fn collect_code(
         }
 
         match auth_client.sign_in_with_code(token, &code) {
-            Ok(outcome) => return Ok(Some(outcome)),
+            Ok(outcome) => {
+                print_status_snapshot(terminal, auth_client, "code")?;
+                return Ok(Some(outcome));
+            }
             Err(err) => {
+                print_status_snapshot(terminal, auth_client, "code")?;
                 if !handle_backend_error(terminal, err, attempt, attempts, "code")? {
                     return Ok(None);
                 }
+                terminal.print_line("Action: retry(code)")?;
             }
         }
     }
@@ -266,17 +282,44 @@ fn collect_password(
         }
 
         match auth_client.verify_password(&password) {
-            Ok(()) => return Ok(Some(())),
+            Ok(()) => {
+                print_status_snapshot(terminal, auth_client, "password")?;
+                return Ok(Some(()));
+            }
             Err(err) => {
+                print_status_snapshot(terminal, auth_client, "password")?;
                 if !handle_backend_error(terminal, err, attempt, attempts, "2fa")? {
                     return Ok(None);
                 }
+                terminal.print_line("Action: retry(password)")?;
             }
         }
     }
 
     terminal.print_line("2FA step failed too many times. Please restart rtg.")?;
     Ok(None)
+}
+
+fn print_status_snapshot(
+    terminal: &mut dyn AuthTerminal,
+    auth_client: &dyn TelegramAuthClient,
+    action: &str,
+) -> io::Result<()> {
+    let Some(snapshot) = auth_client.auth_status_snapshot() else {
+        return Ok(());
+    };
+
+    let last_error = snapshot
+        .last_error
+        .as_ref()
+        .map(|error| error.code.as_str())
+        .unwrap_or("none");
+
+    terminal.print_line(&format!(
+        "status[{action}]: auth={} connectivity={} last_error={last_error}",
+        snapshot.auth.as_label(),
+        snapshot.connectivity.as_label()
+    ))
 }
 
 fn handle_backend_error(
@@ -441,17 +484,30 @@ mod tests {
 
     struct FakeClient {
         actions: VecDeque<Action>,
+        snapshot: Option<AuthConnectivityStatus>,
     }
 
     impl FakeClient {
         fn new(actions: Vec<Action>) -> Self {
             Self {
                 actions: actions.into(),
+                snapshot: None,
+            }
+        }
+
+        fn with_snapshot(actions: Vec<Action>, snapshot: AuthConnectivityStatus) -> Self {
+            Self {
+                actions: actions.into(),
+                snapshot: Some(snapshot),
             }
         }
     }
 
     impl TelegramAuthClient for FakeClient {
+        fn auth_status_snapshot(&self) -> Option<AuthConnectivityStatus> {
+            self.snapshot.clone()
+        }
+
         fn request_login_code(&mut self, _phone: &str) -> Result<AuthCodeToken, AuthBackendError> {
             match self.actions.pop_front().expect("missing request action") {
                 Action::RequestCode(result) => result,
@@ -701,6 +757,45 @@ mod tests {
         assert!(!joined.contains("Attempts left:"));
         assert!(!joined.contains("password=s3cret"));
         assert!(!joined.contains("code=12345"));
+    }
+
+    #[test]
+    fn status_snapshot_is_printed_for_ui_actions_when_available() {
+        let session_path = temp_session_path();
+        let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]);
+        let snapshot = AuthConnectivityStatus {
+            auth: crate::domain::status::AuthStatus::InProgress,
+            connectivity: crate::domain::status::ConnectivityHealth::Ok,
+            updated_at_unix_ms: 1,
+            last_error: None,
+        };
+        let mut client = FakeClient::with_snapshot(
+            vec![
+                Action::RequestCode(Ok(AuthCodeToken("token".into()))),
+                Action::SignIn(Ok(SignInOutcome::Authorized)),
+            ],
+            snapshot,
+        );
+
+        let result = run_guided_auth(
+            &mut terminal,
+            &mut client,
+            &session_path,
+            &RetryPolicy::default(),
+        )
+        .expect("guided auth should complete");
+
+        assert_eq!(result, GuidedAuthOutcome::Authenticated);
+        assert!(terminal
+            .output
+            .iter()
+            .any(|line| line.contains("status[start]: auth=AUTH_IN_PROGRESS")));
+        assert!(terminal
+            .output
+            .iter()
+            .any(|line| line.contains("status[code]: auth=AUTH_IN_PROGRESS")));
+
+        let _ = fs::remove_file(session_path);
     }
 
     #[test]
