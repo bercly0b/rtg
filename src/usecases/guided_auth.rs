@@ -547,7 +547,30 @@ mod tests {
     }
 
     #[test]
-    fn guided_auth_happy_path_with_optional_2fa() {
+    fn e2e_happy_path_without_2fa_authenticates_and_persists_session() {
+        let session_path = temp_session_path();
+        let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]);
+        let mut client = FakeClient::new(vec![
+            Action::RequestCode(Ok(AuthCodeToken("token".into()))),
+            Action::SignIn(Ok(SignInOutcome::Authorized)),
+        ]);
+
+        let result = run_guided_auth(
+            &mut terminal,
+            &mut client,
+            &session_path,
+            &RetryPolicy::default(),
+        )
+        .expect("guided auth should complete");
+
+        assert_eq!(result, GuidedAuthOutcome::Authenticated);
+        assert!(session_path.exists());
+
+        let _ = fs::remove_file(session_path);
+    }
+
+    #[test]
+    fn e2e_2fa_required_authenticates_after_password_step() {
         let session_path = temp_session_path();
         let mut terminal =
             FakeTerminal::new(vec![Some("+15551234567"), Some("12345"), Some("s3cret")]);
@@ -572,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_code_retries_then_succeeds() {
+    fn e2e_wrong_code_retries_then_succeeds() {
         let session_path = temp_session_path();
         let mut terminal =
             FakeTerminal::new(vec![Some("+15551234567"), Some("000"), Some("12345")]);
@@ -600,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    fn wrong_2fa_exhausts_retries_and_exits_with_guidance() {
+    fn e2e_wrong_password_exhausts_retries_and_exits_with_guidance() {
         let session_path = temp_session_path();
         let mut terminal = FakeTerminal::new(vec![
             Some("+15551234567"),
