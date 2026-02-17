@@ -95,6 +95,10 @@ cargo check
 Source of truth (sequence, bootstrap, evidence, pass/fail):
 - [`docs/phase2-quality-gate.md`](docs/phase2-quality-gate.md)
 
+Planning baseline (phase rebaseline + status model):
+- [`docs/phase-roadmap-rebaseline.md`](docs/phase-roadmap-rebaseline.md)
+- [`docs/auth-connectivity-status-model.md`](docs/auth-connectivity-status-model.md)
+
 ## Contributing
 
 Please read:
