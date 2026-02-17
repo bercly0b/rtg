@@ -245,46 +245,79 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct BurstyConnectivitySource {
-        connected: bool,
+    struct ScriptedDrainConnectivitySource {
+        bursts: VecDeque<VecDeque<ConnectivityStatus>>,
+        active_drain: VecDeque<ConnectivityStatus>,
+        drain_boundary_pending: bool,
     }
 
-    impl ConnectivityStatusSource for BurstyConnectivitySource {
+    impl ScriptedDrainConnectivitySource {
+        fn from_bursts(bursts: Vec<Vec<ConnectivityStatus>>) -> Self {
+            Self {
+                bursts: bursts.into_iter().map(Into::into).collect(),
+                active_drain: VecDeque::new(),
+                drain_boundary_pending: false,
+            }
+        }
+    }
+
+    impl ConnectivityStatusSource for ScriptedDrainConnectivitySource {
         fn next_status(&mut self) -> Option<ConnectivityStatus> {
-            self.connected = !self.connected;
-            Some(if self.connected {
-                ConnectivityStatus::Connected
-            } else {
-                ConnectivityStatus::Disconnected
-            })
+            if self.drain_boundary_pending {
+                self.drain_boundary_pending = false;
+                return None;
+            }
+
+            if self.active_drain.is_empty() {
+                self.active_drain = self.bursts.pop_front().unwrap_or_default();
+                if self.active_drain.is_empty() {
+                    return None;
+                }
+            }
+
+            let status = self.active_drain.pop_front();
+            if self.active_drain.is_empty() {
+                self.drain_boundary_pending = true;
+            }
+            status
         }
     }
 
     #[derive(Default)]
     struct TestTerminalEventSource {
-        polled: VecDeque<bool>,
+        immediate_polls: VecDeque<bool>,
+        blocking_polls: VecDeque<bool>,
         events: VecDeque<Event>,
     }
 
     impl TestTerminalEventSource {
-        fn with_polls(polls: Vec<bool>) -> Self {
+        fn with_blocking_polls(blocking_polls: Vec<bool>) -> Self {
             Self {
-                polled: polls.into(),
+                immediate_polls: VecDeque::new(),
+                blocking_polls: blocking_polls.into(),
                 events: VecDeque::new(),
             }
         }
 
-        fn with_polls_and_events(polls: Vec<bool>, events: Vec<Event>) -> Self {
+        fn with_non_blocking_polls_and_events(
+            immediate_polls: Vec<bool>,
+            events: Vec<Event>,
+        ) -> Self {
             Self {
-                polled: polls.into(),
+                immediate_polls: immediate_polls.into(),
+                blocking_polls: VecDeque::new(),
                 events: events.into(),
             }
         }
     }
 
     impl TerminalEventSource for TestTerminalEventSource {
-        fn poll(&mut self, _timeout: Duration) -> Result<bool> {
-            Ok(self.polled.pop_front().unwrap_or(false))
+        fn poll(&mut self, timeout: Duration) -> Result<bool> {
+            if timeout == NON_BLOCKING_POLL_TIMEOUT {
+                return Ok(self.immediate_polls.pop_front().unwrap_or(false));
+            }
+
+            Ok(self.blocking_polls.pop_front().unwrap_or(false))
         }
 
         fn read(&mut self) -> Result<Event> {
@@ -339,7 +372,7 @@ mod tests {
             ConnectivityStatus::Disconnected,
             ConnectivityStatus::Connecting,
         ])));
-        let mut terminal = TestTerminalEventSource::with_polls(vec![false, false, false]);
+        let mut terminal = TestTerminalEventSource::with_blocking_polls(vec![false, false, false]);
 
         let mut produced = Vec::new();
         for _ in 0..6 {
@@ -368,7 +401,7 @@ mod tests {
             ConnectivityStatus::Connecting,
         ])));
 
-        let mut terminal = TestTerminalEventSource::with_polls_and_events(
+        let mut terminal = TestTerminalEventSource::with_non_blocking_polls_and_events(
             vec![true, true, false, false],
             vec![
                 Event::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)),
@@ -392,9 +425,44 @@ mod tests {
     }
 
     #[test]
-    fn crossterm_event_source_does_not_starve_tick_under_bursty_connectivity() {
-        let mut source = CrosstermEventSource::new(Box::new(BurstyConnectivitySource::default()));
-        let mut terminal = TestTerminalEventSource::with_polls(vec![false; 32]);
+    fn crossterm_event_source_emits_tick_after_connectivity_streak_limit() {
+        let mut source = CrosstermEventSource::new(Box::new(
+            ScriptedDrainConnectivitySource::from_bursts(vec![
+                vec![
+                    ConnectivityStatus::Connecting,
+                    ConnectivityStatus::Connected,
+                ],
+                vec![
+                    ConnectivityStatus::Connecting,
+                    ConnectivityStatus::Disconnected,
+                ],
+                vec![
+                    ConnectivityStatus::Connecting,
+                    ConnectivityStatus::Connected,
+                ],
+                vec![
+                    ConnectivityStatus::Connecting,
+                    ConnectivityStatus::Disconnected,
+                ],
+                vec![
+                    ConnectivityStatus::Connecting,
+                    ConnectivityStatus::Connected,
+                ],
+                vec![
+                    ConnectivityStatus::Connecting,
+                    ConnectivityStatus::Disconnected,
+                ],
+                vec![
+                    ConnectivityStatus::Connecting,
+                    ConnectivityStatus::Connected,
+                ],
+                vec![
+                    ConnectivityStatus::Connecting,
+                    ConnectivityStatus::Disconnected,
+                ],
+            ]),
+        ));
+        let mut terminal = TestTerminalEventSource::with_blocking_polls(vec![false; 8]);
 
         let mut produced = Vec::new();
         for _ in 0..8 {
@@ -406,42 +474,77 @@ mod tests {
             );
         }
 
-        assert!(
-            produced.iter().any(|event| matches!(event, AppEvent::Tick)),
-            "tick should be emitted even when connectivity changes every cycle"
+        assert_eq!(
+            produced,
+            vec![
+                AppEvent::ConnectivityChanged(ConnectivityStatus::Connected),
+                AppEvent::ConnectivityChanged(ConnectivityStatus::Disconnected),
+                AppEvent::ConnectivityChanged(ConnectivityStatus::Connected),
+                AppEvent::Tick,
+                AppEvent::Tick,
+                AppEvent::ConnectivityChanged(ConnectivityStatus::Disconnected),
+                AppEvent::ConnectivityChanged(ConnectivityStatus::Connected),
+                AppEvent::ConnectivityChanged(ConnectivityStatus::Disconnected),
+            ]
         );
     }
 
     #[test]
-    fn crossterm_event_source_does_not_starve_input_under_bursty_connectivity() {
-        let mut source = CrosstermEventSource::new(Box::new(BurstyConnectivitySource::default()));
-        let mut terminal = TestTerminalEventSource::with_polls_and_events(
-            vec![true, true, true, true],
-            vec![
-                Event::Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE)),
-                Event::Key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE)),
-                Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE)),
-                Event::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
-            ],
+    fn crossterm_event_source_emits_ready_input_even_with_pending_connectivity() {
+        let mut source = CrosstermEventSource::new(Box::new(
+            ScriptedDrainConnectivitySource::from_bursts(vec![
+                vec![
+                    ConnectivityStatus::Connecting,
+                    ConnectivityStatus::Connected,
+                ],
+                vec![
+                    ConnectivityStatus::Connecting,
+                    ConnectivityStatus::Disconnected,
+                ],
+                vec![
+                    ConnectivityStatus::Connecting,
+                    ConnectivityStatus::Connected,
+                ],
+                vec![
+                    ConnectivityStatus::Connecting,
+                    ConnectivityStatus::Disconnected,
+                ],
+            ]),
+        ));
+        let mut terminal = TestTerminalEventSource::with_non_blocking_polls_and_events(
+            vec![false, false, false, true],
+            vec![Event::Key(KeyEvent::new(
+                KeyCode::Char('q'),
+                KeyModifiers::NONE,
+            ))],
         );
 
-        let first = source
-            .next_event_with_terminal(&mut terminal)
-            .expect("first event should be readable");
-        let second = source
-            .next_event_with_terminal(&mut terminal)
-            .expect("second event should be readable");
-        let third = source
-            .next_event_with_terminal(&mut terminal)
-            .expect("third event should be readable");
-        let fourth = source
-            .next_event_with_terminal(&mut terminal)
-            .expect("fourth event should be readable");
-
-        assert_eq!(first, Some(AppEvent::InputKey(KeyInput::new("a", false))));
-        assert_eq!(second, Some(AppEvent::InputKey(KeyInput::new("b", false))));
-        assert_eq!(third, Some(AppEvent::InputKey(KeyInput::new("c", false))));
-        assert_eq!(fourth, Some(AppEvent::QuitRequested));
+        assert_eq!(
+            source
+                .next_event_with_terminal(&mut terminal)
+                .expect("first event should be readable"),
+            Some(AppEvent::ConnectivityChanged(ConnectivityStatus::Connected))
+        );
+        assert_eq!(
+            source
+                .next_event_with_terminal(&mut terminal)
+                .expect("second event should be readable"),
+            Some(AppEvent::ConnectivityChanged(
+                ConnectivityStatus::Disconnected
+            ))
+        );
+        assert_eq!(
+            source
+                .next_event_with_terminal(&mut terminal)
+                .expect("third event should be readable"),
+            Some(AppEvent::ConnectivityChanged(ConnectivityStatus::Connected))
+        );
+        assert_eq!(
+            source
+                .next_event_with_terminal(&mut terminal)
+                .expect("fourth event should be readable"),
+            Some(AppEvent::QuitRequested)
+        );
     }
 
     #[test]
@@ -451,7 +554,7 @@ mod tests {
             ConnectivityStatus::Connected,
             ConnectivityStatus::Connected,
         ])));
-        let mut terminal = TestTerminalEventSource::with_polls(vec![false, false, false]);
+        let mut terminal = TestTerminalEventSource::with_blocking_polls(vec![false, false, false]);
 
         assert_eq!(
             source
@@ -498,7 +601,7 @@ mod tests {
             ]),
         ));
 
-        let mut terminal = TestTerminalEventSource::with_polls_and_events(
+        let mut terminal = TestTerminalEventSource::with_non_blocking_polls_and_events(
             vec![true, false, false],
             vec![Event::Key(KeyEvent::new(
                 KeyCode::Char('q'),
