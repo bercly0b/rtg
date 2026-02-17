@@ -98,6 +98,10 @@ impl TelegramAdapter {
 }
 
 impl TelegramAuthClient for TelegramAdapter {
+    fn auth_status_snapshot(&self) -> Option<AuthConnectivityStatus> {
+        Some(self.status_snapshot())
+    }
+
     fn request_login_code(&mut self, phone: &str) -> Result<AuthCodeToken, AuthBackendError> {
         self.status_tracker.on_auth_start();
 
