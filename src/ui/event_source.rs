@@ -194,10 +194,7 @@ impl MockEventSource {
         }
     }
 
-    pub fn with_connectivity(
-        events: Vec<AppEvent>,
-        connectivity: Vec<ConnectivityStatus>,
-    ) -> Self {
+    pub fn with_connectivity(events: Vec<AppEvent>, connectivity: Vec<ConnectivityStatus>) -> Self {
         Self {
             queue: events.into(),
             connectivity_queue: connectivity.into(),
