@@ -17,3 +17,4 @@ rpassword = "7.3"
 grammers-client = "0.7"
 grammers-session = "0.7"
 tokio = { version = "1", features = ["rt", "time"] }
+dotenvy = "0.15"

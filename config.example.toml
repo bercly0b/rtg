@@ -1,5 +1,6 @@
 # RTG example configuration
 # Copy this file to `config.toml` and adjust values.
+# Do not commit real secrets.
 
 [logging]
 # Tracing level: trace | debug | info | warn | error
@@ -7,8 +8,9 @@ level = "info"
 
 [telegram]
 # Telegram app credentials from https://my.telegram.org
-api_id = 123456
-api_hash = "your-api-hash"
+# Keep placeholder values in tracked config files.
+api_id = 0
+api_hash = "replace-me"
 
 [startup]
 # Timeout for lightweight online session validity probe during startup.
