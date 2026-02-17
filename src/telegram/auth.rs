@@ -35,6 +35,8 @@ pub(super) struct GrammersAuthBackend {
     client: Client,
     login_token: Option<grammers_client::types::LoginToken>,
     password_token: Option<grammers_client::types::PasswordToken>,
+    current_code_token: Option<AuthCodeToken>,
+    next_code_token_id: u64,
     state: LoginState,
 }
 
@@ -77,6 +79,8 @@ impl GrammersAuthBackend {
             client,
             login_token: None,
             password_token: None,
+            current_code_token: None,
+            next_code_token_id: 1,
             state: LoginState::Disconnected,
         })
     }
@@ -96,6 +100,9 @@ impl GrammersAuthBackend {
         {
             Ok(token) => token,
             Err(error) => {
+                self.login_token = None;
+                self.password_token = None;
+                self.current_code_token = None;
                 self.state = LoginState::Disconnected;
                 return Err(StartLoginError::Backend(error));
             }
@@ -103,6 +110,7 @@ impl GrammersAuthBackend {
 
         self.login_token = Some(login_token);
         self.password_token = None;
+        self.current_code_token = None;
         self.state = LoginState::CodeRequired;
 
         Ok(StartLoginTransition {
@@ -123,30 +131,48 @@ impl GrammersAuthBackend {
             StartLoginError::Backend(err) => err,
         })?;
 
-        Ok(AuthCodeToken("code-requested".to_owned()))
+        let token = AuthCodeToken(format!("code-requested-{}", self.next_code_token_id));
+        self.next_code_token_id += 1;
+        self.current_code_token = Some(token.clone());
+
+        Ok(token)
     }
 
     pub(super) fn sign_in_with_code(
         &mut self,
-        _token: &AuthCodeToken,
+        token: &AuthCodeToken,
         code: &str,
     ) -> Result<SignInOutcome, AuthBackendError> {
-        let login_token = self.login_token.take().ok_or(AuthBackendError::Transient {
-            code: "AUTH_INVALID_FLOW",
-            message: "login code request token is missing".to_owned(),
-        })?;
+        if self.current_code_token.as_ref() != Some(token) {
+            return Err(AuthBackendError::Transient {
+                code: "AUTH_INVALID_FLOW",
+                message: "code submission token does not match active login request".to_owned(),
+            });
+        }
+
+        let login_token = self
+            .login_token
+            .as_ref()
+            .ok_or(AuthBackendError::Transient {
+                code: "AUTH_INVALID_FLOW",
+                message: "login code request token is missing".to_owned(),
+            })?;
 
         self.state = LoginState::Connecting;
 
-        let result = self.rt.block_on(self.client.sign_in(&login_token, code));
+        let result = self.rt.block_on(self.client.sign_in(login_token, code));
 
         match result {
             Ok(_) => {
+                self.login_token = None;
+                self.current_code_token = None;
                 self.password_token = None;
                 self.state = LoginState::Authorized;
                 Ok(SignInOutcome::Authorized)
             }
             Err(SignInError::PasswordRequired(password_token)) => {
+                self.login_token = None;
+                self.current_code_token = None;
                 self.password_token = Some(password_token);
                 self.state = LoginState::PasswordRequired;
                 Ok(SignInOutcome::PasswordRequired)
@@ -245,20 +271,46 @@ fn map_request_code_error(error: impl std::fmt::Display) -> AuthBackendError {
 }
 
 fn map_sign_in_error(error: SignInError) -> AuthBackendError {
-    let msg = error.to_string().to_ascii_lowercase();
+    match error {
+        SignInError::InvalidCode => AuthBackendError::InvalidCode,
+        SignInError::Other(other) => {
+            let msg = other.to_string().to_ascii_lowercase();
 
-    if msg.contains("code") {
-        return AuthBackendError::InvalidCode;
-    }
+            if is_recoverable_code_error(&msg) {
+                return AuthBackendError::InvalidCode;
+            }
 
-    if let Some(seconds) = parse_flood_wait_seconds(&msg) {
-        return AuthBackendError::FloodWait { seconds };
-    }
+            if let Some(seconds) = parse_flood_wait_seconds(&msg) {
+                return AuthBackendError::FloodWait { seconds };
+            }
 
-    AuthBackendError::Transient {
-        code: "AUTH_SIGN_IN_FAILED",
-        message: "telegram sign-in failed".to_owned(),
+            AuthBackendError::Transient {
+                code: "AUTH_SIGN_IN_FAILED",
+                message: "telegram sign-in failed".to_owned(),
+            }
+        }
+        SignInError::InvalidPassword => AuthBackendError::Transient {
+            code: "AUTH_SIGN_IN_FAILED",
+            message: "telegram sign-in failed".to_owned(),
+        },
+        SignInError::SignUpRequired { .. } => AuthBackendError::Transient {
+            code: "AUTH_SIGN_IN_FAILED",
+            message: "telegram sign-in failed".to_owned(),
+        },
+        SignInError::PasswordRequired(_) => AuthBackendError::Transient {
+            code: "AUTH_SIGN_IN_FAILED",
+            message: "telegram sign-in failed".to_owned(),
+        },
     }
+}
+
+fn is_recoverable_code_error(message: &str) -> bool {
+    message.contains("invalid code")
+        || message.contains("phone_code_invalid")
+        || message.contains("phone code invalid")
+        || message.contains("phone_code_expired")
+        || message.contains("phone code expired")
+        || message.contains("code expired")
 }
 
 fn map_password_error(error: impl std::fmt::Display) -> AuthBackendError {
@@ -318,6 +370,18 @@ mod tests {
                 message: "failed to load existing session: malformed data".to_owned(),
             }
         );
+    }
+
+    #[test]
+    fn maps_sign_in_invalid_code_as_recoverable_error() {
+        let err = map_sign_in_error(SignInError::InvalidCode);
+        assert_eq!(err, AuthBackendError::InvalidCode);
+    }
+
+    #[test]
+    fn detects_expired_code_message_as_recoverable_code_error() {
+        assert!(is_recoverable_code_error("phone_code_expired"));
+        assert!(is_recoverable_code_error("phone code expired"));
     }
 
     #[test]
