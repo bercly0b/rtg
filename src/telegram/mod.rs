@@ -11,7 +11,7 @@ pub use connectivity::{ConnectivityMonitorStartError, TelegramConnectivityMonito
 
 use crate::{
     domain::events::ConnectivityStatus,
-    infra::config::TelegramConfig,
+    infra::{config::TelegramConfig, storage_layout::StorageLayout},
     usecases::guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome, TelegramAuthClient},
 };
 
@@ -47,7 +47,14 @@ impl TelegramAdapter {
             return Ok(Self::stub());
         }
 
-        let backend = GrammersAuthBackend::new(config)?;
+        let session_path = StorageLayout::resolve()
+            .map_err(|error| AuthBackendError::Transient {
+                code: "AUTH_SESSION_STORE_UNAVAILABLE",
+                message: format!("failed to resolve storage layout: {error}"),
+            })?
+            .session_file();
+
+        let backend = GrammersAuthBackend::new(config, &session_path)?;
         Ok(Self {
             backend_kind: BackendKind::Grammers,
             auth_backend: Some(backend),
@@ -95,6 +102,19 @@ impl TelegramAuthClient for TelegramAdapter {
     fn verify_password(&mut self, password: &str) -> Result<(), AuthBackendError> {
         match self.auth_backend.as_mut() {
             Some(backend) => backend.verify_password(password),
+            None => Err(AuthBackendError::Transient {
+                code: "AUTH_BACKEND_UNAVAILABLE",
+                message: "Telegram auth backend is not configured".into(),
+            }),
+        }
+    }
+
+    fn persist_authorized_session(
+        &mut self,
+        session_path: &std::path::Path,
+    ) -> Result<(), AuthBackendError> {
+        match self.auth_backend.as_mut() {
+            Some(backend) => backend.persist_authorized_session(session_path),
             None => Err(AuthBackendError::Transient {
                 code: "AUTH_BACKEND_UNAVAILABLE",
                 message: "Telegram auth backend is not configured".into(),

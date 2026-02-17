@@ -1,9 +1,11 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::{ErrorKind, Read, Write},
+    io::{ErrorKind, Write},
     path::{Path, PathBuf},
     time::Duration,
 };
+
+use grammers_session::Session;
 
 use crate::{
     infra::{error::AppError, storage_layout::StorageLayout},
@@ -199,18 +201,10 @@ enum LocalSessionValidity {
 }
 
 fn local_session_validity(session_file: &Path) -> LocalSessionValidity {
-    let mut file = match File::open(session_file) {
-        Ok(file) => file,
-        Err(source) if source.kind() == ErrorKind::NotFound => {
-            return LocalSessionValidity::Missing
-        }
-        Err(_) => return LocalSessionValidity::Broken,
-    };
-
-    let mut first_byte = [0_u8; 1];
-    match file.read(&mut first_byte) {
-        Ok(0) => LocalSessionValidity::Broken,
-        Ok(_) => LocalSessionValidity::Valid,
+    match Session::load_file(session_file) {
+        Ok(session) if session.signed_in() => LocalSessionValidity::Valid,
+        Ok(_) => LocalSessionValidity::Broken,
+        Err(source) if source.kind() == ErrorKind::NotFound => LocalSessionValidity::Missing,
         Err(_) => LocalSessionValidity::Broken,
     }
 }
@@ -298,11 +292,20 @@ mod tests {
         }
     }
 
+    fn write_signed_in_session(path: &Path) {
+        let session = Session::load_file_or_create(path)
+            .expect("session fixture file should be created before save");
+        session.set_user(1, 1, false);
+        session
+            .save_to_file(path)
+            .expect("signed-in session should be writable");
+    }
+
     #[test]
     fn valid_session_and_probe_launch_tui() {
         let layout = make_layout();
         layout.ensure_dirs().expect("dirs should be created");
-        fs::write(layout.session_file(), b"x").expect("session should be present");
+        write_signed_in_session(&layout.session_file());
 
         let prober = StubSessionProber::valid();
         let plan = plan_startup_with_layout(&layout, &prober, Some(2500)).expect("startup plan");
@@ -348,10 +351,27 @@ mod tests {
     }
 
     #[test]
+    fn legacy_marker_session_is_treated_as_broken_and_forces_reauth() {
+        let layout = make_layout();
+        layout.ensure_dirs().expect("dirs should be created");
+        fs::write(layout.session_file(), b"authorized").expect("legacy marker written");
+        let prober = StubSessionProber::valid();
+
+        let plan = plan_startup_with_layout(&layout, &prober, None).expect("startup plan");
+
+        assert_eq!(
+            plan.state,
+            StartupFlowState::GuidedAuth {
+                reason: GuidedAuthReason::Broken
+            }
+        );
+    }
+
+    #[test]
     fn revoked_protocol_session_goes_to_guided_auth_and_marks_policy_invalid() {
         let layout = make_layout();
         layout.ensure_dirs().expect("dirs should be created");
-        fs::write(layout.session_file(), b"x").expect("session should be present");
+        write_signed_in_session(&layout.session_file());
 
         let prober = StubSessionProber {
             outcome: Ok(ProtocolSessionValidity::Revoked),
@@ -392,7 +412,7 @@ mod tests {
     fn probe_timeout_falls_back_to_launch_tui_with_warning() {
         let layout = make_layout();
         layout.ensure_dirs().expect("dirs should be created");
-        fs::write(layout.session_file(), b"x").expect("session should be present");
+        write_signed_in_session(&layout.session_file());
 
         let prober = StubSessionProber {
             outcome: Err(ProtocolProbeError::Timeout),
@@ -409,7 +429,7 @@ mod tests {
     fn probe_network_error_falls_back_to_launch_tui_with_warning() {
         let layout = make_layout();
         layout.ensure_dirs().expect("dirs should be created");
-        fs::write(layout.session_file(), b"x").expect("session should be present");
+        write_signed_in_session(&layout.session_file());
 
         let prober = StubSessionProber {
             outcome: Err(ProtocolProbeError::Network),

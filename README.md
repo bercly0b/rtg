@@ -73,6 +73,17 @@ Example config is provided in `config.example.toml`:
 
 If `config.toml` is missing, the app falls back to built-in defaults.
 
+### Telegram session storage lifecycle
+
+RTG persists Telegram auth session state to:
+- `${XDG_CONFIG_HOME}/rtg/session/session.dat` (or `~/.config/rtg/session/session.dat` when `XDG_CONFIG_HOME` is not set)
+
+Lifecycle:
+- the session file is created (if missing) during Telegram backend bootstrap;
+- on successful guided auth, the authorized Telegram session is saved to this file;
+- on restart, RTG reuses this persisted session for startup/session validation;
+- if a session is revoked by Telegram, RTG marks policy invalid at `session/session.policy.invalid` and forces re-authorization.
+
 ## Controls
 
 In the current TUI shell:

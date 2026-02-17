@@ -52,6 +52,13 @@ pub trait TelegramAuthClient {
         code: &str,
     ) -> Result<SignInOutcome, AuthBackendError>;
     fn verify_password(&mut self, password: &str) -> Result<(), AuthBackendError>;
+
+    fn persist_authorized_session(&mut self, session_path: &Path) -> Result<(), AuthBackendError> {
+        persist_session_marker(session_path).map_err(|source| AuthBackendError::Transient {
+            code: "AUTH_SESSION_PERSIST_FAILED",
+            message: format!("failed to persist authorized session: {source}"),
+        })
+    }
 }
 
 pub trait AuthTerminal {
@@ -126,7 +133,11 @@ pub fn run_guided_auth(
         return Ok(GuidedAuthOutcome::ExitWithGuidance);
     }
 
-    persist_session_marker(session_path)?;
+    if let Err(err) = auth_client.persist_authorized_session(session_path) {
+        let _ = handle_backend_error(terminal, err, 1, 1, "session-persist")?;
+        terminal.print_line("Failed to persist session safely. Please retry login.")?;
+        return Ok(GuidedAuthOutcome::ExitWithGuidance);
+    }
     terminal.print_line("Authentication successful. Session saved.")?;
 
     Ok(GuidedAuthOutcome::Authenticated)
@@ -661,6 +672,60 @@ mod tests {
         assert!(!joined.contains("Attempts left:"));
         assert!(!joined.contains("password=s3cret"));
         assert!(!joined.contains("code=12345"));
+    }
+
+    #[test]
+    fn persist_failure_exits_with_guidance() {
+        struct PersistFailClient;
+
+        impl TelegramAuthClient for PersistFailClient {
+            fn request_login_code(
+                &mut self,
+                _phone: &str,
+            ) -> Result<AuthCodeToken, AuthBackendError> {
+                Ok(AuthCodeToken("token".into()))
+            }
+
+            fn sign_in_with_code(
+                &mut self,
+                _token: &AuthCodeToken,
+                _code: &str,
+            ) -> Result<SignInOutcome, AuthBackendError> {
+                Ok(SignInOutcome::Authorized)
+            }
+
+            fn verify_password(&mut self, _password: &str) -> Result<(), AuthBackendError> {
+                Ok(())
+            }
+
+            fn persist_authorized_session(
+                &mut self,
+                _session_path: &Path,
+            ) -> Result<(), AuthBackendError> {
+                Err(AuthBackendError::Transient {
+                    code: "AUTH_SESSION_PERSIST_FAILED",
+                    message: "io failure".to_owned(),
+                })
+            }
+        }
+
+        let session_path = temp_session_path();
+        let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]);
+        let mut client = PersistFailClient;
+
+        let result = run_guided_auth(
+            &mut terminal,
+            &mut client,
+            &session_path,
+            &RetryPolicy::default(),
+        )
+        .expect("guided auth should complete");
+
+        assert_eq!(result, GuidedAuthOutcome::ExitWithGuidance);
+        assert!(terminal
+            .output
+            .iter()
+            .any(|line| line.contains("AUTH_SESSION_PERSIST_FAILED")));
     }
 
     #[test]

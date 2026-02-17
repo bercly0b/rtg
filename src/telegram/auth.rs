@@ -1,3 +1,5 @@
+use std::{fs, path::Path};
+
 use grammers_client::{Client, Config, InitParams, SignInError};
 use grammers_session::Session;
 use tokio::runtime::Builder;
@@ -15,7 +17,19 @@ pub(super) struct GrammersAuthBackend {
 }
 
 impl GrammersAuthBackend {
-    pub(super) fn new(config: &TelegramConfig) -> Result<Self, AuthBackendError> {
+    pub(super) fn new(
+        config: &TelegramConfig,
+        session_path: &Path,
+    ) -> Result<Self, AuthBackendError> {
+        if let Some(parent) = session_path.parent() {
+            fs::create_dir_all(parent).map_err(|source| AuthBackendError::Transient {
+                code: "AUTH_SESSION_STORE_UNAVAILABLE",
+                message: format!("failed to create session dir: {source}"),
+            })?;
+        }
+
+        let session = Session::load_file_or_create(session_path).map_err(map_session_load_error)?;
+
         let rt = Builder::new_current_thread()
             .enable_time()
             .build()
@@ -27,7 +41,7 @@ impl GrammersAuthBackend {
         let client = rt
             .block_on(async {
                 Client::connect(Config {
-                    session: Session::new(),
+                    session,
                     api_id: config.api_id,
                     api_hash: config.api_hash.clone(),
                     params: InitParams::default(),
@@ -98,12 +112,35 @@ impl GrammersAuthBackend {
             .map(|_| ())
             .map_err(map_password_error)
     }
+
+    pub(super) fn persist_authorized_session(
+        &self,
+        session_path: &Path,
+    ) -> Result<(), AuthBackendError> {
+        self.client
+            .session()
+            .save_to_file(session_path)
+            .map_err(|source| AuthBackendError::Transient {
+                code: "AUTH_SESSION_PERSIST_FAILED",
+                message: format!(
+                    "failed to persist session at {}: {source}",
+                    session_path.display()
+                ),
+            })
+    }
 }
 
 fn map_connect_error(error: impl std::fmt::Display) -> AuthBackendError {
     AuthBackendError::Transient {
         code: "AUTH_BACKEND_UNAVAILABLE",
         message: format!("telegram backend connection failed: {error}"),
+    }
+}
+
+fn map_session_load_error(error: impl std::fmt::Display) -> AuthBackendError {
+    AuthBackendError::Transient {
+        code: "AUTH_SESSION_LOAD_FAILED",
+        message: format!("failed to load existing session: {error}"),
     }
 }
 
@@ -185,5 +222,17 @@ mod tests {
     #[test]
     fn extracts_flood_wait_seconds() {
         assert_eq!(parse_flood_wait_seconds("FLOOD_WAIT_67"), Some(67));
+    }
+
+    #[test]
+    fn maps_session_load_error() {
+        let err = map_session_load_error("malformed data");
+        assert_eq!(
+            err,
+            AuthBackendError::Transient {
+                code: "AUTH_SESSION_LOAD_FAILED",
+                message: "failed to load existing session: malformed data".to_owned(),
+            }
+        );
     }
 }
