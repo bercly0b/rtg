@@ -12,6 +12,7 @@ use crate::{
 };
 
 const EVENT_POLL_TIMEOUT: Duration = Duration::from_millis(100);
+const NON_BLOCKING_POLL_TIMEOUT: Duration = Duration::from_millis(0);
 const MAX_CONNECTIVITY_STREAK: u8 = 3;
 const MAX_CONNECTIVITY_DRAIN_PER_CYCLE: usize = 32;
 
@@ -113,6 +114,15 @@ impl CrosstermEventSource {
         terminal: &mut T,
     ) -> Result<Option<AppEvent>> {
         self.refresh_pending_connectivity();
+
+        let has_ready_terminal_input = terminal.poll(NON_BLOCKING_POLL_TIMEOUT).unwrap_or(false);
+        if has_ready_terminal_input {
+            self.connectivity_streak = 0;
+            if let Event::Key(key) = terminal.read()? {
+                return Ok(map_key_event(key));
+            }
+            return Ok(None);
+        }
 
         if self.connectivity_streak < MAX_CONNECTIVITY_STREAK {
             if let Some(status) = self.pending_connectivity.take() {
@@ -235,6 +245,22 @@ mod tests {
     }
 
     #[derive(Default)]
+    struct BurstyConnectivitySource {
+        connected: bool,
+    }
+
+    impl ConnectivityStatusSource for BurstyConnectivitySource {
+        fn next_status(&mut self) -> Option<ConnectivityStatus> {
+            self.connected = !self.connected;
+            Some(if self.connected {
+                ConnectivityStatus::Connected
+            } else {
+                ConnectivityStatus::Disconnected
+            })
+        }
+    }
+
+    #[derive(Default)]
     struct TestTerminalEventSource {
         polled: VecDeque<bool>,
         events: VecDeque<Event>,
@@ -332,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn crossterm_event_source_keeps_input_and_quit_path_under_connectivity_burst() {
+    fn crossterm_event_source_prioritizes_ready_input_over_connectivity_burst() {
         let mut source = CrosstermEventSource::new(Box::new(TestConnectivitySource::from(vec![
             ConnectivityStatus::Connected,
             ConnectivityStatus::Disconnected,
@@ -343,7 +369,7 @@ mod tests {
         ])));
 
         let mut terminal = TestTerminalEventSource::with_polls_and_events(
-            vec![true, true],
+            vec![true, true, false, false],
             vec![
                 Event::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)),
                 Event::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
@@ -360,9 +386,62 @@ mod tests {
             .next_event_with_terminal(&mut terminal)
             .expect("third event should be readable");
 
-        assert!(matches!(first, Some(AppEvent::ConnectivityChanged(_))));
-        assert_eq!(second, Some(AppEvent::InputKey(KeyInput::new("x", false))));
-        assert_eq!(third, Some(AppEvent::QuitRequested));
+        assert_eq!(first, Some(AppEvent::InputKey(KeyInput::new("x", false))));
+        assert_eq!(second, Some(AppEvent::QuitRequested));
+        assert!(matches!(third, Some(AppEvent::ConnectivityChanged(_))));
+    }
+
+    #[test]
+    fn crossterm_event_source_does_not_starve_tick_under_bursty_connectivity() {
+        let mut source = CrosstermEventSource::new(Box::new(BurstyConnectivitySource::default()));
+        let mut terminal = TestTerminalEventSource::with_polls(vec![false; 32]);
+
+        let mut produced = Vec::new();
+        for _ in 0..8 {
+            produced.push(
+                source
+                    .next_event_with_terminal(&mut terminal)
+                    .expect("event should be readable")
+                    .expect("test sequence should produce events"),
+            );
+        }
+
+        assert!(
+            produced.iter().any(|event| matches!(event, AppEvent::Tick)),
+            "tick should be emitted even when connectivity changes every cycle"
+        );
+    }
+
+    #[test]
+    fn crossterm_event_source_does_not_starve_input_under_bursty_connectivity() {
+        let mut source = CrosstermEventSource::new(Box::new(BurstyConnectivitySource::default()));
+        let mut terminal = TestTerminalEventSource::with_polls_and_events(
+            vec![true, true, true, true],
+            vec![
+                Event::Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE)),
+                Event::Key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE)),
+                Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE)),
+                Event::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
+            ],
+        );
+
+        let first = source
+            .next_event_with_terminal(&mut terminal)
+            .expect("first event should be readable");
+        let second = source
+            .next_event_with_terminal(&mut terminal)
+            .expect("second event should be readable");
+        let third = source
+            .next_event_with_terminal(&mut terminal)
+            .expect("third event should be readable");
+        let fourth = source
+            .next_event_with_terminal(&mut terminal)
+            .expect("fourth event should be readable");
+
+        assert_eq!(first, Some(AppEvent::InputKey(KeyInput::new("a", false))));
+        assert_eq!(second, Some(AppEvent::InputKey(KeyInput::new("b", false))));
+        assert_eq!(third, Some(AppEvent::InputKey(KeyInput::new("c", false))));
+        assert_eq!(fourth, Some(AppEvent::QuitRequested));
     }
 
     #[test]
@@ -420,11 +499,18 @@ mod tests {
         ));
 
         let mut terminal = TestTerminalEventSource::with_polls_and_events(
-            vec![true],
+            vec![true, false, false],
             vec![Event::Key(KeyEvent::new(
                 KeyCode::Char('q'),
                 KeyModifiers::NONE,
             ))],
+        );
+
+        assert_eq!(
+            source
+                .next_event_with_terminal(&mut terminal)
+                .expect("quit event should be readable"),
+            Some(AppEvent::QuitRequested)
         );
 
         assert!(matches!(
@@ -433,12 +519,5 @@ mod tests {
                 .expect("connectivity event should be readable"),
             Some(AppEvent::ConnectivityChanged(_))
         ));
-
-        assert_eq!(
-            source
-                .next_event_with_terminal(&mut terminal)
-                .expect("quit event should be readable"),
-            Some(AppEvent::QuitRequested)
-        );
     }
 }
