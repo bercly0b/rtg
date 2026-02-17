@@ -50,6 +50,18 @@ where
                 if key.ctrl && key.key == "o" {
                     self.opener.open("about:blank")?;
                     self.storage.save_last_action("open")?;
+                    return Ok(());
+                }
+
+                match key.key.as_str() {
+                    "j" => self.state.chat_list_mut().select_next(),
+                    "k" => self.state.chat_list_mut().select_previous(),
+                    "enter" => {
+                        if self.state.chat_list().selected_chat().is_some() {
+                            self.storage.save_last_action("open_chat_intent")?;
+                        }
+                    }
+                    _ => {}
                 }
             }
             AppEvent::ConnectivityChanged(status) => {
@@ -65,9 +77,22 @@ where
 mod tests {
     use super::*;
     use crate::{
-        domain::events::{ConnectivityStatus, KeyInput},
+        domain::{
+            chat::ChatSummary,
+            events::{ConnectivityStatus, KeyInput},
+        },
         infra::stubs::{NoopOpener, StubStorageAdapter},
     };
+
+    fn chat(chat_id: i64, title: &str) -> ChatSummary {
+        ChatSummary {
+            chat_id,
+            title: title.to_owned(),
+            unread_count: 0,
+            last_message_preview: None,
+            last_message_unix_ms: None,
+        }
+    }
 
     #[test]
     fn stops_on_quit_event() {
@@ -107,6 +132,46 @@ mod tests {
         assert_eq!(
             orchestrator.state().connectivity_status(),
             ConnectivityStatus::Disconnected
+        );
+    }
+
+    #[test]
+    fn key_contract_navigates_chat_list_with_vim_keys() {
+        let mut orchestrator =
+            DefaultShellOrchestrator::new(StubStorageAdapter::default(), NoopOpener::default());
+        orchestrator.state.chat_list_mut().set_ready(vec![
+            chat(1, "General"),
+            chat(2, "Backend"),
+            chat(3, "Ops"),
+        ]);
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .expect("j key should be handled");
+        assert_eq!(orchestrator.state().chat_list().selected_index(), Some(1));
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("k", false)))
+            .expect("k key should be handled");
+        assert_eq!(orchestrator.state().chat_list().selected_index(), Some(0));
+    }
+
+    #[test]
+    fn key_contract_enter_triggers_open_chat_intent_placeholder() {
+        let mut orchestrator =
+            DefaultShellOrchestrator::new(StubStorageAdapter::default(), NoopOpener::default());
+        orchestrator
+            .state
+            .chat_list_mut()
+            .set_ready(vec![chat(1, "General")]);
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter key should be handled");
+
+        assert_eq!(
+            orchestrator.storage.last_action,
+            Some("open_chat_intent".to_owned())
         );
     }
 }

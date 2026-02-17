@@ -185,6 +185,10 @@ fn map_key_event(key: KeyEvent) -> Option<AppEvent> {
         )));
     }
 
+    if key.code == KeyCode::Enter {
+        return Some(AppEvent::InputKey(KeyInput::new("enter", false)));
+    }
+
     None
 }
 
@@ -442,6 +446,25 @@ mod tests {
         assert_eq!(second, Some(AppEvent::InputKey(KeyInput::new("b", false))));
         assert_eq!(third, Some(AppEvent::InputKey(KeyInput::new("c", false))));
         assert_eq!(fourth, Some(AppEvent::QuitRequested));
+    }
+
+    #[test]
+    fn crossterm_event_source_maps_enter_to_open_chat_intent_key() {
+        let mut source = CrosstermEventSource::default();
+        let mut terminal = TestTerminalEventSource::with_polls_and_events(
+            vec![true],
+            vec![Event::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            ))],
+        );
+
+        assert_eq!(
+            source
+                .next_event_with_terminal(&mut terminal)
+                .expect("enter key event should be readable"),
+            Some(AppEvent::InputKey(KeyInput::new("enter", false)))
+        );
     }
 
     #[test]
