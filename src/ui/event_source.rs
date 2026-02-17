@@ -1,8 +1,7 @@
-use std::{
-    collections::VecDeque,
-    sync::mpsc::{self, Receiver},
-    time::Duration,
-};
+use std::{sync::mpsc::Receiver, time::Duration};
+
+#[cfg(test)]
+use std::{collections::VecDeque, sync::mpsc};
 
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
