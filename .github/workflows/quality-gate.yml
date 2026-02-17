@@ -2,10 +2,7 @@ name: Quality Gate
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
-      - 'feature/**'
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   quality:

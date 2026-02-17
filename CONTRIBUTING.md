@@ -21,7 +21,7 @@ cargo test
 cargo check
 ```
 
-When opening a PR, include quality gate evidence using the artifact skeleton defined in the source-of-truth document.
+When opening a PR, you must include quality gate evidence using the artifact skeleton defined in the source-of-truth document.
 
 ## Pull request expectations
 

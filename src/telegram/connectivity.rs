@@ -14,8 +14,14 @@ pub struct TelegramConnectivityMonitor {
 }
 
 impl TelegramConnectivityMonitor {
-    pub fn start(status_tx: Sender<ConnectivityStatus>) -> Result<Self, ConnectivityMonitorStartError> {
-        if std::env::var("RTG_TELEGRAM_CONNECTIVITY_MONITOR_FAIL").ok().as_deref() == Some("1") {
+    pub fn start(
+        status_tx: Sender<ConnectivityStatus>,
+    ) -> Result<Self, ConnectivityMonitorStartError> {
+        if std::env::var("RTG_TELEGRAM_CONNECTIVITY_MONITOR_FAIL")
+            .ok()
+            .as_deref()
+            == Some("1")
+        {
             return Err(ConnectivityMonitorStartError::StartupRejected);
         }
 

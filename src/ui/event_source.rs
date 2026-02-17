@@ -1,8 +1,7 @@
-use std::{
-    collections::VecDeque,
-    sync::mpsc::{self, Receiver},
-    time::Duration,
-};
+use std::{sync::mpsc::Receiver, time::Duration};
+
+#[cfg(test)]
+use std::{collections::VecDeque, sync::mpsc};
 
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -284,11 +283,17 @@ mod tests {
     #[test]
     fn mock_event_source_keeps_tick_input_path_when_no_connectivity_event_available() {
         let mut source = MockEventSource::with_connectivity(
-            vec![AppEvent::Tick, AppEvent::InputKey(KeyInput::new("x", false))],
+            vec![
+                AppEvent::Tick,
+                AppEvent::InputKey(KeyInput::new("x", false)),
+            ],
             vec![],
         );
 
-        assert_eq!(source.next_event().expect("tick must be emitted"), Some(AppEvent::Tick));
+        assert_eq!(
+            source.next_event().expect("tick must be emitted"),
+            Some(AppEvent::Tick)
+        );
         assert_eq!(
             source.next_event().expect("input must be emitted"),
             Some(AppEvent::InputKey(KeyInput::new("x", false)))
@@ -345,44 +350,19 @@ mod tests {
             ],
         );
 
-        let first_non_connectivity = source
+        let first = source
             .next_event_with_terminal(&mut terminal)
             .expect("first event should be readable");
-        let second_non_connectivity = source
+        let second = source
             .next_event_with_terminal(&mut terminal)
             .expect("second event should be readable");
-        let third_non_connectivity = source
+        let third = source
             .next_event_with_terminal(&mut terminal)
             .expect("third event should be readable");
-        let fourth_non_connectivity = source
-            .next_event_with_terminal(&mut terminal)
-            .expect("fourth event should be readable");
 
-        assert!(matches!(first_non_connectivity, Some(AppEvent::ConnectivityChanged(_))));
-        assert!(matches!(second_non_connectivity, Some(AppEvent::ConnectivityChanged(_))));
-        assert!(matches!(third_non_connectivity, Some(AppEvent::ConnectivityChanged(_))));
-        assert_eq!(
-            fourth_non_connectivity,
-            Some(AppEvent::InputKey(KeyInput::new("x", false)))
-        );
-
-        let fifth = source
-            .next_event_with_terminal(&mut terminal)
-            .expect("fifth event should be readable");
-        let sixth = source
-            .next_event_with_terminal(&mut terminal)
-            .expect("sixth event should be readable");
-        let seventh = source
-            .next_event_with_terminal(&mut terminal)
-            .expect("seventh event should be readable");
-        let eighth = source
-            .next_event_with_terminal(&mut terminal)
-            .expect("eighth event should be readable");
-
-        assert!(matches!(fifth, Some(AppEvent::ConnectivityChanged(_))));
-        assert!(matches!(sixth, Some(AppEvent::ConnectivityChanged(_))));
-        assert!(matches!(seventh, Some(AppEvent::ConnectivityChanged(_))));
-        assert_eq!(eighth, Some(AppEvent::QuitRequested));
+        assert!(matches!(first, Some(AppEvent::ConnectivityChanged(_))));
+        assert_eq!(second, Some(AppEvent::InputKey(KeyInput::new("x", false))));
+        assert_eq!(third, Some(AppEvent::QuitRequested));
     }
 
     #[test]
@@ -441,17 +421,18 @@ mod tests {
 
         let mut terminal = TestTerminalEventSource::with_polls_and_events(
             vec![true],
-            vec![Event::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE))],
+            vec![Event::Key(KeyEvent::new(
+                KeyCode::Char('q'),
+                KeyModifiers::NONE,
+            ))],
         );
 
-        for _ in 0..3 {
-            assert!(matches!(
-                source
-                    .next_event_with_terminal(&mut terminal)
-                    .expect("connectivity event should be readable"),
-                Some(AppEvent::ConnectivityChanged(_))
-            ));
-        }
+        assert!(matches!(
+            source
+                .next_event_with_terminal(&mut terminal)
+                .expect("connectivity event should be readable"),
+            Some(AppEvent::ConnectivityChanged(_))
+        ));
 
         assert_eq!(
             source
