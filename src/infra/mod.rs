@@ -5,6 +5,7 @@ pub mod contracts;
 pub mod error;
 pub mod logging;
 pub mod stubs;
+pub mod storage_layout;
 
 /// Returns the infra module name for smoke checks.
 pub fn module_name() -> &'static str {

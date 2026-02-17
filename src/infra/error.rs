@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{io, path::PathBuf};
 
 use thiserror::Error;
 
@@ -18,6 +18,22 @@ pub enum AppError {
     },
     #[error("failed to initialize logging: {0}")]
     LoggingInit(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("failed to resolve storage paths: {details}")]
+    StoragePathResolution { details: String },
+    #[error("failed to create storage directory at {path}: {source}")]
+    StorageDirCreate {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("session store is busy (another rtg instance may be running): {path}")]
+    SessionStoreBusy { path: PathBuf },
+    #[error("failed to create session lock file at {path}: {source}")]
+    SessionLockCreate {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
