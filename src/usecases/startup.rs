@@ -246,9 +246,15 @@ fn acquire_session_lock(path: PathBuf) -> Result<SessionLockGuard, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::usecases::guided_auth::{
-        run_guided_auth, AuthBackendError, AuthCodeToken, AuthTerminal, GuidedAuthOutcome,
-        RetryPolicy, SignInOutcome, TelegramAuthClient,
+    use crate::{
+        test_support::env_lock,
+        usecases::{
+            guided_auth::{
+                run_guided_auth, AuthBackendError, AuthCodeToken, AuthTerminal, GuidedAuthOutcome,
+                RetryPolicy, SignInOutcome, TelegramAuthClient,
+            },
+            logout::logout_and_reset,
+        },
     };
     use std::{
         env,
@@ -554,5 +560,62 @@ mod tests {
 
         assert_eq!(plan.state, StartupFlowState::LaunchTui);
         assert_eq!(plan.probe_warning, Some("AUTH_PROBE_NETWORK_FALLBACK"));
+    }
+
+    #[test]
+    fn logout_reset_results_in_disconnected_state_and_clean_relogin_path() {
+        let _guard = env_lock();
+
+        let root = env::temp_dir().join(format!(
+            "rtg-logout-relogin-startup-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock should be valid")
+                .as_nanos()
+        ));
+        let xdg = root.join("xdg");
+        fs::create_dir_all(&xdg).expect("xdg dir should be creatable");
+
+        let old_xdg = env::var_os("XDG_CONFIG_HOME");
+        // SAFETY: unit test serially sets test-local env and restores it before exit.
+        unsafe { env::set_var("XDG_CONFIG_HOME", &xdg) };
+
+        let layout = StorageLayout::resolve().expect("layout should resolve");
+        layout.ensure_dirs().expect("dirs should be created");
+        write_signed_in_session(&layout.session_file());
+
+        let mut adapter = TelegramAdapter::stub();
+        let outcome = logout_and_reset(&mut adapter).expect("logout should succeed");
+        assert!(outcome.session_removed);
+        assert!(!layout.session_file().exists());
+
+        let snapshot = adapter.status_snapshot();
+        assert_eq!(snapshot.auth, crate::domain::status::AuthStatus::NotStarted);
+        assert_eq!(
+            snapshot.connectivity,
+            crate::domain::status::ConnectivityHealth::Unavailable
+        );
+
+        let prober = StubSessionProber::valid();
+        let plan = plan_startup_with_layout(&layout, &prober, None).expect("startup plan");
+        assert_eq!(
+            plan.state,
+            StartupFlowState::GuidedAuth {
+                reason: GuidedAuthReason::Missing
+            }
+        );
+
+        match old_xdg {
+            Some(value) => {
+                // SAFETY: restoring process env in test teardown.
+                unsafe { env::set_var("XDG_CONFIG_HOME", value) }
+            }
+            None => {
+                // SAFETY: restoring process env in test teardown.
+                unsafe { env::remove_var("XDG_CONFIG_HOME") }
+            }
+        }
+
+        let _ = fs::remove_dir_all(root);
     }
 }

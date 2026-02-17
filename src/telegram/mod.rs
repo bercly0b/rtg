@@ -95,6 +95,13 @@ impl TelegramAdapter {
     pub fn record_connectivity_status(&self, status: ConnectivityStatus) {
         self.status_tracker.on_connectivity_changed(status);
     }
+
+    pub fn disconnect_and_reset(&mut self) {
+        if let Some(backend) = self.auth_backend.as_mut() {
+            backend.disconnect_and_reset();
+        }
+        self.status_tracker.on_logout_reset();
+    }
 }
 
 impl TelegramAuthClient for TelegramAdapter {
@@ -228,5 +235,18 @@ mod tests {
         assert!(snapshots
             .iter()
             .any(|item| item.connectivity.as_label() == "CONNECTIVITY_DEGRADED"));
+    }
+
+    #[test]
+    fn disconnect_and_reset_sets_disconnected_snapshot() {
+        let mut adapter = TelegramAdapter::stub();
+        adapter.record_connectivity_status(ConnectivityStatus::Connected);
+
+        adapter.disconnect_and_reset();
+
+        let snapshot = adapter.status_snapshot();
+        assert_eq!(snapshot.auth.as_label(), "AUTH_NOT_STARTED");
+        assert_eq!(snapshot.connectivity.as_label(), "CONNECTIVITY_UNAVAILABLE");
+        assert_eq!(snapshot.last_error, None);
     }
 }

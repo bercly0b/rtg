@@ -17,6 +17,8 @@ pub struct Cli {
 pub enum Command {
     /// Start TUI shell
     Run,
+    /// Logout/disconnect and reset local auth/session state
+    Logout,
 }
 
 impl Cli {
@@ -49,5 +51,12 @@ mod tests {
                 .map(|p| p.to_string_lossy().to_string()),
             Some("custom.toml".to_owned())
         );
+    }
+
+    #[test]
+    fn parses_logout_command() {
+        let cli = Cli::parse_from(["rtg", "logout"]);
+
+        assert!(matches!(cli.command_or_default(), Command::Logout));
     }
 }

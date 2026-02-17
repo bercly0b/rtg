@@ -84,6 +84,14 @@ impl StatusTracker {
         });
     }
 
+    pub fn on_logout_reset(&self) {
+        self.mutate(|snapshot| {
+            snapshot.auth = AuthStatus::NotStarted;
+            snapshot.connectivity = ConnectivityHealth::Unavailable;
+            snapshot.last_error = None;
+        });
+    }
+
     fn mutate<F>(&self, mutator: F)
     where
         F: FnOnce(&mut AuthConnectivityStatus),
@@ -190,6 +198,20 @@ mod tests {
         tracker.on_auth_success();
         let snapshot = tracker.snapshot();
         assert_eq!(snapshot.auth, AuthStatus::Success);
+        assert!(snapshot.last_error.is_none());
+    }
+
+    #[test]
+    fn logout_reset_forces_disconnected_clean_state() {
+        let tracker = StatusTracker::new();
+        tracker.on_auth_success();
+        tracker.on_connectivity_changed(ConnectivityStatus::Connected);
+
+        tracker.on_logout_reset();
+
+        let snapshot = tracker.snapshot();
+        assert_eq!(snapshot.auth, AuthStatus::NotStarted);
+        assert_eq!(snapshot.connectivity, ConnectivityHealth::Unavailable);
         assert!(snapshot.last_error.is_none());
     }
 }

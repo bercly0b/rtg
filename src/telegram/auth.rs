@@ -217,7 +217,14 @@ impl GrammersAuthBackend {
             })
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) fn disconnect_and_reset(&mut self) {
+        self.login_token = None;
+        self.password_token = None;
+        self.current_code_token = None;
+        self.state = LoginState::Disconnected;
+    }
+
+    #[allow(dead_code)]
     pub(super) fn state(&self) -> LoginState {
         self.state
     }
