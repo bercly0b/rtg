@@ -1,9 +1,11 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::{ErrorKind, Read, Write},
+    io::{ErrorKind, Write},
     path::{Path, PathBuf},
     time::Duration,
 };
+
+use grammers_session::Session;
 
 use crate::{
     infra::{error::AppError, storage_layout::StorageLayout},
@@ -199,18 +201,10 @@ enum LocalSessionValidity {
 }
 
 fn local_session_validity(session_file: &Path) -> LocalSessionValidity {
-    let mut file = match File::open(session_file) {
-        Ok(file) => file,
-        Err(source) if source.kind() == ErrorKind::NotFound => {
-            return LocalSessionValidity::Missing
-        }
-        Err(_) => return LocalSessionValidity::Broken,
-    };
-
-    let mut first_byte = [0_u8; 1];
-    match file.read(&mut first_byte) {
-        Ok(0) => LocalSessionValidity::Broken,
-        Ok(_) => LocalSessionValidity::Valid,
+    match Session::load_file(session_file) {
+        Ok(session) if session.signed_in() => LocalSessionValidity::Valid,
+        Ok(_) => LocalSessionValidity::Broken,
+        Err(source) if source.kind() == ErrorKind::NotFound => LocalSessionValidity::Missing,
         Err(_) => LocalSessionValidity::Broken,
     }
 }
@@ -252,6 +246,10 @@ fn acquire_session_lock(path: PathBuf) -> Result<SessionLockGuard, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::usecases::guided_auth::{
+        run_guided_auth, AuthBackendError, AuthCodeToken, AuthTerminal, GuidedAuthOutcome,
+        RetryPolicy, SignInOutcome, TelegramAuthClient,
+    };
     use std::{
         env,
         fs::{self, create_dir_all},
@@ -284,6 +282,74 @@ mod tests {
         }
     }
 
+    struct FakeTerminal {
+        inputs: std::collections::VecDeque<Option<String>>,
+    }
+
+    impl FakeTerminal {
+        fn new(inputs: Vec<Option<&str>>) -> Self {
+            Self {
+                inputs: inputs
+                    .into_iter()
+                    .map(|item| item.map(std::string::ToString::to_string))
+                    .collect(),
+            }
+        }
+    }
+
+    impl AuthTerminal for FakeTerminal {
+        fn print_line(&mut self, _line: &str) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn prompt_line(&mut self, _prompt: &str) -> std::io::Result<Option<String>> {
+            Ok(self.inputs.pop_front().flatten())
+        }
+
+        fn prompt_secret(&mut self, _prompt: &str) -> std::io::Result<Option<String>> {
+            Ok(self.inputs.pop_front().flatten())
+        }
+    }
+
+    struct SessionPersistClient;
+
+    impl TelegramAuthClient for SessionPersistClient {
+        fn request_login_code(&mut self, _phone: &str) -> Result<AuthCodeToken, AuthBackendError> {
+            Ok(AuthCodeToken("token".to_owned()))
+        }
+
+        fn sign_in_with_code(
+            &mut self,
+            _token: &AuthCodeToken,
+            _code: &str,
+        ) -> Result<SignInOutcome, AuthBackendError> {
+            Ok(SignInOutcome::Authorized)
+        }
+
+        fn verify_password(&mut self, _password: &str) -> Result<(), AuthBackendError> {
+            Ok(())
+        }
+
+        fn persist_authorized_session(
+            &mut self,
+            session_path: &Path,
+        ) -> Result<(), AuthBackendError> {
+            let session = Session::load_file_or_create(session_path).map_err(|source| {
+                AuthBackendError::Transient {
+                    code: "AUTH_SESSION_PERSIST_FAILED",
+                    message: source.to_string(),
+                }
+            })?;
+            session.set_user(1, 1, false);
+            session
+                .save_to_file(session_path)
+                .map_err(|source| AuthBackendError::Transient {
+                    code: "AUTH_SESSION_PERSIST_FAILED",
+                    message: source.to_string(),
+                })
+        }
+    }
+
     fn make_layout() -> StorageLayout {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -298,11 +364,20 @@ mod tests {
         }
     }
 
+    fn write_signed_in_session(path: &Path) {
+        let session = Session::load_file_or_create(path)
+            .expect("session fixture file should be created before save");
+        session.set_user(1, 1, false);
+        session
+            .save_to_file(path)
+            .expect("signed-in session should be writable");
+    }
+
     #[test]
     fn valid_session_and_probe_launch_tui() {
         let layout = make_layout();
         layout.ensure_dirs().expect("dirs should be created");
-        fs::write(layout.session_file(), b"x").expect("session should be present");
+        write_signed_in_session(&layout.session_file());
 
         let prober = StubSessionProber::valid();
         let plan = plan_startup_with_layout(&layout, &prober, Some(2500)).expect("startup plan");
@@ -348,10 +423,27 @@ mod tests {
     }
 
     #[test]
+    fn legacy_marker_session_is_treated_as_broken_and_forces_reauth() {
+        let layout = make_layout();
+        layout.ensure_dirs().expect("dirs should be created");
+        fs::write(layout.session_file(), b"authorized").expect("legacy marker written");
+        let prober = StubSessionProber::valid();
+
+        let plan = plan_startup_with_layout(&layout, &prober, None).expect("startup plan");
+
+        assert_eq!(
+            plan.state,
+            StartupFlowState::GuidedAuth {
+                reason: GuidedAuthReason::Broken
+            }
+        );
+    }
+
+    #[test]
     fn revoked_protocol_session_goes_to_guided_auth_and_marks_policy_invalid() {
         let layout = make_layout();
         layout.ensure_dirs().expect("dirs should be created");
-        fs::write(layout.session_file(), b"x").expect("session should be present");
+        write_signed_in_session(&layout.session_file());
 
         let prober = StubSessionProber {
             outcome: Ok(ProtocolSessionValidity::Revoked),
@@ -389,10 +481,52 @@ mod tests {
     }
 
     #[test]
+    fn revoked_then_successful_guided_auth_clears_policy_marker_and_next_startup_launches_tui() {
+        let layout = make_layout();
+        layout.ensure_dirs().expect("dirs should be created");
+        write_signed_in_session(&layout.session_file());
+
+        let revoked_prober = StubSessionProber {
+            outcome: Ok(ProtocolSessionValidity::Revoked),
+            captured_timeout: Arc::new(Mutex::new(None)),
+        };
+
+        let revoked_plan =
+            plan_startup_with_layout(&layout, &revoked_prober, None).expect("startup plan");
+
+        assert_eq!(
+            revoked_plan.state,
+            StartupFlowState::GuidedAuth {
+                reason: GuidedAuthReason::Revoked
+            }
+        );
+        assert!(layout.session_policy_invalid_file().exists());
+
+        drop(revoked_plan);
+
+        let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]);
+        let mut auth_client = SessionPersistClient;
+        let auth_outcome = run_guided_auth(
+            &mut terminal,
+            &mut auth_client,
+            &layout.session_file(),
+            &RetryPolicy::default(),
+        )
+        .expect("guided auth should complete");
+
+        assert_eq!(auth_outcome, GuidedAuthOutcome::Authenticated);
+        assert!(!layout.session_policy_invalid_file().exists());
+
+        let valid_prober = StubSessionProber::valid();
+        let next_plan = plan_startup_with_layout(&layout, &valid_prober, None).expect("startup");
+        assert_eq!(next_plan.state, StartupFlowState::LaunchTui);
+    }
+
+    #[test]
     fn probe_timeout_falls_back_to_launch_tui_with_warning() {
         let layout = make_layout();
         layout.ensure_dirs().expect("dirs should be created");
-        fs::write(layout.session_file(), b"x").expect("session should be present");
+        write_signed_in_session(&layout.session_file());
 
         let prober = StubSessionProber {
             outcome: Err(ProtocolProbeError::Timeout),
@@ -409,7 +543,7 @@ mod tests {
     fn probe_network_error_falls_back_to_launch_tui_with_warning() {
         let layout = make_layout();
         layout.ensure_dirs().expect("dirs should be created");
-        fs::write(layout.session_file(), b"x").expect("session should be present");
+        write_signed_in_session(&layout.session_file());
 
         let prober = StubSessionProber {
             outcome: Err(ProtocolProbeError::Network),
