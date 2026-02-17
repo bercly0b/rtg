@@ -199,11 +199,11 @@ mod tests {
         let factory = StubConnectivityMonitorFactory { should_fail: true };
 
         let mut shell = compose_shell_with_factory(&context, &factory);
-        let event = shell
-            .event_source
-            .next_event()
-            .expect("fallback source should still be readable");
+        shell
+            .orchestrator
+            .handle_event(AppEvent::QuitRequested)
+            .expect("fallback composition should still wire orchestrator");
 
-        assert_eq!(event, Some(AppEvent::Tick));
+        assert!(!shell.orchestrator.state().is_running());
     }
 }
