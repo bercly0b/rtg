@@ -3,6 +3,7 @@
 pub mod bootstrap;
 pub mod context;
 pub mod contracts;
+pub mod guided_auth;
 pub mod shell;
 pub mod startup;
 

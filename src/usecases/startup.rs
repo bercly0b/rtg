@@ -67,6 +67,12 @@ pub struct StartupPlan {
     _lock_guard: SessionLockGuard,
 }
 
+impl StartupPlan {
+    pub fn session_file(&self) -> PathBuf {
+        self._layout.session_file()
+    }
+}
+
 pub trait SessionProtocolProber {
     fn probe_session_protocol(
         &self,

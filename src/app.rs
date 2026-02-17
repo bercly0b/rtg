@@ -1,13 +1,16 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 
 use crate::{
     cli::{Cli, Command},
     domain, infra, telegram, ui,
-    usecases::{self, bootstrap},
+    usecases::{
+        self, bootstrap,
+        guided_auth::{run_guided_auth, GuidedAuthOutcome, RetryPolicy, StdTerminal},
+    },
 };
 
 pub fn run(cli: Cli) -> Result<()> {
-    let context = bootstrap::bootstrap(cli.config.as_deref())?;
+    let mut context = bootstrap::bootstrap(cli.config.as_deref())?;
     let startup = usecases::startup::plan_startup(
         &context.telegram,
         Some(context.config.startup.session_probe_timeout_ms),
@@ -37,11 +40,28 @@ pub fn run(cli: Cli) -> Result<()> {
                 )?
             }
             usecases::startup::StartupFlowState::GuidedAuth { reason } => {
-                bail!(
-                    "guided CLI authorization is not implemented yet ({code}: {message})",
+                tracing::info!(
                     code = reason.code(),
                     message = reason.user_message(),
-                )
+                    "starting guided CLI authorization"
+                );
+
+                let mut terminal = StdTerminal;
+                let auth_outcome = run_guided_auth(
+                    &mut terminal,
+                    &mut context.telegram,
+                    &startup.session_file(),
+                    &RetryPolicy::default(),
+                )?;
+
+                if matches!(auth_outcome, GuidedAuthOutcome::Authenticated) {
+                    let mut shell = bootstrap::compose_shell();
+                    ui::shell::start(
+                        &context,
+                        shell.event_source.as_mut(),
+                        shell.orchestrator.as_mut(),
+                    )?;
+                }
             }
         },
     }
