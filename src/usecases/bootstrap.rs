@@ -39,22 +39,33 @@ pub fn compose_shell() -> ShellComposition {
 }
 
 fn build_context(config_path: Option<&Path>) -> Result<AppContext, AppError> {
-    let _config_stub_contract = infra::stubs::StubConfigAdapter;
     let config_adapter = FileConfigAdapter::new(config_path);
-    let config = config_adapter.load().map_err(AppError::Other)?;
+    build_context_with(&config_adapter)
+}
 
+fn build_context_with(config_adapter: &dyn ConfigAdapter) -> Result<AppContext, AppError> {
+    let config = config_adapter.load().map_err(AppError::Other)?;
     Ok(AppContext::new(config))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::events::AppEvent;
+    use crate::{domain::events::AppEvent, infra::stubs::StubConfigAdapter};
 
     #[test]
     fn builds_context_with_default_config_when_file_is_missing() {
         let context = build_context(Some(Path::new("./missing-config.toml")))
             .expect("context should build from defaults");
+
+        assert_eq!(context.config, crate::infra::config::AppConfig::default());
+    }
+
+    #[test]
+    fn builds_context_via_config_contract() {
+        let adapter = StubConfigAdapter;
+        let context =
+            build_context_with(&adapter).expect("context should build from config adapter");
 
         assert_eq!(context.config, crate::infra::config::AppConfig::default());
     }
