@@ -128,13 +128,16 @@ fn validate_telegram_config(config: &TelegramConfig) -> Result<(), AppError> {
     if partially_configured {
         return Err(AppError::ConfigValidation {
             code: "TELEGRAM_CONFIG_INVALID",
-            details: "telegram.api_id and telegram.api_hash must both be set for real backend bootstrap".to_owned(),
+            details:
+                "telegram.api_id and telegram.api_hash must both be set for real backend bootstrap"
+                    .to_owned(),
         });
     }
 
     Ok(())
 }
 
+#[allow(clippy::wrong_self_convention)]
 trait TelegramAdapterFactory {
     fn from_config(&self, config: &TelegramConfig) -> Result<TelegramAdapter, AuthBackendError>;
 }
@@ -187,12 +190,18 @@ mod tests {
     }
 
     struct StubTelegramAdapterFactory {
-        result: Result<TelegramAdapter, AuthBackendError>,
+        result: Result<(), AuthBackendError>,
     }
 
     impl TelegramAdapterFactory for StubTelegramAdapterFactory {
-        fn from_config(&self, _config: &TelegramConfig) -> Result<TelegramAdapter, AuthBackendError> {
-            self.result.clone()
+        fn from_config(
+            &self,
+            _config: &TelegramConfig,
+        ) -> Result<TelegramAdapter, AuthBackendError> {
+            match &self.result {
+                Ok(()) => Ok(TelegramAdapter::stub()),
+                Err(error) => Err(error.clone()),
+            }
         }
     }
 
@@ -255,9 +264,7 @@ mod tests {
         let config_adapter = FixedConfigAdapter {
             config: AppConfig::default(),
         };
-        let telegram_factory = StubTelegramAdapterFactory {
-            result: Ok(TelegramAdapter::stub()),
-        };
+        let telegram_factory = StubTelegramAdapterFactory { result: Ok(()) };
 
         let context = build_context_with_factories(&config_adapter, &telegram_factory)
             .expect("unconfigured bootstrap should succeed");

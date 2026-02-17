@@ -54,6 +54,7 @@ impl TelegramAdapter {
         })
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn uses_real_backend(&self) -> bool {
         matches!(self.backend_kind, BackendKind::Grammers)
     }
@@ -113,7 +114,8 @@ mod tests {
 
     #[test]
     fn uses_stub_backend_when_config_is_not_set() {
-        let adapter = TelegramAdapter::from_config(&TelegramConfig::default()).expect("stub adapter");
+        let adapter =
+            TelegramAdapter::from_config(&TelegramConfig::default()).expect("stub adapter");
         assert!(!adapter.uses_real_backend());
     }
 }

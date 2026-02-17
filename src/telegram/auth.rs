@@ -44,7 +44,10 @@ impl GrammersAuthBackend {
         })
     }
 
-    pub(super) fn request_login_code(&mut self, phone: &str) -> Result<AuthCodeToken, AuthBackendError> {
+    pub(super) fn request_login_code(
+        &mut self,
+        phone: &str,
+    ) -> Result<AuthCodeToken, AuthBackendError> {
         let login_token = self
             .rt
             .block_on(self.client.request_login_code(phone))
@@ -82,10 +85,13 @@ impl GrammersAuthBackend {
     }
 
     pub(super) fn verify_password(&mut self, password: &str) -> Result<(), AuthBackendError> {
-        let password_token = self.password_token.take().ok_or(AuthBackendError::Transient {
-            code: "AUTH_INVALID_FLOW",
-            message: "password verification requested before password challenge".to_owned(),
-        })?;
+        let password_token = self
+            .password_token
+            .take()
+            .ok_or(AuthBackendError::Transient {
+                code: "AUTH_INVALID_FLOW",
+                message: "password verification requested before password challenge".to_owned(),
+            })?;
 
         self.rt
             .block_on(self.client.check_password(password_token, password))
@@ -153,13 +159,17 @@ fn map_password_error(error: impl std::fmt::Display) -> AuthBackendError {
 
 fn parse_flood_wait_seconds(message: &str) -> Option<u32> {
     let marker = "flood";
-    if !message.contains(marker) {
+    if !message.to_ascii_lowercase().contains(marker) {
         return None;
     }
 
     message
         .split(|ch: char| !ch.is_ascii_digit())
-        .find_map(|part| (!part.is_empty()).then(|| part.parse::<u32>().ok()).flatten())
+        .find_map(|part| {
+            (!part.is_empty())
+                .then(|| part.parse::<u32>().ok())
+                .flatten()
+        })
 }
 
 #[cfg(test)]
