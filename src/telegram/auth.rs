@@ -9,11 +9,33 @@ use crate::{
     usecases::guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome},
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginState {
+    Disconnected,
+    Connecting,
+    CodeRequired,
+    PasswordRequired,
+    Authorized,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartLoginTransition {
+    pub from: LoginState,
+    pub to: LoginState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StartLoginError {
+    InvalidState { current: LoginState },
+    Backend(AuthBackendError),
+}
+
 pub(super) struct GrammersAuthBackend {
     rt: tokio::runtime::Runtime,
     client: Client,
     login_token: Option<grammers_client::types::LoginToken>,
     password_token: Option<grammers_client::types::PasswordToken>,
+    state: LoginState,
 }
 
 impl GrammersAuthBackend {
@@ -55,6 +77,37 @@ impl GrammersAuthBackend {
             client,
             login_token: None,
             password_token: None,
+            state: LoginState::Disconnected,
+        })
+    }
+
+    pub(super) fn start_login(
+        &mut self,
+        phone: &str,
+    ) -> Result<StartLoginTransition, StartLoginError> {
+        let from = self.state;
+        let to = next_start_login_state(from)?;
+        self.state = to;
+
+        let login_token = match self
+            .rt
+            .block_on(self.client.request_login_code(phone))
+            .map_err(map_request_code_error)
+        {
+            Ok(token) => token,
+            Err(error) => {
+                self.state = LoginState::Disconnected;
+                return Err(StartLoginError::Backend(error));
+            }
+        };
+
+        self.login_token = Some(login_token);
+        self.password_token = None;
+        self.state = LoginState::CodeRequired;
+
+        Ok(StartLoginTransition {
+            from,
+            to: self.state,
         })
     }
 
@@ -62,13 +115,13 @@ impl GrammersAuthBackend {
         &mut self,
         phone: &str,
     ) -> Result<AuthCodeToken, AuthBackendError> {
-        let login_token = self
-            .rt
-            .block_on(self.client.request_login_code(phone))
-            .map_err(map_request_code_error)?;
-
-        self.login_token = Some(login_token);
-        self.password_token = None;
+        self.start_login(phone).map_err(|error| match error {
+            StartLoginError::InvalidState { current } => AuthBackendError::Transient {
+                code: "AUTH_START_LOGIN_INVALID_STATE",
+                message: format!("start-login is not allowed from state {current:?}"),
+            },
+            StartLoginError::Backend(err) => err,
+        })?;
 
         Ok(AuthCodeToken("code-requested".to_owned()))
     }
@@ -83,18 +136,25 @@ impl GrammersAuthBackend {
             message: "login code request token is missing".to_owned(),
         })?;
 
+        self.state = LoginState::Connecting;
+
         let result = self.rt.block_on(self.client.sign_in(&login_token, code));
 
         match result {
             Ok(_) => {
                 self.password_token = None;
+                self.state = LoginState::Authorized;
                 Ok(SignInOutcome::Authorized)
             }
             Err(SignInError::PasswordRequired(password_token)) => {
                 self.password_token = Some(password_token);
+                self.state = LoginState::PasswordRequired;
                 Ok(SignInOutcome::PasswordRequired)
             }
-            Err(error) => Err(map_sign_in_error(error)),
+            Err(error) => {
+                self.state = LoginState::CodeRequired;
+                Err(map_sign_in_error(error))
+            }
         }
     }
 
@@ -107,10 +167,19 @@ impl GrammersAuthBackend {
                 message: "password verification requested before password challenge".to_owned(),
             })?;
 
-        self.rt
+        match self
+            .rt
             .block_on(self.client.check_password(password_token, password))
-            .map(|_| ())
-            .map_err(map_password_error)
+        {
+            Ok(_) => {
+                self.state = LoginState::Authorized;
+                Ok(())
+            }
+            Err(error) => {
+                self.state = LoginState::PasswordRequired;
+                Err(map_password_error(error))
+            }
+        }
     }
 
     pub(super) fn persist_authorized_session(
@@ -127,6 +196,21 @@ impl GrammersAuthBackend {
                     session_path.display()
                 ),
             })
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) fn state(&self) -> LoginState {
+        self.state
+    }
+}
+
+fn next_start_login_state(current: LoginState) -> Result<LoginState, StartLoginError> {
+    match current {
+        LoginState::Disconnected => Ok(LoginState::Connecting),
+        LoginState::Connecting
+        | LoginState::CodeRequired
+        | LoginState::PasswordRequired
+        | LoginState::Authorized => Err(StartLoginError::InvalidState { current }),
     }
 }
 
@@ -232,6 +316,25 @@ mod tests {
             AuthBackendError::Transient {
                 code: "AUTH_SESSION_LOAD_FAILED",
                 message: "failed to load existing session: malformed data".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn start_login_state_transition_is_deterministic_from_disconnected() {
+        let next = next_start_login_state(LoginState::Disconnected).expect("valid transition");
+        assert_eq!(next, LoginState::Connecting);
+    }
+
+    #[test]
+    fn start_login_repeated_call_is_rejected_with_typed_error() {
+        let err = next_start_login_state(LoginState::CodeRequired)
+            .expect_err("repeated start-login should be invalid");
+
+        assert_eq!(
+            err,
+            StartLoginError::InvalidState {
+                current: LoginState::CodeRequired
             }
         );
     }
