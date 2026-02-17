@@ -138,6 +138,22 @@ pub fn run_guided_auth(
         terminal.print_line("Failed to persist session safely. Please retry login.")?;
         return Ok(GuidedAuthOutcome::ExitWithGuidance);
     }
+
+    if let Err(source) = clear_policy_invalid_marker(session_path) {
+        let _ = handle_backend_error(
+            terminal,
+            AuthBackendError::Transient {
+                code: "AUTH_POLICY_MARKER_CLEAR_FAILED",
+                message: format!("failed to clear invalid policy marker: {source}"),
+            },
+            1,
+            1,
+            "session-persist",
+        )?;
+        terminal.print_line("Failed to persist session safely. Please retry login.")?;
+        return Ok(GuidedAuthOutcome::ExitWithGuidance);
+    }
+
     terminal.print_line("Authentication successful. Session saved.")?;
 
     Ok(GuidedAuthOutcome::Authenticated)
@@ -318,6 +334,19 @@ fn handle_backend_error(
             ))?;
             Ok(attempts_left > 0)
         }
+    }
+}
+
+const SESSION_POLICY_INVALID_FILE: &str = "session.policy.invalid";
+
+fn clear_policy_invalid_marker(session_path: &Path) -> io::Result<()> {
+    let parent_dir = session_path.parent().unwrap_or_else(|| Path::new("."));
+    let marker_path = parent_dir.join(SESSION_POLICY_INVALID_FILE);
+
+    match fs::remove_file(&marker_path) {
+        Ok(()) => sync_directory(parent_dir),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(source),
     }
 }
 
@@ -726,6 +755,51 @@ mod tests {
             .output
             .iter()
             .any(|line| line.contains("AUTH_SESSION_PERSIST_FAILED")));
+    }
+
+    #[test]
+    fn successful_auth_clears_policy_invalid_marker() {
+        let mut session_path = env::temp_dir();
+        session_path.push(format!(
+            "rtg-guided-auth-policy-marker-{}-{}/session.dat",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+
+        let parent = session_path
+            .parent()
+            .expect("session path should have parent")
+            .to_path_buf();
+        fs::create_dir_all(&parent).expect("parent should be creatable");
+        fs::write(
+            parent.join(SESSION_POLICY_INVALID_FILE),
+            b"SESSION_POLICY_INVALID",
+        )
+        .expect("policy marker should be writable");
+
+        let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]);
+        let mut client = FakeClient::new(vec![
+            Action::RequestCode(Ok(AuthCodeToken("token".into()))),
+            Action::SignIn(Ok(SignInOutcome::Authorized)),
+        ]);
+
+        let result = run_guided_auth(
+            &mut terminal,
+            &mut client,
+            &session_path,
+            &RetryPolicy::default(),
+        )
+        .expect("guided auth should complete");
+
+        assert_eq!(result, GuidedAuthOutcome::Authenticated);
+        assert!(session_path.exists());
+        assert!(!parent.join(SESSION_POLICY_INVALID_FILE).exists());
+
+        let _ = fs::remove_file(&session_path);
+        let _ = fs::remove_dir_all(parent);
     }
 
     #[test]

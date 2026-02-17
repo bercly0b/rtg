@@ -246,6 +246,10 @@ fn acquire_session_lock(path: PathBuf) -> Result<SessionLockGuard, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::usecases::guided_auth::{
+        run_guided_auth, AuthBackendError, AuthCodeToken, AuthTerminal, GuidedAuthOutcome,
+        RetryPolicy, SignInOutcome, TelegramAuthClient,
+    };
     use std::{
         env,
         fs::{self, create_dir_all},
@@ -275,6 +279,74 @@ mod tests {
         ) -> Result<ProtocolSessionValidity, ProtocolProbeError> {
             *self.captured_timeout.lock().expect("timeout lock") = Some(timeout);
             self.outcome.clone()
+        }
+    }
+
+    struct FakeTerminal {
+        inputs: std::collections::VecDeque<Option<String>>,
+    }
+
+    impl FakeTerminal {
+        fn new(inputs: Vec<Option<&str>>) -> Self {
+            Self {
+                inputs: inputs
+                    .into_iter()
+                    .map(|item| item.map(std::string::ToString::to_string))
+                    .collect(),
+            }
+        }
+    }
+
+    impl AuthTerminal for FakeTerminal {
+        fn print_line(&mut self, _line: &str) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn prompt_line(&mut self, _prompt: &str) -> std::io::Result<Option<String>> {
+            Ok(self.inputs.pop_front().flatten())
+        }
+
+        fn prompt_secret(&mut self, _prompt: &str) -> std::io::Result<Option<String>> {
+            Ok(self.inputs.pop_front().flatten())
+        }
+    }
+
+    struct SessionPersistClient;
+
+    impl TelegramAuthClient for SessionPersistClient {
+        fn request_login_code(&mut self, _phone: &str) -> Result<AuthCodeToken, AuthBackendError> {
+            Ok(AuthCodeToken("token".to_owned()))
+        }
+
+        fn sign_in_with_code(
+            &mut self,
+            _token: &AuthCodeToken,
+            _code: &str,
+        ) -> Result<SignInOutcome, AuthBackendError> {
+            Ok(SignInOutcome::Authorized)
+        }
+
+        fn verify_password(&mut self, _password: &str) -> Result<(), AuthBackendError> {
+            Ok(())
+        }
+
+        fn persist_authorized_session(
+            &mut self,
+            session_path: &Path,
+        ) -> Result<(), AuthBackendError> {
+            let session = Session::load_file_or_create(session_path).map_err(|source| {
+                AuthBackendError::Transient {
+                    code: "AUTH_SESSION_PERSIST_FAILED",
+                    message: source.to_string(),
+                }
+            })?;
+            session.set_user(1, 1, false);
+            session
+                .save_to_file(session_path)
+                .map_err(|source| AuthBackendError::Transient {
+                    code: "AUTH_SESSION_PERSIST_FAILED",
+                    message: source.to_string(),
+                })
         }
     }
 
@@ -406,6 +478,48 @@ mod tests {
             }
         );
         assert_eq!(*prober.captured_timeout.lock().expect("timeout lock"), None);
+    }
+
+    #[test]
+    fn revoked_then_successful_guided_auth_clears_policy_marker_and_next_startup_launches_tui() {
+        let layout = make_layout();
+        layout.ensure_dirs().expect("dirs should be created");
+        write_signed_in_session(&layout.session_file());
+
+        let revoked_prober = StubSessionProber {
+            outcome: Ok(ProtocolSessionValidity::Revoked),
+            captured_timeout: Arc::new(Mutex::new(None)),
+        };
+
+        let revoked_plan =
+            plan_startup_with_layout(&layout, &revoked_prober, None).expect("startup plan");
+
+        assert_eq!(
+            revoked_plan.state,
+            StartupFlowState::GuidedAuth {
+                reason: GuidedAuthReason::Revoked
+            }
+        );
+        assert!(layout.session_policy_invalid_file().exists());
+
+        drop(revoked_plan);
+
+        let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]);
+        let mut auth_client = SessionPersistClient;
+        let auth_outcome = run_guided_auth(
+            &mut terminal,
+            &mut auth_client,
+            &layout.session_file(),
+            &RetryPolicy::default(),
+        )
+        .expect("guided auth should complete");
+
+        assert_eq!(auth_outcome, GuidedAuthOutcome::Authenticated);
+        assert!(!layout.session_policy_invalid_file().exists());
+
+        let valid_prober = StubSessionProber::valid();
+        let next_plan = plan_startup_with_layout(&layout, &valid_prober, None).expect("startup");
+        assert_eq!(next_plan.state, StartupFlowState::LaunchTui);
     }
 
     #[test]
