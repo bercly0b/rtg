@@ -52,6 +52,9 @@ where
                     self.storage.save_last_action("open")?;
                 }
             }
+            AppEvent::ConnectivityChanged(status) => {
+                self.state.set_connectivity_status(status);
+            }
         }
 
         Ok(())
@@ -62,7 +65,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        domain::events::KeyInput,
+        domain::events::{ConnectivityStatus, KeyInput},
         infra::stubs::{NoopOpener, StubStorageAdapter},
     };
 
@@ -88,5 +91,22 @@ mod tests {
             .expect("event must be handled");
 
         assert!(orchestrator.state().is_running());
+    }
+
+    #[test]
+    fn updates_connectivity_status_on_connectivity_event() {
+        let mut orchestrator =
+            DefaultShellOrchestrator::new(StubStorageAdapter::default(), NoopOpener::default());
+
+        orchestrator
+            .handle_event(AppEvent::ConnectivityChanged(
+                ConnectivityStatus::Disconnected,
+            ))
+            .expect("connectivity event must be handled");
+
+        assert_eq!(
+            orchestrator.state().connectivity_status(),
+            ConnectivityStatus::Disconnected
+        );
     }
 }
