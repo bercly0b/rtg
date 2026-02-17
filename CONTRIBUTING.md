@@ -10,7 +10,9 @@ Thanks for contributing.
 
 ## Local quality gate (required before PR)
 
-Run the full baseline:
+Source of truth: [`docs/phase2-quality-gate.md`](docs/phase2-quality-gate.md).
+
+Run the canonical sequence:
 
 ```bash
 cargo fmt --check
@@ -18,6 +20,8 @@ cargo clippy -- -D warnings
 cargo test
 cargo check
 ```
+
+When opening a PR, include quality gate evidence using the artifact skeleton defined in the source-of-truth document.
 
 ## Pull request expectations
 

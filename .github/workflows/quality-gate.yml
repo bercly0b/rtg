@@ -12,25 +12,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Repository checkout
         uses: actions/checkout@v4
 
-      - name: Setup Rust
+      - name: Rust env bootstrap (stable + rustfmt + clippy)
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
-      - name: Cache cargo registry + target
+      - name: Cargo cache (registry + target)
         uses: Swatinem/rust-cache@v2
 
-      - name: cargo fmt --check
+      - name: Gate 1 — cargo fmt --check
         run: cargo fmt --check
 
-      - name: cargo clippy -- -D warnings
+      - name: Gate 2 — cargo clippy -- -D warnings
         run: cargo clippy -- -D warnings
 
-      - name: cargo test
+      - name: Gate 3 — cargo test
         run: cargo test
 
-      - name: cargo check
+      - name: Gate 4 — cargo check
         run: cargo check
