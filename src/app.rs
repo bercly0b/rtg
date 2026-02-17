@@ -39,7 +39,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     shell.orchestrator.as_mut(),
                 )?
             }
-            usecases::startup::StartupFlowState::GuidedAuth { reason } => {
+            usecases::startup::StartupFlowState::GuidedAuth { ref reason } => {
                 tracing::info!(
                     code = reason.code(),
                     message = reason.user_message(),
