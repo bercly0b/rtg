@@ -397,6 +397,25 @@ mod tests {
     }
 
     #[test]
+    fn e2e_restart_reconnect_reuses_persisted_session() {
+        let layout = make_layout();
+        layout.ensure_dirs().expect("dirs should be created");
+        write_signed_in_session(&layout.session_file());
+
+        let first_start_prober = StubSessionProber::valid();
+        let first_plan =
+            plan_startup_with_layout(&layout, &first_start_prober, None).expect("first startup");
+        assert_eq!(first_plan.state, StartupFlowState::LaunchTui);
+
+        drop(first_plan);
+
+        let second_start_prober = StubSessionProber::valid();
+        let second_plan =
+            plan_startup_with_layout(&layout, &second_start_prober, None).expect("second startup");
+        assert_eq!(second_plan.state, StartupFlowState::LaunchTui);
+    }
+
+    #[test]
     fn missing_session_goes_to_guided_auth() {
         let layout = make_layout();
         let prober = StubSessionProber::valid();

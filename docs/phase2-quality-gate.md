@@ -4,6 +4,9 @@
 
 This document is the **source of truth** for RTG quality gate execution in both local development and CI.
 
+For Phase 3 exit-specific scenario coverage and pass criteria, see:
+- [`docs/phase3-release-gate.md`](phase3-release-gate.md)
+
 ## Canonical gate sequence
 
 Run gates in this strict order:

@@ -134,10 +134,12 @@ cargo check
 
 Source of truth (sequence, bootstrap, evidence, pass/fail):
 - [`docs/phase2-quality-gate.md`](docs/phase2-quality-gate.md)
+- [`docs/phase3-release-gate.md`](docs/phase3-release-gate.md)
 
 Planning baseline (phase rebaseline + status model):
 - [`docs/phase-roadmap-rebaseline.md`](docs/phase-roadmap-rebaseline.md)
 - [`docs/auth-connectivity-status-model.md`](docs/auth-connectivity-status-model.md)
+- [`docs/phase3-operator-observability-runbook.md`](docs/phase3-operator-observability-runbook.md)
 
 ## Contributing
 
