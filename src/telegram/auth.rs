@@ -233,13 +233,20 @@ impl GrammersAuthBackend {
             }
 
             let mut dialogs = self.client.iter_dialogs().limit(limit);
-            let mut chats = Vec::with_capacity(limit);
+            let mut fetched_dialogs = Vec::with_capacity(limit);
 
             while let Some(dialog) = dialogs
                 .next()
                 .await
                 .map_err(map_list_chats_invocation_error)?
             {
+                fetched_dialogs.push(dialog);
+            }
+
+            let dialogs_for_chat_list = select_dialogs_for_chat_list(fetched_dialogs);
+            let mut chats = Vec::with_capacity(dialogs_for_chat_list.len());
+
+            for dialog in dialogs_for_chat_list {
                 let unread_count = dialog_unread_count(&dialog.raw)?;
                 let last_message_preview = dialog
                     .last_message
@@ -281,6 +288,67 @@ fn build_auth_runtime() -> Result<tokio::runtime::Runtime, std::io::Error> {
         .enable_time()
         .enable_io()
         .build()
+}
+
+fn select_dialogs_for_chat_list(
+    dialogs: Vec<grammers_client::types::Dialog>,
+) -> Vec<grammers_client::types::Dialog> {
+    let classes = dialogs
+        .iter()
+        .map(|dialog| classify_dialog_folder(&dialog.raw))
+        .collect::<Vec<_>>();
+
+    let selected_indexes = selected_dialog_indexes(&classes)
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+
+    dialogs
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, dialog)| selected_indexes.contains(&index).then_some(dialog))
+        .collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DialogFolderClass {
+    Main,
+    NonMain,
+    FolderMarker,
+}
+
+fn classify_dialog_folder(
+    dialog: &grammers_client::grammers_tl_types::enums::Dialog,
+) -> DialogFolderClass {
+    match dialog {
+        grammers_client::grammers_tl_types::enums::Dialog::Dialog(data) => {
+            if data.folder_id.unwrap_or(0) == 0 {
+                DialogFolderClass::Main
+            } else {
+                DialogFolderClass::NonMain
+            }
+        }
+        grammers_client::grammers_tl_types::enums::Dialog::Folder(_data) => {
+            DialogFolderClass::FolderMarker
+        }
+    }
+}
+
+fn selected_dialog_indexes(classes: &[DialogFolderClass]) -> Vec<usize> {
+    let restrict_to_main_folder = classes
+        .iter()
+        .any(|class| !matches!(class, DialogFolderClass::Main));
+
+    classes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, class)| {
+            if !restrict_to_main_folder || matches!(class, DialogFolderClass::Main) {
+                Some(index)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn dialog_unread_count(
@@ -609,5 +677,33 @@ mod tests {
     fn maps_list_chats_auth_errors_to_unauthorized() {
         let error = map_list_chats_invocation_error("AUTH_KEY_UNREGISTERED");
         assert_eq!(error, ListChatsSourceError::Unauthorized);
+    }
+
+    #[test]
+    fn keeps_only_main_folder_dialogs_when_folder_markers_exist() {
+        let classes = vec![
+            DialogFolderClass::Main,
+            DialogFolderClass::NonMain,
+            DialogFolderClass::Main,
+            DialogFolderClass::FolderMarker,
+            DialogFolderClass::NonMain,
+        ];
+
+        let indexes = selected_dialog_indexes(&classes);
+
+        assert_eq!(indexes, vec![0, 2]);
+    }
+
+    #[test]
+    fn keeps_existing_dialog_order_when_no_folder_markers_exist() {
+        let classes = vec![
+            DialogFolderClass::Main,
+            DialogFolderClass::Main,
+            DialogFolderClass::Main,
+        ];
+
+        let indexes = selected_dialog_indexes(&classes);
+
+        assert_eq!(indexes, vec![0, 1, 2]);
     }
 }
