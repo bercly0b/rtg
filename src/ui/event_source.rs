@@ -194,7 +194,10 @@ impl MockEventSource {
         }
     }
 
-    pub fn with_connectivity(events: Vec<AppEvent>, connectivity: Vec<ConnectivityStatus>) -> Self {
+    pub fn with_connectivity(
+        events: Vec<AppEvent>,
+        connectivity: Vec<ConnectivityStatus>,
+    ) -> Self {
         Self {
             queue: events.into(),
             connectivity_queue: connectivity.into(),
@@ -284,11 +287,17 @@ mod tests {
     #[test]
     fn mock_event_source_keeps_tick_input_path_when_no_connectivity_event_available() {
         let mut source = MockEventSource::with_connectivity(
-            vec![AppEvent::Tick, AppEvent::InputKey(KeyInput::new("x", false))],
+            vec![
+                AppEvent::Tick,
+                AppEvent::InputKey(KeyInput::new("x", false)),
+            ],
             vec![],
         );
 
-        assert_eq!(source.next_event().expect("tick must be emitted"), Some(AppEvent::Tick));
+        assert_eq!(
+            source.next_event().expect("tick must be emitted"),
+            Some(AppEvent::Tick)
+        );
         assert_eq!(
             source.next_event().expect("input must be emitted"),
             Some(AppEvent::InputKey(KeyInput::new("x", false)))
@@ -358,9 +367,18 @@ mod tests {
             .next_event_with_terminal(&mut terminal)
             .expect("fourth event should be readable");
 
-        assert!(matches!(first_non_connectivity, Some(AppEvent::ConnectivityChanged(_))));
-        assert!(matches!(second_non_connectivity, Some(AppEvent::ConnectivityChanged(_))));
-        assert!(matches!(third_non_connectivity, Some(AppEvent::ConnectivityChanged(_))));
+        assert!(matches!(
+            first_non_connectivity,
+            Some(AppEvent::ConnectivityChanged(_))
+        ));
+        assert!(matches!(
+            second_non_connectivity,
+            Some(AppEvent::ConnectivityChanged(_))
+        ));
+        assert!(matches!(
+            third_non_connectivity,
+            Some(AppEvent::ConnectivityChanged(_))
+        ));
         assert_eq!(
             fourth_non_connectivity,
             Some(AppEvent::InputKey(KeyInput::new("x", false)))
@@ -441,7 +459,10 @@ mod tests {
 
         let mut terminal = TestTerminalEventSource::with_polls_and_events(
             vec![true],
-            vec![Event::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE))],
+            vec![Event::Key(KeyEvent::new(
+                KeyCode::Char('q'),
+                KeyModifiers::NONE,
+            ))],
         );
 
         for _ in 0..3 {

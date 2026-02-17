@@ -145,7 +145,8 @@ mod tests {
     #[test]
     fn builds_context_via_config_contract() {
         let adapter = StubConfigAdapter;
-        let context = build_context_with(&adapter).expect("context should build from config adapter");
+        let context =
+            build_context_with(&adapter).expect("context should build from config adapter");
 
         assert_eq!(context.config, crate::infra::config::AppConfig::default());
     }
