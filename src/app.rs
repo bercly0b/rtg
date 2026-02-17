@@ -8,7 +8,14 @@ use crate::{
 
 pub fn run(cli: Cli) -> Result<()> {
     let context = bootstrap::bootstrap(cli.config.as_deref())?;
-    let _startup = usecases::startup::plan_startup()?;
+    let startup = usecases::startup::plan_startup(
+        &context.telegram,
+        Some(context.config.startup.session_probe_timeout_ms),
+    )?;
+
+    if let Some(code) = startup.probe_warning {
+        tracing::warn!(code, "startup probe fell back to local session validity");
+    }
 
     tracing::debug!(
         ui = ui::module_name(),
@@ -20,7 +27,7 @@ pub fn run(cli: Cli) -> Result<()> {
     );
 
     match cli.command_or_default() {
-        Command::Run => match _startup.state {
+        Command::Run => match startup.state {
             usecases::startup::StartupFlowState::LaunchTui => {
                 let mut shell = bootstrap::compose_shell();
                 ui::shell::start(
@@ -29,9 +36,11 @@ pub fn run(cli: Cli) -> Result<()> {
                     shell.orchestrator.as_mut(),
                 )?
             }
-            usecases::startup::StartupFlowState::GuidedAuth => {
+            usecases::startup::StartupFlowState::GuidedAuth { reason } => {
                 bail!(
-                    "guided CLI authorization is not implemented yet (startup detected missing session)"
+                    "guided CLI authorization is not implemented yet ({code}: {message})",
+                    code = reason.code(),
+                    message = reason.user_message(),
                 )
             }
         },

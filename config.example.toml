@@ -9,3 +9,7 @@ level = "info"
 # Telegram app credentials from https://my.telegram.org
 api_id = 123456
 api_hash = "your-api-hash"
+
+[startup]
+# Timeout for lightweight online session validity probe during startup.
+session_probe_timeout_ms = 1500

@@ -1,11 +1,12 @@
 use serde::Deserialize;
 
-use crate::infra::config::{AppConfig, LogConfig, TelegramConfig};
+use crate::infra::config::{AppConfig, LogConfig, StartupConfig, TelegramConfig};
 
 #[derive(Debug, Deserialize, Default)]
 pub struct FileConfig {
     pub logging: Option<FileLogConfig>,
     pub telegram: Option<FileTelegramConfig>,
+    pub startup: Option<FileStartupConfig>,
 }
 
 impl FileConfig {
@@ -16,6 +17,10 @@ impl FileConfig {
 
         if let Some(telegram) = self.telegram {
             telegram.merge_into(&mut config.telegram);
+        }
+
+        if let Some(startup) = self.startup {
+            startup.merge_into(&mut config.startup);
         }
     }
 }
@@ -47,6 +52,19 @@ impl FileTelegramConfig {
 
         if let Some(api_hash) = self.api_hash {
             config.api_hash = api_hash;
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct FileStartupConfig {
+    pub session_probe_timeout_ms: Option<u64>,
+}
+
+impl FileStartupConfig {
+    fn merge_into(self, config: &mut StartupConfig) {
+        if let Some(timeout_ms) = self.session_probe_timeout_ms {
+            config.session_probe_timeout_ms = timeout_ms;
         }
     }
 }
