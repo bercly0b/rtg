@@ -49,6 +49,10 @@ impl StorageLayout {
     pub fn session_lock_file(&self) -> PathBuf {
         self.session_dir.join("session.lock")
     }
+
+    pub fn session_policy_invalid_file(&self) -> PathBuf {
+        self.session_dir.join("session.policy.invalid")
+    }
 }
 
 fn home_dir() -> Option<PathBuf> {

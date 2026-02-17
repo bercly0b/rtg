@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct AppConfig {
     pub logging: LogConfig,
     pub telegram: TelegramConfig,
+    pub startup: StartupConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -30,6 +31,19 @@ impl Default for TelegramConfig {
         Self {
             api_id: 0,
             api_hash: "replace-me".to_owned(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StartupConfig {
+    pub session_probe_timeout_ms: u64,
+}
+
+impl Default for StartupConfig {
+    fn default() -> Self {
+        Self {
+            session_probe_timeout_ms: 1_500,
         }
     }
 }
