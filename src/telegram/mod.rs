@@ -1,7 +1,14 @@
 //! Telegram integration layer: API clients and event mapping.
 
-use crate::usecases::guided_auth::{
-    AuthBackendError, AuthCodeToken, SignInOutcome, TelegramAuthClient,
+mod connectivity;
+
+use std::sync::mpsc::Sender;
+
+pub use connectivity::{ConnectivityMonitorStartError, TelegramConnectivityMonitor};
+
+use crate::{
+    domain::events::ConnectivityStatus,
+    usecases::guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome, TelegramAuthClient},
 };
 
 #[derive(Debug, Clone, Default)]
@@ -10,6 +17,13 @@ pub struct TelegramAdapter;
 impl TelegramAdapter {
     pub fn stub() -> Self {
         Self
+    }
+
+    pub fn start_connectivity_monitor(
+        &self,
+        status_tx: Sender<ConnectivityStatus>,
+    ) -> Result<TelegramConnectivityMonitor, ConnectivityMonitorStartError> {
+        TelegramConnectivityMonitor::start(status_tx)
     }
 }
 

@@ -26,6 +26,12 @@ pub struct TelegramConfig {
     pub api_hash: String,
 }
 
+impl TelegramConfig {
+    pub fn is_configured(&self) -> bool {
+        self.api_id > 0 && !self.api_hash.trim().is_empty() && self.api_hash != "replace-me"
+    }
+}
+
 impl Default for TelegramConfig {
     fn default() -> Self {
         Self {

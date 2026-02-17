@@ -1,4 +1,8 @@
-use std::{collections::VecDeque, time::Duration};
+use std::{
+    collections::VecDeque,
+    sync::mpsc::{self, Receiver},
+    time::Duration,
+};
 
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -22,6 +26,41 @@ pub struct StubConnectivityStatusSource;
 impl ConnectivityStatusSource for StubConnectivityStatusSource {
     fn next_status(&mut self) -> Option<ConnectivityStatus> {
         None
+    }
+}
+
+pub struct ChannelConnectivityStatusSource {
+    receiver: Receiver<ConnectivityStatus>,
+    latest: Option<ConnectivityStatus>,
+}
+
+impl ChannelConnectivityStatusSource {
+    pub fn new(receiver: Receiver<ConnectivityStatus>) -> Self {
+        Self {
+            receiver,
+            latest: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn from_values(statuses: Vec<ConnectivityStatus>) -> Self {
+        let (tx, rx) = mpsc::channel();
+        for status in statuses {
+            tx.send(status)
+                .expect("status should be sent into test channel");
+        }
+
+        Self::new(rx)
+    }
+}
+
+impl ConnectivityStatusSource for ChannelConnectivityStatusSource {
+    fn next_status(&mut self) -> Option<ConnectivityStatus> {
+        while let Ok(status) = self.receiver.try_recv() {
+            self.latest = Some(status);
+        }
+
+        self.latest.take()
     }
 }
 
@@ -366,6 +405,59 @@ mod tests {
                 .next_event_with_terminal(&mut terminal)
                 .expect("second event should be readable"),
             Some(AppEvent::Tick)
+        );
+    }
+
+    #[test]
+    fn channel_connectivity_source_returns_latest_status_in_burst() {
+        let mut source = ChannelConnectivityStatusSource::from_values(vec![
+            ConnectivityStatus::Connecting,
+            ConnectivityStatus::Disconnected,
+            ConnectivityStatus::Connected,
+        ]);
+
+        assert_eq!(source.next_status(), Some(ConnectivityStatus::Connected));
+        assert_eq!(source.next_status(), None);
+    }
+
+    #[test]
+    fn channel_connectivity_source_is_non_blocking_when_channel_is_empty() {
+        let (_tx, rx) = mpsc::channel::<ConnectivityStatus>();
+        let mut source = ChannelConnectivityStatusSource::new(rx);
+
+        assert_eq!(source.next_status(), None);
+    }
+
+    #[test]
+    fn crossterm_event_source_keeps_non_connectivity_progress_with_channel_source() {
+        let mut source = CrosstermEventSource::new(Box::new(
+            ChannelConnectivityStatusSource::from_values(vec![
+                ConnectivityStatus::Connecting,
+                ConnectivityStatus::Connected,
+                ConnectivityStatus::Disconnected,
+                ConnectivityStatus::Connected,
+            ]),
+        ));
+
+        let mut terminal = TestTerminalEventSource::with_polls_and_events(
+            vec![true],
+            vec![Event::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE))],
+        );
+
+        for _ in 0..3 {
+            assert!(matches!(
+                source
+                    .next_event_with_terminal(&mut terminal)
+                    .expect("connectivity event should be readable"),
+                Some(AppEvent::ConnectivityChanged(_))
+            ));
+        }
+
+        assert_eq!(
+            source
+                .next_event_with_terminal(&mut terminal)
+                .expect("quit event should be readable"),
+            Some(AppEvent::QuitRequested)
         );
     }
 }
