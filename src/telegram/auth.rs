@@ -187,25 +187,21 @@ impl GrammersAuthBackend {
     pub(super) fn verify_password(&mut self, password: &str) -> Result<(), AuthBackendError> {
         let password_token = self
             .password_token
-            .take()
+            .as_ref()
             .ok_or(AuthBackendError::Transient {
                 code: "AUTH_INVALID_FLOW",
                 message: "password verification requested before password challenge".to_owned(),
             })?;
 
-        match self
+        let result = self
             .rt
-            .block_on(self.client.check_password(password_token, password))
-        {
-            Ok(_) => {
-                self.state = LoginState::Authorized;
-                Ok(())
-            }
-            Err(error) => {
-                self.state = LoginState::PasswordRequired;
-                Err(map_password_error(error))
-            }
-        }
+            .block_on(self.client.check_password(password_token.clone(), password))
+            .map(|_| ())
+            .map_err(map_password_error);
+
+        apply_password_verification_outcome(&mut self.password_token, &mut self.state, &result);
+
+        result
     }
 
     pub(super) fn persist_authorized_session(
@@ -330,6 +326,22 @@ fn map_password_error(error: impl std::fmt::Display) -> AuthBackendError {
     }
 }
 
+fn apply_password_verification_outcome<T>(
+    password_token: &mut Option<T>,
+    state: &mut LoginState,
+    result: &Result<(), AuthBackendError>,
+) {
+    match result {
+        Ok(()) => {
+            *password_token = None;
+            *state = LoginState::Authorized;
+        }
+        Err(_) => {
+            *state = LoginState::PasswordRequired;
+        }
+    }
+}
+
 fn parse_flood_wait_seconds(message: &str) -> Option<u32> {
     let marker = "flood";
     if !message.to_ascii_lowercase().contains(marker) {
@@ -401,5 +413,31 @@ mod tests {
                 current: LoginState::CodeRequired
             }
         );
+    }
+
+    #[test]
+    fn password_verification_error_keeps_password_token_for_retry() {
+        let mut token = Some(7_u8);
+        let mut state = LoginState::Connecting;
+
+        apply_password_verification_outcome(
+            &mut token,
+            &mut state,
+            &Err(AuthBackendError::WrongPassword),
+        );
+
+        assert_eq!(token, Some(7));
+        assert_eq!(state, LoginState::PasswordRequired);
+    }
+
+    #[test]
+    fn password_verification_success_clears_password_token() {
+        let mut token = Some(7_u8);
+        let mut state = LoginState::PasswordRequired;
+
+        apply_password_verification_outcome(&mut token, &mut state, &Ok(()));
+
+        assert_eq!(token, None);
+        assert_eq!(state, LoginState::Authorized);
     }
 }
