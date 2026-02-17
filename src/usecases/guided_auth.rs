@@ -294,6 +294,14 @@ fn handle_backend_error(
         }
         AuthBackendError::Transient { code, .. } => {
             let safe_code = sanitize_error_code(code);
+
+            if safe_code == "AUTH_BACKEND_UNAVAILABLE" {
+                terminal.print_line(&format!(
+                    "{safe_code}: Telegram auth backend is unavailable at {step} step. Check Telegram API config (api_id/api_hash) and network, then retry."
+                ))?;
+                return Ok(false);
+            }
+
             terminal.print_line(&format!(
                 "{safe_code}: temporary authorization issue at {step} step. Please retry. Attempts left: {attempts_left}"
             ))?;
@@ -623,7 +631,7 @@ mod tests {
     }
 
     #[test]
-    fn transient_error_message_is_not_leaked_to_terminal_output() {
+    fn backend_unavailable_fails_fast_with_actionable_message_and_without_leaks() {
         let session_path = temp_session_path();
         let mut terminal = FakeTerminal::new(vec![Some("+15551234567")]);
         let mut client = FakeClient::new(vec![Action::RequestCode(Err(
@@ -633,20 +641,24 @@ mod tests {
             },
         ))]);
 
-        let _ = run_guided_auth(
+        let result = run_guided_auth(
             &mut terminal,
             &mut client,
             &session_path,
             &RetryPolicy {
-                phone_attempts: 1,
+                phone_attempts: 3,
                 code_attempts: 1,
                 password_attempts: 1,
             },
         )
         .expect("guided auth should complete");
 
+        assert_eq!(result, GuidedAuthOutcome::ExitWithGuidance);
+
         let joined = terminal.output.join("\n");
         assert!(joined.contains("AUTH_BACKEND_UNAVAILABLE"));
+        assert!(joined.contains("Check Telegram API config"));
+        assert!(!joined.contains("Attempts left:"));
         assert!(!joined.contains("password=s3cret"));
         assert!(!joined.contains("code=12345"));
     }
