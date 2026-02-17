@@ -14,9 +14,13 @@ pub struct TelegramConnectivityMonitor {
 }
 
 impl TelegramConnectivityMonitor {
-    pub fn start(
+    pub fn start<F>(
         status_tx: Sender<ConnectivityStatus>,
-    ) -> Result<Self, ConnectivityMonitorStartError> {
+        on_status: F,
+    ) -> Result<Self, ConnectivityMonitorStartError>
+    where
+        F: Fn(ConnectivityStatus) + Send + 'static,
+    {
         if std::env::var("RTG_TELEGRAM_CONNECTIVITY_MONITOR_FAIL")
             .ok()
             .as_deref()
@@ -28,7 +32,7 @@ impl TelegramConnectivityMonitor {
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
         let worker = thread::Builder::new()
             .name("rtg-telegram-connectivity".to_owned())
-            .spawn(move || run_monitor(status_tx, stop_rx))
+            .spawn(move || run_monitor(status_tx, stop_rx, on_status))
             .map_err(ConnectivityMonitorStartError::WorkerSpawn)?;
 
         Ok(Self {
@@ -64,11 +68,23 @@ impl Drop for TelegramConnectivityMonitor {
     }
 }
 
-fn run_monitor(status_tx: Sender<ConnectivityStatus>, stop_rx: Receiver<()>) {
-    let _ = status_tx.send(ConnectivityStatus::Connecting);
-    let _ = status_tx.send(ConnectivityStatus::Connected);
+fn run_monitor<F>(status_tx: Sender<ConnectivityStatus>, stop_rx: Receiver<()>, on_status: F)
+where
+    F: Fn(ConnectivityStatus),
+{
+    let connecting = ConnectivityStatus::Connecting;
+    on_status(connecting);
+    let _ = status_tx.send(connecting);
+
+    let connected = ConnectivityStatus::Connected;
+    on_status(connected);
+    let _ = status_tx.send(connected);
+
     let _ = stop_rx.recv();
-    let _ = status_tx.send(ConnectivityStatus::Disconnected);
+
+    let disconnected = ConnectivityStatus::Disconnected;
+    on_status(disconnected);
+    let _ = status_tx.send(disconnected);
 }
 
 #[derive(Debug)]
