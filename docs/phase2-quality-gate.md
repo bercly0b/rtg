@@ -1,5 +1,7 @@
 # Phase 2 — Quality Gate Execution Contract
 
+> Phase numbering baseline: see [`docs/phase-roadmap-rebaseline.md`](phase-roadmap-rebaseline.md).
+
 This document is the **source of truth** for RTG quality gate execution in both local development and CI.
 
 ## Canonical gate sequence

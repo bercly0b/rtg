@@ -1,5 +1,7 @@
 # Phase 1 — Layer Contracts and Data Flow
 
+> Phase numbering baseline: see [`docs/phase-roadmap-rebaseline.md`](phase-roadmap-rebaseline.md).
+
 ## Dependency direction
 
 Dependencies go inward:
@@ -21,4 +23,4 @@ Dependencies go inward:
 5. Orchestrator updates domain state and may call infra contracts (storage/opener) through adapters.
 6. Loop exits when state switches to `stopping`.
 
-This keeps integration boundaries explicit and allows replacing stubs with real Telegram/infra adapters later without breaking layer direction.
+This keeps integration boundaries explicit and allows replacing stubs with real Telegram/infra adapters in later phases (notably new Phase 3+) without breaking layer direction.

@@ -12,6 +12,10 @@ Thanks for contributing.
 
 Source of truth: [`docs/phase2-quality-gate.md`](docs/phase2-quality-gate.md).
 
+Roadmap baseline: [`docs/phase-roadmap-rebaseline.md`](docs/phase-roadmap-rebaseline.md).
+
+Auth/connectivity status vocabulary (single source): [`docs/auth-connectivity-status-model.md`](docs/auth-connectivity-status-model.md).
+
 Run the canonical sequence:
 
 ```bash

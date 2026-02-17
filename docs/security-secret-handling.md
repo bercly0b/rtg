@@ -1,6 +1,9 @@
-# Secret handling and safe logging (Phase 2 / Task 5)
+# Secret handling and safe logging
 
 This document defines mandatory guardrails for RTG authentication flows.
+
+Status terms used in auth/backend discussions are defined in:
+- [`docs/auth-connectivity-status-model.md`](auth-connectivity-status-model.md)
 
 ## Rules
 
