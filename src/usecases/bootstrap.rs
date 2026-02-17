@@ -4,7 +4,7 @@ use crate::{
     domain::events::ConnectivityStatus,
     infra::{
         self,
-        config::FileConfigAdapter,
+        config::{FileConfigAdapter, TelegramConfig},
         contracts::ConfigAdapter,
         error::AppError,
         stubs::{NoopOpener, StubStorageAdapter},
@@ -81,7 +81,37 @@ fn build_context(config_path: Option<&Path>) -> Result<AppContext, AppError> {
 
 fn build_context_with(config_adapter: &dyn ConfigAdapter) -> Result<AppContext, AppError> {
     let config = config_adapter.load().map_err(AppError::Other)?;
-    Ok(AppContext::new(config))
+    validate_telegram_config(&config.telegram)?;
+
+    let telegram = TelegramAdapter::from_config(&config.telegram).map_err(|error| {
+        AppError::Other(anyhow::anyhow!(
+            "telegram bootstrap failed [{}]",
+            crate::infra::secrets::sanitize_error_code(match error {
+                crate::usecases::guided_auth::AuthBackendError::Transient { code, .. } => code,
+                _ => "AUTH_BACKEND_UNAVAILABLE",
+            })
+        ))
+    })?;
+
+    Ok(AppContext::new(config, telegram))
+}
+
+fn validate_telegram_config(config: &TelegramConfig) -> Result<(), AppError> {
+    let api_hash_is_default = config.api_hash == TelegramConfig::default().api_hash;
+    let api_hash_missing = config.api_hash.trim().is_empty() || api_hash_is_default;
+    let api_id_missing = config.api_id <= 0;
+
+    let partially_configured = (config.api_id > 0 && api_hash_missing)
+        || (config.api_hash.trim() != "" && !api_hash_is_default && api_id_missing);
+
+    if partially_configured {
+        return Err(AppError::ConfigValidation {
+            code: "TELEGRAM_CONFIG_INVALID",
+            details: "telegram.api_id and telegram.api_hash must both be set for real backend bootstrap".to_owned(),
+        });
+    }
+
+    Ok(())
 }
 
 trait ConnectivityMonitorFactory {
@@ -109,7 +139,7 @@ mod tests {
     use super::*;
     use crate::{
         domain::events::AppEvent,
-        infra::{config::TelegramConfig, stubs::StubConfigAdapter},
+        infra::{config::AppConfig, stubs::StubConfigAdapter},
     };
 
     struct StubConnectivityMonitorFactory {
@@ -140,6 +170,7 @@ mod tests {
             .expect("context should build from defaults");
 
         assert_eq!(context.config, crate::infra::config::AppConfig::default());
+        assert!(!context.telegram.uses_real_backend());
     }
 
     #[test]
@@ -149,11 +180,25 @@ mod tests {
             build_context_with(&adapter).expect("context should build from config adapter");
 
         assert_eq!(context.config, crate::infra::config::AppConfig::default());
+        assert!(!context.telegram.uses_real_backend());
+    }
+
+    #[test]
+    fn rejects_partially_configured_telegram_config() {
+        let mut config = AppConfig::default();
+        config.telegram.api_id = 100;
+
+        let error = validate_telegram_config(&config.telegram).expect_err("must fail");
+        let rendered = error.to_string();
+
+        assert!(rendered.contains("TELEGRAM_CONFIG_INVALID"));
+        assert!(rendered.contains("telegram.api_id"));
+        assert!(!rendered.contains("api_hash ="));
     }
 
     #[test]
     fn composes_shell_dependencies_in_bootstrap_layer() {
-        let context = AppContext::new(crate::infra::config::AppConfig::default());
+        let context = AppContext::new(AppConfig::default(), TelegramAdapter::stub());
         let mut shell = compose_shell(&context);
 
         assert!(shell.orchestrator.state().is_running());
@@ -168,11 +213,12 @@ mod tests {
 
     #[test]
     fn compose_shell_injects_channel_backed_source_when_telegram_monitor_starts() {
-        let mut context = AppContext::new(crate::infra::config::AppConfig::default());
-        context.config.telegram = TelegramConfig {
+        let mut config = AppConfig::default();
+        config.telegram = TelegramConfig {
             api_id: 100,
             api_hash: "configured".to_owned(),
         };
+        let context = AppContext::new(config, TelegramAdapter::stub());
 
         let factory = StubConnectivityMonitorFactory { should_fail: false };
 
@@ -190,11 +236,12 @@ mod tests {
 
     #[test]
     fn compose_shell_falls_back_when_telegram_monitor_start_fails() {
-        let mut context = AppContext::new(crate::infra::config::AppConfig::default());
-        context.config.telegram = TelegramConfig {
+        let mut config = AppConfig::default();
+        config.telegram = TelegramConfig {
             api_id: 100,
             api_hash: "configured".to_owned(),
         };
+        let context = AppContext::new(config, TelegramAdapter::stub());
 
         let factory = StubConnectivityMonitorFactory { should_fail: true };
 
