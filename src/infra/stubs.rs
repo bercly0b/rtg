@@ -1,13 +1,15 @@
 use anyhow::Result;
 
-use crate::infra::{
-    config::AppConfig,
-    contracts::{ConfigAdapter, ExternalOpener, StorageAdapter},
-};
+use crate::infra::contracts::{ExternalOpener, StorageAdapter};
 
+#[cfg(test)]
+use crate::infra::{config::AppConfig, contracts::ConfigAdapter};
+
+#[cfg(test)]
 #[derive(Debug, Clone, Default)]
 pub struct StubConfigAdapter;
 
+#[cfg(test)]
 impl ConfigAdapter for StubConfigAdapter {
     fn load(&self) -> Result<AppConfig> {
         Ok(AppConfig::default())
