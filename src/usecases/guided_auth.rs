@@ -1,4 +1,8 @@
-use std::{fs, io, path::Path};
+use std::{
+    fs::{self, OpenOptions},
+    io::{self, Write},
+    path::Path,
+};
 
 use crate::infra::secrets::sanitize_error_code;
 
@@ -299,9 +303,37 @@ fn handle_backend_error(
 }
 
 fn persist_session_marker(path: &Path) -> io::Result<()> {
-    let tmp_path = path.with_extension("tmp");
-    fs::write(&tmp_path, b"authorized")?;
-    fs::rename(tmp_path, path)
+    let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent_dir)?;
+
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("session.dat");
+    let tmp_path = parent_dir.join(format!(".{file_name}.tmp-{}", std::process::id()));
+
+    {
+        let mut tmp_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&tmp_path)?;
+        tmp_file.write_all(b"authorized")?;
+        tmp_file.sync_all()?;
+    }
+
+    if let Err(error) = fs::rename(&tmp_path, path) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(error);
+    }
+
+    sync_directory(parent_dir)?;
+
+    Ok(())
+}
+
+fn sync_directory(path: &Path) -> io::Result<()> {
+    OpenOptions::new().read(true).open(path)?.sync_all()
 }
 
 fn is_valid_phone(phone: &str) -> bool {
@@ -617,5 +649,45 @@ mod tests {
         assert!(joined.contains("AUTH_BACKEND_UNAVAILABLE"));
         assert!(!joined.contains("password=s3cret"));
         assert!(!joined.contains("code=12345"));
+    }
+
+    #[test]
+    fn persist_session_marker_creates_parent_dir_and_replaces_existing_file() {
+        let mut session_path = env::temp_dir();
+        session_path.push(format!(
+            "rtg-guided-auth-persist-{}-{}/session.dat",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+
+        let parent = session_path
+            .parent()
+            .expect("session path should have parent")
+            .to_path_buf();
+
+        fs::create_dir_all(&parent).expect("parent should be creatable");
+        fs::write(&session_path, b"old").expect("pre-existing session should be writable");
+
+        persist_session_marker(&session_path).expect("persist should succeed");
+
+        let content = fs::read_to_string(&session_path).expect("session should be readable");
+        assert_eq!(content, "authorized");
+
+        let leftovers = fs::read_dir(&parent)
+            .expect("parent should be readable")
+            .filter_map(Result::ok)
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .contains(".session.dat.tmp-")
+            });
+        assert!(!leftovers, "temporary files should be cleaned up");
+
+        let _ = fs::remove_file(&session_path);
+        let _ = fs::remove_dir_all(parent);
     }
 }

@@ -9,6 +9,8 @@ use crate::{
     },
 };
 
+const AUTH_TUI_BOOTSTRAP_FAILED: &str = "AUTH_TUI_BOOTSTRAP_FAILED";
+
 pub fn run(cli: Cli) -> Result<()> {
     let mut context = bootstrap::bootstrap(cli.config.as_deref())?;
     let startup = usecases::startup::plan_startup(
@@ -56,15 +58,52 @@ pub fn run(cli: Cli) -> Result<()> {
 
                 if matches!(auth_outcome, GuidedAuthOutcome::Authenticated) {
                     let mut shell = bootstrap::compose_shell();
-                    ui::shell::start(
+                    if let Err(error) = ui::shell::start(
                         &context,
                         shell.event_source.as_mut(),
                         shell.orchestrator.as_mut(),
-                    )?;
+                    ) {
+                        report_post_auth_tui_bootstrap_failure(&error);
+                    }
                 }
             }
         },
     }
 
     Ok(())
+}
+
+fn report_post_auth_tui_bootstrap_failure(error: &anyhow::Error) {
+    tracing::error!(
+        code = AUTH_TUI_BOOTSTRAP_FAILED,
+        error = ?error,
+        "post-auth TUI bootstrap failed after successful session persist"
+    );
+
+    for line in post_auth_tui_fallback_lines(AUTH_TUI_BOOTSTRAP_FAILED) {
+        eprintln!("{line}");
+    }
+}
+
+fn post_auth_tui_fallback_lines(error_code: &str) -> [String; 3] {
+    [
+        "Authentication successful. Session is saved.".to_owned(),
+        format!("{error_code}: TUI failed to start in this run."),
+        "Please restart RTG to enter TUI using the saved session.".to_owned(),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn post_auth_fallback_lines_include_non_secret_error_code_and_guidance() {
+        let lines = post_auth_tui_fallback_lines(AUTH_TUI_BOOTSTRAP_FAILED);
+
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].contains("Session is saved"));
+        assert!(lines[1].contains(AUTH_TUI_BOOTSTRAP_FAILED));
+        assert!(lines[2].contains("restart RTG"));
+    }
 }
