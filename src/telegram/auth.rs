@@ -185,23 +185,20 @@ impl GrammersAuthBackend {
     }
 
     pub(super) fn verify_password(&mut self, password: &str) -> Result<(), AuthBackendError> {
-        let password_token = self
-            .password_token
-            .as_ref()
-            .ok_or(AuthBackendError::Transient {
-                code: "AUTH_INVALID_FLOW",
-                message: "password verification requested before password challenge".to_owned(),
-            })?;
-
-        let result = self
-            .rt
-            .block_on(self.client.check_password(password_token.clone(), password))
-            .map(|_| ())
-            .map_err(map_password_error);
-
-        apply_password_verification_outcome(&mut self.password_token, &mut self.state, &result);
-
-        result
+        verify_password_with_token(
+            &mut self.password_token,
+            &mut self.state,
+            password,
+            |password_token, candidate_password| {
+                self.rt
+                    .block_on(
+                        self.client
+                            .check_password(password_token, candidate_password),
+                    )
+                    .map(|_| ())
+                    .map_err(map_password_error)
+            },
+        )
     }
 
     pub(super) fn persist_authorized_session(
@@ -326,6 +323,30 @@ fn map_password_error(error: impl std::fmt::Display) -> AuthBackendError {
     }
 }
 
+fn verify_password_with_token<T, F>(
+    password_token: &mut Option<T>,
+    state: &mut LoginState,
+    password: &str,
+    checker: F,
+) -> Result<(), AuthBackendError>
+where
+    T: Clone,
+    F: FnOnce(T, &str) -> Result<(), AuthBackendError>,
+{
+    let active_token = password_token
+        .as_ref()
+        .cloned()
+        .ok_or(AuthBackendError::Transient {
+            code: "AUTH_INVALID_FLOW",
+            message: "password verification requested before password challenge".to_owned(),
+        })?;
+
+    let result = checker(active_token, password);
+    apply_password_verification_outcome(password_token, state, &result);
+
+    result
+}
+
 fn apply_password_verification_outcome<T>(
     password_token: &mut Option<T>,
     state: &mut LoginState,
@@ -428,6 +449,46 @@ mod tests {
 
         assert_eq!(token, Some(7));
         assert_eq!(state, LoginState::PasswordRequired);
+    }
+
+    #[test]
+    fn verify_password_path_rejects_missing_password_challenge() {
+        let mut token = None::<u8>;
+        let mut state = LoginState::CodeRequired;
+
+        let result =
+            verify_password_with_token(&mut token, &mut state, "secret", |_token, _| Ok(()));
+
+        assert_eq!(
+            result,
+            Err(AuthBackendError::Transient {
+                code: "AUTH_INVALID_FLOW",
+                message: "password verification requested before password challenge".to_owned(),
+            })
+        );
+        assert_eq!(state, LoginState::CodeRequired);
+    }
+
+    #[test]
+    fn verify_password_path_keeps_token_after_failure_and_allows_retry() {
+        let mut token = Some(42_u8);
+        let mut state = LoginState::PasswordRequired;
+
+        let first_attempt =
+            verify_password_with_token(&mut token, &mut state, "wrong", |_token, _| {
+                Err(AuthBackendError::WrongPassword)
+            });
+
+        assert_eq!(first_attempt, Err(AuthBackendError::WrongPassword));
+        assert_eq!(token, Some(42));
+        assert_eq!(state, LoginState::PasswordRequired);
+
+        let second_attempt =
+            verify_password_with_token(&mut token, &mut state, "correct", |_token, _| Ok(()));
+
+        assert_eq!(second_attempt, Ok(()));
+        assert_eq!(token, None);
+        assert_eq!(state, LoginState::Authorized);
     }
 
     #[test]
