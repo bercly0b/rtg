@@ -3,6 +3,24 @@ pub enum AppEvent {
     Tick,
     QuitRequested,
     InputKey(KeyInput),
+    ConnectivityChanged(ConnectivityStatus),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectivityStatus {
+    Connected,
+    Connecting,
+    Disconnected,
+}
+
+impl ConnectivityStatus {
+    pub fn as_label(self) -> &'static str {
+        match self {
+            Self::Connected => "connected",
+            Self::Connecting => "connecting",
+            Self::Disconnected => "disconnected",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

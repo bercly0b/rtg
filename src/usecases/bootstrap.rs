@@ -30,7 +30,7 @@ pub fn bootstrap(config_path: Option<&Path>) -> Result<AppContext, AppError> {
 
 pub fn compose_shell() -> ShellComposition {
     ShellComposition {
-        event_source: Box::new(CrosstermEventSource),
+        event_source: Box::new(CrosstermEventSource::default()),
         orchestrator: Box::new(DefaultShellOrchestrator::new(
             StubStorageAdapter::default(),
             NoopOpener,

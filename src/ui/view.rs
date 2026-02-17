@@ -33,5 +33,32 @@ fn status_line(state: &ShellState) -> String {
     } else {
         "stopping"
     };
-    format!("mode: {mode} | q/Ctrl+C: quit")
+    let connectivity = state.connectivity_status().as_label();
+    format!("mode: {mode} | connectivity: {connectivity} | q/Ctrl+C: quit")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::events::ConnectivityStatus;
+
+    #[test]
+    fn status_line_renders_connected_label() {
+        let mut state = ShellState::default();
+        state.set_connectivity_status(ConnectivityStatus::Connected);
+
+        let line = status_line(&state);
+
+        assert!(line.contains("connectivity: connected"));
+    }
+
+    #[test]
+    fn status_line_renders_disconnected_label() {
+        let mut state = ShellState::default();
+        state.set_connectivity_status(ConnectivityStatus::Disconnected);
+
+        let line = status_line(&state);
+
+        assert!(line.contains("connectivity: disconnected"));
+    }
 }
