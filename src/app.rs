@@ -34,7 +34,7 @@ pub fn run(cli: Cli) -> Result<()> {
     match cli.command_or_default() {
         Command::Run => match startup.state {
             usecases::startup::StartupFlowState::LaunchTui => {
-                let mut shell = bootstrap::compose_shell();
+                let mut shell = bootstrap::compose_shell(&context);
                 ui::shell::start(
                     &context,
                     shell.event_source.as_mut(),
@@ -57,7 +57,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 )?;
 
                 if matches!(auth_outcome, GuidedAuthOutcome::Authenticated) {
-                    let mut shell = bootstrap::compose_shell();
+                    let mut shell = bootstrap::compose_shell(&context);
                     if let Err(error) = ui::shell::start(
                         &context,
                         shell.event_source.as_mut(),
