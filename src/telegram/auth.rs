@@ -54,13 +54,10 @@ impl GrammersAuthBackend {
 
         let session = Session::load_file_or_create(session_path).map_err(map_session_load_error)?;
 
-        let rt = Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .map_err(|error| AuthBackendError::Transient {
-                code: "AUTH_BACKEND_UNAVAILABLE",
-                message: format!("failed to initialize async runtime: {error}"),
-            })?;
+        let rt = build_auth_runtime().map_err(|error| AuthBackendError::Transient {
+            code: "AUTH_BACKEND_UNAVAILABLE",
+            message: format!("failed to initialize async runtime: {error}"),
+        })?;
 
         let client = rt
             .block_on(async {
@@ -230,6 +227,13 @@ impl GrammersAuthBackend {
     }
 }
 
+fn build_auth_runtime() -> Result<tokio::runtime::Runtime, std::io::Error> {
+    Builder::new_current_thread()
+        .enable_time()
+        .enable_io()
+        .build()
+}
+
 fn next_start_login_state(current: LoginState) -> Result<LoginState, StartLoginError> {
     match current {
         LoginState::Disconnected => Ok(LoginState::Connecting),
@@ -388,6 +392,15 @@ fn parse_flood_wait_seconds(message: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auth_runtime_enables_io_driver_for_tcp() {
+        let rt = build_auth_runtime().expect("runtime should initialize");
+
+        let bind_result = rt.block_on(async { tokio::net::TcpListener::bind("127.0.0.1:0").await });
+
+        assert!(bind_result.is_ok(), "io driver should support tcp bind");
+    }
 
     #[test]
     fn maps_invalid_phone_from_message() {
