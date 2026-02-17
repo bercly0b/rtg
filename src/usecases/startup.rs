@@ -35,10 +35,16 @@ pub fn plan_startup() -> Result<StartupPlan, AppError> {
 
     let lock_guard = acquire_session_lock(layout.session_lock_file())?;
 
-    let state = if layout.session_file().exists() {
-        StartupFlowState::LaunchTui
-    } else {
-        StartupFlowState::GuidedAuth
+    let session_file = layout.session_file();
+    let state = match fs::metadata(&session_file) {
+        Ok(_) => StartupFlowState::LaunchTui,
+        Err(source) if source.kind() == ErrorKind::NotFound => StartupFlowState::GuidedAuth,
+        Err(source) => {
+            return Err(AppError::SessionProbe {
+                path: session_file,
+                source,
+            })
+        }
     };
 
     Ok(StartupPlan {

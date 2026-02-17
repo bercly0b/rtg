@@ -34,6 +34,12 @@ pub enum AppError {
         #[source]
         source: io::Error,
     },
+    #[error("failed to probe session file at {path}: {source}")]
+    SessionProbe {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
