@@ -78,11 +78,15 @@ fn chat_list_item_text(chat: &ChatSummary) -> String {
     let preview = chat
         .last_message_preview
         .as_deref()
-        .map(str::trim)
+        .map(normalize_preview_for_chat_row)
         .filter(|text| !text.is_empty())
-        .unwrap_or("No messages yet");
+        .unwrap_or_else(|| "No messages yet".to_owned());
 
     format!("{}{} — {}", chat.title, unread, preview)
+}
+
+fn normalize_preview_for_chat_row(preview: &str) -> String {
+    preview.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn status_line(state: &ShellState) -> String {
@@ -139,8 +143,22 @@ mod tests {
 
     #[test]
     fn chat_list_item_falls_back_to_placeholder_preview() {
-        let line = chat_list_item_text(&chat(1, "General", 0, Some("  ")));
+        let line = chat_list_item_text(&chat(1, "General", 0, Some("  \n\t  ")));
 
         assert_eq!(line, "General — No messages yet");
+    }
+
+    #[test]
+    fn chat_list_item_replaces_newlines_with_spaces() {
+        let line = chat_list_item_text(&chat(1, "General", 0, Some("Hello\nworld\r\n!")));
+
+        assert_eq!(line, "General — Hello world !");
+    }
+
+    #[test]
+    fn chat_list_item_normalizes_redundant_whitespace_to_one_line() {
+        let line = chat_list_item_text(&chat(1, "General", 0, Some("  Hello\n\n  from\t\tRTG   ")));
+
+        assert_eq!(line, "General — Hello from RTG");
     }
 }

@@ -232,34 +232,18 @@ impl GrammersAuthBackend {
                 return Err(ListChatsSourceError::Unauthorized);
             }
 
-            let mut dialogs = self.client.iter_dialogs().limit(limit);
-            let mut chats = Vec::with_capacity(limit);
-
-            while let Some(dialog) = dialogs
-                .next()
+            let fetch_scope = determine_dialog_fetch_scope(&self.client)
                 .await
-                .map_err(map_list_chats_invocation_error)?
-            {
-                let unread_count = dialog_unread_count(&dialog.raw)?;
-                let last_message_preview = dialog
-                    .last_message
-                    .as_ref()
-                    .and_then(|message| normalize_preview_text(message.text()));
-                let last_message_unix_ms = dialog
-                    .last_message
-                    .as_ref()
-                    .map(|message| message.date().timestamp_millis());
+                .unwrap_or(DialogFetchScope::AllDialogs);
 
-                chats.push(ChatSummary {
-                    chat_id: dialog.chat().id(),
-                    title: dialog.chat().name().to_owned(),
-                    unread_count,
-                    last_message_preview,
-                    last_message_unix_ms,
-                });
+            match fetch_scope {
+                DialogFetchScope::MainFolderOnly => {
+                    fetch_chat_summaries_from_main_folder(&self.client, limit).await
+                }
+                DialogFetchScope::AllDialogs => {
+                    fetch_chat_summaries_from_all_dialogs(&self.client, limit).await
+                }
             }
-
-            Ok(chats)
         })
     }
 
@@ -281,6 +265,186 @@ fn build_auth_runtime() -> Result<tokio::runtime::Runtime, std::io::Error> {
         .enable_time()
         .enable_io()
         .build()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DialogFetchScope {
+    AllDialogs,
+    MainFolderOnly,
+}
+
+async fn determine_dialog_fetch_scope(
+    client: &grammers_client::Client,
+) -> Result<DialogFetchScope, ListChatsSourceError> {
+    let filters_response = client
+        .invoke(&grammers_client::grammers_tl_types::functions::messages::GetDialogFilters {})
+        .await
+        .map_err(map_list_chats_invocation_error)?;
+
+    let filters = match filters_response {
+        grammers_client::grammers_tl_types::enums::messages::DialogFilters::Filters(data) => {
+            data.filters
+        }
+    };
+
+    Ok(dialog_fetch_scope_from_filters(&filters))
+}
+
+fn dialog_fetch_scope_from_filters(
+    filters: &[grammers_client::grammers_tl_types::enums::DialogFilter],
+) -> DialogFetchScope {
+    let has_custom_folder = filters.iter().any(|filter| {
+        !matches!(
+            filter,
+            grammers_client::grammers_tl_types::enums::DialogFilter::Default
+        )
+    });
+
+    if has_custom_folder {
+        DialogFetchScope::MainFolderOnly
+    } else {
+        DialogFetchScope::AllDialogs
+    }
+}
+
+async fn fetch_chat_summaries_from_all_dialogs(
+    client: &grammers_client::Client,
+    limit: usize,
+) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+    let mut dialogs = client.iter_dialogs().limit(limit);
+    let mut chats = Vec::with_capacity(limit);
+
+    while let Some(dialog) = dialogs
+        .next()
+        .await
+        .map_err(map_list_chats_invocation_error)?
+    {
+        let unread_count = dialog_unread_count(&dialog.raw)?;
+        let last_message_preview = dialog
+            .last_message
+            .as_ref()
+            .and_then(|message| normalize_preview_text(message.text()));
+        let last_message_unix_ms = dialog
+            .last_message
+            .as_ref()
+            .map(|message| message.date().timestamp_millis());
+
+        chats.push(ChatSummary {
+            chat_id: dialog.chat().id(),
+            title: dialog.chat().name().to_owned(),
+            unread_count,
+            last_message_preview,
+            last_message_unix_ms,
+        });
+    }
+
+    Ok(chats)
+}
+
+async fn fetch_chat_summaries_from_main_folder(
+    client: &grammers_client::Client,
+    limit: usize,
+) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+    let response = client
+        .invoke(
+            &grammers_client::grammers_tl_types::functions::messages::GetDialogs {
+                exclude_pinned: false,
+                folder_id: Some(0),
+                offset_date: 0,
+                offset_id: 0,
+                offset_peer: grammers_client::grammers_tl_types::enums::InputPeer::Empty,
+                limit: i32::try_from(limit.min(100))
+                    .map_err(|_| ListChatsSourceError::InvalidData)?,
+                hash: 0,
+            },
+        )
+        .await
+        .map_err(map_list_chats_invocation_error)?;
+
+    let (dialogs, messages, users, chats) = match response {
+        grammers_client::grammers_tl_types::enums::messages::Dialogs::Dialogs(data) => {
+            (data.dialogs, data.messages, data.users, data.chats)
+        }
+        grammers_client::grammers_tl_types::enums::messages::Dialogs::Slice(data) => {
+            (data.dialogs, data.messages, data.users, data.chats)
+        }
+        grammers_client::grammers_tl_types::enums::messages::Dialogs::NotModified(_) => {
+            return Ok(Vec::new())
+        }
+    };
+
+    let chat_map = grammers_client::types::ChatMap::new(users, chats);
+    let mut message_map = std::collections::HashMap::<
+        (i64, i32),
+        grammers_client::grammers_tl_types::enums::Message,
+    >::new();
+
+    for message in messages {
+        if let Some((peer_key, message_id)) = dialog_message_key(&message) {
+            message_map.insert((peer_key, message_id), message);
+        }
+    }
+
+    let mut result = Vec::new();
+
+    for dialog in dialogs {
+        let grammers_client::grammers_tl_types::enums::Dialog::Dialog(data) = dialog else {
+            continue;
+        };
+
+        let Some(chat) = chat_map.get(&data.peer) else {
+            continue;
+        };
+
+        let unread_count =
+            u32::try_from(data.unread_count).map_err(|_| ListChatsSourceError::InvalidData)?;
+        let message_key = (dialog_peer_key(&data.peer), data.top_message);
+        let last_message = message_map.get(&message_key).and_then(|message| {
+            grammers_client::types::Message::from_raw(client, message.clone(), &chat_map)
+        });
+        let last_message_preview = last_message
+            .as_ref()
+            .and_then(|message| normalize_preview_text(message.text()));
+        let last_message_unix_ms = last_message
+            .as_ref()
+            .map(|message| message.date().timestamp_millis());
+
+        result.push(ChatSummary {
+            chat_id: chat.id(),
+            title: chat.name().to_owned(),
+            unread_count,
+            last_message_preview,
+            last_message_unix_ms,
+        });
+
+        if result.len() >= limit {
+            break;
+        }
+    }
+
+    Ok(result)
+}
+
+fn dialog_peer_key(peer: &grammers_client::grammers_tl_types::enums::Peer) -> i64 {
+    match peer {
+        grammers_client::grammers_tl_types::enums::Peer::User(data) => data.user_id,
+        grammers_client::grammers_tl_types::enums::Peer::Chat(data) => -data.chat_id,
+        grammers_client::grammers_tl_types::enums::Peer::Channel(data) => -data.channel_id,
+    }
+}
+
+fn dialog_message_key(
+    message: &grammers_client::grammers_tl_types::enums::Message,
+) -> Option<(i64, i32)> {
+    match message {
+        grammers_client::grammers_tl_types::enums::Message::Message(data) => {
+            Some((dialog_peer_key(&data.peer_id), data.id))
+        }
+        grammers_client::grammers_tl_types::enums::Message::Service(data) => {
+            Some((dialog_peer_key(&data.peer_id), data.id))
+        }
+        grammers_client::grammers_tl_types::enums::Message::Empty(_) => None,
+    }
 }
 
 fn dialog_unread_count(
@@ -609,5 +773,44 @@ mod tests {
     fn maps_list_chats_auth_errors_to_unauthorized() {
         let error = map_list_chats_invocation_error("AUTH_KEY_UNREGISTERED");
         assert_eq!(error, ListChatsSourceError::Unauthorized);
+    }
+
+    #[test]
+    fn selects_main_folder_scope_when_custom_filters_exist() {
+        let filters = vec![
+            grammers_client::grammers_tl_types::enums::DialogFilter::Default,
+            grammers_client::grammers_tl_types::enums::DialogFilter::Filter(
+                grammers_client::grammers_tl_types::types::DialogFilter {
+                    contacts: false,
+                    non_contacts: false,
+                    groups: false,
+                    broadcasts: false,
+                    bots: false,
+                    exclude_muted: false,
+                    exclude_read: false,
+                    exclude_archived: false,
+                    id: 1,
+                    title: "Work".to_owned(),
+                    emoticon: None,
+                    color: None,
+                    pinned_peers: Vec::new(),
+                    include_peers: Vec::new(),
+                    exclude_peers: Vec::new(),
+                },
+            ),
+        ];
+
+        let scope = dialog_fetch_scope_from_filters(&filters);
+
+        assert_eq!(scope, DialogFetchScope::MainFolderOnly);
+    }
+
+    #[test]
+    fn keeps_all_dialog_scope_when_only_default_filter_exists() {
+        let filters = vec![grammers_client::grammers_tl_types::enums::DialogFilter::Default];
+
+        let scope = dialog_fetch_scope_from_filters(&filters);
+
+        assert_eq!(scope, DialogFetchScope::AllDialogs);
     }
 }
