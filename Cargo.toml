@@ -13,3 +13,4 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 crossterm = "0.29"
 ratatui = "0.29"
+rpassword = "7.3"

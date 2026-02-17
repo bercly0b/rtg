@@ -4,6 +4,7 @@ pub mod config;
 pub mod contracts;
 pub mod error;
 pub mod logging;
+pub mod secrets;
 pub mod storage_layout;
 pub mod stubs;
 

@@ -1,5 +1,7 @@
 use std::{fs, io, path::Path};
 
+use crate::infra::secrets::sanitize_error_code;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryPolicy {
     pub phone_attempts: usize,
@@ -51,6 +53,7 @@ pub trait TelegramAuthClient {
 pub trait AuthTerminal {
     fn print_line(&mut self, line: &str) -> io::Result<()>;
     fn prompt_line(&mut self, prompt: &str) -> io::Result<Option<String>>;
+    fn prompt_secret(&mut self, prompt: &str) -> io::Result<Option<String>>;
 }
 
 pub struct StdTerminal;
@@ -74,6 +77,14 @@ impl AuthTerminal for StdTerminal {
         }
 
         Ok(Some(line.trim().to_owned()))
+    }
+
+    fn prompt_secret(&mut self, prompt: &str) -> io::Result<Option<String>> {
+        match rpassword::prompt_password(prompt) {
+            Ok(password) => Ok(Some(password.trim().to_owned())),
+            Err(source) if source.kind() == io::ErrorKind::UnexpectedEof => Ok(None),
+            Err(source) => Err(source),
+        }
     }
 }
 
@@ -210,7 +221,7 @@ fn collect_password(
 ) -> io::Result<Option<()>> {
     for attempt in 1..=attempts {
         terminal.print_line("Step 3/3 — 2FA password is required for this account.")?;
-        let Some(password) = terminal.prompt_line("2FA password: ")? else {
+        let Some(password) = terminal.prompt_secret("2FA password: ")? else {
             terminal.print_line("Input cancelled (EOF). Run rtg again to retry.")?;
             return Ok(None);
         };
@@ -277,9 +288,10 @@ fn handle_backend_error(
             ))?;
             Ok(false)
         }
-        AuthBackendError::Transient { code, message } => {
+        AuthBackendError::Transient { code, .. } => {
+            let safe_code = sanitize_error_code(code);
             terminal.print_line(&format!(
-                "{code}: transient error at {step} step: {message}. Attempts left: {attempts_left}"
+                "{safe_code}: temporary authorization issue at {step} step. Please retry. Attempts left: {attempts_left}"
             ))?;
             Ok(attempts_left > 0)
         }
@@ -333,6 +345,10 @@ mod tests {
         }
 
         fn prompt_line(&mut self, _prompt: &str) -> io::Result<Option<String>> {
+            Ok(self.inputs.pop_front().flatten())
+        }
+
+        fn prompt_secret(&mut self, _prompt: &str) -> io::Result<Option<String>> {
             Ok(self.inputs.pop_front().flatten())
         }
     }
@@ -572,5 +588,34 @@ mod tests {
             .output
             .iter()
             .any(|line| line.contains("AUTH_INVALID_PHONE")));
+    }
+
+    #[test]
+    fn transient_error_message_is_not_leaked_to_terminal_output() {
+        let session_path = temp_session_path();
+        let mut terminal = FakeTerminal::new(vec![Some("+15551234567")]);
+        let mut client = FakeClient::new(vec![Action::RequestCode(Err(
+            AuthBackendError::Transient {
+                code: "AUTH_BACKEND_UNAVAILABLE",
+                message: "password=s3cret code=12345".to_owned(),
+            },
+        ))]);
+
+        let _ = run_guided_auth(
+            &mut terminal,
+            &mut client,
+            &session_path,
+            &RetryPolicy {
+                phone_attempts: 1,
+                code_attempts: 1,
+                password_attempts: 1,
+            },
+        )
+        .expect("guided auth should complete");
+
+        let joined = terminal.output.join("\n");
+        assert!(joined.contains("AUTH_BACKEND_UNAVAILABLE"));
+        assert!(!joined.contains("password=s3cret"));
+        assert!(!joined.contains("code=12345"));
     }
 }
