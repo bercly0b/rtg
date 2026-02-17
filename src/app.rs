@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 
 use crate::{
     cli::{Cli, Command},
@@ -33,9 +33,6 @@ pub fn run(cli: Cli) -> Result<()> {
                 bail!(
                     "guided CLI authorization is not implemented yet (startup detected missing session)"
                 )
-            }
-            _ => {
-                bail!("unsupported startup state for run mode")
             }
         },
     }

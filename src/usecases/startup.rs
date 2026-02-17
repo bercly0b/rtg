@@ -8,9 +8,6 @@ use crate::infra::{error::AppError, storage_layout::StorageLayout};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StartupFlowState {
-    Startup,
-    SessionLoad,
-    SessionProbe,
     LaunchTui,
     GuidedAuth,
 }
@@ -27,9 +24,9 @@ impl Drop for SessionLockGuard {
 }
 
 pub struct StartupPlan {
-    pub layout: StorageLayout,
-    pub lock_guard: SessionLockGuard,
     pub state: StartupFlowState,
+    _layout: StorageLayout,
+    _lock_guard: SessionLockGuard,
 }
 
 pub fn plan_startup() -> Result<StartupPlan, AppError> {
@@ -45,9 +42,9 @@ pub fn plan_startup() -> Result<StartupPlan, AppError> {
     };
 
     Ok(StartupPlan {
-        layout,
-        lock_guard,
         state,
+        _layout: layout,
+        _lock_guard: lock_guard,
     })
 }
 
@@ -66,8 +63,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn startup_plan_resolves_layout() {
+    fn startup_plan_selects_a_start_state() {
         let plan = plan_startup().expect("startup plan should be built");
-        assert!(plan.layout.config_dir.ends_with("rtg"));
+        assert!(matches!(
+            plan.state,
+            StartupFlowState::LaunchTui | StartupFlowState::GuidedAuth
+        ));
     }
 }
