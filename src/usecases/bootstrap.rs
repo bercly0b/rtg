@@ -22,9 +22,9 @@ use crate::{
 
 const CONNECTIVITY_MONITOR_START_FAILED: &str = "TELEGRAM_CONNECTIVITY_MONITOR_START_FAILED";
 
-pub struct ShellComposition {
+pub struct ShellComposition<'a> {
     pub event_source: Box<dyn AppEventSource>,
-    pub orchestrator: Box<dyn ShellOrchestrator>,
+    pub orchestrator: Box<dyn ShellOrchestrator + 'a>,
     _connectivity_monitor: Option<TelegramConnectivityMonitor>,
 }
 
@@ -35,14 +35,14 @@ pub fn bootstrap(config_path: Option<&Path>) -> Result<AppContext, AppError> {
     Ok(context)
 }
 
-pub fn compose_shell(context: &AppContext) -> ShellComposition {
+pub fn compose_shell(context: &AppContext) -> ShellComposition<'_> {
     compose_shell_with_factory(context, &RealConnectivityMonitorFactory)
 }
 
-fn compose_shell_with_factory(
-    context: &AppContext,
+fn compose_shell_with_factory<'a>(
+    context: &'a AppContext,
     monitor_factory: &dyn ConnectivityMonitorFactory,
-) -> ShellComposition {
+) -> ShellComposition<'a> {
     let mut connectivity_monitor = None;
     let event_source: Box<dyn AppEventSource> = if context.config.telegram.is_configured() {
         let (status_tx, status_rx) = std::sync::mpsc::channel::<ConnectivityStatus>();
@@ -71,6 +71,7 @@ fn compose_shell_with_factory(
         orchestrator: Box::new(DefaultShellOrchestrator::new(
             StubStorageAdapter::default(),
             NoopOpener,
+            &context.telegram,
         )),
         _connectivity_monitor: connectivity_monitor,
     }

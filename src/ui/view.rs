@@ -92,7 +92,7 @@ fn status_line(state: &ShellState) -> String {
         "stopping"
     };
     let connectivity = state.connectivity_status().as_label();
-    format!("mode: {mode} | connectivity: {connectivity} | q/Ctrl+C: quit")
+    format!("mode: {mode} | connectivity: {connectivity} | r: refresh | q/Ctrl+C: quit")
 }
 
 #[cfg(test)]

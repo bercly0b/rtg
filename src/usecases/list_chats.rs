@@ -47,6 +47,15 @@ pub trait ListChatsSource {
     fn list_chats(&self, limit: usize) -> Result<Vec<ChatSummary>, ListChatsSourceError>;
 }
 
+impl<T> ListChatsSource for &T
+where
+    T: ListChatsSource + ?Sized,
+{
+    fn list_chats(&self, limit: usize) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+        (*self).list_chats(limit)
+    }
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListChatsError {

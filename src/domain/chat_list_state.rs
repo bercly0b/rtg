@@ -52,15 +52,23 @@ impl ChatListState {
     }
 
     pub fn set_ready(&mut self, chats: Vec<ChatSummary>) {
+        let previous_selected_chat_id = self.selected_chat().map(|chat| chat.chat_id);
+        self.set_ready_with_selection_hint(chats, previous_selected_chat_id);
+    }
+
+    pub fn set_ready_with_selection_hint(
+        &mut self,
+        chats: Vec<ChatSummary>,
+        preferred_chat_id: Option<i64>,
+    ) {
         if chats.is_empty() {
             self.set_empty();
             return;
         }
 
-        let previous_selected_chat_id = self.selected_chat().map(|chat| chat.chat_id);
         self.ui_state = ChatListUiState::Ready;
         self.chats = chats;
-        self.selected_index = resolve_selection_index(&self.chats, previous_selected_chat_id);
+        self.selected_index = resolve_selection_index(&self.chats, preferred_chat_id);
     }
 
     pub fn set_empty(&mut self) {
@@ -215,5 +223,21 @@ mod tests {
 
         assert_eq!(state.selected_index(), Some(0));
         assert_eq!(state.selected_chat().map(|item| item.chat_id), Some(10));
+    }
+
+    #[test]
+    fn set_ready_with_selection_hint_preserves_selection_across_reload() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![chat(1, "General"), chat(2, "Backend")]);
+        state.select_next();
+
+        state.set_loading();
+        state.set_ready_with_selection_hint(
+            vec![chat(10, "Infra"), chat(2, "Backend"), chat(11, "Design")],
+            Some(2),
+        );
+
+        assert_eq!(state.selected_index(), Some(1));
+        assert_eq!(state.selected_chat().map(|item| item.chat_id), Some(2));
     }
 }

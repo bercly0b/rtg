@@ -35,11 +35,22 @@ pub fn start(
 mod tests {
     use super::*;
     use crate::{
-        domain::events::AppEvent,
+        domain::{chat::ChatSummary, events::AppEvent},
         infra::stubs::{NoopOpener, StubStorageAdapter},
         ui::event_source::MockEventSource,
-        usecases::shell::DefaultShellOrchestrator,
+        usecases::{
+            list_chats::{ListChatsSource, ListChatsSourceError},
+            shell::DefaultShellOrchestrator,
+        },
     };
+
+    struct EmptyChatsSource;
+
+    impl ListChatsSource for EmptyChatsSource {
+        fn list_chats(&self, _limit: usize) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+            Ok(vec![])
+        }
+    }
 
     #[test]
     fn mock_source_produces_quit_event() {
@@ -52,8 +63,11 @@ mod tests {
     #[test]
     fn orchestrator_stops_on_quit_from_source() {
         let mut source = MockEventSource::from(vec![AppEvent::QuitRequested]);
-        let mut orchestrator =
-            DefaultShellOrchestrator::new(StubStorageAdapter::default(), NoopOpener);
+        let mut orchestrator = DefaultShellOrchestrator::new(
+            StubStorageAdapter::default(),
+            NoopOpener,
+            EmptyChatsSource,
+        );
 
         if let Some(event) = source.next_event().expect("must read mock event") {
             orchestrator
