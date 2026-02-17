@@ -81,7 +81,9 @@ In the current TUI shell:
 
 ## Development
 
-Quality gate commands (local and CI baseline):
+### Reproducible quality gate
+
+Run the canonical quality gate sequence:
 
 ```bash
 cargo fmt --check
@@ -89,6 +91,9 @@ cargo clippy -- -D warnings
 cargo test
 cargo check
 ```
+
+Source of truth (sequence, bootstrap, evidence, pass/fail):
+- [`docs/phase2-quality-gate.md`](docs/phase2-quality-gate.md)
 
 ## Contributing
 
