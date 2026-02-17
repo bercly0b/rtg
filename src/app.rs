@@ -6,6 +6,7 @@ use crate::{
     usecases::{
         self, bootstrap,
         guided_auth::{run_guided_auth, GuidedAuthOutcome, RetryPolicy, StdTerminal},
+        logout::logout_and_reset,
     },
 };
 
@@ -13,14 +14,6 @@ const AUTH_TUI_BOOTSTRAP_FAILED: &str = "AUTH_TUI_BOOTSTRAP_FAILED";
 
 pub fn run(cli: Cli) -> Result<()> {
     let mut context = bootstrap::bootstrap(cli.config.as_deref())?;
-    let startup = usecases::startup::plan_startup(
-        &context.telegram,
-        Some(context.config.startup.session_probe_timeout_ms),
-    )?;
-
-    if let Some(code) = startup.probe_warning {
-        tracing::warn!(code, "startup probe fell back to local session validity");
-    }
 
     tracing::debug!(
         ui = ui::module_name(),
@@ -32,42 +25,62 @@ pub fn run(cli: Cli) -> Result<()> {
     );
 
     match cli.command_or_default() {
-        Command::Run => match startup.state {
-            usecases::startup::StartupFlowState::LaunchTui => {
-                let mut shell = bootstrap::compose_shell(&context);
-                ui::shell::start(
-                    &context,
-                    shell.event_source.as_mut(),
-                    shell.orchestrator.as_mut(),
-                )?
+        Command::Run => {
+            let startup = usecases::startup::plan_startup(
+                &context.telegram,
+                Some(context.config.startup.session_probe_timeout_ms),
+            )?;
+
+            if let Some(code) = startup.probe_warning {
+                tracing::warn!(code, "startup probe fell back to local session validity");
             }
-            usecases::startup::StartupFlowState::GuidedAuth { ref reason } => {
-                tracing::info!(
-                    code = reason.code(),
-                    message = reason.user_message(),
-                    "starting guided CLI authorization"
-                );
 
-                let mut terminal = StdTerminal;
-                let auth_outcome = run_guided_auth(
-                    &mut terminal,
-                    &mut context.telegram,
-                    &startup.session_file(),
-                    &RetryPolicy::default(),
-                )?;
-
-                if matches!(auth_outcome, GuidedAuthOutcome::Authenticated) {
+            match startup.state {
+                usecases::startup::StartupFlowState::LaunchTui => {
                     let mut shell = bootstrap::compose_shell(&context);
-                    if let Err(error) = ui::shell::start(
+                    ui::shell::start(
                         &context,
                         shell.event_source.as_mut(),
                         shell.orchestrator.as_mut(),
-                    ) {
-                        report_post_auth_tui_bootstrap_failure(&error);
+                    )?
+                }
+                usecases::startup::StartupFlowState::GuidedAuth { ref reason } => {
+                    tracing::info!(
+                        code = reason.code(),
+                        message = reason.user_message(),
+                        "starting guided CLI authorization"
+                    );
+
+                    let mut terminal = StdTerminal;
+                    let auth_outcome = run_guided_auth(
+                        &mut terminal,
+                        &mut context.telegram,
+                        &startup.session_file(),
+                        &RetryPolicy::default(),
+                    )?;
+
+                    if matches!(auth_outcome, GuidedAuthOutcome::Authenticated) {
+                        let mut shell = bootstrap::compose_shell(&context);
+                        if let Err(error) = ui::shell::start(
+                            &context,
+                            shell.event_source.as_mut(),
+                            shell.orchestrator.as_mut(),
+                        ) {
+                            report_post_auth_tui_bootstrap_failure(&error);
+                        }
                     }
                 }
             }
-        },
+        }
+        Command::Logout => {
+            let outcome = logout_and_reset(&mut context.telegram)?;
+            tracing::info!(
+                session_removed = outcome.session_removed,
+                policy_marker_removed = outcome.policy_marker_removed,
+                "logout/reset completed"
+            );
+            println!("Logout completed. State is disconnected and ready for clean re-login.");
+        }
     }
 
     Ok(())
