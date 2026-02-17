@@ -16,6 +16,8 @@ pub enum AppError {
         #[source]
         source: toml::de::Error,
     },
+    #[error("invalid configuration [{code}]: {details}")]
+    ConfigValidation { code: &'static str, details: String },
     #[error("failed to initialize logging: {0}")]
     LoggingInit(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("failed to resolve storage paths: {details}")]

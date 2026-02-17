@@ -14,3 +14,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 crossterm = "0.29"
 ratatui = "0.29"
 rpassword = "7.3"
+grammers-client = "0.7"
+grammers-session = "0.7"
+tokio = { version = "1", features = ["rt", "time"] }
