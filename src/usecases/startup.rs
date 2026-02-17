@@ -246,12 +246,15 @@ fn acquire_session_lock(path: PathBuf) -> Result<SessionLockGuard, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::usecases::{
-        guided_auth::{
-            run_guided_auth, AuthBackendError, AuthCodeToken, AuthTerminal, GuidedAuthOutcome,
-            RetryPolicy, SignInOutcome, TelegramAuthClient,
+    use crate::{
+        test_support::env_lock,
+        usecases::{
+            guided_auth::{
+                run_guided_auth, AuthBackendError, AuthCodeToken, AuthTerminal, GuidedAuthOutcome,
+                RetryPolicy, SignInOutcome, TelegramAuthClient,
+            },
+            logout::logout_and_reset,
         },
-        logout::logout_and_reset,
     };
     use std::{
         env,
@@ -561,6 +564,8 @@ mod tests {
 
     #[test]
     fn logout_reset_results_in_disconnected_state_and_clean_relogin_path() {
+        let _guard = env_lock();
+
         let root = env::temp_dir().join(format!(
             "rtg-logout-relogin-startup-{}",
             SystemTime::now()

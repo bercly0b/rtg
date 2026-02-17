@@ -3,6 +3,8 @@ mod cli;
 mod domain;
 mod infra;
 mod telegram;
+#[cfg(test)]
+mod test_support;
 mod ui;
 mod usecases;
 

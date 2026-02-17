@@ -41,9 +41,12 @@ mod tests {
     use std::{env, fs};
 
     use super::*;
+    use crate::test_support::env_lock;
 
     #[test]
     fn logout_removes_session_and_policy_marker() {
+        let _guard = env_lock();
+
         let root = env::temp_dir().join(format!(
             "rtg-logout-test-{}",
             std::time::SystemTime::now()
@@ -95,6 +98,8 @@ mod tests {
 
     #[test]
     fn logout_is_idempotent_when_no_files_exist() {
+        let _guard = env_lock();
+
         let mut adapter = TelegramAdapter::stub();
         adapter.record_connectivity_status(crate::domain::events::ConnectivityStatus::Connected);
 
