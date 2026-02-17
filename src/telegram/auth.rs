@@ -5,8 +5,12 @@ use grammers_session::Session;
 use tokio::runtime::Builder;
 
 use crate::{
+    domain::chat::ChatSummary,
     infra::config::TelegramConfig,
-    usecases::guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome},
+    usecases::{
+        guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome},
+        list_chats::ListChatsSourceError,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -214,6 +218,51 @@ impl GrammersAuthBackend {
             })
     }
 
+    pub(super) fn list_chat_summaries(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+        self.rt.block_on(async {
+            let is_authorized = self
+                .client
+                .is_authorized()
+                .await
+                .map_err(map_list_chats_invocation_error)?;
+            if !is_authorized {
+                return Err(ListChatsSourceError::Unauthorized);
+            }
+
+            let mut dialogs = self.client.iter_dialogs().limit(limit);
+            let mut chats = Vec::with_capacity(limit);
+
+            while let Some(dialog) = dialogs
+                .next()
+                .await
+                .map_err(map_list_chats_invocation_error)?
+            {
+                let unread_count = dialog_unread_count(&dialog.raw)?;
+                let last_message_preview = dialog
+                    .last_message
+                    .as_ref()
+                    .and_then(|message| normalize_preview_text(message.text()));
+                let last_message_unix_ms = dialog
+                    .last_message
+                    .as_ref()
+                    .map(|message| message.date().timestamp_millis());
+
+                chats.push(ChatSummary {
+                    chat_id: dialog.chat().id(),
+                    title: dialog.chat().name().to_owned(),
+                    unread_count,
+                    last_message_preview,
+                    last_message_unix_ms,
+                });
+            }
+
+            Ok(chats)
+        })
+    }
+
     pub(super) fn disconnect_and_reset(&mut self) {
         self.login_token = None;
         self.password_token = None;
@@ -232,6 +281,31 @@ fn build_auth_runtime() -> Result<tokio::runtime::Runtime, std::io::Error> {
         .enable_time()
         .enable_io()
         .build()
+}
+
+fn dialog_unread_count(
+    dialog: &grammers_client::grammers_tl_types::enums::Dialog,
+) -> Result<u32, ListChatsSourceError> {
+    let unread_raw = match dialog {
+        grammers_client::grammers_tl_types::enums::Dialog::Dialog(data) => data.unread_count,
+        grammers_client::grammers_tl_types::enums::Dialog::Folder(_data) => 0,
+    };
+
+    u32::try_from(unread_raw).map_err(|_| ListChatsSourceError::InvalidData)
+}
+
+fn normalize_preview_text(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_owned())
+}
+
+fn map_list_chats_invocation_error(error: impl std::fmt::Display) -> ListChatsSourceError {
+    let message = error.to_string().to_ascii_lowercase();
+    if message.contains("unauthorized") || message.contains("auth") || message.contains("session") {
+        return ListChatsSourceError::Unauthorized;
+    }
+
+    ListChatsSourceError::Unavailable
 }
 
 fn next_start_login_state(current: LoginState) -> Result<LoginState, StartLoginError> {
@@ -520,5 +594,20 @@ mod tests {
 
         assert_eq!(token, None);
         assert_eq!(state, LoginState::Authorized);
+    }
+
+    #[test]
+    fn normalize_preview_text_trims_and_drops_empty_values() {
+        assert_eq!(
+            normalize_preview_text("  hello  "),
+            Some("hello".to_owned())
+        );
+        assert_eq!(normalize_preview_text("   \n\t  "), None);
+    }
+
+    #[test]
+    fn maps_list_chats_auth_errors_to_unauthorized() {
+        let error = map_list_chats_invocation_error("AUTH_KEY_UNREGISTERED");
+        assert_eq!(error, ListChatsSourceError::Unauthorized);
     }
 }
