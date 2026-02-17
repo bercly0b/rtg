@@ -96,7 +96,7 @@ impl AuthTerminal for StdTerminal {
 
     fn prompt_secret(&mut self, prompt: &str) -> io::Result<Option<String>> {
         match rpassword::prompt_password(prompt) {
-            Ok(password) => Ok(Some(password.trim().to_owned())),
+            Ok(password) => Ok(Some(password)),
             Err(source) if source.kind() == io::ErrorKind::UnexpectedEof => Ok(None),
             Err(source) => Err(source),
         }
@@ -485,6 +485,7 @@ mod tests {
     struct FakeClient {
         actions: VecDeque<Action>,
         snapshot: Option<AuthConnectivityStatus>,
+        verified_passwords: Vec<String>,
     }
 
     impl FakeClient {
@@ -492,6 +493,7 @@ mod tests {
             Self {
                 actions: actions.into(),
                 snapshot: None,
+                verified_passwords: Vec::new(),
             }
         }
 
@@ -499,6 +501,7 @@ mod tests {
             Self {
                 actions: actions.into(),
                 snapshot: Some(snapshot),
+                verified_passwords: Vec::new(),
             }
         }
     }
@@ -526,7 +529,8 @@ mod tests {
             }
         }
 
-        fn verify_password(&mut self, _password: &str) -> Result<(), AuthBackendError> {
+        fn verify_password(&mut self, password: &str) -> Result<(), AuthBackendError> {
+            self.verified_passwords.push(password.to_owned());
             match self.actions.pop_front().expect("missing verify action") {
                 Action::Verify(result) => result,
                 _ => panic!("unexpected action order"),
@@ -590,6 +594,37 @@ mod tests {
 
         assert_eq!(result, GuidedAuthOutcome::Authenticated);
         assert!(session_path.exists());
+
+        let _ = fs::remove_file(session_path);
+    }
+
+    #[test]
+    fn e2e_2fa_password_preserves_boundary_spaces_for_verification() {
+        let session_path = temp_session_path();
+        let mut terminal = FakeTerminal::new(vec![
+            Some("+15551234567"),
+            Some("12345"),
+            Some("  pass phrase  "),
+        ]);
+        let mut client = FakeClient::new(vec![
+            Action::RequestCode(Ok(AuthCodeToken("token".into()))),
+            Action::SignIn(Ok(SignInOutcome::PasswordRequired)),
+            Action::Verify(Ok(())),
+        ]);
+
+        let result = run_guided_auth(
+            &mut terminal,
+            &mut client,
+            &session_path,
+            &RetryPolicy::default(),
+        )
+        .expect("guided auth should complete");
+
+        assert_eq!(result, GuidedAuthOutcome::Authenticated);
+        assert_eq!(
+            client.verified_passwords,
+            vec!["  pass phrase  ".to_owned()]
+        );
 
         let _ = fs::remove_file(session_path);
     }
