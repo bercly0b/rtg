@@ -362,4 +362,82 @@ mod tests {
         );
         assert_eq!(orchestrator.state().chat_list().selected_index(), Some(0));
     }
+
+    #[test]
+    fn phase4_integration_smoke_happy_path_startup_load_navigate_and_open_intent() {
+        let mut orchestrator = DefaultShellOrchestrator::new(
+            StubStorageAdapter::default(),
+            NoopOpener::default(),
+            StubChatsSource::fixed(Ok(vec![
+                chat(1, "General"),
+                chat(2, "Backend"),
+                chat(3, "Ops"),
+            ])),
+        );
+
+        assert_eq!(
+            orchestrator.state().chat_list().ui_state(),
+            ChatListUiState::Loading
+        );
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("startup tick should load chats");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .expect("navigation should work on ready list");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("open intent placeholder should be handled");
+
+        assert_eq!(
+            orchestrator.state().chat_list().ui_state(),
+            ChatListUiState::Ready
+        );
+        assert_eq!(orchestrator.state().chat_list().selected_index(), Some(1));
+        assert_eq!(
+            orchestrator
+                .state()
+                .chat_list()
+                .selected_chat()
+                .map(|chat| chat.chat_id),
+            Some(2)
+        );
+        assert_eq!(
+            orchestrator.storage.last_action,
+            Some("open_chat_intent".to_owned())
+        );
+    }
+
+    #[test]
+    fn phase4_integration_smoke_fallback_error_then_empty_list_remains_stable() {
+        let mut orchestrator = DefaultShellOrchestrator::new(
+            StubStorageAdapter::default(),
+            NoopOpener::default(),
+            StubChatsSource::sequence(vec![Err(ListChatsSourceError::Unavailable), Ok(vec![])]),
+        );
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("error fallback should not break event loop");
+        assert_eq!(
+            orchestrator.state().chat_list().ui_state(),
+            ChatListUiState::Error
+        );
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .expect("retry from error should be handled");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter on empty list should be a no-op");
+
+        assert_eq!(
+            orchestrator.state().chat_list().ui_state(),
+            ChatListUiState::Empty
+        );
+        assert_eq!(orchestrator.state().chat_list().selected_index(), None);
+        assert_eq!(orchestrator.storage.last_action, Some("tick".to_owned()));
+        assert!(orchestrator.state().is_running());
+    }
 }
