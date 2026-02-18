@@ -10,8 +10,11 @@ use crate::{
         secrets::sanitize_error_code,
         stubs::{NoopOpener, StubStorageAdapter},
     },
-    telegram::{ConnectivityMonitorStartError, TelegramAdapter, TelegramConnectivityMonitor},
-    ui::{ChannelConnectivityStatusSource, CrosstermEventSource},
+    telegram::{
+        ChatUpdatesMonitorStartError, ConnectivityMonitorStartError, TelegramAdapter,
+        TelegramChatUpdatesMonitor, TelegramConnectivityMonitor,
+    },
+    ui::{ChannelChatUpdatesSignalSource, ChannelConnectivityStatusSource, CrosstermEventSource},
     usecases::{
         context::AppContext,
         contracts::{AppEventSource, ShellOrchestrator},
@@ -21,11 +24,13 @@ use crate::{
 };
 
 const CONNECTIVITY_MONITOR_START_FAILED: &str = "TELEGRAM_CONNECTIVITY_MONITOR_START_FAILED";
+const CHAT_UPDATES_MONITOR_START_FAILED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_START_FAILED";
 
 pub struct ShellComposition<'a> {
     pub event_source: Box<dyn AppEventSource>,
     pub orchestrator: Box<dyn ShellOrchestrator + 'a>,
     _connectivity_monitor: Option<TelegramConnectivityMonitor>,
+    _chat_updates_monitor: Option<TelegramChatUpdatesMonitor>,
 }
 
 pub fn bootstrap(config_path: Option<&Path>) -> Result<AppContext, AppError> {
@@ -44,24 +49,37 @@ fn compose_shell_with_factory<'a>(
     monitor_factory: &dyn ConnectivityMonitorFactory,
 ) -> ShellComposition<'a> {
     let mut connectivity_monitor = None;
+    let mut chat_updates_monitor = None;
     let event_source: Box<dyn AppEventSource> = if context.config.telegram.is_configured() {
         let (status_tx, status_rx) = std::sync::mpsc::channel::<ConnectivityStatus>();
+        let (updates_tx, updates_rx) = std::sync::mpsc::channel::<()>();
+
         match monitor_factory.start(&context.telegram, status_tx) {
-            Ok(monitor) => {
-                connectivity_monitor = Some(monitor);
-                Box::new(CrosstermEventSource::new(Box::new(
-                    ChannelConnectivityStatusSource::new(status_rx),
-                )))
-            }
+            Ok(monitor) => connectivity_monitor = Some(monitor),
             Err(error) => {
                 tracing::warn!(
                     code = CONNECTIVITY_MONITOR_START_FAILED,
                     error = %error,
                     "telegram connectivity monitor failed to start; using safe fallback"
                 );
-                Box::new(CrosstermEventSource::default())
             }
         }
+
+        match monitor_factory.start_chat_updates(&context.telegram, updates_tx) {
+            Ok(monitor) => chat_updates_monitor = Some(monitor),
+            Err(error) => {
+                tracing::warn!(
+                    code = CHAT_UPDATES_MONITOR_START_FAILED,
+                    error = %error,
+                    "telegram chat updates monitor failed to start; using safe fallback"
+                );
+            }
+        }
+
+        Box::new(CrosstermEventSource::with_sources(
+            Box::new(ChannelConnectivityStatusSource::new(status_rx)),
+            Box::new(ChannelChatUpdatesSignalSource::new(updates_rx)),
+        ))
     } else {
         Box::new(CrosstermEventSource::default())
     };
@@ -74,6 +92,7 @@ fn compose_shell_with_factory<'a>(
             &context.telegram,
         )),
         _connectivity_monitor: connectivity_monitor,
+        _chat_updates_monitor: chat_updates_monitor,
     }
 }
 
@@ -157,6 +176,12 @@ trait ConnectivityMonitorFactory {
         telegram: &TelegramAdapter,
         status_tx: Sender<ConnectivityStatus>,
     ) -> Result<TelegramConnectivityMonitor, ConnectivityMonitorStartError>;
+
+    fn start_chat_updates(
+        &self,
+        telegram: &TelegramAdapter,
+        updates_tx: Sender<()>,
+    ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError>;
 }
 
 struct RealConnectivityMonitorFactory;
@@ -168,6 +193,14 @@ impl ConnectivityMonitorFactory for RealConnectivityMonitorFactory {
         status_tx: Sender<ConnectivityStatus>,
     ) -> Result<TelegramConnectivityMonitor, ConnectivityMonitorStartError> {
         telegram.start_connectivity_monitor(status_tx)
+    }
+
+    fn start_chat_updates(
+        &self,
+        telegram: &TelegramAdapter,
+        updates_tx: Sender<()>,
+    ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
+        telegram.start_chat_updates_monitor(updates_tx)
     }
 }
 
@@ -208,6 +241,7 @@ mod tests {
 
     struct StubConnectivityMonitorFactory {
         should_fail: bool,
+        chat_updates_should_fail: bool,
     }
 
     impl ConnectivityMonitorFactory for StubConnectivityMonitorFactory {
@@ -225,6 +259,22 @@ mod tests {
                 .expect("test status should be sent");
 
             Ok(TelegramConnectivityMonitor::inert())
+        }
+
+        fn start_chat_updates(
+            &self,
+            _telegram: &TelegramAdapter,
+            updates_tx: Sender<()>,
+        ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
+            if self.chat_updates_should_fail {
+                return Err(ChatUpdatesMonitorStartError::StartupRejected);
+            }
+
+            updates_tx
+                .send(())
+                .expect("chat update signal should be sent");
+
+            Ok(TelegramChatUpdatesMonitor::inert())
         }
     }
 
@@ -343,7 +393,10 @@ mod tests {
         };
         let context = AppContext::new(config, TelegramAdapter::stub());
 
-        let factory = StubConnectivityMonitorFactory { should_fail: false };
+        let factory = StubConnectivityMonitorFactory {
+            should_fail: false,
+            chat_updates_should_fail: false,
+        };
 
         let mut shell = compose_shell_with_factory(&context, &factory);
         let event = shell
@@ -355,6 +408,12 @@ mod tests {
             event,
             Some(AppEvent::ConnectivityChanged(ConnectivityStatus::Connected))
         );
+
+        let second_event = shell
+            .event_source
+            .next_event()
+            .expect("second event should be readable");
+        assert_eq!(second_event, Some(AppEvent::ChatListUpdateRequested));
     }
 
     #[test]
@@ -366,7 +425,10 @@ mod tests {
         };
         let context = AppContext::new(config, TelegramAdapter::stub());
 
-        let factory = StubConnectivityMonitorFactory { should_fail: true };
+        let factory = StubConnectivityMonitorFactory {
+            should_fail: true,
+            chat_updates_should_fail: true,
+        };
 
         let mut shell = compose_shell_with_factory(&context, &factory);
         shell
@@ -375,5 +437,28 @@ mod tests {
             .expect("fallback composition should still wire orchestrator");
 
         assert!(!shell.orchestrator.state().is_running());
+    }
+
+    #[test]
+    fn compose_shell_keeps_chat_updates_when_only_connectivity_monitor_fails() {
+        let mut config = AppConfig::default();
+        config.telegram = TelegramConfig {
+            api_id: 100,
+            api_hash: "configured".to_owned(),
+        };
+        let context = AppContext::new(config, TelegramAdapter::stub());
+
+        let factory = StubConnectivityMonitorFactory {
+            should_fail: true,
+            chat_updates_should_fail: false,
+        };
+
+        let mut shell = compose_shell_with_factory(&context, &factory);
+        let event = shell
+            .event_source
+            .next_event()
+            .expect("event should be readable");
+
+        assert_eq!(event, Some(AppEvent::ChatListUpdateRequested));
     }
 }

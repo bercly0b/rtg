@@ -94,6 +94,9 @@ where
             AppEvent::ConnectivityChanged(status) => {
                 self.state.set_connectivity_status(status);
             }
+            AppEvent::ChatListUpdateRequested => {
+                self.refresh_chat_list();
+            }
         }
 
         Ok(())
@@ -337,6 +340,39 @@ mod tests {
             ChatListUiState::Ready
         );
         assert_eq!(orchestrator.state().chat_list().selected_index(), Some(0));
+    }
+
+    #[test]
+    fn chat_list_update_event_triggers_full_refresh_with_selection_preservation() {
+        let mut orchestrator = DefaultShellOrchestrator::new(
+            StubStorageAdapter::default(),
+            NoopOpener::default(),
+            StubChatsSource::fixed(Ok(vec![
+                chat(10, "Infra"),
+                chat(2, "Backend"),
+                chat(20, "Design"),
+            ])),
+        );
+
+        orchestrator
+            .state
+            .chat_list_mut()
+            .set_ready(vec![chat(1, "General"), chat(2, "Backend")]);
+        orchestrator.state.chat_list_mut().select_next();
+
+        orchestrator
+            .handle_event(AppEvent::ChatListUpdateRequested)
+            .expect("chat update event should trigger refresh");
+
+        assert_eq!(orchestrator.state().chat_list().selected_index(), Some(1));
+        assert_eq!(
+            orchestrator
+                .state()
+                .chat_list()
+                .selected_chat()
+                .map(|chat| chat.chat_id),
+            Some(2)
+        );
     }
 
     #[test]

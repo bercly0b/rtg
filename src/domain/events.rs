@@ -4,6 +4,7 @@ pub enum AppEvent {
     QuitRequested,
     InputKey(KeyInput),
     ConnectivityChanged(ConnectivityStatus),
+    ChatListUpdateRequested,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -13,6 +13,8 @@ use crate::{
     },
 };
 
+use super::chat_updates::{ChatUpdatesMonitorStartError, TelegramChatUpdatesMonitor};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginState {
     Disconnected,
@@ -252,6 +254,13 @@ impl GrammersAuthBackend {
         self.password_token = None;
         self.current_code_token = None;
         self.state = LoginState::Disconnected;
+    }
+
+    pub(super) fn start_chat_updates_monitor(
+        &self,
+        updates_tx: std::sync::mpsc::Sender<()>,
+    ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
+        TelegramChatUpdatesMonitor::start(self.client.clone(), updates_tx)
     }
 
     #[allow(dead_code)]
