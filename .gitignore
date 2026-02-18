@@ -2,3 +2,5 @@ target/
 .env
 .env.*
 *.local
+AGENTS.md
+docs/internal/
