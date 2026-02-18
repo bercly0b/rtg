@@ -11,10 +11,11 @@ thiserror = "2.0"
 toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
 crossterm = "0.29"
 ratatui = "0.29"
 rpassword = "7.3"
 grammers-client = "0.7"
 grammers-session = "0.7"
-tokio = { version = "1", features = ["rt", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 dotenvy = "0.15"

@@ -12,7 +12,12 @@ const DEFAULT_CONFIG_PATH: &str = "config.toml";
 const TELEGRAM_API_ID_ENV: &str = "RTG_TELEGRAM_API_ID";
 const TELEGRAM_API_HASH_ENV: &str = "RTG_TELEGRAM_API_HASH";
 
+#[allow(dead_code)]
 pub fn load(path: Option<&Path>) -> Result<AppConfig, AppError> {
+    load_internal(path, true)
+}
+
+pub(crate) fn load_internal(path: Option<&Path>, load_env: bool) -> Result<AppConfig, AppError> {
     let config_path = path
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_PATH));
@@ -34,7 +39,9 @@ pub fn load(path: Option<&Path>) -> Result<AppConfig, AppError> {
         file_config.merge_into(&mut config);
     }
 
-    let _ = dotenvy::dotenv();
+    if load_env {
+        let _ = dotenvy::dotenv();
+    }
     apply_env_overrides(&mut config)?;
 
     Ok(config)
@@ -87,7 +94,8 @@ mod tests {
         let _guard = env_lock().lock().expect("env lock should not be poisoned");
         clear_env();
 
-        let config = load(Some(Path::new("./missing-config.toml"))).expect("config must load");
+        let config = load_internal(Some(Path::new("./missing-config.toml")), false)
+            .expect("config must load");
 
         assert_eq!(config, AppConfig::default());
     }
@@ -112,7 +120,7 @@ api_hash = "abc"
         )
         .expect("must write test config");
 
-        let config = load(Some(&config_path)).expect("config must load");
+        let config = load_internal(Some(&config_path), false).expect("config must load");
         fs::remove_file(config_path).expect("must remove test config");
 
         assert_eq!(config.logging.level, "debug");

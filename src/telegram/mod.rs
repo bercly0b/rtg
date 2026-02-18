@@ -1,6 +1,7 @@
 //! Telegram integration layer: API clients and event mapping.
 
 mod auth;
+mod chat_updates;
 mod connectivity;
 mod status_tracker;
 
@@ -9,6 +10,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use auth::GrammersAuthBackend;
 use status_tracker::StatusTracker;
 
+pub use chat_updates::{ChatUpdatesMonitorStartError, TelegramChatUpdatesMonitor};
 pub use connectivity::{ConnectivityMonitorStartError, TelegramConnectivityMonitor};
 
 use crate::{
@@ -82,6 +84,16 @@ impl TelegramAdapter {
         TelegramConnectivityMonitor::start(status_tx, move |status| {
             tracker.on_connectivity_changed(status);
         })
+    }
+
+    pub fn start_chat_updates_monitor(
+        &self,
+        updates_tx: Sender<()>,
+    ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
+        match self.auth_backend.as_ref() {
+            Some(backend) => backend.start_chat_updates_monitor(updates_tx),
+            None => Err(ChatUpdatesMonitorStartError::StartupRejected),
+        }
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
