@@ -286,8 +286,11 @@ mod tests {
 
     #[test]
     fn builds_context_with_default_config_when_file_is_missing() {
-        let context = build_context(Some(Path::new("./missing-config.toml")))
-            .expect("context should build from defaults");
+        let config_adapter = crate::infra::config::FileConfigAdapter::without_env(Some(Path::new(
+            "./missing-config.toml",
+        )));
+        let context =
+            build_context_with(&config_adapter).expect("context should build from defaults");
 
         assert_eq!(context.config, crate::infra::config::AppConfig::default());
         assert!(!context.telegram.uses_real_backend());
