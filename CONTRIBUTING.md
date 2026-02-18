@@ -36,14 +36,9 @@ When opening a PR, you must include quality gate evidence using the artifact ske
 ### Review anti-loop policy
 
 To avoid endless review loops:
-- After code changes, run `@code-reviewer`.
 - Fix **CRITICAL** issues in the current PR.
-- Track **MEDIUM/MINOR** follow-ups in `docs/internal/RTG_REVIEW_BACKLOG.md`.
+- Track **MAJOR/MINOR** follow-ups in `RTG_REVIEW_BACKLOG.md`.
 - Do not expand PR scope with non-critical refactors.
-
-### Internal navigation docs
-
-Important project-navigation decisions and notes should be documented in `docs/internal/`.
 
 ## Architecture notes
 
