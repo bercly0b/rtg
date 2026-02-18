@@ -41,14 +41,26 @@ where
             .chat_list()
             .selected_chat()
             .map(|chat| chat.chat_id);
+        tracing::debug!(
+            preferred_chat_id = preferred_chat_id,
+            "refreshing chat list from source"
+        );
         self.state.chat_list_mut().set_loading();
 
         match list_chats(&self.chats_source, ListChatsQuery::default()) {
-            Ok(output) => self
-                .state
-                .chat_list_mut()
-                .set_ready_with_selection_hint(output.chats, preferred_chat_id),
-            Err(_) => self.state.chat_list_mut().set_error(),
+            Ok(output) => {
+                tracing::debug!(
+                    chat_count = output.chats.len(),
+                    "chat list refresh completed"
+                );
+                self.state
+                    .chat_list_mut()
+                    .set_ready_with_selection_hint(output.chats, preferred_chat_id)
+            }
+            Err(error) => {
+                tracing::warn!(error = ?error, "chat list refresh failed");
+                self.state.chat_list_mut().set_error()
+            }
         }
     }
 }
@@ -95,6 +107,7 @@ where
                 self.state.set_connectivity_status(status);
             }
             AppEvent::ChatListUpdateRequested => {
+                tracing::debug!("orchestrator received chat list update request");
                 self.refresh_chat_list();
             }
         }

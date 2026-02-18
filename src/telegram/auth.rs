@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{fs, path::Path, sync::Arc};
 
 use grammers_client::{Client, Config, InitParams, SignInError};
 use grammers_session::Session;
@@ -37,7 +37,7 @@ pub enum StartLoginError {
 }
 
 pub(super) struct GrammersAuthBackend {
-    rt: tokio::runtime::Runtime,
+    rt: Arc<tokio::runtime::Runtime>,
     client: Client,
     login_token: Option<grammers_client::types::LoginToken>,
     password_token: Option<grammers_client::types::PasswordToken>,
@@ -60,10 +60,12 @@ impl GrammersAuthBackend {
 
         let session = Session::load_file_or_create(session_path).map_err(map_session_load_error)?;
 
-        let rt = build_auth_runtime().map_err(|error| AuthBackendError::Transient {
-            code: "AUTH_BACKEND_UNAVAILABLE",
-            message: format!("failed to initialize async runtime: {error}"),
-        })?;
+        let rt = Arc::new(
+            build_auth_runtime().map_err(|error| AuthBackendError::Transient {
+                code: "AUTH_BACKEND_UNAVAILABLE",
+                message: format!("failed to initialize async runtime: {error}"),
+            })?,
+        );
 
         let client = rt
             .block_on(async {
@@ -260,7 +262,7 @@ impl GrammersAuthBackend {
         &self,
         updates_tx: std::sync::mpsc::Sender<()>,
     ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
-        TelegramChatUpdatesMonitor::start(self.client.clone(), updates_tx)
+        TelegramChatUpdatesMonitor::start(&self.rt, self.client.clone(), updates_tx)
     }
 
     #[allow(dead_code)]
@@ -270,7 +272,7 @@ impl GrammersAuthBackend {
 }
 
 fn build_auth_runtime() -> Result<tokio::runtime::Runtime, std::io::Error> {
-    Builder::new_current_thread()
+    Builder::new_multi_thread()
         .enable_time()
         .enable_io()
         .build()

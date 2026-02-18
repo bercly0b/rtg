@@ -15,7 +15,6 @@ const EVENT_POLL_TIMEOUT: Duration = Duration::from_millis(100);
 const NON_BLOCKING_POLL_TIMEOUT: Duration = Duration::from_millis(0);
 const MAX_CONNECTIVITY_STREAK: u8 = 3;
 const MAX_CONNECTIVITY_DRAIN_PER_CYCLE: usize = 32;
-const MAX_CHAT_UPDATES_DRAIN_PER_CYCLE: usize = 32;
 
 pub trait ConnectivityStatusSource {
     fn next_status(&mut self) -> Option<ConnectivityStatus>;
@@ -80,15 +79,11 @@ impl ConnectivityStatusSource for ChannelConnectivityStatusSource {
 
 pub struct ChannelChatUpdatesSignalSource {
     receiver: Receiver<()>,
-    has_pending: bool,
 }
 
 impl ChannelChatUpdatesSignalSource {
     pub fn new(receiver: Receiver<()>) -> Self {
-        Self {
-            receiver,
-            has_pending: false,
-        }
+        Self { receiver }
     }
 
     #[cfg(test)]
@@ -104,14 +99,7 @@ impl ChannelChatUpdatesSignalSource {
 
 impl ChatUpdatesSignalSource for ChannelChatUpdatesSignalSource {
     fn has_pending_refresh(&mut self) -> bool {
-        for _ in 0..MAX_CHAT_UPDATES_DRAIN_PER_CYCLE {
-            if self.receiver.try_recv().is_err() {
-                break;
-            }
-            self.has_pending = true;
-        }
-
-        std::mem::take(&mut self.has_pending)
+        self.receiver.try_recv().is_ok()
     }
 }
 
@@ -136,7 +124,6 @@ pub struct CrosstermEventSource {
     connectivity_source: Box<dyn ConnectivityStatusSource>,
     chat_updates_source: Box<dyn ChatUpdatesSignalSource>,
     pending_connectivity: Option<ConnectivityStatus>,
-    pending_chat_update: bool,
     last_emitted_connectivity: Option<ConnectivityStatus>,
     connectivity_streak: u8,
 }
@@ -147,7 +134,6 @@ impl Default for CrosstermEventSource {
             connectivity_source: Box::new(StubConnectivityStatusSource),
             chat_updates_source: Box::new(StubChatUpdatesSignalSource),
             pending_connectivity: None,
-            pending_chat_update: false,
             last_emitted_connectivity: None,
             connectivity_streak: 0,
         }
@@ -168,7 +154,6 @@ impl CrosstermEventSource {
             connectivity_source,
             chat_updates_source,
             pending_connectivity: None,
-            pending_chat_update: false,
             last_emitted_connectivity: None,
             connectivity_streak: 0,
         }
@@ -179,7 +164,6 @@ impl CrosstermEventSource {
         terminal: &mut T,
     ) -> Result<Option<AppEvent>> {
         self.refresh_pending_connectivity();
-        self.refresh_pending_chat_updates();
 
         let has_ready_terminal_input = terminal.poll(NON_BLOCKING_POLL_TIMEOUT).unwrap_or(false);
         if has_ready_terminal_input {
@@ -190,17 +174,17 @@ impl CrosstermEventSource {
             return Ok(None);
         }
 
+        if self.chat_updates_source.has_pending_refresh() {
+            self.connectivity_streak = 0;
+            tracing::debug!("event source emitted chat list update request");
+            return Ok(Some(AppEvent::ChatListUpdateRequested));
+        }
+
         if self.connectivity_streak < MAX_CONNECTIVITY_STREAK {
             if let Some(status) = self.pending_connectivity.take() {
                 self.connectivity_streak += 1;
                 self.last_emitted_connectivity = Some(status);
                 return Ok(Some(AppEvent::ConnectivityChanged(status)));
-            }
-
-            if self.pending_chat_update {
-                self.connectivity_streak += 1;
-                self.pending_chat_update = false;
-                return Ok(Some(AppEvent::ChatListUpdateRequested));
             }
         }
 
@@ -228,12 +212,6 @@ impl CrosstermEventSource {
 
         if self.pending_connectivity == self.last_emitted_connectivity {
             self.pending_connectivity = None;
-        }
-    }
-
-    fn refresh_pending_chat_updates(&mut self) {
-        if self.chat_updates_source.has_pending_refresh() {
-            self.pending_chat_update = true;
         }
     }
 }
@@ -651,9 +629,11 @@ mod tests {
     }
 
     #[test]
-    fn channel_chat_updates_source_coalesces_burst_into_single_refresh_signal() {
+    fn channel_chat_updates_source_emits_refresh_per_signal() {
         let mut source = ChannelChatUpdatesSignalSource::from_signal_count(3);
 
+        assert!(source.has_pending_refresh());
+        assert!(source.has_pending_refresh());
         assert!(source.has_pending_refresh());
         assert!(!source.has_pending_refresh());
     }
@@ -681,7 +661,35 @@ mod tests {
     }
 
     #[test]
-    fn crossterm_event_source_does_not_starve_tick_under_bursty_chat_updates() {
+    fn crossterm_event_source_emits_refresh_per_chat_update_signal() {
+        let mut source = CrosstermEventSource::with_sources(
+            Box::new(StubConnectivityStatusSource),
+            Box::new(TestChatUpdatesSource::from(vec![true, true, false])),
+        );
+        let mut terminal = TestTerminalEventSource::with_polls(vec![false, false, false]);
+
+        assert_eq!(
+            source
+                .next_event_with_terminal(&mut terminal)
+                .expect("first chat update event should be readable"),
+            Some(AppEvent::ChatListUpdateRequested)
+        );
+        assert_eq!(
+            source
+                .next_event_with_terminal(&mut terminal)
+                .expect("second chat update event should be readable"),
+            Some(AppEvent::ChatListUpdateRequested)
+        );
+        assert_eq!(
+            source
+                .next_event_with_terminal(&mut terminal)
+                .expect("third event should remain available"),
+            Some(AppEvent::Tick)
+        );
+    }
+
+    #[test]
+    fn crossterm_event_source_prioritizes_bursty_chat_updates() {
         let mut source = CrosstermEventSource::with_sources(
             Box::new(StubConnectivityStatusSource),
             Box::new(BurstyChatUpdatesSource),
@@ -699,8 +707,10 @@ mod tests {
         }
 
         assert!(
-            produced.iter().any(|event| matches!(event, AppEvent::Tick)),
-            "tick should be emitted even when chat updates arrive every cycle"
+            produced
+                .iter()
+                .all(|event| matches!(event, AppEvent::ChatListUpdateRequested)),
+            "chat updates should be emitted immediately while burst continues"
         );
     }
 }

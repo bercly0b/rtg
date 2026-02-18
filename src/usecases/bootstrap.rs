@@ -55,7 +55,10 @@ fn compose_shell_with_factory<'a>(
         let (updates_tx, updates_rx) = std::sync::mpsc::channel::<()>();
 
         match monitor_factory.start(&context.telegram, status_tx) {
-            Ok(monitor) => connectivity_monitor = Some(monitor),
+            Ok(monitor) => {
+                tracing::info!("telegram connectivity monitor started");
+                connectivity_monitor = Some(monitor);
+            }
             Err(error) => {
                 tracing::warn!(
                     code = CONNECTIVITY_MONITOR_START_FAILED,
@@ -66,7 +69,10 @@ fn compose_shell_with_factory<'a>(
         }
 
         match monitor_factory.start_chat_updates(&context.telegram, updates_tx) {
-            Ok(monitor) => chat_updates_monitor = Some(monitor),
+            Ok(monitor) => {
+                tracing::info!("telegram chat updates monitor wired into event source");
+                chat_updates_monitor = Some(monitor);
+            }
             Err(error) => {
                 tracing::warn!(
                     code = CHAT_UPDATES_MONITOR_START_FAILED,
@@ -399,21 +405,20 @@ mod tests {
         };
 
         let mut shell = compose_shell_with_factory(&context, &factory);
-        let event = shell
+        let first_event = shell
             .event_source
             .next_event()
             .expect("event should be readable");
-
-        assert_eq!(
-            event,
-            Some(AppEvent::ConnectivityChanged(ConnectivityStatus::Connected))
-        );
-
         let second_event = shell
             .event_source
             .next_event()
             .expect("second event should be readable");
-        assert_eq!(second_event, Some(AppEvent::ChatListUpdateRequested));
+
+        let events = [first_event, second_event];
+        assert!(events.contains(&Some(AppEvent::ChatListUpdateRequested)));
+        assert!(events.contains(&Some(AppEvent::ConnectivityChanged(
+            ConnectivityStatus::Connected
+        ))));
     }
 
     #[test]
