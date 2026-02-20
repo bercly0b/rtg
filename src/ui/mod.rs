@@ -2,6 +2,7 @@
 
 mod event_source;
 pub mod shell;
+mod styles;
 mod terminal;
 mod view;
 

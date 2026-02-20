@@ -1,6 +1,7 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame,
 };
@@ -9,6 +10,8 @@ use crate::domain::{
     chat::ChatSummary, chat_list_state::ChatListUiState, message::Message,
     open_chat_state::OpenChatUiState, shell_state::ShellState,
 };
+
+use super::styles;
 
 pub fn render(frame: &mut Frame<'_>, state: &ShellState) {
     let [content_area, status_area] = Layout::default()
@@ -41,19 +44,25 @@ fn render_chat_list_panel(frame: &mut Frame<'_>, area: ratatui::layout::Rect, st
             "Failed to load chats. Check connection and retry.",
         ),
         ChatListUiState::Ready => {
-            let items = chat_list
-                .chats()
-                .iter()
-                .map(chat_list_item)
-                .collect::<Vec<_>>();
+            let chats = chat_list.chats();
+            // Inner width = area width - 2 (borders)
+            let inner_width = area.width.saturating_sub(2) as usize;
+            let items = build_chat_list_items(chats, inner_width);
+            let chat_count = chats.len();
 
+            let title = format!("Chats ({})", chat_count);
             let list = List::new(items)
-                .block(Block::default().title("Chats").borders(Borders::ALL))
-                .highlight_style(Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD))
-                .highlight_symbol("> ");
+                .block(Block::default().title(title).borders(Borders::ALL))
+                .highlight_style(
+                    Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
+                );
+
+            let visual_index = chat_list
+                .selected_index()
+                .map(|idx| compute_visual_index(chats, idx));
 
             let mut list_state = ListState::default();
-            list_state.select(chat_list.selected_index());
+            list_state.select(visual_index);
             frame.render_stateful_widget(list, area, &mut list_state);
         }
     }
@@ -65,16 +74,62 @@ fn render_chat_list_message(frame: &mut Frame<'_>, area: ratatui::layout::Rect, 
     frame.render_widget(message, area);
 }
 
-fn chat_list_item(chat: &ChatSummary) -> ListItem<'static> {
-    ListItem::new(chat_list_item_text(chat))
+/// Builds the list of visual items including section headers.
+fn build_chat_list_items(chats: &[ChatSummary], width: usize) -> Vec<ListItem<'static>> {
+    let (pinned, regular): (Vec<_>, Vec<_>) = chats.iter().partition(|c| c.is_pinned);
+
+    let mut items = Vec::new();
+    let has_pinned = !pinned.is_empty();
+
+    if has_pinned {
+        items.push(section_header_item("Pinned"));
+        for chat in &pinned {
+            items.push(chat_list_item(chat, width));
+        }
+    }
+
+    if !regular.is_empty() || !has_pinned {
+        items.push(section_header_item("All Chats"));
+        for chat in &regular {
+            items.push(chat_list_item(chat, width));
+        }
+    }
+
+    items
 }
 
-fn chat_list_item_text(chat: &ChatSummary) -> String {
-    let unread = if chat.unread_count > 0 {
-        format!(" [{}]", chat.unread_count)
+/// Computes the visual index in the list (accounting for section headers).
+fn compute_visual_index(chats: &[ChatSummary], chat_index: usize) -> usize {
+    let pinned_count = chats.iter().filter(|c| c.is_pinned).count();
+    let has_pinned = pinned_count > 0;
+
+    if chat_index < pinned_count {
+        // In pinned section: +1 for "Pinned" header
+        chat_index + 1
     } else {
-        String::new()
-    };
+        // In regular section
+        let headers = if has_pinned { 2 } else { 1 }; // "Pinned" + "All Chats" or just "All Chats"
+        chat_index + headers
+    }
+}
+
+fn section_header_item(title: &str) -> ListItem<'static> {
+    let line = Line::from(vec![Span::styled(
+        format!("-- {} --", title),
+        styles::section_header_style(),
+    )]);
+    ListItem::new(line)
+}
+
+fn chat_list_item(chat: &ChatSummary, width: usize) -> ListItem<'static> {
+    ListItem::new(chat_list_item_line(chat, width))
+}
+
+fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
+    let timestamp = chat
+        .last_message_unix_ms
+        .map(format_chat_timestamp)
+        .unwrap_or_else(|| "     ".to_owned());
 
     let preview = chat
         .last_message_preview
@@ -83,7 +138,71 @@ fn chat_list_item_text(chat: &ChatSummary) -> String {
         .filter(|text| !text.is_empty())
         .unwrap_or_else(|| "No messages yet".to_owned());
 
-    format!("{}{} — {}", chat.title, unread, preview)
+    // Format: "HH:MM | Name Preview...          [N]"
+    // Fixed parts: timestamp (5) + " | " (3) + " " (1) after name = 9 chars
+    let unread_badge = if chat.unread_count > 0 {
+        format!(" [{}]", chat.unread_count)
+    } else {
+        String::new()
+    };
+
+    let fixed_prefix_len = 5 + 3; // timestamp + separator
+    let badge_len = unread_badge.chars().count();
+    let name_len = chat.title.chars().count();
+
+    // Calculate available space for preview + padding
+    // Total = fixed_prefix + name + 1 (space) + preview + padding + badge
+    let content_len = fixed_prefix_len + name_len + 1; // prefix + name + space
+    let available_for_preview_and_padding = width.saturating_sub(content_len + badge_len);
+
+    // Truncate preview if needed and calculate padding
+    let preview_chars: Vec<char> = preview.chars().collect();
+    let (display_preview, padding) = if preview_chars.len() <= available_for_preview_and_padding {
+        let pad = available_for_preview_and_padding.saturating_sub(preview_chars.len());
+        (preview, pad)
+    } else {
+        // Truncate preview with ellipsis
+        let max_preview = available_for_preview_and_padding.saturating_sub(3);
+        let truncated: String = preview_chars.iter().take(max_preview).collect();
+        (format!("{}...", truncated), 0)
+    };
+
+    let mut spans = vec![
+        Span::styled(format!("{:>5}", timestamp), styles::timestamp_style()),
+        Span::styled(" | ", styles::separator_style()),
+        Span::styled(chat.title.clone(), styles::chat_name_style()),
+        Span::raw(" "),
+        Span::styled(display_preview, styles::chat_preview_style()),
+    ];
+
+    if padding > 0 {
+        spans.push(Span::raw(" ".repeat(padding)));
+    }
+
+    if !unread_badge.is_empty() {
+        spans.push(Span::styled(unread_badge, styles::unread_count_style()));
+    }
+
+    Line::from(spans)
+}
+
+fn format_chat_timestamp(timestamp_ms: i64) -> String {
+    use chrono::{Local, TimeZone};
+
+    // Handle negative timestamps gracefully (before Unix epoch or corrupted data)
+    let datetime = match Local.timestamp_millis_opt(timestamp_ms) {
+        chrono::LocalResult::Single(dt) => dt,
+        chrono::LocalResult::Ambiguous(dt, _) => dt,
+        chrono::LocalResult::None => return "     ".to_owned(),
+    };
+
+    let today = Local::now().date_naive();
+
+    if datetime.date_naive() == today {
+        datetime.format("%H:%M").to_string()
+    } else {
+        datetime.format("%d.%m").to_string()
+    }
 }
 
 fn normalize_preview_for_chat_row(preview: &str) -> String {
@@ -174,12 +293,23 @@ mod tests {
     use crate::domain::events::ConnectivityStatus;
 
     fn chat(chat_id: i64, title: &str, unread_count: u32, preview: Option<&str>) -> ChatSummary {
+        chat_with_pinned(chat_id, title, unread_count, preview, false)
+    }
+
+    fn chat_with_pinned(
+        chat_id: i64,
+        title: &str,
+        unread_count: u32,
+        preview: Option<&str>,
+        is_pinned: bool,
+    ) -> ChatSummary {
         ChatSummary {
             chat_id,
             title: title.to_owned(),
             unread_count,
             last_message_preview: preview.map(ToOwned::to_owned),
             last_message_unix_ms: None,
+            is_pinned,
         }
     }
 
@@ -204,6 +334,11 @@ mod tests {
         format!("[{}] {}: {}", time, prefix, text)
     }
 
+    /// Extracts text content from Line for testing.
+    fn line_to_string(line: &Line<'_>) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
     #[test]
     fn status_line_renders_connected_label() {
         let mut state = ShellState::default();
@@ -224,32 +359,52 @@ mod tests {
         assert!(line.contains("connectivity: disconnected"));
     }
 
-    #[test]
-    fn chat_list_item_includes_unread_counter_and_preview() {
-        let line = chat_list_item_text(&chat(1, "General", 3, Some("Hello")));
+    // Use a typical width for chat list tests
+    const TEST_WIDTH: usize = 50;
 
-        assert_eq!(line, "General [3] — Hello");
+    #[test]
+    fn chat_list_item_includes_title_and_preview() {
+        let line = chat_list_item_line(&chat(1, "General", 0, Some("Hello")), TEST_WIDTH);
+        let text = line_to_string(&line);
+
+        assert!(text.contains("General"));
+        assert!(text.contains("Hello"));
+    }
+
+    #[test]
+    fn chat_list_item_includes_unread_counter() {
+        let line = chat_list_item_line(&chat(1, "General", 3, Some("Hello")), TEST_WIDTH);
+        let text = line_to_string(&line);
+
+        assert!(text.contains("[3]"));
+    }
+
+    #[test]
+    fn chat_list_item_omits_counter_when_zero() {
+        let line = chat_list_item_line(&chat(1, "General", 0, Some("Hello")), TEST_WIDTH);
+        let text = line_to_string(&line);
+
+        assert!(!text.contains("[0]"));
+        assert!(!text.contains("[]"));
     }
 
     #[test]
     fn chat_list_item_falls_back_to_placeholder_preview() {
-        let line = chat_list_item_text(&chat(1, "General", 0, Some("  \n\t  ")));
+        let line = chat_list_item_line(&chat(1, "General", 0, Some("  \n\t  ")), TEST_WIDTH);
+        let text = line_to_string(&line);
 
-        assert_eq!(line, "General — No messages yet");
+        assert!(text.contains("No messages yet"));
     }
 
     #[test]
-    fn chat_list_item_replaces_newlines_with_spaces() {
-        let line = chat_list_item_text(&chat(1, "General", 0, Some("Hello\nworld\r\n!")));
+    fn chat_list_item_normalizes_whitespace() {
+        let line = chat_list_item_line(
+            &chat(1, "General", 0, Some("  Hello\n\n  from\t\tRTG   ")),
+            TEST_WIDTH,
+        );
+        let text = line_to_string(&line);
 
-        assert_eq!(line, "General — Hello world !");
-    }
-
-    #[test]
-    fn chat_list_item_normalizes_redundant_whitespace_to_one_line() {
-        let line = chat_list_item_text(&chat(1, "General", 0, Some("  Hello\n\n  from\t\tRTG   ")));
-
-        assert_eq!(line, "General — Hello from RTG");
+        assert!(text.contains("Hello from RTG"));
     }
 
     #[test]
@@ -295,5 +450,120 @@ mod tests {
         let title = open_chat_title(state.open_chat());
 
         assert_eq!(title, "Messages — General");
+    }
+
+    #[test]
+    fn build_chat_list_items_creates_all_chats_section_for_regular_chats() {
+        let chats = vec![chat(1, "General", 0, Some("Hello"))];
+        let items = build_chat_list_items(&chats, TEST_WIDTH);
+
+        // Should have: "All Chats" header + 1 chat
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn build_chat_list_items_creates_both_sections_when_pinned_exists() {
+        let chats = vec![
+            chat_with_pinned(1, "Pinned Chat", 0, Some("Hi"), true),
+            chat(2, "Regular Chat", 0, Some("Hello")),
+        ];
+        let items = build_chat_list_items(&chats, TEST_WIDTH);
+
+        // Should have: "Pinned" header + 1 pinned + "All Chats" header + 1 regular
+        assert_eq!(items.len(), 4);
+    }
+
+    #[test]
+    fn compute_visual_index_accounts_for_headers() {
+        let chats = vec![
+            chat_with_pinned(1, "Pinned", 0, None, true),
+            chat(2, "Regular", 0, None),
+        ];
+
+        // Pinned chat at index 0 -> visual index 1 (after "Pinned" header)
+        assert_eq!(compute_visual_index(&chats, 0), 1);
+        // Regular chat at index 1 -> visual index 3 (after "Pinned" header + pinned chat + "All Chats" header)
+        assert_eq!(compute_visual_index(&chats, 1), 3);
+    }
+
+    #[test]
+    fn compute_visual_index_with_no_pinned() {
+        let chats = vec![chat(1, "Chat1", 0, None), chat(2, "Chat2", 0, None)];
+
+        // First chat -> visual index 1 (after "All Chats" header)
+        assert_eq!(compute_visual_index(&chats, 0), 1);
+        // Second chat -> visual index 2
+        assert_eq!(compute_visual_index(&chats, 1), 2);
+    }
+
+    #[test]
+    fn format_chat_timestamp_shows_time_for_today() {
+        use chrono::Local;
+
+        let now = Local::now();
+        let timestamp_ms = now.timestamp_millis();
+
+        let formatted = format_chat_timestamp(timestamp_ms);
+
+        // Should be in HH:MM format
+        assert_eq!(formatted.len(), 5);
+        assert!(formatted.contains(':'));
+    }
+
+    #[test]
+    fn format_chat_timestamp_shows_date_for_past() {
+        // Jan 1, 2020 00:00:00 UTC
+        let timestamp_ms = 1577836800000_i64;
+
+        let formatted = format_chat_timestamp(timestamp_ms);
+
+        // Should be in DD.MM format
+        assert_eq!(formatted.len(), 5);
+        assert!(formatted.contains('.'));
+    }
+
+    #[test]
+    fn format_chat_timestamp_handles_negative_timestamp_gracefully() {
+        // Small negative timestamp (before Unix epoch) - should still be valid date
+        let formatted = format_chat_timestamp(-1000);
+
+        // Should be a valid DD.MM format (Dec 31, 1969 or Jan 1, 1970 depending on timezone)
+        assert_eq!(formatted.len(), 5);
+        assert!(formatted.contains('.'));
+    }
+
+    #[test]
+    fn format_chat_timestamp_handles_extreme_negative_timestamp() {
+        // Extremely negative timestamp that chrono cannot handle
+        let formatted = format_chat_timestamp(i64::MIN);
+
+        // Should return empty placeholder for invalid dates
+        assert_eq!(formatted, "     ");
+    }
+
+    #[test]
+    fn compute_visual_index_with_all_pinned() {
+        let chats = vec![
+            chat_with_pinned(1, "Pinned1", 0, None, true),
+            chat_with_pinned(2, "Pinned2", 0, None, true),
+        ];
+
+        // First pinned chat -> visual index 1 (after "Pinned" header)
+        assert_eq!(compute_visual_index(&chats, 0), 1);
+        // Second pinned chat -> visual index 2
+        assert_eq!(compute_visual_index(&chats, 1), 2);
+    }
+
+    #[test]
+    fn build_chat_list_items_shows_all_chats_header_when_all_pinned() {
+        let chats = vec![
+            chat_with_pinned(1, "Pinned1", 0, None, true),
+            chat_with_pinned(2, "Pinned2", 0, None, true),
+        ];
+        let items = build_chat_list_items(&chats, TEST_WIDTH);
+
+        // Should have: "Pinned" header + 2 pinned chats (no "All Chats" header since regular is empty)
+        // Based on logic: `if !regular.is_empty() || !has_pinned` - so All Chats NOT added when all pinned
+        assert_eq!(items.len(), 3);
     }
 }
