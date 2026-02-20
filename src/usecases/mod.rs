@@ -5,6 +5,7 @@ pub mod context;
 pub mod contracts;
 pub mod guided_auth;
 pub mod list_chats;
+pub mod load_messages;
 pub mod logout;
 pub mod shell;
 pub mod startup;

@@ -14,11 +14,12 @@ pub use chat_updates::{ChatUpdatesMonitorStartError, TelegramChatUpdatesMonitor}
 pub use connectivity::{ConnectivityMonitorStartError, TelegramConnectivityMonitor};
 
 use crate::{
-    domain::{events::ConnectivityStatus, status::AuthConnectivityStatus},
+    domain::{events::ConnectivityStatus, message::Message, status::AuthConnectivityStatus},
     infra::{config::TelegramConfig, storage_layout::StorageLayout},
     usecases::{
         guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome, TelegramAuthClient},
         list_chats::{ListChatsSource, ListChatsSourceError},
+        load_messages::{MessagesSource, MessagesSourceError},
     },
 };
 
@@ -207,6 +208,19 @@ impl ListChatsSource for TelegramAdapter {
     }
 }
 
+impl MessagesSource for TelegramAdapter {
+    fn list_messages(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<Message>, MessagesSourceError> {
+        match self.auth_backend.as_ref() {
+            Some(backend) => backend.list_messages(chat_id, limit),
+            None => Err(MessagesSourceError::Unavailable),
+        }
+    }
+}
+
 /// Returns the telegram module name for smoke checks.
 pub fn module_name() -> &'static str {
     "telegram"
@@ -286,5 +300,16 @@ mod tests {
             .expect_err("stub adapter should fail");
 
         assert_eq!(error, ListChatsSourceError::Unavailable);
+    }
+
+    #[test]
+    fn list_messages_returns_unavailable_when_backend_is_not_configured() {
+        let adapter = TelegramAdapter::stub();
+
+        let error = adapter
+            .list_messages(1, 20)
+            .expect_err("stub adapter should fail");
+
+        assert_eq!(error, MessagesSourceError::Unavailable);
     }
 }

@@ -1357,6 +1357,7 @@ name = "rtg"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "crossterm 0.29.0",
  "dotenvy",
