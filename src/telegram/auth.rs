@@ -234,11 +234,14 @@ impl GrammersAuthBackend {
     ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
         self.rt.block_on(async {
             let fetch_scope = {
-                let cached = self.cached_folder_scope.read().unwrap();
-                if let Some(scope) = *cached {
+                let cached_scope = {
+                    let cached = self.cached_folder_scope.read().unwrap();
+                    *cached
+                };
+
+                if let Some(scope) = cached_scope {
                     scope
                 } else {
-                    drop(cached);
                     let scope = determine_dialog_fetch_scope(&self.client)
                         .await
                         .unwrap_or(DialogFetchScope::AllDialogs);
