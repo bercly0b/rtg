@@ -3,35 +3,42 @@ use anyhow::Result;
 use crate::{
     domain::{chat_list_state::ChatListUiState, events::AppEvent, shell_state::ShellState},
     infra::contracts::{ExternalOpener, StorageAdapter},
-    usecases::list_chats::{list_chats, ListChatsQuery, ListChatsSource},
+    usecases::{
+        list_chats::{list_chats, ListChatsQuery, ListChatsSource},
+        load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
+    },
 };
 
 use super::contracts::ShellOrchestrator;
 
-pub struct DefaultShellOrchestrator<S, O, C>
+pub struct DefaultShellOrchestrator<S, O, C, M>
 where
     S: StorageAdapter,
     O: ExternalOpener,
     C: ListChatsSource,
+    M: MessagesSource,
 {
     state: ShellState,
     storage: S,
     opener: O,
     chats_source: C,
+    messages_source: M,
 }
 
-impl<S, O, C> DefaultShellOrchestrator<S, O, C>
+impl<S, O, C, M> DefaultShellOrchestrator<S, O, C, M>
 where
     S: StorageAdapter,
     O: ExternalOpener,
     C: ListChatsSource,
+    M: MessagesSource,
 {
-    pub fn new(storage: S, opener: O, chats_source: C) -> Self {
+    pub fn new(storage: S, opener: O, chats_source: C, messages_source: M) -> Self {
         Self {
             state: ShellState::default(),
             storage,
             opener,
             chats_source,
+            messages_source,
         }
     }
 
@@ -63,13 +70,41 @@ where
             }
         }
     }
+
+    fn open_selected_chat(&mut self) {
+        let Some(selected) = self.state.chat_list().selected_chat() else {
+            return;
+        };
+
+        let chat_id = selected.chat_id;
+        let chat_title = selected.title.clone();
+
+        tracing::debug!(chat_id, chat_title = %chat_title, "opening chat");
+
+        self.state.open_chat_mut().set_loading(chat_id, chat_title);
+
+        match load_messages(&self.messages_source, LoadMessagesQuery::new(chat_id)) {
+            Ok(output) => {
+                tracing::debug!(
+                    message_count = output.messages.len(),
+                    "chat messages loaded"
+                );
+                self.state.open_chat_mut().set_ready(output.messages);
+            }
+            Err(error) => {
+                tracing::warn!(error = ?error, "failed to load chat messages");
+                self.state.open_chat_mut().set_error();
+            }
+        }
+    }
 }
 
-impl<S, O, C> ShellOrchestrator for DefaultShellOrchestrator<S, O, C>
+impl<S, O, C, M> ShellOrchestrator for DefaultShellOrchestrator<S, O, C, M>
 where
     S: StorageAdapter,
     O: ExternalOpener,
     C: ListChatsSource,
+    M: MessagesSource,
 {
     fn state(&self) -> &ShellState {
         &self.state
@@ -97,7 +132,8 @@ where
                     "r" => self.refresh_chat_list(),
                     "enter" => {
                         if self.state.chat_list().selected_chat().is_some() {
-                            self.storage.save_last_action("open_chat_intent")?;
+                            self.open_selected_chat();
+                            self.storage.save_last_action("open_chat")?;
                         }
                     }
                     _ => {}
@@ -124,10 +160,13 @@ mod tests {
     use crate::{
         domain::{
             chat::ChatSummary,
-            events::{ConnectivityStatus, KeyInput},
+            chat_list_state::ChatListUiState,
+            events::{AppEvent, ConnectivityStatus, KeyInput},
+            message::Message,
+            open_chat_state::OpenChatUiState,
         },
         infra::stubs::{NoopOpener, StubStorageAdapter},
-        usecases::list_chats::ListChatsSourceError,
+        usecases::{list_chats::ListChatsSourceError, load_messages::MessagesSourceError},
     };
 
     fn chat(chat_id: i64, title: &str) -> ChatSummary {
@@ -137,6 +176,16 @@ mod tests {
             unread_count: 0,
             last_message_preview: None,
             last_message_unix_ms: None,
+        }
+    }
+
+    fn message(id: i32, text: &str) -> Message {
+        Message {
+            id,
+            sender_name: "User".to_owned(),
+            text: text.to_owned(),
+            timestamp_ms: 1000,
+            is_outgoing: false,
         }
     }
 
@@ -167,13 +216,47 @@ mod tests {
         }
     }
 
-    #[test]
-    fn stops_on_quit_event() {
-        let mut orchestrator = DefaultShellOrchestrator::new(
+    struct StubMessagesSource {
+        responses: RefCell<VecDeque<Result<Vec<Message>, MessagesSourceError>>>,
+    }
+
+    impl StubMessagesSource {
+        fn fixed(response: Result<Vec<Message>, MessagesSourceError>) -> Self {
+            Self {
+                responses: RefCell::new(VecDeque::from([response])),
+            }
+        }
+    }
+
+    impl MessagesSource for StubMessagesSource {
+        fn list_messages(
+            &self,
+            _chat_id: i64,
+            _limit: usize,
+        ) -> Result<Vec<Message>, MessagesSourceError> {
+            self.responses
+                .borrow_mut()
+                .pop_front()
+                .expect("test source must have enough responses")
+        }
+    }
+
+    fn make_orchestrator(
+        chats_response: Result<Vec<ChatSummary>, ListChatsSourceError>,
+        messages_response: Result<Vec<Message>, MessagesSourceError>,
+    ) -> DefaultShellOrchestrator<StubStorageAdapter, NoopOpener, StubChatsSource, StubMessagesSource>
+    {
+        DefaultShellOrchestrator::new(
             StubStorageAdapter::default(),
             NoopOpener::default(),
-            StubChatsSource::fixed(Ok(vec![])),
-        );
+            StubChatsSource::fixed(chats_response),
+            StubMessagesSource::fixed(messages_response),
+        )
+    }
+
+    #[test]
+    fn stops_on_quit_event() {
+        let mut orchestrator = make_orchestrator(Ok(vec![]), Ok(vec![]));
 
         orchestrator
             .handle_event(AppEvent::QuitRequested)
@@ -184,11 +267,7 @@ mod tests {
 
     #[test]
     fn keeps_running_on_regular_key() {
-        let mut orchestrator = DefaultShellOrchestrator::new(
-            StubStorageAdapter::default(),
-            NoopOpener::default(),
-            StubChatsSource::fixed(Ok(vec![])),
-        );
+        let mut orchestrator = make_orchestrator(Ok(vec![]), Ok(vec![]));
 
         orchestrator
             .handle_event(AppEvent::InputKey(KeyInput::new("x", false)))
@@ -199,11 +278,7 @@ mod tests {
 
     #[test]
     fn updates_connectivity_status_on_connectivity_event() {
-        let mut orchestrator = DefaultShellOrchestrator::new(
-            StubStorageAdapter::default(),
-            NoopOpener::default(),
-            StubChatsSource::fixed(Ok(vec![])),
-        );
+        let mut orchestrator = make_orchestrator(Ok(vec![]), Ok(vec![]));
 
         orchestrator
             .handle_event(AppEvent::ConnectivityChanged(
@@ -219,11 +294,7 @@ mod tests {
 
     #[test]
     fn key_contract_navigates_chat_list_with_vim_keys() {
-        let mut orchestrator = DefaultShellOrchestrator::new(
-            StubStorageAdapter::default(),
-            NoopOpener::default(),
-            StubChatsSource::fixed(Ok(vec![])),
-        );
+        let mut orchestrator = make_orchestrator(Ok(vec![]), Ok(vec![]));
         orchestrator.state.chat_list_mut().set_ready(vec![
             chat(1, "General"),
             chat(2, "Backend"),
@@ -242,24 +313,48 @@ mod tests {
     }
 
     #[test]
-    fn key_contract_enter_triggers_open_chat_intent_placeholder() {
-        let mut orchestrator = DefaultShellOrchestrator::new(
-            StubStorageAdapter::default(),
-            NoopOpener::default(),
-            StubChatsSource::fixed(Ok(vec![])),
+    fn enter_key_opens_chat_and_loads_messages() {
+        let mut orchestrator = make_orchestrator(
+            Ok(vec![chat(1, "General"), chat(2, "Backend")]),
+            Ok(vec![message(1, "Hello"), message(2, "World")]),
         );
+
         orchestrator
-            .state
-            .chat_list_mut()
-            .set_ready(vec![chat(1, "General")]);
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
 
         orchestrator
             .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
-            .expect("enter key should be handled");
+            .expect("enter should open chat");
 
+        assert_eq!(orchestrator.state().open_chat().chat_id(), Some(1));
+        assert_eq!(orchestrator.state().open_chat().chat_title(), "General");
         assert_eq!(
-            orchestrator.storage.last_action,
-            Some("open_chat_intent".to_owned())
+            orchestrator.state().open_chat().ui_state(),
+            OpenChatUiState::Ready
+        );
+        assert_eq!(orchestrator.state().open_chat().messages().len(), 2);
+    }
+
+    #[test]
+    fn enter_key_handles_messages_load_error() {
+        let mut orchestrator = make_orchestrator(
+            Ok(vec![chat(1, "General")]),
+            Err(MessagesSourceError::Unavailable),
+        );
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter should handle error gracefully");
+
+        assert_eq!(orchestrator.state().open_chat().chat_id(), Some(1));
+        assert_eq!(
+            orchestrator.state().open_chat().ui_state(),
+            OpenChatUiState::Error
         );
     }
 
@@ -273,6 +368,7 @@ mod tests {
                 chat(2, "Backend"),
                 chat(200, "Design"),
             ])),
+            StubMessagesSource::fixed(Ok(vec![])),
         );
 
         orchestrator
@@ -302,6 +398,7 @@ mod tests {
             StubStorageAdapter::default(),
             NoopOpener::default(),
             StubChatsSource::fixed(Ok(vec![chat(10, "Infra"), chat(11, "Design")])),
+            StubMessagesSource::fixed(Ok(vec![])),
         );
 
         orchestrator
@@ -334,6 +431,7 @@ mod tests {
                 Err(ListChatsSourceError::Unavailable),
                 Ok(vec![chat(1, "General")]),
             ]),
+            StubMessagesSource::fixed(Ok(vec![])),
         );
 
         orchestrator
@@ -365,6 +463,7 @@ mod tests {
                 chat(2, "Backend"),
                 chat(20, "Design"),
             ])),
+            StubMessagesSource::fixed(Ok(vec![])),
         );
 
         orchestrator
@@ -390,11 +489,8 @@ mod tests {
 
     #[test]
     fn initial_loading_state_is_refreshed_on_tick() {
-        let mut orchestrator = DefaultShellOrchestrator::new(
-            StubStorageAdapter::default(),
-            NoopOpener::default(),
-            StubChatsSource::fixed(Ok(vec![chat(1, "General"), chat(2, "Backend")])),
-        );
+        let mut orchestrator =
+            make_orchestrator(Ok(vec![chat(1, "General"), chat(2, "Backend")]), Ok(vec![]));
 
         assert_eq!(
             orchestrator.state().chat_list().ui_state(),
@@ -413,15 +509,10 @@ mod tests {
     }
 
     #[test]
-    fn phase4_integration_smoke_happy_path_startup_load_navigate_and_open_intent() {
-        let mut orchestrator = DefaultShellOrchestrator::new(
-            StubStorageAdapter::default(),
-            NoopOpener::default(),
-            StubChatsSource::fixed(Ok(vec![
-                chat(1, "General"),
-                chat(2, "Backend"),
-                chat(3, "Ops"),
-            ])),
+    fn integration_smoke_happy_path_startup_load_navigate_and_open_chat() {
+        let mut orchestrator = make_orchestrator(
+            Ok(vec![chat(1, "General"), chat(2, "Backend"), chat(3, "Ops")]),
+            Ok(vec![message(1, "Hello")]),
         );
 
         assert_eq!(
@@ -437,7 +528,7 @@ mod tests {
             .expect("navigation should work on ready list");
         orchestrator
             .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
-            .expect("open intent placeholder should be handled");
+            .expect("enter should open chat");
 
         assert_eq!(
             orchestrator.state().chat_list().ui_state(),
@@ -452,18 +543,22 @@ mod tests {
                 .map(|chat| chat.chat_id),
             Some(2)
         );
+        assert_eq!(orchestrator.state().open_chat().chat_id(), Some(2));
+        assert_eq!(orchestrator.state().open_chat().chat_title(), "Backend");
+        assert_eq!(orchestrator.state().open_chat().messages().len(), 1);
         assert_eq!(
             orchestrator.storage.last_action,
-            Some("open_chat_intent".to_owned())
+            Some("open_chat".to_owned())
         );
     }
 
     #[test]
-    fn phase4_integration_smoke_fallback_error_then_empty_list_remains_stable() {
+    fn integration_smoke_fallback_error_then_empty_list_remains_stable() {
         let mut orchestrator = DefaultShellOrchestrator::new(
             StubStorageAdapter::default(),
             NoopOpener::default(),
             StubChatsSource::sequence(vec![Err(ListChatsSourceError::Unavailable), Ok(vec![])]),
+            StubMessagesSource::fixed(Ok(vec![])),
         );
 
         orchestrator

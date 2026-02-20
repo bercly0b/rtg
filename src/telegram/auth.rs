@@ -9,11 +9,12 @@ use grammers_session::Session;
 use tokio::runtime::Builder;
 
 use crate::{
-    domain::chat::ChatSummary,
+    domain::{chat::ChatSummary, message::Message},
     infra::config::TelegramConfig,
     usecases::{
         guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome},
         list_chats::ListChatsSourceError,
+        load_messages::MessagesSourceError,
     },
 };
 
@@ -49,6 +50,7 @@ pub(super) struct GrammersAuthBackend {
     next_code_token_id: u64,
     state: LoginState,
     cached_folder_scope: RwLock<Option<DialogFetchScope>>,
+    chat_cache: RwLock<std::collections::HashMap<i64, grammers_client::types::PackedChat>>,
 }
 
 impl GrammersAuthBackend {
@@ -93,6 +95,7 @@ impl GrammersAuthBackend {
             next_code_token_id: 1,
             state: LoginState::Disconnected,
             cached_folder_scope: RwLock::new(None),
+            chat_cache: RwLock::new(std::collections::HashMap::new()),
         })
     }
 
@@ -253,12 +256,24 @@ impl GrammersAuthBackend {
 
             match fetch_scope {
                 DialogFetchScope::MainFolderOnly => {
-                    fetch_chat_summaries_from_main_folder(&self.client, limit).await
+                    fetch_chat_summaries_from_main_folder(&self.client, limit, &self.chat_cache)
+                        .await
                 }
                 DialogFetchScope::AllDialogs => {
-                    fetch_chat_summaries_from_all_dialogs(&self.client, limit).await
+                    fetch_chat_summaries_from_all_dialogs(&self.client, limit, &self.chat_cache)
+                        .await
                 }
             }
+        })
+    }
+
+    pub(super) fn list_messages(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<Message>, MessagesSourceError> {
+        self.rt.block_on(async {
+            fetch_messages_from_chat(&self.client, chat_id, limit, &self.chat_cache).await
         })
     }
 
@@ -268,6 +283,7 @@ impl GrammersAuthBackend {
         self.current_code_token = None;
         self.state = LoginState::Disconnected;
         *self.cached_folder_scope.write().unwrap() = None;
+        self.chat_cache.write().unwrap().clear();
     }
 
     pub(super) fn start_chat_updates_monitor(
@@ -333,15 +349,22 @@ fn dialog_fetch_scope_from_filters(
 async fn fetch_chat_summaries_from_all_dialogs(
     client: &grammers_client::Client,
     limit: usize,
+    chat_cache: &RwLock<std::collections::HashMap<i64, grammers_client::types::PackedChat>>,
 ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
     let mut dialogs = client.iter_dialogs().limit(limit);
     let mut chats = Vec::with_capacity(limit);
+    let mut cache = chat_cache.write().unwrap();
 
     while let Some(dialog) = dialogs
         .next()
         .await
         .map_err(map_list_chats_invocation_error)?
     {
+        let chat = dialog.chat();
+        let chat_id = chat.id();
+        let packed: grammers_client::types::PackedChat = chat.into();
+        cache.insert(chat_id, packed);
+
         let unread_count = dialog_unread_count(&dialog.raw)?;
         let last_message_preview = dialog
             .last_message
@@ -353,8 +376,8 @@ async fn fetch_chat_summaries_from_all_dialogs(
             .map(|message| message.date().timestamp_millis());
 
         chats.push(ChatSummary {
-            chat_id: dialog.chat().id(),
-            title: dialog.chat().name().to_owned(),
+            chat_id,
+            title: chat.name().to_owned(),
             unread_count,
             last_message_preview,
             last_message_unix_ms,
@@ -367,6 +390,7 @@ async fn fetch_chat_summaries_from_all_dialogs(
 async fn fetch_chat_summaries_from_main_folder(
     client: &grammers_client::Client,
     limit: usize,
+    chat_cache: &RwLock<std::collections::HashMap<i64, grammers_client::types::PackedChat>>,
 ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
     let response = client
         .invoke(
@@ -409,6 +433,7 @@ async fn fetch_chat_summaries_from_main_folder(
     }
 
     let mut result = Vec::new();
+    let mut cache = chat_cache.write().unwrap();
 
     for dialog in dialogs {
         let grammers_client::grammers_tl_types::enums::Dialog::Dialog(data) = dialog else {
@@ -418,6 +443,10 @@ async fn fetch_chat_summaries_from_main_folder(
         let Some(chat) = chat_map.get(&data.peer) else {
             continue;
         };
+
+        let chat_id = chat.id();
+        let packed: grammers_client::types::PackedChat = chat.into();
+        cache.insert(chat_id, packed);
 
         let unread_count =
             u32::try_from(data.unread_count).map_err(|_| ListChatsSourceError::InvalidData)?;
@@ -484,6 +513,118 @@ fn dialog_unread_count(
 fn normalize_preview_text(text: &str) -> Option<String> {
     let trimmed = text.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_owned())
+}
+
+async fn fetch_messages_from_chat(
+    client: &grammers_client::Client,
+    chat_id: i64,
+    limit: usize,
+    chat_cache: &RwLock<std::collections::HashMap<i64, grammers_client::types::PackedChat>>,
+) -> Result<Vec<Message>, MessagesSourceError> {
+    use grammers_client::grammers_tl_types::{
+        enums::messages::Messages, functions::messages::GetHistory,
+    };
+
+    let packed_chat = {
+        let cache = chat_cache.read().unwrap();
+        cache.get(&chat_id).cloned()
+    };
+
+    let input_peer = match packed_chat {
+        Some(packed) => packed.to_input_peer(),
+        None => return Err(MessagesSourceError::ChatNotFound),
+    };
+
+    let limit = i32::try_from(limit.min(100)).map_err(|_| MessagesSourceError::InvalidData)?;
+
+    let response = client
+        .invoke(&GetHistory {
+            peer: input_peer,
+            offset_id: 0,
+            offset_date: 0,
+            add_offset: 0,
+            limit,
+            max_id: 0,
+            min_id: 0,
+            hash: 0,
+        })
+        .await
+        .map_err(map_messages_invocation_error)?;
+
+    let (raw_messages, users, chats) = match response {
+        Messages::Messages(data) => (data.messages, data.users, data.chats),
+        Messages::Slice(data) => (data.messages, data.users, data.chats),
+        Messages::ChannelMessages(data) => (data.messages, data.users, data.chats),
+        Messages::NotModified(_) => return Ok(Vec::new()),
+    };
+
+    let chat_map = grammers_client::types::ChatMap::new(users, chats);
+    let mut messages = Vec::new();
+
+    for raw_message in raw_messages {
+        let (id, text, timestamp_ms, is_outgoing, sender_id) = match raw_message {
+            grammers_client::grammers_tl_types::enums::Message::Message(data) => {
+                let ts = data.date as i64 * 1000;
+                (
+                    data.id,
+                    data.message,
+                    ts,
+                    data.out,
+                    peer_to_user_id(&data.from_id),
+                )
+            }
+            grammers_client::grammers_tl_types::enums::Message::Service(data) => {
+                let ts = data.date as i64 * 1000;
+                (
+                    data.id,
+                    String::new(),
+                    ts,
+                    data.out,
+                    peer_to_user_id(&data.from_id),
+                )
+            }
+            grammers_client::grammers_tl_types::enums::Message::Empty(_) => continue,
+        };
+
+        let sender_name = sender_id
+            .and_then(|uid| {
+                chat_map
+                    .get(&grammers_client::grammers_tl_types::enums::Peer::User(
+                        grammers_client::grammers_tl_types::types::PeerUser { user_id: uid },
+                    ))
+                    .map(|c| c.name().to_owned())
+            })
+            .unwrap_or_else(|| "Unknown".to_owned());
+
+        messages.push(Message {
+            id,
+            sender_name,
+            text,
+            timestamp_ms,
+            is_outgoing,
+        });
+    }
+
+    messages.reverse();
+    Ok(messages)
+}
+
+fn peer_to_user_id(peer: &Option<grammers_client::grammers_tl_types::enums::Peer>) -> Option<i64> {
+    match peer {
+        Some(grammers_client::grammers_tl_types::enums::Peer::User(u)) => Some(u.user_id),
+        _ => None,
+    }
+}
+
+fn map_messages_invocation_error(error: impl std::fmt::Display) -> MessagesSourceError {
+    let message = error.to_string().to_ascii_lowercase();
+    if message.contains("unauthorized") || message.contains("auth") || message.contains("session") {
+        return MessagesSourceError::Unauthorized;
+    }
+    if message.contains("channel") || message.contains("chat") || message.contains("peer") {
+        return MessagesSourceError::ChatNotFound;
+    }
+    MessagesSourceError::Unavailable
 }
 
 fn map_list_chats_invocation_error(error: impl std::fmt::Display) -> ListChatsSourceError {

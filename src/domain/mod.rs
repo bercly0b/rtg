@@ -3,6 +3,8 @@
 pub mod chat;
 pub mod chat_list_state;
 pub mod events;
+pub mod message;
+pub mod open_chat_state;
 pub mod shell_state;
 pub mod status;
 

@@ -1,10 +1,13 @@
-use super::{chat_list_state::ChatListState, events::ConnectivityStatus};
+use super::{
+    chat_list_state::ChatListState, events::ConnectivityStatus, open_chat_state::OpenChatState,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellState {
     running: bool,
     connectivity_status: ConnectivityStatus,
     chat_list: ChatListState,
+    open_chat: OpenChatState,
 }
 
 impl Default for ShellState {
@@ -13,6 +16,7 @@ impl Default for ShellState {
             running: true,
             connectivity_status: ConnectivityStatus::Connecting,
             chat_list: ChatListState::default(),
+            open_chat: OpenChatState::default(),
         }
     }
 }
@@ -42,5 +46,13 @@ impl ShellState {
     #[allow(dead_code)]
     pub fn chat_list_mut(&mut self) -> &mut ChatListState {
         &mut self.chat_list
+    }
+
+    pub fn open_chat(&self) -> &OpenChatState {
+        &self.open_chat
+    }
+
+    pub fn open_chat_mut(&mut self) -> &mut OpenChatState {
+        &mut self.open_chat
     }
 }

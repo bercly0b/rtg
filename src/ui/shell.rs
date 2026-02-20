@@ -35,11 +35,12 @@ pub fn start(
 mod tests {
     use super::*;
     use crate::{
-        domain::{chat::ChatSummary, events::AppEvent},
+        domain::{chat::ChatSummary, events::AppEvent, message::Message},
         infra::stubs::{NoopOpener, StubStorageAdapter},
         ui::event_source::MockEventSource,
         usecases::{
             list_chats::{ListChatsSource, ListChatsSourceError},
+            load_messages::{MessagesSource, MessagesSourceError},
             shell::DefaultShellOrchestrator,
         },
     };
@@ -48,6 +49,18 @@ mod tests {
 
     impl ListChatsSource for EmptyChatsSource {
         fn list_chats(&self, _limit: usize) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+            Ok(vec![])
+        }
+    }
+
+    struct EmptyMessagesSource;
+
+    impl MessagesSource for EmptyMessagesSource {
+        fn list_messages(
+            &self,
+            _chat_id: i64,
+            _limit: usize,
+        ) -> Result<Vec<Message>, MessagesSourceError> {
             Ok(vec![])
         }
     }
@@ -67,6 +80,7 @@ mod tests {
             StubStorageAdapter::default(),
             NoopOpener,
             EmptyChatsSource,
+            EmptyMessagesSource,
         );
 
         if let Some(event) = source.next_event().expect("must read mock event") {
