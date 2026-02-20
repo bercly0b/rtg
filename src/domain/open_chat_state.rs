@@ -47,6 +47,10 @@ impl OpenChatState {
         self.ui_state.clone()
     }
 
+    /// Returns the selected message index.
+    /// Note: Currently unused as message selection is disabled in the UI.
+    /// Will be needed when message navigation is implemented.
+    #[allow(dead_code)]
     pub fn selected_index(&self) -> Option<usize> {
         self.selected_index
     }
@@ -98,6 +102,7 @@ mod tests {
             text: text.to_owned(),
             timestamp_ms: 1000,
             is_outgoing: false,
+            media: crate::domain::message::MessageMedia::None,
         }
     }
 
