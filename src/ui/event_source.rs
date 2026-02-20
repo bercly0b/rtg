@@ -245,15 +245,19 @@ fn map_key_event(key: KeyEvent) -> Option<AppEvent> {
         )));
     }
 
-    if key.code == KeyCode::Enter {
-        return Some(AppEvent::InputKey(KeyInput::new("enter", false)));
-    }
+    let special_key = match key.code {
+        KeyCode::Enter => Some("enter"),
+        KeyCode::Esc => Some("esc"),
+        KeyCode::Backspace => Some("backspace"),
+        KeyCode::Delete => Some("delete"),
+        KeyCode::Left => Some("left"),
+        KeyCode::Right => Some("right"),
+        KeyCode::Home => Some("home"),
+        KeyCode::End => Some("end"),
+        _ => None,
+    };
 
-    if key.code == KeyCode::Esc {
-        return Some(AppEvent::InputKey(KeyInput::new("esc", false)));
-    }
-
-    None
+    special_key.map(|k| AppEvent::InputKey(KeyInput::new(k, false)))
 }
 
 #[cfg(test)]

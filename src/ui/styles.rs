@@ -83,6 +83,25 @@ pub fn inactive_panel_border_style() -> Style {
     Style::default()
 }
 
+// =============================================================================
+// Message input styles
+// =============================================================================
+
+/// Style for the input prompt symbol (>).
+pub fn input_prompt_style() -> Style {
+    Style::default().fg(Color::Green)
+}
+
+/// Style for the input text being typed.
+pub fn input_text_style() -> Style {
+    Style::default().fg(Color::White)
+}
+
+/// Style for the placeholder text in unfocused empty input.
+pub fn input_placeholder_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,6 +135,24 @@ mod tests {
     #[test]
     fn date_separator_style_is_dark_gray() {
         let style = date_separator_style();
+        assert_eq!(style.fg, Some(Color::DarkGray));
+    }
+
+    #[test]
+    fn input_prompt_style_is_green() {
+        let style = input_prompt_style();
+        assert_eq!(style.fg, Some(Color::Green));
+    }
+
+    #[test]
+    fn input_text_style_is_white() {
+        let style = input_text_style();
+        assert_eq!(style.fg, Some(Color::White));
+    }
+
+    #[test]
+    fn input_placeholder_style_is_dark_gray() {
+        let style = input_placeholder_style();
         assert_eq!(style.fg, Some(Color::DarkGray));
     }
 }

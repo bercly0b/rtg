@@ -124,9 +124,37 @@ where
             "j" => self.state.open_chat_mut().select_next(),
             "k" => self.state.open_chat_mut().select_previous(),
             "h" | "esc" => self.state.set_active_pane(ActivePane::ChatList),
+            "i" => {
+                if self.state.open_chat().is_open() {
+                    self.state.set_active_pane(ActivePane::MessageInput);
+                }
+            }
             _ => {}
         }
         Ok(())
+    }
+
+    fn handle_message_input_key(&mut self, key: &str) {
+        match key {
+            "esc" => self.state.set_active_pane(ActivePane::Messages),
+            "enter" => {
+                // TODO: Implement message sending
+                // When implemented: send message, clear input, stay in input mode
+            }
+            "backspace" => self.state.message_input_mut().delete_char_before(),
+            "delete" => self.state.message_input_mut().delete_char_at(),
+            "left" => self.state.message_input_mut().move_cursor_left(),
+            "right" => self.state.message_input_mut().move_cursor_right(),
+            "home" => self.state.message_input_mut().move_cursor_home(),
+            "end" => self.state.message_input_mut().move_cursor_end(),
+            // Single character input
+            ch if ch.chars().count() == 1 => {
+                if let Some(c) = ch.chars().next() {
+                    self.state.message_input_mut().insert_char(c);
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -153,7 +181,15 @@ where
                 }
                 self.storage.save_last_action("tick")?;
             }
-            AppEvent::QuitRequested => self.state.stop(),
+            AppEvent::QuitRequested => {
+                // In message input mode, 'q' is handled as text input, not quit
+                // QuitRequested is only sent for 'q' and Ctrl+C from event_source
+                if self.state.active_pane() == ActivePane::MessageInput {
+                    self.handle_message_input_key("q");
+                } else {
+                    self.state.stop();
+                }
+            }
             AppEvent::InputKey(key) => {
                 if key.ctrl && key.key == "o" {
                     self.opener.open("about:blank")?;
@@ -164,6 +200,7 @@ where
                 match self.state.active_pane() {
                     ActivePane::ChatList => self.handle_chat_list_key(&key.key)?,
                     ActivePane::Messages => self.handle_messages_key(&key.key)?,
+                    ActivePane::MessageInput => self.handle_message_input_key(&key.key),
                 }
             }
             AppEvent::ConnectivityChanged(status) => {
@@ -813,5 +850,236 @@ mod tests {
         assert!(orchestrator.state().is_running());
         assert!(orchestrator.state().open_chat().is_open());
         assert_eq!(orchestrator.state().open_chat().chat_id(), Some(1));
+    }
+
+    #[test]
+    fn i_key_switches_to_message_input_mode_when_chat_is_open() {
+        let mut orchestrator =
+            make_orchestrator(Ok(vec![chat(1, "General")]), Ok(vec![message(1, "Hello")]));
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter should open chat");
+
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::Messages);
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .expect("i should switch to message input");
+
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::MessageInput);
+    }
+
+    #[test]
+    fn i_key_does_nothing_when_no_chat_is_open() {
+        let mut orchestrator = make_orchestrator(Ok(vec![chat(1, "General")]), Ok(vec![]));
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+
+        // Force switch to Messages pane without opening a chat
+        orchestrator.state.set_active_pane(ActivePane::Messages);
+        assert!(!orchestrator.state().open_chat().is_open());
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .expect("i should be handled");
+
+        // Should stay in Messages pane since no chat is open
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::Messages);
+    }
+
+    #[test]
+    fn esc_key_switches_from_message_input_to_messages_pane() {
+        let mut orchestrator =
+            make_orchestrator(Ok(vec![chat(1, "General")]), Ok(vec![message(1, "Hello")]));
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter should open chat");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .expect("i should switch to message input");
+
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::MessageInput);
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
+            .expect("esc should switch back to messages");
+
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::Messages);
+    }
+
+    #[test]
+    fn text_input_in_message_input_mode() {
+        let mut orchestrator =
+            make_orchestrator(Ok(vec![chat(1, "General")]), Ok(vec![message(1, "Hello")]));
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter should open chat");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .expect("i should switch to message input");
+
+        // Type "Hi"
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("H", false)))
+            .expect("H should be typed");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .expect("i should be typed (not switch mode)");
+
+        assert_eq!(orchestrator.state().message_input().text(), "Hi");
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::MessageInput);
+    }
+
+    #[test]
+    fn backspace_deletes_character_in_message_input_mode() {
+        let mut orchestrator =
+            make_orchestrator(Ok(vec![chat(1, "General")]), Ok(vec![message(1, "Hello")]));
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter should open chat");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .expect("i should switch to message input");
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("H", false)))
+            .expect("H should be typed");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .expect("i should be typed");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("backspace", false)))
+            .expect("backspace should delete");
+
+        assert_eq!(orchestrator.state().message_input().text(), "H");
+    }
+
+    #[test]
+    fn cursor_navigation_in_message_input_mode() {
+        let mut orchestrator =
+            make_orchestrator(Ok(vec![chat(1, "General")]), Ok(vec![message(1, "Hello")]));
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter should open chat");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .expect("i should switch to message input");
+
+        // Type "abc"
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("a", false)))
+            .expect("a should be typed");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("b", false)))
+            .expect("b should be typed");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("c", false)))
+            .expect("c should be typed");
+
+        assert_eq!(orchestrator.state().message_input().cursor_position(), 3);
+
+        // Move left
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("left", false)))
+            .expect("left should move cursor");
+        assert_eq!(orchestrator.state().message_input().cursor_position(), 2);
+
+        // Move to home
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("home", false)))
+            .expect("home should move cursor");
+        assert_eq!(orchestrator.state().message_input().cursor_position(), 0);
+
+        // Move to end
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("end", false)))
+            .expect("end should move cursor");
+        assert_eq!(orchestrator.state().message_input().cursor_position(), 3);
+    }
+
+    #[test]
+    fn q_key_types_q_in_message_input_mode_instead_of_quitting() {
+        let mut orchestrator =
+            make_orchestrator(Ok(vec![chat(1, "General")]), Ok(vec![message(1, "Hello")]));
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter should open chat");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .expect("i should switch to message input");
+
+        // 'q' in message input mode should type 'q', not quit
+        orchestrator
+            .handle_event(AppEvent::QuitRequested)
+            .expect("q should be handled as input");
+
+        assert!(orchestrator.state().is_running());
+        assert_eq!(orchestrator.state().message_input().text(), "q");
+    }
+
+    #[test]
+    fn message_input_state_preserved_when_switching_panes() {
+        let mut orchestrator =
+            make_orchestrator(Ok(vec![chat(1, "General")]), Ok(vec![message(1, "Hello")]));
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter should open chat");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .expect("i should switch to message input");
+
+        // Type something
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("H", false)))
+            .expect("H should be typed");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .expect("i should be typed");
+
+        // Switch back to messages
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
+            .expect("esc should switch to messages");
+
+        // Text should be preserved
+        assert_eq!(orchestrator.state().message_input().text(), "Hi");
+
+        // Switch back to input mode
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .expect("i should switch to message input");
+
+        // Text should still be there
+        assert_eq!(orchestrator.state().message_input().text(), "Hi");
     }
 }

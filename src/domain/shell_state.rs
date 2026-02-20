@@ -1,5 +1,6 @@
 use super::{
-    chat_list_state::ChatListState, events::ConnectivityStatus, open_chat_state::OpenChatState,
+    chat_list_state::ChatListState, events::ConnectivityStatus,
+    message_input_state::MessageInputState, open_chat_state::OpenChatState,
 };
 
 /// Represents which panel currently has focus for keyboard navigation.
@@ -10,6 +11,8 @@ pub enum ActivePane {
     ChatList,
     /// The right panel showing messages for the selected chat.
     Messages,
+    /// The message input field for composing messages.
+    MessageInput,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +21,7 @@ pub struct ShellState {
     connectivity_status: ConnectivityStatus,
     chat_list: ChatListState,
     open_chat: OpenChatState,
+    message_input: MessageInputState,
     active_pane: ActivePane,
 }
 
@@ -28,6 +32,7 @@ impl Default for ShellState {
             connectivity_status: ConnectivityStatus::Connecting,
             chat_list: ChatListState::default(),
             open_chat: OpenChatState::default(),
+            message_input: MessageInputState::default(),
             active_pane: ActivePane::default(),
         }
     }
@@ -74,5 +79,13 @@ impl ShellState {
 
     pub fn set_active_pane(&mut self, pane: ActivePane) {
         self.active_pane = pane;
+    }
+
+    pub fn message_input(&self) -> &MessageInputState {
+        &self.message_input
+    }
+
+    pub fn message_input_mut(&mut self) -> &mut MessageInputState {
+        &mut self.message_input
     }
 }

@@ -13,6 +13,7 @@ use crate::domain::{
     shell_state::{ActivePane, ShellState},
 };
 
+use super::message_input::render_message_input;
 use super::message_rendering::{
     build_message_list_elements, element_to_list_item, message_index_to_element_index,
 };
@@ -24,14 +25,21 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .areas(frame.area());
 
-    let [chats_area, messages_area] = Layout::default()
+    let [chats_area, messages_with_input_area] = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .areas(content_area);
 
+    // Split right panel into messages area and input field (3 lines for input: 1 border + 1 text + 1 border)
+    let [messages_area, input_area] = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(3)])
+        .areas(messages_with_input_area);
+
     let active_pane = state.active_pane();
     render_chat_list_panel(frame, chats_area, state, active_pane);
     render_messages_panel(frame, messages_area, state, active_pane);
+    render_message_input(frame, input_area, state.message_input(), active_pane);
 
     let status = Paragraph::new(status_line(state));
     frame.render_widget(status, status_area);
@@ -361,10 +369,11 @@ fn status_line(state: &ShellState) -> String {
     };
     let connectivity = state.connectivity_status().as_label();
     let nav_hint = match state.active_pane() {
-        ActivePane::ChatList => "j/k: navigate | l/Enter: open chat",
-        ActivePane::Messages => "j/k: navigate | h/Esc: back to chats",
+        ActivePane::ChatList => "j/k: navigate | l/Enter: open chat | r: refresh | q: quit",
+        ActivePane::Messages => "j/k: navigate | i: compose | h/Esc: back to chats | q: quit",
+        ActivePane::MessageInput => "Esc: cancel | type your message",
     };
-    format!("mode: {mode} | connectivity: {connectivity} | {nav_hint} | r: refresh | q: quit")
+    format!("mode: {mode} | connectivity: {connectivity} | {nav_hint}")
 }
 
 #[cfg(test)]
