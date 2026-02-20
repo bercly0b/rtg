@@ -8,5 +8,6 @@ pub trait AppEventSource {
 
 pub trait ShellOrchestrator {
     fn state(&self) -> &ShellState;
+    fn state_mut(&mut self) -> &mut ShellState;
     fn handle_event(&mut self, event: AppEvent) -> Result<()>;
 }

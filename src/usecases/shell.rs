@@ -141,6 +141,10 @@ where
         &self.state
     }
 
+    fn state_mut(&mut self) -> &mut ShellState {
+        &mut self.state
+    }
+
     fn handle_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::Tick => {

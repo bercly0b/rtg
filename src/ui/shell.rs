@@ -21,7 +21,7 @@ pub fn start(
     let mut terminal = TerminalSession::new()?;
 
     while orchestrator.state().is_running() {
-        terminal.draw(|frame| view::render(frame, orchestrator.state()))?;
+        terminal.draw(|frame| view::render(frame, orchestrator.state_mut()))?;
 
         if let Some(event) = event_source.next_event()? {
             orchestrator.handle_event(event)?;

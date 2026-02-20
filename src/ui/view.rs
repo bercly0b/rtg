@@ -18,7 +18,7 @@ use super::message_rendering::{
 };
 use super::styles;
 
-pub fn render(frame: &mut Frame<'_>, state: &ShellState) {
+pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
     let [content_area, status_area] = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
@@ -250,7 +250,7 @@ fn normalize_preview_for_chat_row(preview: &str) -> String {
 fn render_messages_panel(
     frame: &mut Frame<'_>,
     area: ratatui::layout::Rect,
-    state: &ShellState,
+    state: &mut ShellState,
     active_pane: ActivePane,
 ) {
     let is_active = active_pane == ActivePane::Messages;
@@ -262,8 +262,9 @@ fn render_messages_panel(
 
     let open_chat = state.open_chat();
     let title = open_chat_title(open_chat);
+    let ui_state = open_chat.ui_state();
 
-    match open_chat.ui_state() {
+    match ui_state {
         OpenChatUiState::Empty => {
             let panel = Paragraph::new("Select a chat to view messages").block(
                 Block::default()
@@ -292,7 +293,7 @@ fn render_messages_panel(
             frame.render_widget(panel, area);
         }
         OpenChatUiState::Ready => {
-            let messages = open_chat.messages();
+            let messages = state.open_chat().messages();
             if messages.is_empty() {
                 let panel = Paragraph::new("No messages in this chat").block(
                     Block::default()
@@ -306,6 +307,24 @@ fn render_messages_panel(
                 let items: Vec<ListItem<'static>> =
                     elements.iter().map(element_to_list_item).collect();
 
+                // Calculate viewport height (area height minus borders)
+                let viewport_height = area.height.saturating_sub(2) as usize;
+
+                // Map message index to element index (accounting for date separators)
+                let element_index = state
+                    .open_chat()
+                    .selected_index()
+                    .and_then(|msg_idx| message_index_to_element_index(&elements, msg_idx));
+
+                // Update scroll offset based on selection and viewport
+                if let Some(idx) = element_index {
+                    state
+                        .open_chat_mut()
+                        .update_scroll_offset(idx, viewport_height);
+                }
+
+                let scroll_offset = state.open_chat().scroll_offset();
+
                 let list = List::new(items)
                     .block(
                         Block::default()
@@ -318,11 +337,8 @@ fn render_messages_panel(
                     );
 
                 let mut list_state = ListState::default();
-                // Map message index to element index (accounting for date separators)
-                let element_index = open_chat
-                    .selected_index()
-                    .and_then(|msg_idx| message_index_to_element_index(&elements, msg_idx));
                 list_state.select(element_index);
+                *list_state.offset_mut() = scroll_offset;
                 frame.render_stateful_widget(list, area, &mut list_state);
             }
         }
