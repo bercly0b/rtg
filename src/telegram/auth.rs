@@ -18,6 +18,7 @@ use crate::{
         guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome},
         list_chats::ListChatsSourceError,
         load_messages::MessagesSourceError,
+        send_message::SendMessageSourceError,
     },
 };
 
@@ -277,6 +278,29 @@ impl GrammersAuthBackend {
     ) -> Result<Vec<Message>, MessagesSourceError> {
         self.rt.block_on(async {
             fetch_messages_from_chat(&self.client, chat_id, limit, &self.chat_cache).await
+        })
+    }
+
+    pub(super) fn send_message(
+        &self,
+        chat_id: i64,
+        text: &str,
+    ) -> Result<(), SendMessageSourceError> {
+        let packed_chat = {
+            let cache = self.chat_cache.read().unwrap();
+            cache.get(&chat_id).cloned()
+        };
+
+        let Some(packed) = packed_chat else {
+            return Err(SendMessageSourceError::ChatNotFound);
+        };
+
+        self.rt.block_on(async {
+            self.client
+                .send_message(packed, text)
+                .await
+                .map(|_| ())
+                .map_err(map_send_message_error)
         })
     }
 
@@ -721,6 +745,17 @@ fn map_messages_invocation_error(error: impl std::fmt::Display) -> MessagesSourc
         return MessagesSourceError::ChatNotFound;
     }
     MessagesSourceError::Unavailable
+}
+
+fn map_send_message_error(error: impl std::fmt::Display) -> SendMessageSourceError {
+    let message = error.to_string().to_ascii_lowercase();
+    if message.contains("unauthorized") || message.contains("auth") || message.contains("session") {
+        return SendMessageSourceError::Unauthorized;
+    }
+    if message.contains("peer") || message.contains("chat") || message.contains("channel") {
+        return SendMessageSourceError::ChatNotFound;
+    }
+    SendMessageSourceError::Unavailable
 }
 
 fn map_list_chats_invocation_error(error: impl std::fmt::Display) -> ListChatsSourceError {

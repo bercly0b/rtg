@@ -20,6 +20,7 @@ use crate::{
         guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome, TelegramAuthClient},
         list_chats::{ListChatsSource, ListChatsSourceError},
         load_messages::{MessagesSource, MessagesSourceError},
+        send_message::{MessageSender, SendMessageSourceError},
     },
 };
 
@@ -221,6 +222,15 @@ impl MessagesSource for TelegramAdapter {
     }
 }
 
+impl MessageSender for TelegramAdapter {
+    fn send_message(&self, chat_id: i64, text: &str) -> Result<(), SendMessageSourceError> {
+        match self.auth_backend.as_ref() {
+            Some(backend) => backend.send_message(chat_id, text),
+            None => Err(SendMessageSourceError::Unauthorized),
+        }
+    }
+}
+
 /// Returns the telegram module name for smoke checks.
 pub fn module_name() -> &'static str {
     "telegram"
@@ -311,5 +321,16 @@ mod tests {
             .expect_err("stub adapter should fail");
 
         assert_eq!(error, MessagesSourceError::Unavailable);
+    }
+
+    #[test]
+    fn send_message_returns_unauthorized_when_backend_is_not_configured() {
+        let adapter = TelegramAdapter::stub();
+
+        let error = adapter
+            .send_message(1, "hello")
+            .expect_err("stub adapter should fail");
+
+        assert_eq!(error, SendMessageSourceError::Unauthorized);
     }
 }
