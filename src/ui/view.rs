@@ -7,8 +7,10 @@ use ratatui::{
 };
 
 use crate::domain::{
-    chat::ChatSummary, chat_list_state::ChatListUiState, open_chat_state::OpenChatUiState,
-    shell_state::ShellState,
+    chat::ChatSummary,
+    chat_list_state::ChatListUiState,
+    open_chat_state::OpenChatUiState,
+    shell_state::{ActivePane, ShellState},
 };
 
 use super::message_rendering::{
@@ -16,7 +18,7 @@ use super::message_rendering::{
 };
 use super::styles;
 
-pub fn render(frame: &mut Frame<'_>, state: &ShellState) {
+pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
     let [content_area, status_area] = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
@@ -27,24 +29,43 @@ pub fn render(frame: &mut Frame<'_>, state: &ShellState) {
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .areas(content_area);
 
-    render_chat_list_panel(frame, chats_area, state);
-    render_messages_panel(frame, messages_area, state);
+    let active_pane = state.active_pane();
+    render_chat_list_panel(frame, chats_area, state, active_pane);
+    render_messages_panel(frame, messages_area, state, active_pane);
 
     let status = Paragraph::new(status_line(state));
     frame.render_widget(status, status_area);
 }
 
-fn render_chat_list_panel(frame: &mut Frame<'_>, area: ratatui::layout::Rect, state: &ShellState) {
+fn render_chat_list_panel(
+    frame: &mut Frame<'_>,
+    area: ratatui::layout::Rect,
+    state: &ShellState,
+    active_pane: ActivePane,
+) {
+    let is_active = active_pane == ActivePane::ChatList;
+    let border_style = if is_active {
+        styles::active_panel_border_style()
+    } else {
+        styles::inactive_panel_border_style()
+    };
+
     let chat_list = state.chat_list();
     match chat_list.ui_state() {
-        ChatListUiState::Loading => render_chat_list_message(frame, area, "Loading chats..."),
-        ChatListUiState::Empty => {
-            render_chat_list_message(frame, area, "No chats yet. Press refresh to try again.")
+        ChatListUiState::Loading => {
+            render_chat_list_message(frame, area, "Loading chats...", border_style)
         }
+        ChatListUiState::Empty => render_chat_list_message(
+            frame,
+            area,
+            "No chats yet. Press refresh to try again.",
+            border_style,
+        ),
         ChatListUiState::Error => render_chat_list_message(
             frame,
             area,
             "Failed to load chats. Check connection and retry.",
+            border_style,
         ),
         ChatListUiState::Ready => {
             let chats = chat_list.chats();
@@ -55,7 +76,12 @@ fn render_chat_list_panel(frame: &mut Frame<'_>, area: ratatui::layout::Rect, st
 
             let title = format!("Chats ({})", chat_count);
             let list = List::new(items)
-                .block(Block::default().title(title).borders(Borders::ALL))
+                .block(
+                    Block::default()
+                        .title(title)
+                        .borders(Borders::ALL)
+                        .border_style(border_style),
+                )
                 .highlight_style(
                     Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
                 );
@@ -71,9 +97,18 @@ fn render_chat_list_panel(frame: &mut Frame<'_>, area: ratatui::layout::Rect, st
     }
 }
 
-fn render_chat_list_message(frame: &mut Frame<'_>, area: ratatui::layout::Rect, message: &str) {
-    let message =
-        Paragraph::new(message).block(Block::default().title("Chats").borders(Borders::ALL));
+fn render_chat_list_message(
+    frame: &mut Frame<'_>,
+    area: ratatui::layout::Rect,
+    message: &str,
+    border_style: Style,
+) {
+    let message = Paragraph::new(message).block(
+        Block::default()
+            .title("Chats")
+            .borders(Borders::ALL)
+            .border_style(border_style),
+    );
     frame.render_widget(message, area);
 }
 
@@ -212,46 +247,98 @@ fn normalize_preview_for_chat_row(preview: &str) -> String {
     preview.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn render_messages_panel(frame: &mut Frame<'_>, area: ratatui::layout::Rect, state: &ShellState) {
+fn render_messages_panel(
+    frame: &mut Frame<'_>,
+    area: ratatui::layout::Rect,
+    state: &mut ShellState,
+    active_pane: ActivePane,
+) {
+    let is_active = active_pane == ActivePane::Messages;
+    let border_style = if is_active {
+        styles::active_panel_border_style()
+    } else {
+        styles::inactive_panel_border_style()
+    };
+
     let open_chat = state.open_chat();
     let title = open_chat_title(open_chat);
+    let ui_state = open_chat.ui_state();
 
-    match open_chat.ui_state() {
+    match ui_state {
         OpenChatUiState::Empty => {
-            let panel = Paragraph::new("Select a chat to view messages")
-                .block(Block::default().title(title).borders(Borders::ALL));
+            let panel = Paragraph::new("Select a chat to view messages").block(
+                Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .border_style(border_style),
+            );
             frame.render_widget(panel, area);
         }
         OpenChatUiState::Loading => {
-            let panel = Paragraph::new("Loading messages...")
-                .block(Block::default().title(title).borders(Borders::ALL));
+            let panel = Paragraph::new("Loading messages...").block(
+                Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .border_style(border_style),
+            );
             frame.render_widget(panel, area);
         }
         OpenChatUiState::Error => {
-            let panel = Paragraph::new("Failed to load messages. Press Enter to retry.")
-                .block(Block::default().title(title).borders(Borders::ALL));
+            let panel = Paragraph::new("Failed to load messages. Press Enter to retry.").block(
+                Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .border_style(border_style),
+            );
             frame.render_widget(panel, area);
         }
         OpenChatUiState::Ready => {
-            let messages = open_chat.messages();
+            let messages = state.open_chat().messages();
             if messages.is_empty() {
-                let panel = Paragraph::new("No messages in this chat")
-                    .block(Block::default().title(title).borders(Borders::ALL));
+                let panel = Paragraph::new("No messages in this chat").block(
+                    Block::default()
+                        .title(title)
+                        .borders(Borders::ALL)
+                        .border_style(border_style),
+                );
                 frame.render_widget(panel, area);
             } else {
                 let elements = build_message_list_elements(messages);
                 let items: Vec<ListItem<'static>> =
                     elements.iter().map(element_to_list_item).collect();
 
-                let list =
-                    List::new(items).block(Block::default().title(title).borders(Borders::ALL));
+                // Calculate viewport height (area height minus borders)
+                let viewport_height = area.height.saturating_sub(2) as usize;
 
-                let mut list_state = ListState::default();
                 // Map message index to element index (accounting for date separators)
-                let element_index = open_chat
+                let element_index = state
+                    .open_chat()
                     .selected_index()
                     .and_then(|msg_idx| message_index_to_element_index(&elements, msg_idx));
+
+                // Update scroll offset based on selection and viewport
+                if let Some(idx) = element_index {
+                    state
+                        .open_chat_mut()
+                        .update_scroll_offset(idx, viewport_height);
+                }
+
+                let scroll_offset = state.open_chat().scroll_offset();
+
+                let list = List::new(items)
+                    .block(
+                        Block::default()
+                            .title(title)
+                            .borders(Borders::ALL)
+                            .border_style(border_style),
+                    )
+                    .highlight_style(
+                        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
+                    );
+
+                let mut list_state = ListState::default();
                 list_state.select(element_index);
+                *list_state.offset_mut() = scroll_offset;
                 frame.render_stateful_widget(list, area, &mut list_state);
             }
         }
@@ -273,7 +360,11 @@ fn status_line(state: &ShellState) -> String {
         "stopping"
     };
     let connectivity = state.connectivity_status().as_label();
-    format!("mode: {mode} | connectivity: {connectivity} | r: refresh | q/Ctrl+C: quit")
+    let nav_hint = match state.active_pane() {
+        ActivePane::ChatList => "j/k: navigate | l/Enter: open chat",
+        ActivePane::Messages => "j/k: navigate | h/Esc: back to chats",
+    };
+    format!("mode: {mode} | connectivity: {connectivity} | {nav_hint} | r: refresh | q: quit")
 }
 
 #[cfg(test)]

@@ -249,6 +249,10 @@ fn map_key_event(key: KeyEvent) -> Option<AppEvent> {
         return Some(AppEvent::InputKey(KeyInput::new("enter", false)));
     }
 
+    if key.code == KeyCode::Esc {
+        return Some(AppEvent::InputKey(KeyInput::new("esc", false)));
+    }
+
     None
 }
 
