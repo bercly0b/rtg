@@ -117,6 +117,7 @@ mod tests {
             unread_count: 3,
             last_message_preview: Some("hello".to_owned()),
             last_message_unix_ms: Some(1_700_000_000_000),
+            is_pinned: false,
         }
     }
 

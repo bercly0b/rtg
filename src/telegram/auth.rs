@@ -366,6 +366,7 @@ async fn fetch_chat_summaries_from_all_dialogs(
         cache_entries.push((chat_id, packed));
 
         let unread_count = dialog_unread_count(&dialog.raw)?;
+        let is_pinned = dialog_is_pinned(&dialog.raw);
         let last_message_preview = dialog
             .last_message
             .as_ref()
@@ -381,6 +382,7 @@ async fn fetch_chat_summaries_from_all_dialogs(
             unread_count,
             last_message_preview,
             last_message_unix_ms,
+            is_pinned,
         });
     }
 
@@ -455,6 +457,7 @@ async fn fetch_chat_summaries_from_main_folder(
 
         let unread_count =
             u32::try_from(data.unread_count).map_err(|_| ListChatsSourceError::InvalidData)?;
+        let is_pinned = data.pinned;
         let message_key = (dialog_peer_key(&data.peer), data.top_message);
         let last_message = message_map.get(&message_key).and_then(|message| {
             grammers_client::types::Message::from_raw(client, message.clone(), &chat_map)
@@ -472,6 +475,7 @@ async fn fetch_chat_summaries_from_main_folder(
             unread_count,
             last_message_preview,
             last_message_unix_ms,
+            is_pinned,
         });
 
         if result.len() >= limit {
@@ -513,6 +517,13 @@ fn dialog_unread_count(
     };
 
     u32::try_from(unread_raw).map_err(|_| ListChatsSourceError::InvalidData)
+}
+
+fn dialog_is_pinned(dialog: &grammers_client::grammers_tl_types::enums::Dialog) -> bool {
+    match dialog {
+        grammers_client::grammers_tl_types::enums::Dialog::Dialog(data) => data.pinned,
+        grammers_client::grammers_tl_types::enums::Dialog::Folder(_) => false,
+    }
 }
 
 fn normalize_preview_text(text: &str) -> Option<String> {

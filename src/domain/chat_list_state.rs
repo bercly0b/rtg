@@ -126,6 +126,7 @@ mod tests {
             unread_count: 0,
             last_message_preview: None,
             last_message_unix_ms: None,
+            is_pinned: false,
         }
     }
 
