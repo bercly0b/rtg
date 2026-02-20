@@ -9,7 +9,10 @@ use grammers_session::Session;
 use tokio::runtime::Builder;
 
 use crate::{
-    domain::{chat::ChatSummary, message::Message},
+    domain::{
+        chat::ChatSummary,
+        message::{Message, MessageMedia},
+    },
     infra::config::TelegramConfig,
     usecases::{
         guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome},
@@ -578,15 +581,18 @@ async fn fetch_messages_from_chat(
     let mut messages = Vec::new();
 
     for raw_message in raw_messages {
-        let (id, text, timestamp_ms, is_outgoing, sender_id) = match raw_message {
+        let (id, text, timestamp_ms, is_outgoing, sender_id, peer_id, media) = match &raw_message {
             grammers_client::grammers_tl_types::enums::Message::Message(data) => {
                 let ts = data.date as i64 * 1000;
+                let media_type = parse_message_media(&data.media);
                 (
                     data.id,
-                    data.message,
+                    data.message.clone(),
                     ts,
                     data.out,
                     peer_to_user_id(&data.from_id),
+                    Some(data.peer_id.clone()),
+                    media_type,
                 )
             }
             grammers_client::grammers_tl_types::enums::Message::Service(data) => {
@@ -597,11 +603,15 @@ async fn fetch_messages_from_chat(
                     ts,
                     data.out,
                     peer_to_user_id(&data.from_id),
+                    Some(data.peer_id.clone()),
+                    MessageMedia::None,
                 )
             }
             grammers_client::grammers_tl_types::enums::Message::Empty(_) => continue,
         };
 
+        // Try to get sender name from from_id first, then fall back to peer_id
+        // In private chats, from_id may be None, but peer_id points to the chat partner
         let sender_name = sender_id
             .and_then(|uid| {
                 chat_map
@@ -609,6 +619,20 @@ async fn fetch_messages_from_chat(
                         grammers_client::grammers_tl_types::types::PeerUser { user_id: uid },
                     ))
                     .map(|c| c.name().to_owned())
+            })
+            .or_else(|| {
+                // Fallback: use peer_id for private chats (User peers only) when from_id is not available
+                // Don't use this fallback for groups/channels to avoid showing group name as sender
+                peer_id.as_ref().and_then(|peer| {
+                    if matches!(
+                        peer,
+                        grammers_client::grammers_tl_types::enums::Peer::User(_)
+                    ) {
+                        chat_map.get(peer).map(|c| c.name().to_owned())
+                    } else {
+                        None
+                    }
+                })
             })
             .unwrap_or_else(|| "Unknown".to_owned());
 
@@ -618,6 +642,7 @@ async fn fetch_messages_from_chat(
             text,
             timestamp_ms,
             is_outgoing,
+            media,
         });
     }
 
@@ -630,6 +655,61 @@ fn peer_to_user_id(peer: &Option<grammers_client::grammers_tl_types::enums::Peer
         Some(grammers_client::grammers_tl_types::enums::Peer::User(u)) => Some(u.user_id),
         _ => None,
     }
+}
+
+fn parse_message_media(
+    media: &Option<grammers_client::grammers_tl_types::enums::MessageMedia>,
+) -> MessageMedia {
+    use grammers_client::grammers_tl_types::enums::MessageMedia as TgMedia;
+
+    let Some(media) = media else {
+        return MessageMedia::None;
+    };
+
+    match media {
+        TgMedia::Empty => MessageMedia::None,
+        TgMedia::Photo(_) => MessageMedia::Photo,
+        TgMedia::Geo(_) | TgMedia::GeoLive(_) | TgMedia::Venue(_) => MessageMedia::Location,
+        TgMedia::Contact(_) => MessageMedia::Contact,
+        TgMedia::Poll(_) => MessageMedia::Poll,
+        TgMedia::Document(doc) => parse_document_media(doc),
+        TgMedia::WebPage(_) => MessageMedia::None, // Web previews are not shown as media
+        _ => MessageMedia::Other,
+    }
+}
+
+fn parse_document_media(
+    doc: &grammers_client::grammers_tl_types::types::MessageMediaDocument,
+) -> MessageMedia {
+    use grammers_client::grammers_tl_types::enums::{Document, DocumentAttribute};
+
+    let Some(document) = &doc.document else {
+        return MessageMedia::Document;
+    };
+
+    let Document::Document(data) = document else {
+        return MessageMedia::Document;
+    };
+
+    // Check attributes to determine document type
+    for attr in &data.attributes {
+        match attr {
+            DocumentAttribute::Sticker(_) => return MessageMedia::Sticker,
+            DocumentAttribute::Video(v) if v.round_message => return MessageMedia::VideoNote,
+            DocumentAttribute::Video(_) => return MessageMedia::Video,
+            DocumentAttribute::Audio(a) if a.voice => return MessageMedia::Voice,
+            DocumentAttribute::Audio(_) => return MessageMedia::Audio,
+            DocumentAttribute::Animated => return MessageMedia::Animation,
+            _ => {}
+        }
+    }
+
+    // Check mime type for GIFs
+    if data.mime_type == "image/gif" {
+        return MessageMedia::Animation;
+    }
+
+    MessageMedia::Document
 }
 
 fn map_messages_invocation_error(error: impl std::fmt::Display) -> MessagesSourceError {

@@ -187,6 +187,7 @@ mod tests {
             text: text.to_owned(),
             timestamp_ms: 1000,
             is_outgoing: false,
+            media: crate::domain::message::MessageMedia::None,
         }
     }
 
