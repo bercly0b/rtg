@@ -242,7 +242,9 @@ fn render_messages_panel(frame: &mut Frame<'_>, area: ratatui::layout::Rect, sta
                 let list =
                     List::new(items).block(Block::default().title(title).borders(Borders::ALL));
 
-                frame.render_widget(list, area);
+                let mut list_state = ListState::default();
+                list_state.select(open_chat.selected_index());
+                frame.render_stateful_widget(list, area, &mut list_state);
             }
         }
     }
