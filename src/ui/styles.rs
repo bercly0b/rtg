@@ -69,6 +69,20 @@ pub fn date_separator_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
 
+// =============================================================================
+// Panel styles
+// =============================================================================
+
+/// Style for the border of the active (focused) panel.
+pub fn active_panel_border_style() -> Style {
+    Style::default().fg(Color::Green)
+}
+
+/// Style for the border of inactive panels.
+pub fn inactive_panel_border_style() -> Style {
+    Style::default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

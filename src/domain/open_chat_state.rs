@@ -86,6 +86,32 @@ impl OpenChatState {
     pub fn is_open(&self) -> bool {
         self.chat_id.is_some()
     }
+
+    /// Selects the next message (moves down in the list).
+    pub fn select_next(&mut self) {
+        if self.messages.is_empty() {
+            return;
+        }
+
+        self.selected_index = match self.selected_index {
+            None => Some(0),
+            Some(idx) if idx + 1 < self.messages.len() => Some(idx + 1),
+            Some(idx) => Some(idx), // Already at the last message
+        };
+    }
+
+    /// Selects the previous message (moves up in the list).
+    pub fn select_previous(&mut self) {
+        if self.messages.is_empty() {
+            return;
+        }
+
+        self.selected_index = match self.selected_index {
+            None => Some(self.messages.len() - 1),
+            Some(0) => Some(0), // Already at the first message
+            Some(idx) => Some(idx - 1),
+        };
+    }
 }
 
 #[cfg(test)]
@@ -171,5 +197,94 @@ mod tests {
         assert!(!state.is_open());
         assert!(state.messages().is_empty());
         assert_eq!(state.selected_index(), None);
+    }
+
+    #[test]
+    fn select_next_moves_down_in_message_list() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B"), message(3, "C")]);
+
+        // Initially at last message (index 2)
+        assert_eq!(state.selected_index(), Some(2));
+
+        // Move to beginning for testing
+        state.selected_index = Some(0);
+
+        state.select_next();
+        assert_eq!(state.selected_index(), Some(1));
+
+        state.select_next();
+        assert_eq!(state.selected_index(), Some(2));
+
+        // At the end, should stay at last
+        state.select_next();
+        assert_eq!(state.selected_index(), Some(2));
+    }
+
+    #[test]
+    fn select_previous_moves_up_in_message_list() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B"), message(3, "C")]);
+
+        // Initially at last message (index 2)
+        assert_eq!(state.selected_index(), Some(2));
+
+        state.select_previous();
+        assert_eq!(state.selected_index(), Some(1));
+
+        state.select_previous();
+        assert_eq!(state.selected_index(), Some(0));
+
+        // At the beginning, should stay at first
+        state.select_previous();
+        assert_eq!(state.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn select_next_on_empty_messages_does_nothing() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![]);
+
+        state.select_next();
+
+        assert_eq!(state.selected_index(), None);
+    }
+
+    #[test]
+    fn select_previous_on_empty_messages_does_nothing() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![]);
+
+        state.select_previous();
+
+        assert_eq!(state.selected_index(), None);
+    }
+
+    #[test]
+    fn select_next_initializes_to_first_when_no_selection() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B")]);
+        state.selected_index = None; // Force no selection
+
+        state.select_next();
+
+        assert_eq!(state.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn select_previous_initializes_to_last_when_no_selection() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B")]);
+        state.selected_index = None; // Force no selection
+
+        state.select_previous();
+
+        assert_eq!(state.selected_index(), Some(1));
     }
 }

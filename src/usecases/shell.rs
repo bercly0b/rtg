@@ -1,7 +1,11 @@
 use anyhow::Result;
 
 use crate::{
-    domain::{chat_list_state::ChatListUiState, events::AppEvent, shell_state::ShellState},
+    domain::{
+        chat_list_state::ChatListUiState,
+        events::AppEvent,
+        shell_state::{ActivePane, ShellState},
+    },
     infra::contracts::{ExternalOpener, StorageAdapter},
     usecases::{
         list_chats::{list_chats, ListChatsQuery, ListChatsSource},
@@ -97,6 +101,33 @@ where
             }
         }
     }
+
+    fn handle_chat_list_key(&mut self, key: &str) -> Result<()> {
+        match key {
+            "j" => self.state.chat_list_mut().select_next(),
+            "k" => self.state.chat_list_mut().select_previous(),
+            "r" => self.refresh_chat_list(),
+            "enter" | "l" => {
+                if self.state.chat_list().selected_chat().is_some() {
+                    self.open_selected_chat();
+                    self.state.set_active_pane(ActivePane::Messages);
+                    self.storage.save_last_action("open_chat")?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_messages_key(&mut self, key: &str) -> Result<()> {
+        match key {
+            "j" => self.state.open_chat_mut().select_next(),
+            "k" => self.state.open_chat_mut().select_previous(),
+            "h" | "esc" => self.state.set_active_pane(ActivePane::ChatList),
+            _ => {}
+        }
+        Ok(())
+    }
 }
 
 impl<S, O, C, M> ShellOrchestrator for DefaultShellOrchestrator<S, O, C, M>
@@ -126,17 +157,9 @@ where
                     return Ok(());
                 }
 
-                match key.key.as_str() {
-                    "j" => self.state.chat_list_mut().select_next(),
-                    "k" => self.state.chat_list_mut().select_previous(),
-                    "r" => self.refresh_chat_list(),
-                    "enter" => {
-                        if self.state.chat_list().selected_chat().is_some() {
-                            self.open_selected_chat();
-                            self.storage.save_last_action("open_chat")?;
-                        }
-                    }
-                    _ => {}
+                match self.state.active_pane() {
+                    ActivePane::ChatList => self.handle_chat_list_key(&key.key)?,
+                    ActivePane::Messages => self.handle_messages_key(&key.key)?,
                 }
             }
             AppEvent::ConnectivityChanged(status) => {
@@ -226,6 +249,12 @@ mod tests {
         fn fixed(response: Result<Vec<Message>, MessagesSourceError>) -> Self {
             Self {
                 responses: RefCell::new(VecDeque::from([response])),
+            }
+        }
+
+        fn sequence(responses: Vec<Result<Vec<Message>, MessagesSourceError>>) -> Self {
+            Self {
+                responses: RefCell::new(responses.into()),
             }
         }
     }
@@ -585,5 +614,200 @@ mod tests {
         assert_eq!(orchestrator.state().chat_list().selected_index(), None);
         assert_eq!(orchestrator.storage.last_action, Some("tick".to_owned()));
         assert!(orchestrator.state().is_running());
+    }
+
+    #[test]
+    fn enter_key_switches_focus_to_messages_pane() {
+        let mut orchestrator = make_orchestrator(
+            Ok(vec![chat(1, "General")]),
+            Ok(vec![message(1, "Hello"), message(2, "World")]),
+        );
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::ChatList);
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter should open chat");
+
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::Messages);
+        assert_eq!(orchestrator.state().open_chat().selected_index(), Some(1)); // Last message
+    }
+
+    #[test]
+    fn l_key_opens_chat_and_switches_focus() {
+        let mut orchestrator =
+            make_orchestrator(Ok(vec![chat(1, "General")]), Ok(vec![message(1, "Hello")]));
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .expect("l should open chat");
+
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::Messages);
+        assert_eq!(orchestrator.state().open_chat().chat_id(), Some(1));
+    }
+
+    #[test]
+    fn h_key_switches_focus_back_to_chat_list() {
+        let mut orchestrator =
+            make_orchestrator(Ok(vec![chat(1, "General")]), Ok(vec![message(1, "Hello")]));
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter should open chat");
+
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::Messages);
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+            .expect("h should switch back to chat list");
+
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::ChatList);
+    }
+
+    #[test]
+    fn esc_key_switches_focus_back_to_chat_list() {
+        let mut orchestrator =
+            make_orchestrator(Ok(vec![chat(1, "General")]), Ok(vec![message(1, "Hello")]));
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter should open chat");
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
+            .expect("esc should switch back to chat list");
+
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::ChatList);
+    }
+
+    #[test]
+    fn jk_keys_navigate_messages_when_in_messages_pane() {
+        let mut orchestrator = make_orchestrator(
+            Ok(vec![chat(1, "General")]),
+            Ok(vec![message(1, "A"), message(2, "B"), message(3, "C")]),
+        );
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter should open chat");
+
+        // Initially at last message (index 2)
+        assert_eq!(orchestrator.state().open_chat().selected_index(), Some(2));
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("k", false)))
+            .expect("k should move up");
+        assert_eq!(orchestrator.state().open_chat().selected_index(), Some(1));
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("k", false)))
+            .expect("k should move up again");
+        assert_eq!(orchestrator.state().open_chat().selected_index(), Some(0));
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .expect("j should move down");
+        assert_eq!(orchestrator.state().open_chat().selected_index(), Some(1));
+    }
+
+    #[test]
+    fn jk_keys_navigate_chat_list_when_in_chat_list_pane() {
+        let mut orchestrator = make_orchestrator(
+            Ok(vec![chat(1, "General"), chat(2, "Backend"), chat(3, "Ops")]),
+            Ok(vec![]),
+        );
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::ChatList);
+        assert_eq!(orchestrator.state().chat_list().selected_index(), Some(0));
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .expect("j should move down in chat list");
+        assert_eq!(orchestrator.state().chat_list().selected_index(), Some(1));
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("k", false)))
+            .expect("k should move up in chat list");
+        assert_eq!(orchestrator.state().chat_list().selected_index(), Some(0));
+    }
+
+    #[test]
+    fn l_key_does_nothing_when_no_chat_selected() {
+        let mut orchestrator = make_orchestrator(Ok(vec![]), Ok(vec![]));
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should complete");
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .expect("l on empty list should be a no-op");
+
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::ChatList);
+        assert!(!orchestrator.state().open_chat().is_open());
+    }
+
+    #[test]
+    fn rapid_pane_switching_maintains_consistent_state() {
+        let mut orchestrator = DefaultShellOrchestrator::new(
+            StubStorageAdapter::default(),
+            NoopOpener::default(),
+            StubChatsSource::fixed(Ok(vec![chat(1, "General"), chat(2, "Backend")])),
+            StubMessagesSource::sequence(vec![
+                Ok(vec![message(1, "Hello")]),
+                Ok(vec![message(1, "Hello")]), // For the second open via 'l'
+            ]),
+        );
+
+        orchestrator
+            .handle_event(AppEvent::Tick)
+            .expect("tick should load chats");
+
+        // Rapid switching between panes
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .expect("enter should open chat");
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::Messages);
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+            .expect("h should switch to chat list");
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::ChatList);
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .expect("l should switch to messages");
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::Messages);
+
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
+            .expect("esc should switch to chat list");
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::ChatList);
+
+        // State should be consistent after rapid switching
+        assert!(orchestrator.state().is_running());
+        assert!(orchestrator.state().open_chat().is_open());
+        assert_eq!(orchestrator.state().open_chat().chat_id(), Some(1));
     }
 }

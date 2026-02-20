@@ -2,12 +2,23 @@ use super::{
     chat_list_state::ChatListState, events::ConnectivityStatus, open_chat_state::OpenChatState,
 };
 
+/// Represents which panel currently has focus for keyboard navigation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ActivePane {
+    /// The left panel showing the list of chats.
+    #[default]
+    ChatList,
+    /// The right panel showing messages for the selected chat.
+    Messages,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellState {
     running: bool,
     connectivity_status: ConnectivityStatus,
     chat_list: ChatListState,
     open_chat: OpenChatState,
+    active_pane: ActivePane,
 }
 
 impl Default for ShellState {
@@ -17,6 +28,7 @@ impl Default for ShellState {
             connectivity_status: ConnectivityStatus::Connecting,
             chat_list: ChatListState::default(),
             open_chat: OpenChatState::default(),
+            active_pane: ActivePane::default(),
         }
     }
 }
@@ -54,5 +66,13 @@ impl ShellState {
 
     pub fn open_chat_mut(&mut self) -> &mut OpenChatState {
         &mut self.open_chat
+    }
+
+    pub fn active_pane(&self) -> ActivePane {
+        self.active_pane
+    }
+
+    pub fn set_active_pane(&mut self, pane: ActivePane) {
+        self.active_pane = pane;
     }
 }
