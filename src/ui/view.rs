@@ -45,14 +45,17 @@ fn render_chat_list_panel(frame: &mut Frame<'_>, area: ratatui::layout::Rect, st
         ),
         ChatListUiState::Ready => {
             let chats = chat_list.chats();
-            let items = build_chat_list_items(chats);
+            // Inner width = area width - 2 (borders)
+            let inner_width = area.width.saturating_sub(2) as usize;
+            let items = build_chat_list_items(chats, inner_width);
             let chat_count = chats.len();
 
             let title = format!("Chats ({})", chat_count);
             let list = List::new(items)
                 .block(Block::default().title(title).borders(Borders::ALL))
-                .highlight_style(Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD))
-                .highlight_symbol("> ");
+                .highlight_style(
+                    Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
+                );
 
             let visual_index = chat_list
                 .selected_index()
@@ -72,7 +75,7 @@ fn render_chat_list_message(frame: &mut Frame<'_>, area: ratatui::layout::Rect, 
 }
 
 /// Builds the list of visual items including section headers.
-fn build_chat_list_items(chats: &[ChatSummary]) -> Vec<ListItem<'static>> {
+fn build_chat_list_items(chats: &[ChatSummary], width: usize) -> Vec<ListItem<'static>> {
     let (pinned, regular): (Vec<_>, Vec<_>) = chats.iter().partition(|c| c.is_pinned);
 
     let mut items = Vec::new();
@@ -81,14 +84,14 @@ fn build_chat_list_items(chats: &[ChatSummary]) -> Vec<ListItem<'static>> {
     if has_pinned {
         items.push(section_header_item("Pinned"));
         for chat in &pinned {
-            items.push(chat_list_item(chat));
+            items.push(chat_list_item(chat, width));
         }
     }
 
     if !regular.is_empty() || !has_pinned {
         items.push(section_header_item("All Chats"));
         for chat in &regular {
-            items.push(chat_list_item(chat));
+            items.push(chat_list_item(chat, width));
         }
     }
 
@@ -118,11 +121,11 @@ fn section_header_item(title: &str) -> ListItem<'static> {
     ListItem::new(line)
 }
 
-fn chat_list_item(chat: &ChatSummary) -> ListItem<'static> {
-    ListItem::new(chat_list_item_line(chat))
+fn chat_list_item(chat: &ChatSummary, width: usize) -> ListItem<'static> {
+    ListItem::new(chat_list_item_line(chat, width))
 }
 
-fn chat_list_item_line(chat: &ChatSummary) -> Line<'static> {
+fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
     let timestamp = chat
         .last_message_unix_ms
         .map(format_chat_timestamp)
@@ -135,19 +138,49 @@ fn chat_list_item_line(chat: &ChatSummary) -> Line<'static> {
         .filter(|text| !text.is_empty())
         .unwrap_or_else(|| "No messages yet".to_owned());
 
+    // Format: "HH:MM | Name Preview...          [N]"
+    // Fixed parts: timestamp (5) + " | " (3) + " " (1) after name = 9 chars
+    let unread_badge = if chat.unread_count > 0 {
+        format!(" [{}]", chat.unread_count)
+    } else {
+        String::new()
+    };
+
+    let fixed_prefix_len = 5 + 3; // timestamp + separator
+    let badge_len = unread_badge.chars().count();
+    let name_len = chat.title.chars().count();
+
+    // Calculate available space for preview + padding
+    // Total = fixed_prefix + name + 1 (space) + preview + padding + badge
+    let content_len = fixed_prefix_len + name_len + 1; // prefix + name + space
+    let available_for_preview_and_padding = width.saturating_sub(content_len + badge_len);
+
+    // Truncate preview if needed and calculate padding
+    let preview_chars: Vec<char> = preview.chars().collect();
+    let (display_preview, padding) = if preview_chars.len() <= available_for_preview_and_padding {
+        let pad = available_for_preview_and_padding.saturating_sub(preview_chars.len());
+        (preview, pad)
+    } else {
+        // Truncate preview with ellipsis
+        let max_preview = available_for_preview_and_padding.saturating_sub(3);
+        let truncated: String = preview_chars.iter().take(max_preview).collect();
+        (format!("{}...", truncated), 0)
+    };
+
     let mut spans = vec![
         Span::styled(format!("{:>5}", timestamp), styles::timestamp_style()),
         Span::styled(" | ", styles::separator_style()),
         Span::styled(chat.title.clone(), styles::chat_name_style()),
         Span::raw(" "),
-        Span::styled(preview, styles::chat_preview_style()),
+        Span::styled(display_preview, styles::chat_preview_style()),
     ];
 
-    if chat.unread_count > 0 {
-        spans.push(Span::styled(
-            format!(" [{}]", chat.unread_count),
-            styles::unread_count_style(),
-        ));
+    if padding > 0 {
+        spans.push(Span::raw(" ".repeat(padding)));
+    }
+
+    if !unread_badge.is_empty() {
+        spans.push(Span::styled(unread_badge, styles::unread_count_style()));
     }
 
     Line::from(spans)
@@ -326,9 +359,12 @@ mod tests {
         assert!(line.contains("connectivity: disconnected"));
     }
 
+    // Use a typical width for chat list tests
+    const TEST_WIDTH: usize = 50;
+
     #[test]
     fn chat_list_item_includes_title_and_preview() {
-        let line = chat_list_item_line(&chat(1, "General", 0, Some("Hello")));
+        let line = chat_list_item_line(&chat(1, "General", 0, Some("Hello")), TEST_WIDTH);
         let text = line_to_string(&line);
 
         assert!(text.contains("General"));
@@ -337,7 +373,7 @@ mod tests {
 
     #[test]
     fn chat_list_item_includes_unread_counter() {
-        let line = chat_list_item_line(&chat(1, "General", 3, Some("Hello")));
+        let line = chat_list_item_line(&chat(1, "General", 3, Some("Hello")), TEST_WIDTH);
         let text = line_to_string(&line);
 
         assert!(text.contains("[3]"));
@@ -345,7 +381,7 @@ mod tests {
 
     #[test]
     fn chat_list_item_omits_counter_when_zero() {
-        let line = chat_list_item_line(&chat(1, "General", 0, Some("Hello")));
+        let line = chat_list_item_line(&chat(1, "General", 0, Some("Hello")), TEST_WIDTH);
         let text = line_to_string(&line);
 
         assert!(!text.contains("[0]"));
@@ -354,7 +390,7 @@ mod tests {
 
     #[test]
     fn chat_list_item_falls_back_to_placeholder_preview() {
-        let line = chat_list_item_line(&chat(1, "General", 0, Some("  \n\t  ")));
+        let line = chat_list_item_line(&chat(1, "General", 0, Some("  \n\t  ")), TEST_WIDTH);
         let text = line_to_string(&line);
 
         assert!(text.contains("No messages yet"));
@@ -362,7 +398,10 @@ mod tests {
 
     #[test]
     fn chat_list_item_normalizes_whitespace() {
-        let line = chat_list_item_line(&chat(1, "General", 0, Some("  Hello\n\n  from\t\tRTG   ")));
+        let line = chat_list_item_line(
+            &chat(1, "General", 0, Some("  Hello\n\n  from\t\tRTG   ")),
+            TEST_WIDTH,
+        );
         let text = line_to_string(&line);
 
         assert!(text.contains("Hello from RTG"));
@@ -416,7 +455,7 @@ mod tests {
     #[test]
     fn build_chat_list_items_creates_all_chats_section_for_regular_chats() {
         let chats = vec![chat(1, "General", 0, Some("Hello"))];
-        let items = build_chat_list_items(&chats);
+        let items = build_chat_list_items(&chats, TEST_WIDTH);
 
         // Should have: "All Chats" header + 1 chat
         assert_eq!(items.len(), 2);
@@ -428,7 +467,7 @@ mod tests {
             chat_with_pinned(1, "Pinned Chat", 0, Some("Hi"), true),
             chat(2, "Regular Chat", 0, Some("Hello")),
         ];
-        let items = build_chat_list_items(&chats);
+        let items = build_chat_list_items(&chats, TEST_WIDTH);
 
         // Should have: "Pinned" header + 1 pinned + "All Chats" header + 1 regular
         assert_eq!(items.len(), 4);
@@ -521,7 +560,7 @@ mod tests {
             chat_with_pinned(1, "Pinned1", 0, None, true),
             chat_with_pinned(2, "Pinned2", 0, None, true),
         ];
-        let items = build_chat_list_items(&chats);
+        let items = build_chat_list_items(&chats, TEST_WIDTH);
 
         // Should have: "Pinned" header + 2 pinned chats (no "All Chats" header since regular is empty)
         // Based on logic: `if !regular.is_empty() || !has_pinned` - so All Chats NOT added when all pinned
