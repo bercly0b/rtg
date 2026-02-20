@@ -353,7 +353,7 @@ async fn fetch_chat_summaries_from_all_dialogs(
 ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
     let mut dialogs = client.iter_dialogs().limit(limit);
     let mut chats = Vec::with_capacity(limit);
-    let mut cache = chat_cache.write().unwrap();
+    let mut cache_entries = Vec::new();
 
     while let Some(dialog) = dialogs
         .next()
@@ -363,7 +363,7 @@ async fn fetch_chat_summaries_from_all_dialogs(
         let chat = dialog.chat();
         let chat_id = chat.id();
         let packed: grammers_client::types::PackedChat = chat.into();
-        cache.insert(chat_id, packed);
+        cache_entries.push((chat_id, packed));
 
         let unread_count = dialog_unread_count(&dialog.raw)?;
         let last_message_preview = dialog
@@ -382,6 +382,11 @@ async fn fetch_chat_summaries_from_all_dialogs(
             last_message_preview,
             last_message_unix_ms,
         });
+    }
+
+    let mut cache = chat_cache.write().unwrap();
+    for (chat_id, packed) in cache_entries {
+        cache.insert(chat_id, packed);
     }
 
     Ok(chats)
