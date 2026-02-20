@@ -14,6 +14,7 @@ pub struct OpenChatState {
     chat_title: String,
     messages: Vec<Message>,
     ui_state: OpenChatUiState,
+    selected_index: Option<usize>,
 }
 
 impl Default for OpenChatState {
@@ -23,6 +24,7 @@ impl Default for OpenChatState {
             chat_title: String::new(),
             messages: Vec::new(),
             ui_state: OpenChatUiState::Empty,
+            selected_index: None,
         }
     }
 }
@@ -45,14 +47,24 @@ impl OpenChatState {
         self.ui_state.clone()
     }
 
+    pub fn selected_index(&self) -> Option<usize> {
+        self.selected_index
+    }
+
     pub fn set_loading(&mut self, chat_id: i64, chat_title: String) {
         self.chat_id = Some(chat_id);
         self.chat_title = chat_title;
         self.messages.clear();
         self.ui_state = OpenChatUiState::Loading;
+        self.selected_index = None;
     }
 
     pub fn set_ready(&mut self, messages: Vec<Message>) {
+        self.selected_index = if messages.is_empty() {
+            None
+        } else {
+            Some(messages.len() - 1)
+        };
         self.messages = messages;
         self.ui_state = OpenChatUiState::Ready;
     }
@@ -67,6 +79,7 @@ impl OpenChatState {
         self.chat_title.clear();
         self.messages.clear();
         self.ui_state = OpenChatUiState::Empty;
+        self.selected_index = None;
     }
 
     pub fn is_open(&self) -> bool {
@@ -95,6 +108,7 @@ mod tests {
         assert_eq!(state.ui_state(), OpenChatUiState::Empty);
         assert!(!state.is_open());
         assert!(state.messages().is_empty());
+        assert_eq!(state.selected_index(), None);
     }
 
     #[test]
@@ -106,10 +120,11 @@ mod tests {
         assert_eq!(state.chat_id(), Some(42));
         assert_eq!(state.chat_title(), "Test Chat");
         assert_eq!(state.ui_state(), OpenChatUiState::Loading);
+        assert_eq!(state.selected_index(), None);
     }
 
     #[test]
-    fn set_ready_stores_messages() {
+    fn set_ready_stores_messages_and_selects_last() {
         let mut state = OpenChatState::default();
         state.set_loading(1, "Chat".to_owned());
 
@@ -117,6 +132,19 @@ mod tests {
 
         assert_eq!(state.ui_state(), OpenChatUiState::Ready);
         assert_eq!(state.messages().len(), 2);
+        assert_eq!(state.selected_index(), Some(1));
+    }
+
+    #[test]
+    fn set_ready_with_empty_messages_has_no_selection() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+
+        state.set_ready(vec![]);
+
+        assert_eq!(state.ui_state(), OpenChatUiState::Ready);
+        assert!(state.messages().is_empty());
+        assert_eq!(state.selected_index(), None);
     }
 
     #[test]
@@ -140,5 +168,6 @@ mod tests {
         assert_eq!(state.ui_state(), OpenChatUiState::Empty);
         assert!(!state.is_open());
         assert!(state.messages().is_empty());
+        assert_eq!(state.selected_index(), None);
     }
 }
