@@ -47,10 +47,7 @@ impl OpenChatState {
         self.ui_state.clone()
     }
 
-    /// Returns the selected message index.
-    /// Note: Currently unused as message selection is disabled in the UI.
-    /// Will be needed when message navigation is implemented.
-    #[allow(dead_code)]
+    /// Returns the selected message index for scroll positioning.
     pub fn selected_index(&self) -> Option<usize> {
         self.selected_index
     }

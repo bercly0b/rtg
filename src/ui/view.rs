@@ -11,7 +11,9 @@ use crate::domain::{
     shell_state::ShellState,
 };
 
-use super::message_rendering::{build_message_list_elements, element_to_list_item};
+use super::message_rendering::{
+    build_message_list_elements, element_to_list_item, message_index_to_element_index,
+};
 use super::styles;
 
 pub fn render(frame: &mut Frame<'_>, state: &ShellState) {
@@ -245,9 +247,11 @@ fn render_messages_panel(frame: &mut Frame<'_>, area: ratatui::layout::Rect, sta
                     List::new(items).block(Block::default().title(title).borders(Borders::ALL));
 
                 let mut list_state = ListState::default();
-                // Note: selection index needs to be mapped to element index
-                // For now, disable selection as the index mapping is complex
-                list_state.select(None);
+                // Map message index to element index (accounting for date separators)
+                let element_index = open_chat
+                    .selected_index()
+                    .and_then(|msg_idx| message_index_to_element_index(&elements, msg_idx));
+                list_state.select(element_index);
                 frame.render_stateful_widget(list, area, &mut list_state);
             }
         }

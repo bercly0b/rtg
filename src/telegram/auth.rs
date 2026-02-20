@@ -581,16 +581,17 @@ async fn fetch_messages_from_chat(
     let mut messages = Vec::new();
 
     for raw_message in raw_messages {
-        let (id, text, timestamp_ms, is_outgoing, sender_id, media) = match raw_message {
+        let (id, text, timestamp_ms, is_outgoing, sender_id, peer_id, media) = match &raw_message {
             grammers_client::grammers_tl_types::enums::Message::Message(data) => {
                 let ts = data.date as i64 * 1000;
                 let media_type = parse_message_media(&data.media);
                 (
                     data.id,
-                    data.message,
+                    data.message.clone(),
                     ts,
                     data.out,
                     peer_to_user_id(&data.from_id),
+                    Some(data.peer_id.clone()),
                     media_type,
                 )
             }
@@ -602,12 +603,15 @@ async fn fetch_messages_from_chat(
                     ts,
                     data.out,
                     peer_to_user_id(&data.from_id),
+                    Some(data.peer_id.clone()),
                     MessageMedia::None,
                 )
             }
             grammers_client::grammers_tl_types::enums::Message::Empty(_) => continue,
         };
 
+        // Try to get sender name from from_id first, then fall back to peer_id
+        // In private chats, from_id may be None, but peer_id points to the chat partner
         let sender_name = sender_id
             .and_then(|uid| {
                 chat_map
@@ -615,6 +619,20 @@ async fn fetch_messages_from_chat(
                         grammers_client::grammers_tl_types::types::PeerUser { user_id: uid },
                     ))
                     .map(|c| c.name().to_owned())
+            })
+            .or_else(|| {
+                // Fallback: use peer_id for private chats (User peers only) when from_id is not available
+                // Don't use this fallback for groups/channels to avoid showing group name as sender
+                peer_id.as_ref().and_then(|peer| {
+                    if matches!(
+                        peer,
+                        grammers_client::grammers_tl_types::enums::Peer::User(_)
+                    ) {
+                        chat_map.get(peer).map(|c| c.name().to_owned())
+                    } else {
+                        None
+                    }
+                })
             })
             .unwrap_or_else(|| "Unknown".to_owned());
 

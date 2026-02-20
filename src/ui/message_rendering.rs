@@ -8,6 +8,7 @@
 
 use chrono::{Local, TimeZone};
 use ratatui::{
+    layout::Alignment,
     text::{Line, Span},
     widgets::ListItem,
 };
@@ -41,7 +42,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
         let msg_date = timestamp_to_date(message.timestamp_ms);
 
         // Insert date separator if date changed
-        if prev_date.map_or(true, |d| d != msg_date) {
+        if prev_date != Some(msg_date) {
             elements.push(MessageListElement::DateSeparator(format_date(msg_date)));
             prev_sender = None; // Reset sender grouping on date change
         }
@@ -49,7 +50,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
         let sender_name = effective_sender_name(message);
 
         // Show sender only if different from previous message
-        let show_sender = prev_sender.map_or(true, |ps| ps != sender_name);
+        let show_sender = prev_sender != Some(sender_name);
         let sender = if show_sender {
             Some(sender_name.to_owned())
         } else {
@@ -69,6 +70,29 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
     elements
 }
 
+/// Converts a message index to the corresponding element index in the list.
+///
+/// Since the element list contains both messages and date separators,
+/// this function finds the element index for a given message index.
+/// Returns `None` if the message index is out of range.
+pub fn message_index_to_element_index(
+    elements: &[MessageListElement],
+    message_index: usize,
+) -> Option<usize> {
+    let mut msg_count = 0;
+
+    for (elem_idx, element) in elements.iter().enumerate() {
+        if matches!(element, MessageListElement::Message { .. }) {
+            if msg_count == message_index {
+                return Some(elem_idx);
+            }
+            msg_count += 1;
+        }
+    }
+
+    None
+}
+
 /// Converts a list element to a ListItem for ratatui rendering.
 pub fn element_to_list_item(element: &MessageListElement) -> ListItem<'static> {
     match element {
@@ -86,32 +110,65 @@ fn date_separator_item(date: &str) -> ListItem<'static> {
     let line = Line::from(vec![Span::styled(
         separator,
         styles::date_separator_style(),
-    )]);
+    )])
+    .alignment(Alignment::Center);
     ListItem::new(vec![Line::default(), line, Line::default()])
 }
 
 fn message_item(time: &str, sender: Option<&str>, content: &str) -> ListItem<'static> {
     let mut lines = Vec::new();
-
-    // First line: time + sender (if present)
-    let header_line = build_message_header_line(time, sender);
-    lines.push(header_line);
-
-    // Content lines (may be multiline)
     let indent = "      "; // 6 spaces to align with time column
-    for text_line in content.lines() {
-        let content_spans = build_content_line_spans(text_line);
-        let mut line_spans = vec![Span::raw(indent.to_owned())];
-        line_spans.extend(content_spans);
-        lines.push(Line::from(line_spans));
-    }
 
-    // Handle empty content
-    if content.is_empty() {
-        lines.push(Line::from(vec![
-            Span::raw(indent.to_owned()),
-            Span::styled("[Empty message]".to_owned(), styles::message_media_style()),
-        ]));
+    if sender.is_some() {
+        // First message in group: header line (time + sender), then content on separate lines
+        let header_line = build_message_header_line(time, sender);
+        lines.push(header_line);
+
+        for text_line in content.lines() {
+            let content_spans = build_content_line_spans(text_line);
+            let mut line_spans = vec![Span::raw(indent.to_owned())];
+            line_spans.extend(content_spans);
+            lines.push(Line::from(line_spans));
+        }
+
+        if content.is_empty() {
+            lines.push(Line::from(vec![
+                Span::raw(indent.to_owned()),
+                Span::styled("[Empty message]".to_owned(), styles::message_media_style()),
+            ]));
+        }
+    } else {
+        // Grouped message (no sender): time + first line of content on same line
+        let mut content_lines = content.lines();
+
+        if let Some(first_line) = content_lines.next() {
+            // Time + first content line on same row
+            let mut spans = vec![Span::styled(
+                format!("{:>5} ", time),
+                styles::message_time_style(),
+            )];
+            spans.extend(build_content_line_spans(first_line));
+            lines.push(Line::from(spans));
+
+            // Remaining lines with indent
+            for text_line in content_lines {
+                let content_spans = build_content_line_spans(text_line);
+                let mut line_spans = vec![Span::raw(indent.to_owned())];
+                line_spans.extend(content_spans);
+                lines.push(Line::from(line_spans));
+            }
+        } else {
+            // Empty content
+            let mut spans = vec![Span::styled(
+                format!("{:>5} ", time),
+                styles::message_time_style(),
+            )];
+            spans.push(Span::styled(
+                "[Empty message]".to_owned(),
+                styles::message_media_style(),
+            ));
+            lines.push(Line::from(spans));
+        }
     }
 
     ListItem::new(lines)
@@ -384,5 +441,60 @@ mod tests {
 
         assert_eq!(time.len(), 5);
         assert!(time.contains(':'));
+    }
+
+    #[test]
+    fn message_index_to_element_index_maps_first_message() {
+        let messages = vec![msg(1, "Alice", "Hello", FEB_14_2026_10AM, false)];
+        let elements = build_message_list_elements(&messages);
+
+        // Elements: [DateSeparator, Message]
+        // Message index 0 -> Element index 1
+        assert_eq!(message_index_to_element_index(&elements, 0), Some(1));
+    }
+
+    #[test]
+    fn message_index_to_element_index_accounts_for_date_separators() {
+        let messages = vec![
+            msg(1, "Alice", "Day 1", FEB_14_2026_10AM, false),
+            msg(2, "Alice", "Day 2", FEB_15_2026_1PM, false),
+        ];
+        let elements = build_message_list_elements(&messages);
+
+        // Elements: [DateSeparator1, Message1, DateSeparator2, Message2]
+        // Message index 0 -> Element index 1
+        // Message index 1 -> Element index 3
+        assert_eq!(message_index_to_element_index(&elements, 0), Some(1));
+        assert_eq!(message_index_to_element_index(&elements, 1), Some(3));
+    }
+
+    #[test]
+    fn message_index_to_element_index_handles_multiple_messages_same_day() {
+        let messages = vec![
+            msg(1, "Alice", "First", FEB_14_2026_10AM, false),
+            msg(2, "Alice", "Second", FEB_14_2026_10AM + 60000, false),
+            msg(3, "Bob", "Third", FEB_14_2026_10AM + 120000, false),
+        ];
+        let elements = build_message_list_elements(&messages);
+
+        // Elements: [DateSeparator, Message1, Message2, Message3]
+        assert_eq!(message_index_to_element_index(&elements, 0), Some(1));
+        assert_eq!(message_index_to_element_index(&elements, 1), Some(2));
+        assert_eq!(message_index_to_element_index(&elements, 2), Some(3));
+    }
+
+    #[test]
+    fn message_index_to_element_index_returns_none_for_out_of_range() {
+        let messages = vec![msg(1, "Alice", "Hello", FEB_14_2026_10AM, false)];
+        let elements = build_message_list_elements(&messages);
+
+        assert_eq!(message_index_to_element_index(&elements, 5), None);
+    }
+
+    #[test]
+    fn message_index_to_element_index_returns_none_for_empty_elements() {
+        let elements: Vec<MessageListElement> = vec![];
+
+        assert_eq!(message_index_to_element_index(&elements, 0), None);
     }
 }
