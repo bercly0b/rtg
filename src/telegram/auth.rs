@@ -1,4 +1,8 @@
-use std::{fs, path::Path, sync::Arc};
+use std::{
+    fs,
+    path::Path,
+    sync::{Arc, RwLock},
+};
 
 use grammers_client::{Client, Config, InitParams, SignInError};
 use grammers_session::Session;
@@ -44,6 +48,7 @@ pub(super) struct GrammersAuthBackend {
     current_code_token: Option<AuthCodeToken>,
     next_code_token_id: u64,
     state: LoginState,
+    cached_folder_scope: RwLock<Option<DialogFetchScope>>,
 }
 
 impl GrammersAuthBackend {
@@ -87,6 +92,7 @@ impl GrammersAuthBackend {
             current_code_token: None,
             next_code_token_id: 1,
             state: LoginState::Disconnected,
+            cached_folder_scope: RwLock::new(None),
         })
     }
 
@@ -227,18 +233,23 @@ impl GrammersAuthBackend {
         limit: usize,
     ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
         self.rt.block_on(async {
-            let is_authorized = self
-                .client
-                .is_authorized()
-                .await
-                .map_err(map_list_chats_invocation_error)?;
-            if !is_authorized {
-                return Err(ListChatsSourceError::Unauthorized);
-            }
+            let fetch_scope = {
+                let cached_scope = {
+                    let cached = self.cached_folder_scope.read().unwrap();
+                    *cached
+                };
 
-            let fetch_scope = determine_dialog_fetch_scope(&self.client)
-                .await
-                .unwrap_or(DialogFetchScope::AllDialogs);
+                if let Some(scope) = cached_scope {
+                    scope
+                } else {
+                    let scope = determine_dialog_fetch_scope(&self.client)
+                        .await
+                        .unwrap_or(DialogFetchScope::AllDialogs);
+                    let mut cache = self.cached_folder_scope.write().unwrap();
+                    *cache = Some(scope);
+                    scope
+                }
+            };
 
             match fetch_scope {
                 DialogFetchScope::MainFolderOnly => {
@@ -256,6 +267,7 @@ impl GrammersAuthBackend {
         self.password_token = None;
         self.current_code_token = None;
         self.state = LoginState::Disconnected;
+        *self.cached_folder_scope.write().unwrap() = None;
     }
 
     pub(super) fn start_chat_updates_monitor(

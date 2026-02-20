@@ -99,7 +99,11 @@ impl ChannelChatUpdatesSignalSource {
 
 impl ChatUpdatesSignalSource for ChannelChatUpdatesSignalSource {
     fn has_pending_refresh(&mut self) -> bool {
-        self.receiver.try_recv().is_ok()
+        let mut has_pending = false;
+        while self.receiver.try_recv().is_ok() {
+            has_pending = true;
+        }
+        has_pending
     }
 }
 
@@ -629,11 +633,9 @@ mod tests {
     }
 
     #[test]
-    fn channel_chat_updates_source_emits_refresh_per_signal() {
-        let mut source = ChannelChatUpdatesSignalSource::from_signal_count(3);
+    fn channel_chat_updates_source_drains_burst_into_single_refresh() {
+        let mut source = ChannelChatUpdatesSignalSource::from_signal_count(5);
 
-        assert!(source.has_pending_refresh());
-        assert!(source.has_pending_refresh());
         assert!(source.has_pending_refresh());
         assert!(!source.has_pending_refresh());
     }
