@@ -120,6 +120,7 @@ mod tests {
     use super::*;
 
     fn chat(chat_id: i64, title: &str) -> ChatSummary {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
         ChatSummary {
             chat_id,
             title: title.to_owned(),
@@ -127,6 +128,10 @@ mod tests {
             last_message_preview: None,
             last_message_unix_ms: None,
             is_pinned: false,
+            chat_type: ChatType::Private,
+            last_message_sender: None,
+            is_online: None,
+            outgoing_status: OutgoingReadStatus::default(),
         }
     }
 

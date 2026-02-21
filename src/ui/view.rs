@@ -172,40 +172,53 @@ fn chat_list_item(chat: &ChatSummary, width: usize) -> ListItem<'static> {
 }
 
 fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
+    use crate::domain::chat::ChatType;
+
     let timestamp = chat
         .last_message_unix_ms
         .map(format_chat_timestamp)
         .unwrap_or_else(|| "     ".to_owned());
 
-    let preview = chat
+    let raw_preview = chat
         .last_message_preview
         .as_deref()
         .map(normalize_preview_for_chat_row)
         .filter(|text| !text.is_empty())
         .unwrap_or_else(|| "No messages yet".to_owned());
 
-    // Format: "HH:MM | Name Preview...          [N]"
-    // Fixed parts: timestamp (5) + " | " (3) + " " (1) after name = 9 chars
+    // Build prefix segments (read indicator, sender name, etc.)
+    let prefix_segments = build_preview_prefix_segments(chat);
+    let prefix_total_len = prefix_segments_len(&prefix_segments);
+
+    // Build suffix badges: unread count and online indicator
     let unread_badge = if chat.unread_count > 0 {
         format!(" [{}]", chat.unread_count)
     } else {
         String::new()
     };
 
-    let fixed_prefix_len = 5 + 3; // timestamp + separator
-    let badge_len = unread_badge.chars().count();
+    let online_indicator = if chat.chat_type == ChatType::Private && chat.is_online == Some(true) {
+        " \u{25CF}" // Unicode filled circle
+    } else {
+        ""
+    };
+
+    let suffix = format!("{}{}", unread_badge, online_indicator);
+
+    // Calculate layout
+    let fixed_prefix_len = 5 + 3; // timestamp (5) + " | " (3)
+    let suffix_len = suffix.chars().count();
     let name_len = chat.title.chars().count();
 
-    // Calculate available space for preview + padding
-    // Total = fixed_prefix + name + 1 (space) + preview + padding + badge
-    let content_len = fixed_prefix_len + name_len + 1; // prefix + name + space
-    let available_for_preview_and_padding = width.saturating_sub(content_len + badge_len);
+    // Total = fixed_prefix + name + 1 (space) + prefix_segments + preview + padding + suffix
+    let content_len = fixed_prefix_len + name_len + 1 + prefix_total_len;
+    let available_for_preview_and_padding = width.saturating_sub(content_len + suffix_len);
 
     // Truncate preview if needed and calculate padding
-    let preview_chars: Vec<char> = preview.chars().collect();
+    let preview_chars: Vec<char> = raw_preview.chars().collect();
     let (display_preview, padding) = if preview_chars.len() <= available_for_preview_and_padding {
         let pad = available_for_preview_and_padding.saturating_sub(preview_chars.len());
-        (preview, pad)
+        (raw_preview, pad)
     } else {
         // Truncate preview with ellipsis
         let max_preview = available_for_preview_and_padding.saturating_sub(3);
@@ -213,23 +226,85 @@ fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
         (format!("{}...", truncated), 0)
     };
 
+    // Build spans
     let mut spans = vec![
         Span::styled(format!("{:>5}", timestamp), styles::timestamp_style()),
         Span::styled(" | ", styles::separator_style()),
         Span::styled(chat.title.clone(), styles::chat_name_style()),
         Span::raw(" "),
-        Span::styled(display_preview, styles::chat_preview_style()),
     ];
+
+    // Add prefix segments with their individual styles
+    for segment in prefix_segments {
+        spans.push(Span::styled(segment.text, segment.style));
+    }
+
+    // Add the preview text
+    spans.push(Span::styled(display_preview, styles::chat_preview_style()));
 
     if padding > 0 {
         spans.push(Span::raw(" ".repeat(padding)));
     }
 
+    // Add unread badge
     if !unread_badge.is_empty() {
         spans.push(Span::styled(unread_badge, styles::unread_count_style()));
     }
 
+    // Add online indicator
+    if !online_indicator.is_empty() {
+        spans.push(Span::styled(
+            online_indicator.to_owned(),
+            styles::online_indicator_style(),
+        ));
+    }
+
     Line::from(spans)
+}
+
+/// A styled segment of the preview prefix.
+struct PrefixSegment {
+    text: String,
+    style: Style,
+}
+
+/// Builds the prefix segments for the preview text based on chat type and message status.
+/// Returns a vector of styled segments that should be prepended to the preview.
+/// Order: sender name first (for groups), then read indicator (for outgoing messages).
+fn build_preview_prefix_segments(chat: &ChatSummary) -> Vec<PrefixSegment> {
+    use crate::domain::chat::ChatType;
+
+    let mut segments = Vec::new();
+
+    // Add sender name for group chats (comes first)
+    if chat.chat_type == ChatType::Group {
+        if let Some(ref sender) = chat.last_message_sender {
+            segments.push(PrefixSegment {
+                text: format!("{}: ", sender),
+                style: styles::group_sender_style(),
+            });
+        }
+    }
+
+    // Add read status indicator for outgoing messages (all chat types, after sender name)
+    if chat.outgoing_status.is_outgoing {
+        let (text, style) = if chat.outgoing_status.is_read {
+            ("\u{2713} ", styles::outgoing_read_style()) // checkmark
+        } else {
+            ("\u{2022} ", styles::outgoing_unread_style()) // bullet
+        };
+        segments.push(PrefixSegment {
+            text: text.to_owned(),
+            style,
+        });
+    }
+
+    segments
+}
+
+/// Calculates the total character length of all prefix segments.
+fn prefix_segments_len(segments: &[PrefixSegment]) -> usize {
+    segments.iter().map(|s| s.text.chars().count()).sum()
 }
 
 fn format_chat_timestamp(timestamp_ms: i64) -> String {
@@ -392,6 +467,7 @@ mod tests {
         preview: Option<&str>,
         is_pinned: bool,
     ) -> ChatSummary {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
         ChatSummary {
             chat_id,
             title: title.to_owned(),
@@ -399,6 +475,10 @@ mod tests {
             last_message_preview: preview.map(ToOwned::to_owned),
             last_message_unix_ms: None,
             is_pinned,
+            chat_type: ChatType::Private,
+            last_message_sender: None,
+            is_online: None,
+            outgoing_status: OutgoingReadStatus::default(),
         }
     }
 
@@ -607,5 +687,301 @@ mod tests {
         // Should have: "Pinned" header + 2 pinned chats (no "All Chats" header since regular is empty)
         // Based on logic: `if !regular.is_empty() || !has_pinned` - so All Chats NOT added when all pinned
         assert_eq!(items.len(), 3);
+    }
+
+    // =========================================================================
+    // Tests for new chat list features
+    // =========================================================================
+
+    fn group_chat(
+        chat_id: i64,
+        title: &str,
+        preview: Option<&str>,
+        sender: Option<&str>,
+    ) -> ChatSummary {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
+        ChatSummary {
+            chat_id,
+            title: title.to_owned(),
+            unread_count: 0,
+            last_message_preview: preview.map(ToOwned::to_owned),
+            last_message_unix_ms: None,
+            is_pinned: false,
+            chat_type: ChatType::Group,
+            last_message_sender: sender.map(ToOwned::to_owned),
+            is_online: None,
+            outgoing_status: OutgoingReadStatus::default(),
+        }
+    }
+
+    fn private_chat_online(
+        chat_id: i64,
+        title: &str,
+        preview: Option<&str>,
+        is_online: bool,
+    ) -> ChatSummary {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
+        ChatSummary {
+            chat_id,
+            title: title.to_owned(),
+            unread_count: 0,
+            last_message_preview: preview.map(ToOwned::to_owned),
+            last_message_unix_ms: None,
+            is_pinned: false,
+            chat_type: ChatType::Private,
+            last_message_sender: None,
+            is_online: Some(is_online),
+            outgoing_status: OutgoingReadStatus::default(),
+        }
+    }
+
+    fn private_chat_outgoing(
+        chat_id: i64,
+        title: &str,
+        preview: Option<&str>,
+        is_read: bool,
+    ) -> ChatSummary {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
+        ChatSummary {
+            chat_id,
+            title: title.to_owned(),
+            unread_count: 0,
+            last_message_preview: preview.map(ToOwned::to_owned),
+            last_message_unix_ms: None,
+            is_pinned: false,
+            chat_type: ChatType::Private,
+            last_message_sender: None,
+            is_online: None,
+            outgoing_status: OutgoingReadStatus {
+                is_outgoing: true,
+                is_read,
+            },
+        }
+    }
+
+    #[test]
+    fn group_chat_shows_sender_name_before_preview() {
+        let line = chat_list_item_line(
+            &group_chat(1, "Dev Team", Some("Fixed the bug"), Some("Alex")),
+            TEST_WIDTH,
+        );
+        let text = line_to_string(&line);
+
+        assert!(text.contains("Dev Team"));
+        assert!(text.contains("Alex: "));
+        assert!(text.contains("Fixed the bug"));
+    }
+
+    #[test]
+    fn group_chat_without_sender_shows_plain_preview() {
+        let line = chat_list_item_line(
+            &group_chat(1, "Dev Team", Some("Hello everyone"), None),
+            TEST_WIDTH,
+        );
+        let text = line_to_string(&line);
+
+        assert!(text.contains("Hello everyone"));
+        assert!(!text.contains(": "));
+    }
+
+    fn group_chat_outgoing(
+        chat_id: i64,
+        title: &str,
+        preview: Option<&str>,
+        sender: Option<&str>,
+        is_read: bool,
+    ) -> ChatSummary {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
+        ChatSummary {
+            chat_id,
+            title: title.to_owned(),
+            unread_count: 0,
+            last_message_preview: preview.map(ToOwned::to_owned),
+            last_message_unix_ms: None,
+            is_pinned: false,
+            chat_type: ChatType::Group,
+            last_message_sender: sender.map(ToOwned::to_owned),
+            is_online: None,
+            outgoing_status: OutgoingReadStatus {
+                is_outgoing: true,
+                is_read,
+            },
+        }
+    }
+
+    #[test]
+    fn group_chat_outgoing_unread_shows_sender_then_bullet() {
+        let line = chat_list_item_line(
+            &group_chat_outgoing(1, "Dev Team", Some("I fixed it"), Some("You"), false),
+            70, // wider to fit all content
+        );
+        let text = line_to_string(&line);
+
+        assert!(text.contains("Dev Team"));
+        assert!(text.contains("You: ")); // sender name comes first
+        assert!(text.contains("\u{2022} ")); // bullet indicator after sender
+        assert!(text.contains("I fixed it"));
+        // Verify order: sender before bullet
+        let sender_pos = text.find("You: ").unwrap();
+        let bullet_pos = text.find("\u{2022}").unwrap();
+        assert!(
+            sender_pos < bullet_pos,
+            "Sender name should come before read indicator"
+        );
+    }
+
+    #[test]
+    fn group_chat_outgoing_read_shows_sender_then_checkmark() {
+        let line = chat_list_item_line(
+            &group_chat_outgoing(1, "Dev Team", Some("Done"), Some("You"), true),
+            70,
+        );
+        let text = line_to_string(&line);
+
+        assert!(text.contains("Dev Team"));
+        assert!(text.contains("You: ")); // sender name comes first
+        assert!(text.contains("\u{2713} ")); // checkmark indicator after sender
+        assert!(text.contains("Done"));
+        // Verify order: sender before checkmark
+        let sender_pos = text.find("You: ").unwrap();
+        let check_pos = text.find("\u{2713}").unwrap();
+        assert!(
+            sender_pos < check_pos,
+            "Sender name should come before read indicator"
+        );
+    }
+
+    fn channel_chat_outgoing(
+        chat_id: i64,
+        title: &str,
+        preview: Option<&str>,
+        is_read: bool,
+    ) -> ChatSummary {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
+        ChatSummary {
+            chat_id,
+            title: title.to_owned(),
+            unread_count: 0,
+            last_message_preview: preview.map(ToOwned::to_owned),
+            last_message_unix_ms: None,
+            is_pinned: false,
+            chat_type: ChatType::Channel,
+            last_message_sender: None,
+            is_online: None,
+            outgoing_status: OutgoingReadStatus {
+                is_outgoing: true,
+                is_read,
+            },
+        }
+    }
+
+    #[test]
+    fn channel_outgoing_shows_read_indicator() {
+        let line = chat_list_item_line(
+            &channel_chat_outgoing(1, "My Channel", Some("New post"), true),
+            TEST_WIDTH,
+        );
+        let text = line_to_string(&line);
+
+        assert!(text.contains("My Channel"));
+        assert!(text.contains("\u{2713} ")); // checkmark
+        assert!(text.contains("New post"));
+    }
+
+    #[test]
+    fn channel_outgoing_unread_shows_bullet() {
+        let line = chat_list_item_line(
+            &channel_chat_outgoing(1, "My Channel", Some("Draft post"), false),
+            TEST_WIDTH,
+        );
+        let text = line_to_string(&line);
+
+        assert!(text.contains("My Channel"));
+        assert!(text.contains("\u{2022} ")); // bullet
+        assert!(text.contains("Draft post"));
+    }
+
+    #[test]
+    fn private_chat_online_shows_green_dot() {
+        let line = chat_list_item_line(
+            &private_chat_online(1, "John", Some("Hey there"), true),
+            TEST_WIDTH,
+        );
+        let text = line_to_string(&line);
+
+        assert!(text.contains("John"));
+        assert!(text.contains("Hey there"));
+        assert!(text.contains("\u{25CF}")); // Unicode filled circle
+    }
+
+    #[test]
+    fn private_chat_offline_no_dot() {
+        let line = chat_list_item_line(
+            &private_chat_online(1, "John", Some("Hey there"), false),
+            TEST_WIDTH,
+        );
+        let text = line_to_string(&line);
+
+        assert!(text.contains("John"));
+        assert!(!text.contains("\u{25CF}"));
+    }
+
+    #[test]
+    fn private_chat_outgoing_unread_shows_bullet() {
+        let line = chat_list_item_line(
+            &private_chat_outgoing(1, "Jane", Some("See you tomorrow"), false),
+            TEST_WIDTH,
+        );
+        let text = line_to_string(&line);
+
+        assert!(text.contains("Jane"));
+        assert!(text.contains("\u{2022} ")); // bullet + space
+        assert!(text.contains("See you tomorrow"));
+    }
+
+    #[test]
+    fn private_chat_outgoing_read_shows_checkmark() {
+        let line = chat_list_item_line(
+            &private_chat_outgoing(1, "Jane", Some("Got it"), true),
+            TEST_WIDTH,
+        );
+        let text = line_to_string(&line);
+
+        assert!(text.contains("Jane"));
+        assert!(text.contains("\u{2713} ")); // checkmark + space
+        assert!(text.contains("Got it"));
+    }
+
+    #[test]
+    fn private_chat_incoming_message_no_indicator() {
+        let line = chat_list_item_line(&chat(1, "Bob", 0, Some("Hello!")), TEST_WIDTH);
+        let text = line_to_string(&line);
+
+        assert!(text.contains("Hello!"));
+        assert!(!text.contains("\u{2022}")); // no bullet
+        assert!(!text.contains("\u{2713}")); // no checkmark
+    }
+
+    #[test]
+    fn chat_with_unread_and_online_shows_both() {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
+        let chat = ChatSummary {
+            chat_id: 1,
+            title: "Alice".to_owned(),
+            unread_count: 5,
+            last_message_preview: Some("New message".to_owned()),
+            last_message_unix_ms: None,
+            is_pinned: false,
+            chat_type: ChatType::Private,
+            last_message_sender: None,
+            is_online: Some(true),
+            outgoing_status: OutgoingReadStatus::default(),
+        };
+
+        let line = chat_list_item_line(&chat, 70);
+        let text = line_to_string(&line);
+
+        assert!(text.contains("[5]"));
+        assert!(text.contains("\u{25CF}"));
     }
 }
