@@ -10,39 +10,50 @@ use crate::{
     usecases::{
         list_chats::{list_chats, ListChatsQuery, ListChatsSource},
         load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
+        send_message::{send_message, MessageSender, SendMessageCommand, SendMessageError},
     },
 };
 
 use super::contracts::ShellOrchestrator;
 
-pub struct DefaultShellOrchestrator<S, O, C, M>
+pub struct DefaultShellOrchestrator<S, O, C, M, MS>
 where
     S: StorageAdapter,
     O: ExternalOpener,
     C: ListChatsSource,
     M: MessagesSource,
+    MS: MessageSender,
 {
     state: ShellState,
     storage: S,
     opener: O,
     chats_source: C,
     messages_source: M,
+    message_sender: MS,
 }
 
-impl<S, O, C, M> DefaultShellOrchestrator<S, O, C, M>
+impl<S, O, C, M, MS> DefaultShellOrchestrator<S, O, C, M, MS>
 where
     S: StorageAdapter,
     O: ExternalOpener,
     C: ListChatsSource,
     M: MessagesSource,
+    MS: MessageSender,
 {
-    pub fn new(storage: S, opener: O, chats_source: C, messages_source: M) -> Self {
+    pub fn new(
+        storage: S,
+        opener: O,
+        chats_source: C,
+        messages_source: M,
+        message_sender: MS,
+    ) -> Self {
         Self {
             state: ShellState::default(),
             storage,
             opener,
             chats_source,
             messages_source,
+            message_sender,
         }
     }
 
@@ -137,10 +148,7 @@ where
     fn handle_message_input_key(&mut self, key: &str) {
         match key {
             "esc" => self.state.set_active_pane(ActivePane::Messages),
-            "enter" => {
-                // TODO: Implement message sending
-                // When implemented: send message, clear input, stay in input mode
-            }
+            "enter" => self.try_send_message(),
             "backspace" => self.state.message_input_mut().delete_char_before(),
             "delete" => self.state.message_input_mut().delete_char_at(),
             "left" => self.state.message_input_mut().move_cursor_left(),
@@ -156,14 +164,60 @@ where
             _ => {}
         }
     }
+
+    fn try_send_message(&mut self) {
+        let text = self.state.message_input().text().to_string();
+
+        let Some(chat_id) = self.state.open_chat().chat_id() else {
+            return;
+        };
+
+        let command = SendMessageCommand { chat_id, text };
+
+        match send_message(&self.message_sender, command) {
+            Ok(()) => {
+                tracing::debug!(chat_id, "message sent successfully");
+                self.state.message_input_mut().clear();
+                self.refresh_open_chat_messages();
+            }
+            Err(SendMessageError::EmptyMessage) => {
+                // Ignore empty messages silently
+            }
+            Err(error) => {
+                tracing::warn!(error = ?error, chat_id, "failed to send message");
+                // Keep text in input for retry
+            }
+        }
+    }
+
+    fn refresh_open_chat_messages(&mut self) {
+        let Some(chat_id) = self.state.open_chat().chat_id() else {
+            return;
+        };
+
+        match load_messages(&self.messages_source, LoadMessagesQuery::new(chat_id)) {
+            Ok(output) => {
+                tracing::debug!(
+                    message_count = output.messages.len(),
+                    "messages refreshed after send"
+                );
+                self.state.open_chat_mut().set_ready(output.messages);
+            }
+            Err(error) => {
+                tracing::warn!(error = ?error, "failed to refresh messages after send");
+                // Don't change UI state on refresh failure - messages were sent
+            }
+        }
+    }
 }
 
-impl<S, O, C, M> ShellOrchestrator for DefaultShellOrchestrator<S, O, C, M>
+impl<S, O, C, M, MS> ShellOrchestrator for DefaultShellOrchestrator<S, O, C, M, MS>
 where
     S: StorageAdapter,
     O: ExternalOpener,
     C: ListChatsSource,
     M: MessagesSource,
+    MS: MessageSender,
 {
     fn state(&self) -> &ShellState {
         &self.state
@@ -230,7 +284,10 @@ mod tests {
             open_chat_state::OpenChatUiState,
         },
         infra::stubs::{NoopOpener, StubStorageAdapter},
-        usecases::{list_chats::ListChatsSourceError, load_messages::MessagesSourceError},
+        usecases::{
+            list_chats::ListChatsSourceError, load_messages::MessagesSourceError,
+            send_message::SendMessageSourceError,
+        },
     };
 
     fn chat(chat_id: i64, title: &str) -> ChatSummary {
@@ -313,16 +370,64 @@ mod tests {
         }
     }
 
+    struct StubMessageSender {
+        responses: RefCell<VecDeque<Result<(), SendMessageSourceError>>>,
+        captured_calls: RefCell<Vec<(i64, String)>>,
+    }
+
+    impl StubMessageSender {
+        fn fixed(response: Result<(), SendMessageSourceError>) -> Self {
+            Self {
+                responses: RefCell::new(VecDeque::from([response])),
+                captured_calls: RefCell::new(Vec::new()),
+            }
+        }
+
+        fn always_ok() -> Self {
+            Self {
+                responses: RefCell::new(VecDeque::new()),
+                captured_calls: RefCell::new(Vec::new()),
+            }
+        }
+
+        #[allow(dead_code)]
+        fn sequence(responses: Vec<Result<(), SendMessageSourceError>>) -> Self {
+            Self {
+                responses: RefCell::new(responses.into()),
+                captured_calls: RefCell::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<(i64, String)> {
+            self.captured_calls.borrow().clone()
+        }
+    }
+
+    impl MessageSender for StubMessageSender {
+        fn send_message(&self, chat_id: i64, text: &str) -> Result<(), SendMessageSourceError> {
+            self.captured_calls
+                .borrow_mut()
+                .push((chat_id, text.to_owned()));
+            self.responses.borrow_mut().pop_front().unwrap_or(Ok(()))
+        }
+    }
+
     fn make_orchestrator(
         chats_response: Result<Vec<ChatSummary>, ListChatsSourceError>,
         messages_response: Result<Vec<Message>, MessagesSourceError>,
-    ) -> DefaultShellOrchestrator<StubStorageAdapter, NoopOpener, StubChatsSource, StubMessagesSource>
-    {
+    ) -> DefaultShellOrchestrator<
+        StubStorageAdapter,
+        NoopOpener,
+        StubChatsSource,
+        StubMessagesSource,
+        StubMessageSender,
+    > {
         DefaultShellOrchestrator::new(
             StubStorageAdapter::default(),
             NoopOpener::default(),
             StubChatsSource::fixed(chats_response),
             StubMessagesSource::fixed(messages_response),
+            StubMessageSender::always_ok(),
         )
     }
 
@@ -441,6 +546,7 @@ mod tests {
                 chat(200, "Design"),
             ])),
             StubMessagesSource::fixed(Ok(vec![])),
+            StubMessageSender::always_ok(),
         );
 
         orchestrator
@@ -471,6 +577,7 @@ mod tests {
             NoopOpener::default(),
             StubChatsSource::fixed(Ok(vec![chat(10, "Infra"), chat(11, "Design")])),
             StubMessagesSource::fixed(Ok(vec![])),
+            StubMessageSender::always_ok(),
         );
 
         orchestrator
@@ -504,6 +611,7 @@ mod tests {
                 Ok(vec![chat(1, "General")]),
             ]),
             StubMessagesSource::fixed(Ok(vec![])),
+            StubMessageSender::always_ok(),
         );
 
         orchestrator
@@ -536,6 +644,7 @@ mod tests {
                 chat(20, "Design"),
             ])),
             StubMessagesSource::fixed(Ok(vec![])),
+            StubMessageSender::always_ok(),
         );
 
         orchestrator
@@ -631,6 +740,7 @@ mod tests {
             NoopOpener::default(),
             StubChatsSource::sequence(vec![Err(ListChatsSourceError::Unavailable), Ok(vec![])]),
             StubMessagesSource::fixed(Ok(vec![])),
+            StubMessageSender::always_ok(),
         );
 
         orchestrator
@@ -819,6 +929,7 @@ mod tests {
                 Ok(vec![message(1, "Hello")]),
                 Ok(vec![message(1, "Hello")]), // For the second open via 'l'
             ]),
+            StubMessageSender::always_ok(),
         );
 
         orchestrator
@@ -1081,5 +1192,194 @@ mod tests {
 
         // Text should still be there
         assert_eq!(orchestrator.state().message_input().text(), "Hi");
+    }
+
+    #[test]
+    fn enter_key_sends_message_and_clears_input() {
+        let mut orchestrator = DefaultShellOrchestrator::new(
+            StubStorageAdapter::default(),
+            NoopOpener::default(),
+            StubChatsSource::fixed(Ok(vec![chat(1, "General")])),
+            StubMessagesSource::sequence(vec![
+                Ok(vec![message(1, "Hello")]),                   // Initial load
+                Ok(vec![message(1, "Hello"), message(2, "Hi")]), // After send refresh
+            ]),
+            StubMessageSender::fixed(Ok(())),
+        );
+
+        // Load chats, open chat, switch to input mode
+        orchestrator.handle_event(AppEvent::Tick).unwrap();
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .unwrap();
+
+        // Type "Hi"
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("H", false)))
+            .unwrap();
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .unwrap();
+
+        assert_eq!(orchestrator.state().message_input().text(), "Hi");
+
+        // Send message
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // Input should be cleared
+        assert_eq!(orchestrator.state().message_input().text(), "");
+        // Messages should be refreshed (now has 2 messages)
+        assert_eq!(orchestrator.state().open_chat().messages().len(), 2);
+        // Should stay in message input mode
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::MessageInput);
+    }
+
+    #[test]
+    fn enter_key_with_empty_input_does_nothing() {
+        let mut orchestrator = DefaultShellOrchestrator::new(
+            StubStorageAdapter::default(),
+            NoopOpener::default(),
+            StubChatsSource::fixed(Ok(vec![chat(1, "General")])),
+            StubMessagesSource::fixed(Ok(vec![message(1, "Hello")])),
+            StubMessageSender::fixed(Err(SendMessageSourceError::Unavailable)), // Should not be called
+        );
+
+        // Load chats, open chat, switch to input mode
+        orchestrator.handle_event(AppEvent::Tick).unwrap();
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .unwrap();
+
+        // Press enter without typing anything
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // Nothing should happen - no error, input still empty
+        assert_eq!(orchestrator.state().message_input().text(), "");
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::MessageInput);
+    }
+
+    #[test]
+    fn enter_key_with_whitespace_only_does_nothing() {
+        let mut orchestrator = DefaultShellOrchestrator::new(
+            StubStorageAdapter::default(),
+            NoopOpener::default(),
+            StubChatsSource::fixed(Ok(vec![chat(1, "General")])),
+            StubMessagesSource::fixed(Ok(vec![message(1, "Hello")])),
+            StubMessageSender::fixed(Err(SendMessageSourceError::Unavailable)), // Should not be called
+        );
+
+        // Load chats, open chat, switch to input mode
+        orchestrator.handle_event(AppEvent::Tick).unwrap();
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .unwrap();
+
+        // Type only spaces
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new(" ", false)))
+            .unwrap();
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new(" ", false)))
+            .unwrap();
+
+        // Press enter
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // Input should remain unchanged (spaces still there)
+        assert_eq!(orchestrator.state().message_input().text(), "  ");
+    }
+
+    #[test]
+    fn send_message_error_keeps_text_in_input() {
+        let mut orchestrator = DefaultShellOrchestrator::new(
+            StubStorageAdapter::default(),
+            NoopOpener::default(),
+            StubChatsSource::fixed(Ok(vec![chat(1, "General")])),
+            StubMessagesSource::fixed(Ok(vec![message(1, "Hello")])),
+            StubMessageSender::fixed(Err(SendMessageSourceError::Unavailable)),
+        );
+
+        // Load chats, open chat, switch to input mode
+        orchestrator.handle_event(AppEvent::Tick).unwrap();
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .unwrap();
+
+        // Type "Test message"
+        for c in "Test message".chars() {
+            orchestrator
+                .handle_event(AppEvent::InputKey(KeyInput::new(&c.to_string(), false)))
+                .unwrap();
+        }
+
+        // Try to send - should fail
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // Text should be preserved for retry
+        assert_eq!(orchestrator.state().message_input().text(), "Test message");
+        // Should stay in message input mode
+        assert_eq!(orchestrator.state().active_pane(), ActivePane::MessageInput);
+    }
+
+    #[test]
+    fn send_message_passes_correct_chat_id_and_text() {
+        let sender = StubMessageSender::always_ok();
+        let mut orchestrator = DefaultShellOrchestrator::new(
+            StubStorageAdapter::default(),
+            NoopOpener::default(),
+            StubChatsSource::fixed(Ok(vec![chat(42, "TestChat")])),
+            StubMessagesSource::sequence(vec![
+                Ok(vec![message(1, "Hello")]),
+                Ok(vec![message(1, "Hello")]),
+            ]),
+            sender,
+        );
+
+        // Load chats, open chat, switch to input mode
+        orchestrator.handle_event(AppEvent::Tick).unwrap();
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .unwrap();
+
+        // Type "Hello World"
+        for c in "  Hello World  ".chars() {
+            orchestrator
+                .handle_event(AppEvent::InputKey(KeyInput::new(&c.to_string(), false)))
+                .unwrap();
+        }
+
+        // Send message
+        orchestrator
+            .handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // Verify send was called with correct parameters (trimmed text)
+        let calls = orchestrator.message_sender.calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, 42); // chat_id
+        assert_eq!(calls[0].1, "Hello World"); // trimmed text
     }
 }

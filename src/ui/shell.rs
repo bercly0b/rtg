@@ -41,6 +41,7 @@ mod tests {
         usecases::{
             list_chats::{ListChatsSource, ListChatsSourceError},
             load_messages::{MessagesSource, MessagesSourceError},
+            send_message::{MessageSender, SendMessageSourceError},
             shell::DefaultShellOrchestrator,
         },
     };
@@ -65,6 +66,14 @@ mod tests {
         }
     }
 
+    struct NoopMessageSender;
+
+    impl MessageSender for NoopMessageSender {
+        fn send_message(&self, _chat_id: i64, _text: &str) -> Result<(), SendMessageSourceError> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn mock_source_produces_quit_event() {
         let mut source = MockEventSource::from(vec![AppEvent::QuitRequested]);
@@ -81,6 +90,7 @@ mod tests {
             NoopOpener,
             EmptyChatsSource,
             EmptyMessagesSource,
+            NoopMessageSender,
         );
 
         if let Some(event) = source.next_event().expect("must read mock event") {

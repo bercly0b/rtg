@@ -97,6 +97,7 @@ fn compose_shell_with_factory<'a>(
             NoopOpener,
             &context.telegram,
             &context.telegram,
+            &context.telegram,
         )),
         _connectivity_monitor: connectivity_monitor,
         _chat_updates_monitor: chat_updates_monitor,
