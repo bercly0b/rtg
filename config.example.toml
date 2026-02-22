@@ -4,7 +4,10 @@
 
 [logging]
 # Tracing level: trace | debug | info | warn | error
+# Note: trace/debug levels apply only to rtg; dependencies are limited to warn
 level = "info"
+# Maximum number of log files to keep (daily rotation)
+max_log_files = 3
 
 [telegram]
 # Telegram app credentials from https://my.telegram.org
