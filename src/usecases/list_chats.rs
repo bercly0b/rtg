@@ -111,6 +111,7 @@ mod tests {
     }
 
     fn sample_chat() -> ChatSummary {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
         ChatSummary {
             chat_id: 42,
             title: "rtg".to_owned(),
@@ -118,6 +119,10 @@ mod tests {
             last_message_preview: Some("hello".to_owned()),
             last_message_unix_ms: Some(1_700_000_000_000),
             is_pinned: false,
+            chat_type: ChatType::Private,
+            last_message_sender: None,
+            is_online: None,
+            outgoing_status: OutgoingReadStatus::default(),
         }
     }
 

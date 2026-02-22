@@ -10,7 +10,7 @@ use tokio::runtime::Builder;
 
 use crate::{
     domain::{
-        chat::ChatSummary,
+        chat::{ChatSummary, ChatType, OutgoingReadStatus},
         message::{Message, MessageMedia},
     },
     infra::config::TelegramConfig,
@@ -373,6 +373,89 @@ fn dialog_fetch_scope_from_filters(
     }
 }
 
+/// Extracts ChatType from grammers Chat enum.
+fn chat_type_from_grammers(chat: &grammers_client::types::Chat) -> ChatType {
+    match chat {
+        grammers_client::types::Chat::User(_) => ChatType::Private,
+        grammers_client::types::Chat::Group(_) => ChatType::Group,
+        grammers_client::types::Chat::Channel(_) => ChatType::Channel,
+    }
+}
+
+/// Checks if a user is currently online based on their status.
+fn is_user_online(user: &grammers_client::types::User) -> bool {
+    use grammers_client::grammers_tl_types::enums::UserStatus;
+
+    match user.status() {
+        UserStatus::Online(status) => {
+            // Check if the online status hasn't expired yet
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i32)
+                .unwrap_or(0);
+            status.expires > now
+        }
+        _ => false,
+    }
+}
+
+/// Extracts online status for private chats.
+fn extract_online_status(chat: &grammers_client::types::Chat) -> Option<bool> {
+    match chat {
+        grammers_client::types::Chat::User(user) => Some(is_user_online(user)),
+        _ => None,
+    }
+}
+
+/// Extracts sender name from a grammers Message for group chats.
+fn extract_sender_name(
+    message: &grammers_client::types::Message,
+    chat_type: ChatType,
+) -> Option<String> {
+    // Only extract sender name for group chats
+    if chat_type != ChatType::Group {
+        return None;
+    }
+
+    message.sender().map(|sender| match sender {
+        grammers_client::types::Chat::User(user) => user.first_name().to_owned(),
+        grammers_client::types::Chat::Group(group) => group.title().to_owned(),
+        grammers_client::types::Chat::Channel(channel) => channel.title().to_owned(),
+    })
+}
+
+/// Extracts outgoing read status from dialog and last message.
+fn extract_outgoing_status(
+    dialog: &grammers_client::grammers_tl_types::enums::Dialog,
+    last_message: Option<&grammers_client::types::Message>,
+) -> OutgoingReadStatus {
+    let Some(message) = last_message else {
+        return OutgoingReadStatus::default();
+    };
+
+    let is_outgoing = message.outgoing();
+
+    if !is_outgoing {
+        return OutgoingReadStatus {
+            is_outgoing: false,
+            is_read: false,
+        };
+    }
+
+    let read_outbox_max_id = match dialog {
+        grammers_client::grammers_tl_types::enums::Dialog::Dialog(data) => data.read_outbox_max_id,
+        grammers_client::grammers_tl_types::enums::Dialog::Folder(_) => 0,
+    };
+
+    let message_id = message.id();
+    let is_read = message_id <= read_outbox_max_id;
+
+    OutgoingReadStatus {
+        is_outgoing,
+        is_read,
+    }
+}
+
 async fn fetch_chat_summaries_from_all_dialogs(
     client: &grammers_client::Client,
     limit: usize,
@@ -403,6 +486,14 @@ async fn fetch_chat_summaries_from_all_dialogs(
             .as_ref()
             .map(|message| message.date().timestamp_millis());
 
+        let chat_type = chat_type_from_grammers(chat);
+        let last_message_sender = dialog
+            .last_message
+            .as_ref()
+            .and_then(|msg| extract_sender_name(msg, chat_type));
+        let is_online = extract_online_status(chat);
+        let outgoing_status = extract_outgoing_status(&dialog.raw, dialog.last_message.as_ref());
+
         chats.push(ChatSummary {
             chat_id,
             title: chat.name().to_owned(),
@@ -410,6 +501,10 @@ async fn fetch_chat_summaries_from_all_dialogs(
             last_message_preview,
             last_message_unix_ms,
             is_pinned,
+            chat_type,
+            last_message_sender,
+            is_online,
+            outgoing_status,
         });
     }
 
@@ -470,7 +565,7 @@ async fn fetch_chat_summaries_from_main_folder(
     let mut cache = chat_cache.write().unwrap();
 
     for dialog in dialogs {
-        let grammers_client::grammers_tl_types::enums::Dialog::Dialog(data) = dialog else {
+        let grammers_client::grammers_tl_types::enums::Dialog::Dialog(ref data) = dialog else {
             continue;
         };
 
@@ -496,6 +591,13 @@ async fn fetch_chat_summaries_from_main_folder(
             .as_ref()
             .map(|message| message.date().timestamp_millis());
 
+        let chat_type = chat_type_from_grammers(chat);
+        let last_message_sender = last_message
+            .as_ref()
+            .and_then(|msg| extract_sender_name(msg, chat_type));
+        let is_online = extract_online_status(chat);
+        let outgoing_status = extract_outgoing_status(&dialog, last_message.as_ref());
+
         result.push(ChatSummary {
             chat_id: chat.id(),
             title: chat.name().to_owned(),
@@ -503,6 +605,10 @@ async fn fetch_chat_summaries_from_main_folder(
             last_message_preview,
             last_message_unix_ms,
             is_pinned,
+            chat_type,
+            last_message_sender,
+            is_online,
+            outgoing_status,
         });
 
         if result.len() >= limit {

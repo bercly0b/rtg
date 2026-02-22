@@ -38,6 +38,26 @@ pub fn separator_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
 
+/// Style for online status indicator (green dot).
+pub fn online_indicator_style() -> Style {
+    Style::default().fg(Color::Green)
+}
+
+/// Style for unread outgoing message indicator (dot, dimmed).
+pub fn outgoing_unread_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
+/// Style for read outgoing message indicator (checkmark, green).
+pub fn outgoing_read_style() -> Style {
+    Style::default().fg(Color::Green)
+}
+
+/// Style for sender name prefix in group chats (cyan, slightly dimmed).
+pub fn group_sender_style() -> Style {
+    Style::default().fg(Color::Cyan)
+}
+
 // =============================================================================
 // Message list styles
 // =============================================================================
@@ -154,5 +174,29 @@ mod tests {
     fn input_placeholder_style_is_dark_gray() {
         let style = input_placeholder_style();
         assert_eq!(style.fg, Some(Color::DarkGray));
+    }
+
+    #[test]
+    fn online_indicator_style_is_green() {
+        let style = online_indicator_style();
+        assert_eq!(style.fg, Some(Color::Green));
+    }
+
+    #[test]
+    fn outgoing_unread_style_is_dark_gray() {
+        let style = outgoing_unread_style();
+        assert_eq!(style.fg, Some(Color::DarkGray));
+    }
+
+    #[test]
+    fn outgoing_read_style_is_green() {
+        let style = outgoing_read_style();
+        assert_eq!(style.fg, Some(Color::Green));
+    }
+
+    #[test]
+    fn group_sender_style_is_cyan() {
+        let style = group_sender_style();
+        assert_eq!(style.fg, Some(Color::Cyan));
     }
 }
