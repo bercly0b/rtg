@@ -28,12 +28,16 @@ impl FileConfig {
 #[derive(Debug, Deserialize, Default)]
 pub struct FileLogConfig {
     pub level: Option<String>,
+    pub max_log_files: Option<usize>,
 }
 
 impl FileLogConfig {
     fn merge_into(self, config: &mut LogConfig) {
         if let Some(level) = self.level {
             config.level = level;
+        }
+        if let Some(max_log_files) = self.max_log_files {
+            config.max_log_files = max_log_files;
         }
     }
 }

@@ -10,12 +10,19 @@ pub struct AppConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LogConfig {
     pub level: String,
+    #[serde(default = "default_max_log_files")]
+    pub max_log_files: usize,
+}
+
+fn default_max_log_files() -> usize {
+    3
 }
 
 impl Default for LogConfig {
     fn default() -> Self {
         Self {
             level: "info".to_owned(),
+            max_log_files: default_max_log_files(),
         }
     }
 }
