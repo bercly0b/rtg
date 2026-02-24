@@ -5,6 +5,8 @@ use std::{
     time::Duration,
 };
 
+use fs2::FileExt;
+
 use grammers_session::Session;
 
 use crate::{
@@ -51,15 +53,18 @@ impl GuidedAuthReason {
     }
 }
 
+/// Holds an OS-level advisory lock (`flock`) on the session lock file.
+///
+/// The lock is automatically released by the OS when the file handle is
+/// dropped — even if the process is killed with SIGKILL. This eliminates
+/// stale-lock problems that occur with file-existence-based locking.
+///
+/// **Caveat:** Advisory locks may not be enforced across hosts on network
+/// filesystems (NFS, SMB). The session directory should reside on a local
+/// filesystem for reliable mutual exclusion.
 #[derive(Debug)]
 pub struct SessionLockGuard {
-    path: PathBuf,
-}
-
-impl Drop for SessionLockGuard {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
-    }
+    _file: File,
 }
 
 pub struct StartupPlan {
@@ -234,13 +239,25 @@ fn mark_policy_invalid(layout: &StorageLayout) -> Result<(), AppError> {
 }
 
 fn acquire_session_lock(path: PathBuf) -> Result<SessionLockGuard, AppError> {
-    match OpenOptions::new().write(true).create_new(true).open(&path) {
-        Ok(_) => Ok(SessionLockGuard { path }),
-        Err(source) if source.kind() == ErrorKind::AlreadyExists => {
-            Err(AppError::SessionStoreBusy { path })
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|source| AppError::SessionLockCreate {
+            path: path.clone(),
+            source,
+        })?;
+
+    file.try_lock_exclusive().map_err(|source| {
+        if source.kind() == fs2::lock_contended_error().kind() {
+            AppError::SessionStoreBusy { path }
+        } else {
+            AppError::SessionLockCreate { path, source }
         }
-        Err(source) => Err(AppError::SessionLockCreate { path, source }),
-    }
+    })?;
+
+    Ok(SessionLockGuard { _file: file })
 }
 
 #[cfg(test)]
@@ -636,5 +653,50 @@ mod tests {
         }
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn stale_lock_file_on_disk_does_not_block_startup() {
+        let layout = make_layout();
+        layout.ensure_dirs().expect("dirs should be created");
+
+        // Simulate a stale lock file left behind by a crashed process.
+        // With advisory locking, the file exists but no flock is held.
+        fs::write(layout.session_lock_file(), b"").expect("stale lock file should be writable");
+        assert!(layout.session_lock_file().exists());
+
+        let prober = StubSessionProber::valid();
+        let plan = plan_startup_with_layout(&layout, &prober, None)
+            .expect("startup should succeed despite stale lock file on disk");
+
+        assert_eq!(
+            plan.state,
+            StartupFlowState::GuidedAuth {
+                reason: GuidedAuthReason::Missing
+            }
+        );
+    }
+
+    #[test]
+    fn held_lock_blocks_second_acquisition() {
+        let layout = make_layout();
+        layout.ensure_dirs().expect("dirs should be created");
+
+        let first_guard = acquire_session_lock(layout.session_lock_file())
+            .expect("first lock should be acquired");
+
+        let second_result = acquire_session_lock(layout.session_lock_file());
+        match second_result {
+            Err(AppError::SessionStoreBusy { .. }) => {} // expected
+            other => panic!("expected SessionStoreBusy, got: {other:?}"),
+        }
+
+        drop(first_guard);
+
+        let third_guard = acquire_session_lock(layout.session_lock_file());
+        assert!(
+            third_guard.is_ok(),
+            "lock should be acquirable after first guard is dropped"
+        );
     }
 }
