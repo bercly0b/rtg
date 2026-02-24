@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, List, ListItem, ListState, Padding, Paragraph},
     Frame,
 };
 
@@ -30,10 +30,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .areas(content_area);
 
-    // Split right panel into messages area and input field (3 lines for input: 1 border + 1 text + 1 border)
+    // Split right panel into messages area and input field (1 line for input text)
     let [messages_area, input_area] = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(3)])
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
         .areas(messages_with_input_area);
 
     let active_pane = state.active_pane();
@@ -41,7 +41,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
     render_messages_panel(frame, messages_area, state, active_pane);
     render_message_input(frame, input_area, state.message_input(), active_pane);
 
-    let status = Paragraph::new(status_line(state));
+    let status = Paragraph::new(status_line(state)).style(styles::status_bar_style());
     frame.render_widget(status, status_area);
 }
 
@@ -52,32 +52,28 @@ fn render_chat_list_panel(
     active_pane: ActivePane,
 ) {
     let is_active = active_pane == ActivePane::ChatList;
-    let border_style = if is_active {
-        styles::active_panel_border_style()
-    } else {
-        styles::inactive_panel_border_style()
-    };
+    let panel_style = styles::chat_list_panel_style(is_active);
 
     let chat_list = state.chat_list();
     match chat_list.ui_state() {
         ChatListUiState::Loading => {
-            render_chat_list_message(frame, area, "Loading chats...", border_style)
+            render_chat_list_message(frame, area, "Loading chats...", panel_style)
         }
         ChatListUiState::Empty => render_chat_list_message(
             frame,
             area,
             "No chats yet. Press refresh to try again.",
-            border_style,
+            panel_style,
         ),
         ChatListUiState::Error => render_chat_list_message(
             frame,
             area,
             "Failed to load chats. Check connection and retry.",
-            border_style,
+            panel_style,
         ),
         ChatListUiState::Ready => {
             let chats = chat_list.chats();
-            // Inner width = area width - 2 (borders)
+            // Inner width = area width - 2 (horizontal padding)
             let inner_width = area.width.saturating_sub(2) as usize;
             let items = build_chat_list_items(chats, inner_width);
             let chat_count = chats.len();
@@ -85,10 +81,10 @@ fn render_chat_list_panel(
             let title = format!("Chats ({})", chat_count);
             let list = List::new(items)
                 .block(
-                    Block::default()
+                    Block::new()
                         .title(title)
-                        .borders(Borders::ALL)
-                        .border_style(border_style),
+                        .padding(Padding::horizontal(1))
+                        .style(panel_style),
                 )
                 .highlight_style(
                     Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
@@ -109,13 +105,13 @@ fn render_chat_list_message(
     frame: &mut Frame<'_>,
     area: ratatui::layout::Rect,
     message: &str,
-    border_style: Style,
+    panel_style: Style,
 ) {
     let message = Paragraph::new(message).block(
-        Block::default()
+        Block::new()
             .title("Chats")
-            .borders(Borders::ALL)
-            .border_style(border_style),
+            .padding(Padding::horizontal(1))
+            .style(panel_style),
     );
     frame.render_widget(message, area);
 }
@@ -337,61 +333,46 @@ fn render_messages_panel(
     active_pane: ActivePane,
 ) {
     let is_active = active_pane == ActivePane::Messages;
-    let border_style = if is_active {
-        styles::active_panel_border_style()
-    } else {
-        styles::inactive_panel_border_style()
-    };
+    let panel_style = styles::messages_panel_style(is_active);
 
     let open_chat = state.open_chat();
     let title = open_chat_title(open_chat);
     let ui_state = open_chat.ui_state();
 
+    let block = || {
+        Block::new()
+            .title(title.clone())
+            .padding(Padding::horizontal(1))
+            .style(panel_style)
+    };
+
     match ui_state {
         OpenChatUiState::Empty => {
-            let panel = Paragraph::new("Select a chat to view messages").block(
-                Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(border_style),
-            );
+            let panel = Paragraph::new("Select a chat to view messages").block(block());
             frame.render_widget(panel, area);
         }
         OpenChatUiState::Loading => {
-            let panel = Paragraph::new("Loading messages...").block(
-                Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(border_style),
-            );
+            let panel = Paragraph::new("Loading messages...").block(block());
             frame.render_widget(panel, area);
         }
         OpenChatUiState::Error => {
-            let panel = Paragraph::new("Failed to load messages. Press Enter to retry.").block(
-                Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(border_style),
-            );
+            let panel =
+                Paragraph::new("Failed to load messages. Press Enter to retry.").block(block());
             frame.render_widget(panel, area);
         }
         OpenChatUiState::Ready => {
             let messages = state.open_chat().messages();
             if messages.is_empty() {
-                let panel = Paragraph::new("No messages in this chat").block(
-                    Block::default()
-                        .title(title)
-                        .borders(Borders::ALL)
-                        .border_style(border_style),
-                );
+                let panel = Paragraph::new("No messages in this chat").block(block());
                 frame.render_widget(panel, area);
             } else {
                 let elements = build_message_list_elements(messages);
                 let items: Vec<ListItem<'static>> =
                     elements.iter().map(element_to_list_item).collect();
 
-                // Calculate viewport height (area height minus borders)
-                let viewport_height = area.height.saturating_sub(2) as usize;
+                // Calculate viewport height: area height minus 1 row consumed by the title.
+                // Block::inner() subtracts 1 for top-positioned title, even without borders.
+                let viewport_height = area.height.saturating_sub(1) as usize;
 
                 // Map message index to element index (accounting for date separators)
                 let element_index = state
@@ -408,16 +389,9 @@ fn render_messages_panel(
 
                 let scroll_offset = state.open_chat().scroll_offset();
 
-                let list = List::new(items)
-                    .block(
-                        Block::default()
-                            .title(title)
-                            .borders(Borders::ALL)
-                            .border_style(border_style),
-                    )
-                    .highlight_style(
-                        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-                    );
+                let list = List::new(items).block(block()).highlight_style(
+                    Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
+                );
 
                 let mut list_state = ListState::default();
                 list_state.select(element_index);

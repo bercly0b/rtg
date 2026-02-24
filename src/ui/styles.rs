@@ -90,17 +90,66 @@ pub fn date_separator_style() -> Style {
 }
 
 // =============================================================================
-// Panel styles
+// Panel background colors
 // =============================================================================
 
-/// Style for the border of the active (focused) panel.
-pub fn active_panel_border_style() -> Style {
-    Style::default().fg(Color::Green)
+/// Darker navy for the chat list sidebar.
+const CHAT_LIST_BG: Color = Color::Rgb(28, 31, 48);
+/// Slightly brighter sidebar when active.
+const CHAT_LIST_ACTIVE_BG: Color = Color::Rgb(33, 36, 55);
+
+/// Lighter dark for the messages area.
+const MESSAGES_BG: Color = Color::Rgb(36, 40, 58);
+/// Slightly brighter messages area when active.
+const MESSAGES_ACTIVE_BG: Color = Color::Rgb(40, 44, 64);
+
+/// Background for the input field.
+const INPUT_BG: Color = Color::Rgb(32, 36, 52);
+/// Brighter input field when focused — distinct from messages background.
+const INPUT_ACTIVE_BG: Color = Color::Rgb(40, 44, 62);
+
+/// Darkest shade for the status bar.
+const STATUS_BAR_BG: Color = Color::Rgb(22, 25, 38);
+/// Status bar foreground text.
+const STATUS_BAR_FG: Color = Color::Rgb(140, 145, 170);
+
+// =============================================================================
+// Panel styles
+//
+// Panel backgrounds are applied via Block::style(). Child widget styles
+// (text spans, list items) should NOT set bg() to allow the panel
+// background to show through via ratatui's style inheritance.
+// =============================================================================
+
+/// Style for the chat list panel background.
+pub fn chat_list_panel_style(is_active: bool) -> Style {
+    let bg = if is_active {
+        CHAT_LIST_ACTIVE_BG
+    } else {
+        CHAT_LIST_BG
+    };
+    Style::default().bg(bg)
 }
 
-/// Style for the border of inactive panels.
-pub fn inactive_panel_border_style() -> Style {
-    Style::default()
+/// Style for the messages panel background.
+pub fn messages_panel_style(is_active: bool) -> Style {
+    let bg = if is_active {
+        MESSAGES_ACTIVE_BG
+    } else {
+        MESSAGES_BG
+    };
+    Style::default().bg(bg)
+}
+
+/// Style for the message input panel background.
+pub fn input_panel_style(is_active: bool) -> Style {
+    let bg = if is_active { INPUT_ACTIVE_BG } else { INPUT_BG };
+    Style::default().bg(bg)
+}
+
+/// Style for the status bar.
+pub fn status_bar_style() -> Style {
+    Style::default().fg(STATUS_BAR_FG).bg(STATUS_BAR_BG)
 }
 
 // =============================================================================
@@ -198,5 +247,39 @@ mod tests {
     fn group_sender_style_is_cyan() {
         let style = group_sender_style();
         assert_eq!(style.fg, Some(Color::Cyan));
+    }
+
+    #[test]
+    fn chat_list_panel_style_has_background() {
+        let active = chat_list_panel_style(true);
+        let inactive = chat_list_panel_style(false);
+        assert_eq!(active.bg, Some(CHAT_LIST_ACTIVE_BG));
+        assert_eq!(inactive.bg, Some(CHAT_LIST_BG));
+        assert_ne!(active.bg, inactive.bg);
+    }
+
+    #[test]
+    fn messages_panel_style_has_background() {
+        let active = messages_panel_style(true);
+        let inactive = messages_panel_style(false);
+        assert_eq!(active.bg, Some(MESSAGES_ACTIVE_BG));
+        assert_eq!(inactive.bg, Some(MESSAGES_BG));
+        assert_ne!(active.bg, inactive.bg);
+    }
+
+    #[test]
+    fn input_panel_style_has_background() {
+        let active = input_panel_style(true);
+        let inactive = input_panel_style(false);
+        assert_eq!(active.bg, Some(INPUT_ACTIVE_BG));
+        assert_eq!(inactive.bg, Some(INPUT_BG));
+        assert_ne!(active.bg, inactive.bg);
+    }
+
+    #[test]
+    fn status_bar_style_has_background_and_foreground() {
+        let style = status_bar_style();
+        assert_eq!(style.bg, Some(STATUS_BAR_BG));
+        assert_eq!(style.fg, Some(STATUS_BAR_FG));
     }
 }
