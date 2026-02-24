@@ -91,16 +91,39 @@ pub fn date_separator_style() -> Style {
 
 // =============================================================================
 // Panel styles
+//
+// All panels use the terminal's default background (no bg override) so that
+// the TUI inherits whatever color scheme the user has configured. Only the
+// status bar and the panel separator use explicit ANSI colors (0-15), which
+// are controlled by the user's terminal theme.
+//
+// Active panel is indicated by a green title, matching the existing green
+// accent used for unread badges, online indicators, and the input prompt.
 // =============================================================================
 
-/// Style for the border of the active (focused) panel.
-pub fn active_panel_border_style() -> Style {
-    Style::default().fg(Color::Green)
+/// Style for the panel title when the panel is active.
+pub fn active_title_style() -> Style {
+    Style::default()
+        .fg(Color::Green)
+        .add_modifier(Modifier::BOLD)
 }
 
-/// Style for the border of inactive panels.
-pub fn inactive_panel_border_style() -> Style {
+/// Style for the panel title when the panel is inactive.
+pub fn inactive_title_style() -> Style {
     Style::default()
+        .fg(Color::DarkGray)
+        .add_modifier(Modifier::BOLD)
+}
+
+/// Style for the vertical separator between panels.
+pub fn panel_separator_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
+/// Style for the status bar (ANSI Black bg, default fg).
+/// Uses ANSI color 0 for background — controlled by the terminal theme.
+pub fn status_bar_style() -> Style {
+    Style::default().bg(Color::Black)
 }
 
 // =============================================================================
@@ -198,5 +221,31 @@ mod tests {
     fn group_sender_style_is_cyan() {
         let style = group_sender_style();
         assert_eq!(style.fg, Some(Color::Cyan));
+    }
+
+    #[test]
+    fn active_title_style_is_green_bold() {
+        let style = active_title_style();
+        assert_eq!(style.fg, Some(Color::Green));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn inactive_title_style_is_dark_gray_bold() {
+        let style = inactive_title_style();
+        assert_eq!(style.fg, Some(Color::DarkGray));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn panel_separator_style_is_dark_gray() {
+        let style = panel_separator_style();
+        assert_eq!(style.fg, Some(Color::DarkGray));
+    }
+
+    #[test]
+    fn status_bar_style_uses_ansi_black_bg() {
+        let style = status_bar_style();
+        assert_eq!(style.bg, Some(Color::Black));
     }
 }

@@ -3,7 +3,7 @@
 use ratatui::{
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Padding, Paragraph},
     Frame,
 };
 
@@ -26,31 +26,21 @@ pub fn render_message_input(
 ) {
     let is_focused = active_pane == ActivePane::MessageInput;
 
-    let border_style = if is_focused {
-        styles::active_panel_border_style()
-    } else {
-        styles::inactive_panel_border_style()
-    };
-
     let line = build_input_line(input_state, is_focused);
 
-    let paragraph = Paragraph::new(line).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(border_style),
-    );
+    let paragraph = Paragraph::new(line).block(Block::new().padding(Padding::horizontal(1)));
 
     frame.render_widget(paragraph, area);
 
     // Set cursor position when focused
     if is_focused {
-        // Use saturating arithmetic to prevent overflow with very long inputs
+        // +1 for horizontal padding, no border offset needed
         let cursor_x = area
             .x
             .saturating_add(1)
             .saturating_add(PROMPT_SYMBOL.len() as u16)
             .saturating_add(input_state.cursor_position().min(u16::MAX as usize) as u16);
-        let cursor_y = area.y.saturating_add(1);
+        let cursor_y = area.y;
         frame.set_cursor_position((cursor_x, cursor_y));
     }
 }
