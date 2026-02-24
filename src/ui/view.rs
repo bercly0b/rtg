@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, List, ListItem, ListState, Padding, Paragraph},
@@ -25,9 +25,14 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .areas(frame.area());
 
-    let [chats_area, messages_with_input_area] = Layout::default()
+    // Horizontal split: chat list | separator (1 char) | messages+input
+    let [chats_area, separator_area, messages_with_input_area] = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+        .constraints([
+            Constraint::Percentage(30),
+            Constraint::Length(1),
+            Constraint::Percentage(70),
+        ])
         .areas(content_area);
 
     // Split right panel into messages area and input field (1 line for input text)
@@ -38,6 +43,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
 
     let active_pane = state.active_pane();
     render_chat_list_panel(frame, chats_area, state, active_pane);
+    render_vertical_separator(frame, separator_area);
     render_messages_panel(frame, messages_area, state, active_pane);
     render_message_input(frame, input_area, state.message_input(), active_pane);
 
@@ -47,29 +53,29 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
 
 fn render_chat_list_panel(
     frame: &mut Frame<'_>,
-    area: ratatui::layout::Rect,
+    area: Rect,
     state: &ShellState,
     active_pane: ActivePane,
 ) {
     let is_active = active_pane == ActivePane::ChatList;
-    let panel_style = styles::chat_list_panel_style(is_active);
+    let title_style = panel_title_style(is_active);
 
     let chat_list = state.chat_list();
     match chat_list.ui_state() {
         ChatListUiState::Loading => {
-            render_chat_list_message(frame, area, "Loading chats...", panel_style)
+            render_chat_list_message(frame, area, "Loading chats...", title_style)
         }
         ChatListUiState::Empty => render_chat_list_message(
             frame,
             area,
             "No chats yet. Press refresh to try again.",
-            panel_style,
+            title_style,
         ),
         ChatListUiState::Error => render_chat_list_message(
             frame,
             area,
             "Failed to load chats. Check connection and retry.",
-            panel_style,
+            title_style,
         ),
         ChatListUiState::Ready => {
             let chats = chat_list.chats();
@@ -83,8 +89,8 @@ fn render_chat_list_panel(
                 .block(
                     Block::new()
                         .title(title)
-                        .padding(Padding::horizontal(1))
-                        .style(panel_style),
+                        .title_style(title_style)
+                        .padding(Padding::horizontal(1)),
                 )
                 .highlight_style(
                     Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
@@ -101,19 +107,33 @@ fn render_chat_list_panel(
     }
 }
 
-fn render_chat_list_message(
-    frame: &mut Frame<'_>,
-    area: ratatui::layout::Rect,
-    message: &str,
-    panel_style: Style,
-) {
+fn render_chat_list_message(frame: &mut Frame<'_>, area: Rect, message: &str, title_style: Style) {
     let message = Paragraph::new(message).block(
         Block::new()
             .title("Chats")
-            .padding(Padding::horizontal(1))
-            .style(panel_style),
+            .title_style(title_style)
+            .padding(Padding::horizontal(1)),
     );
     frame.render_widget(message, area);
+}
+
+/// Renders a vertical separator line between panels.
+fn render_vertical_separator(frame: &mut Frame<'_>, area: Rect) {
+    let sep_style = styles::panel_separator_style();
+    let lines: Vec<Line<'_>> = (0..area.height)
+        .map(|_| Line::styled("\u{2502}", sep_style))
+        .collect();
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
+}
+
+/// Returns the appropriate title style for a panel based on active state.
+fn panel_title_style(is_active: bool) -> Style {
+    if is_active {
+        styles::active_title_style()
+    } else {
+        styles::inactive_title_style()
+    }
 }
 
 /// Builds the list of visual items including section headers.
@@ -328,12 +348,12 @@ fn normalize_preview_for_chat_row(preview: &str) -> String {
 
 fn render_messages_panel(
     frame: &mut Frame<'_>,
-    area: ratatui::layout::Rect,
+    area: Rect,
     state: &mut ShellState,
     active_pane: ActivePane,
 ) {
     let is_active = active_pane == ActivePane::Messages;
-    let panel_style = styles::messages_panel_style(is_active);
+    let title_style = panel_title_style(is_active);
 
     let open_chat = state.open_chat();
     let title = open_chat_title(open_chat);
@@ -342,8 +362,8 @@ fn render_messages_panel(
     let block = || {
         Block::new()
             .title(title.clone())
+            .title_style(title_style)
             .padding(Padding::horizontal(1))
-            .style(panel_style)
     };
 
     match ui_state {

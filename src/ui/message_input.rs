@@ -25,15 +25,10 @@ pub fn render_message_input(
     active_pane: ActivePane,
 ) {
     let is_focused = active_pane == ActivePane::MessageInput;
-    let panel_style = styles::input_panel_style(is_focused);
 
     let line = build_input_line(input_state, is_focused);
 
-    let paragraph = Paragraph::new(line).block(
-        Block::new()
-            .padding(Padding::horizontal(1))
-            .style(panel_style),
-    );
+    let paragraph = Paragraph::new(line).block(Block::new().padding(Padding::horizontal(1)));
 
     frame.render_widget(paragraph, area);
 

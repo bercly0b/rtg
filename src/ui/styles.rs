@@ -90,77 +90,40 @@ pub fn date_separator_style() -> Style {
 }
 
 // =============================================================================
-// Panel background colors
-//
-// Uses ANSI 256 grayscale ramp (indices 232..=255) so that panel shading
-// adapts to any dark terminal color scheme instead of hardcoding RGB values.
-//
-// Grayscale reference (dark end):
-//   232 = #080808, 233 = #121212, 234 = #1c1c1c,
-//   235 = #262626, 236 = #303030, 237 = #3a3a3a, 238 = #444444
-//
-// Strategy:
-//   - Messages panel uses the terminal's default bg (Color::Reset).
-//   - Sidebar / input use a slightly raised grayscale step for contrast.
-//   - Active panel is one grayscale step brighter than inactive.
-//   - Status bar gets a distinct raised background.
-// =============================================================================
-
-/// Sidebar background — one step above terminal default.
-const CHAT_LIST_BG: Color = Color::Indexed(235);
-/// Sidebar background when focused.
-const CHAT_LIST_ACTIVE_BG: Color = Color::Indexed(236);
-
-/// Input field background — subtle contrast from the messages area.
-const INPUT_BG: Color = Color::Indexed(235);
-/// Input field background when focused.
-const INPUT_ACTIVE_BG: Color = Color::Indexed(236);
-
-/// Status bar background — visually distinct accent bar.
-const STATUS_BAR_BG: Color = Color::Indexed(237);
-/// Status bar foreground — muted text on the accent bar.
-const STATUS_BAR_FG: Color = Color::Indexed(245);
-
-// =============================================================================
 // Panel styles
 //
-// Panel backgrounds are applied via Block::style(). Child widget styles
-// (text spans, list items) should NOT set bg() to allow the panel
-// background to show through via ratatui's style inheritance.
+// All panels use the terminal's default background (no bg override) so that
+// the TUI inherits whatever color scheme the user has configured. Only the
+// status bar and the panel separator use explicit ANSI colors (0-15), which
+// are controlled by the user's terminal theme.
+//
+// Active panel is indicated by a green title, matching the existing green
+// accent used for unread badges, online indicators, and the input prompt.
 // =============================================================================
 
-/// Style for the chat list panel background.
-pub fn chat_list_panel_style(is_active: bool) -> Style {
-    let bg = if is_active {
-        CHAT_LIST_ACTIVE_BG
-    } else {
-        CHAT_LIST_BG
-    };
-    Style::default().bg(bg)
+/// Style for the panel title when the panel is active.
+pub fn active_title_style() -> Style {
+    Style::default()
+        .fg(Color::Green)
+        .add_modifier(Modifier::BOLD)
 }
 
-/// Style for the messages panel background.
-///
-/// Uses the terminal's default background (`Color::Reset`) so the main
-/// content area inherits whatever color scheme the user has configured.
-/// The active state uses a minimal grayscale raise for a subtle highlight.
-pub fn messages_panel_style(is_active: bool) -> Style {
-    if is_active {
-        Style::default().bg(Color::Indexed(234))
-    } else {
-        Style::reset()
-    }
+/// Style for the panel title when the panel is inactive.
+pub fn inactive_title_style() -> Style {
+    Style::default()
+        .fg(Color::DarkGray)
+        .add_modifier(Modifier::BOLD)
 }
 
-/// Style for the message input panel background.
-pub fn input_panel_style(is_active: bool) -> Style {
-    let bg = if is_active { INPUT_ACTIVE_BG } else { INPUT_BG };
-    Style::default().bg(bg)
+/// Style for the vertical separator between panels.
+pub fn panel_separator_style() -> Style {
+    Style::default().fg(Color::DarkGray)
 }
 
-/// Style for the status bar.
+/// Style for the status bar (ANSI Black bg, default fg).
+/// Uses ANSI color 0 for background — controlled by the terminal theme.
 pub fn status_bar_style() -> Style {
-    Style::default().fg(STATUS_BAR_FG).bg(STATUS_BAR_BG)
+    Style::default().bg(Color::Black)
 }
 
 // =============================================================================
@@ -261,40 +224,28 @@ mod tests {
     }
 
     #[test]
-    fn chat_list_panel_style_has_background() {
-        let active = chat_list_panel_style(true);
-        let inactive = chat_list_panel_style(false);
-        assert_eq!(active.bg, Some(CHAT_LIST_ACTIVE_BG));
-        assert_eq!(inactive.bg, Some(CHAT_LIST_BG));
-        assert_ne!(active.bg, inactive.bg);
+    fn active_title_style_is_green_bold() {
+        let style = active_title_style();
+        assert_eq!(style.fg, Some(Color::Green));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
-    fn messages_panel_style_uses_terminal_default_bg_when_inactive() {
-        let inactive = messages_panel_style(false);
-        // Style::reset() sets bg to Color::Reset, meaning terminal default background.
-        assert_eq!(inactive.bg, Some(Color::Reset));
+    fn inactive_title_style_is_dark_gray_bold() {
+        let style = inactive_title_style();
+        assert_eq!(style.fg, Some(Color::DarkGray));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
-    fn messages_panel_style_has_raised_bg_when_active() {
-        let active = messages_panel_style(true);
-        assert!(active.bg.is_some(), "Active messages panel should have bg");
+    fn panel_separator_style_is_dark_gray() {
+        let style = panel_separator_style();
+        assert_eq!(style.fg, Some(Color::DarkGray));
     }
 
     #[test]
-    fn input_panel_style_has_background() {
-        let active = input_panel_style(true);
-        let inactive = input_panel_style(false);
-        assert_eq!(active.bg, Some(INPUT_ACTIVE_BG));
-        assert_eq!(inactive.bg, Some(INPUT_BG));
-        assert_ne!(active.bg, inactive.bg);
-    }
-
-    #[test]
-    fn status_bar_style_has_background_and_foreground() {
+    fn status_bar_style_uses_ansi_black_bg() {
         let style = status_bar_style();
-        assert_eq!(style.bg, Some(STATUS_BAR_BG));
-        assert_eq!(style.fg, Some(STATUS_BAR_FG));
+        assert_eq!(style.bg, Some(Color::Black));
     }
 }
