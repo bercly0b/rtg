@@ -91,27 +91,35 @@ pub fn date_separator_style() -> Style {
 
 // =============================================================================
 // Panel background colors
+//
+// Uses ANSI 256 grayscale ramp (indices 232..=255) so that panel shading
+// adapts to any dark terminal color scheme instead of hardcoding RGB values.
+//
+// Grayscale reference (dark end):
+//   232 = #080808, 233 = #121212, 234 = #1c1c1c,
+//   235 = #262626, 236 = #303030, 237 = #3a3a3a, 238 = #444444
+//
+// Strategy:
+//   - Messages panel uses the terminal's default bg (Color::Reset).
+//   - Sidebar / input use a slightly raised grayscale step for contrast.
+//   - Active panel is one grayscale step brighter than inactive.
+//   - Status bar gets a distinct raised background.
 // =============================================================================
 
-/// Darker navy for the chat list sidebar.
-const CHAT_LIST_BG: Color = Color::Rgb(28, 31, 48);
-/// Slightly brighter sidebar when active.
-const CHAT_LIST_ACTIVE_BG: Color = Color::Rgb(33, 36, 55);
+/// Sidebar background — one step above terminal default.
+const CHAT_LIST_BG: Color = Color::Indexed(235);
+/// Sidebar background when focused.
+const CHAT_LIST_ACTIVE_BG: Color = Color::Indexed(236);
 
-/// Lighter dark for the messages area.
-const MESSAGES_BG: Color = Color::Rgb(36, 40, 58);
-/// Slightly brighter messages area when active.
-const MESSAGES_ACTIVE_BG: Color = Color::Rgb(40, 44, 64);
+/// Input field background — subtle contrast from the messages area.
+const INPUT_BG: Color = Color::Indexed(235);
+/// Input field background when focused.
+const INPUT_ACTIVE_BG: Color = Color::Indexed(236);
 
-/// Background for the input field.
-const INPUT_BG: Color = Color::Rgb(32, 36, 52);
-/// Brighter input field when focused — distinct from messages background.
-const INPUT_ACTIVE_BG: Color = Color::Rgb(40, 44, 62);
-
-/// Darkest shade for the status bar.
-const STATUS_BAR_BG: Color = Color::Rgb(22, 25, 38);
-/// Status bar foreground text.
-const STATUS_BAR_FG: Color = Color::Rgb(140, 145, 170);
+/// Status bar background — visually distinct accent bar.
+const STATUS_BAR_BG: Color = Color::Indexed(237);
+/// Status bar foreground — muted text on the accent bar.
+const STATUS_BAR_FG: Color = Color::Indexed(245);
 
 // =============================================================================
 // Panel styles
@@ -132,13 +140,16 @@ pub fn chat_list_panel_style(is_active: bool) -> Style {
 }
 
 /// Style for the messages panel background.
+///
+/// Uses the terminal's default background (`Color::Reset`) so the main
+/// content area inherits whatever color scheme the user has configured.
+/// The active state uses a minimal grayscale raise for a subtle highlight.
 pub fn messages_panel_style(is_active: bool) -> Style {
-    let bg = if is_active {
-        MESSAGES_ACTIVE_BG
+    if is_active {
+        Style::default().bg(Color::Indexed(234))
     } else {
-        MESSAGES_BG
-    };
-    Style::default().bg(bg)
+        Style::reset()
+    }
 }
 
 /// Style for the message input panel background.
@@ -259,12 +270,16 @@ mod tests {
     }
 
     #[test]
-    fn messages_panel_style_has_background() {
-        let active = messages_panel_style(true);
+    fn messages_panel_style_uses_terminal_default_bg_when_inactive() {
         let inactive = messages_panel_style(false);
-        assert_eq!(active.bg, Some(MESSAGES_ACTIVE_BG));
-        assert_eq!(inactive.bg, Some(MESSAGES_BG));
-        assert_ne!(active.bg, inactive.bg);
+        // Style::reset() sets bg to Color::Reset, meaning terminal default background.
+        assert_eq!(inactive.bg, Some(Color::Reset));
+    }
+
+    #[test]
+    fn messages_panel_style_has_raised_bg_when_active() {
+        let active = messages_panel_style(true);
+        assert!(active.bg.is_some(), "Active messages panel should have bg");
     }
 
     #[test]
