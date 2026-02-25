@@ -25,6 +25,7 @@ pub enum MessageListElement {
     /// A message with optional sender display.
     Message {
         time: String,
+        show_time: bool,
         sender: Option<String>,
         content: String,
     },
@@ -37,6 +38,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
     let mut elements = Vec::new();
     let mut prev_date: Option<chrono::NaiveDate> = None;
     let mut prev_sender: Option<&str> = None;
+    let mut prev_time: Option<String> = None;
 
     for message in messages {
         let msg_date = timestamp_to_date(message.timestamp_ms);
@@ -45,9 +47,11 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
         if prev_date != Some(msg_date) {
             elements.push(MessageListElement::DateSeparator(format_date(msg_date)));
             prev_sender = None; // Reset sender grouping on date change
+            prev_time = None;
         }
 
         let sender_name = effective_sender_name(message);
+        let time = format_time(message.timestamp_ms);
 
         // Show sender only if different from previous message
         let show_sender = prev_sender != Some(sender_name);
@@ -57,14 +61,20 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             None
         };
 
+        // Show time only on the first message in a same-sender group,
+        // or when HH:MM changes within the group.
+        let show_time = show_sender || prev_time.as_deref() != Some(&time);
+
         elements.push(MessageListElement::Message {
-            time: format_time(message.timestamp_ms),
+            time: time.clone(),
+            show_time,
             sender,
             content: message.display_content(),
         });
 
         prev_date = Some(msg_date);
         prev_sender = Some(sender_name);
+        prev_time = Some(time);
     }
 
     elements
@@ -99,9 +109,10 @@ pub fn element_to_list_item(element: &MessageListElement) -> ListItem<'static> {
         MessageListElement::DateSeparator(date) => date_separator_item(date),
         MessageListElement::Message {
             time,
+            show_time,
             sender,
             content,
-        } => message_item(time, sender.as_deref(), content),
+        } => message_item(time, *show_time, sender.as_deref(), content),
     }
 }
 
@@ -115,13 +126,18 @@ fn date_separator_item(date: &str) -> ListItem<'static> {
     ListItem::new(vec![Line::default(), line, Line::default()])
 }
 
-fn message_item(time: &str, sender: Option<&str>, content: &str) -> ListItem<'static> {
+fn message_item(
+    time: &str,
+    show_time: bool,
+    sender: Option<&str>,
+    content: &str,
+) -> ListItem<'static> {
     let mut lines = Vec::new();
     let indent = "      "; // 6 spaces to align with time column
 
     if sender.is_some() {
         // First message in group: header line (time + sender), then content on separate lines
-        let header_line = build_message_header_line(time, sender);
+        let header_line = build_message_header_line(time, show_time, sender);
         lines.push(header_line);
 
         for text_line in content.lines() {
@@ -138,15 +154,17 @@ fn message_item(time: &str, sender: Option<&str>, content: &str) -> ListItem<'st
             ]));
         }
     } else {
-        // Grouped message (no sender): time + first line of content on same line
+        // Grouped message (no sender): time/blank + first line of content on same line
+        let time_span = if show_time {
+            Span::styled(format!("{:>5} ", time), styles::message_time_style())
+        } else {
+            Span::raw(indent.to_owned())
+        };
+
         let mut content_lines = content.lines();
 
         if let Some(first_line) = content_lines.next() {
-            // Time + first content line on same row
-            let mut spans = vec![Span::styled(
-                format!("{:>5} ", time),
-                styles::message_time_style(),
-            )];
+            let mut spans = vec![time_span];
             spans.extend(build_content_line_spans(first_line));
             lines.push(Line::from(spans));
 
@@ -159,10 +177,7 @@ fn message_item(time: &str, sender: Option<&str>, content: &str) -> ListItem<'st
             }
         } else {
             // Empty content
-            let mut spans = vec![Span::styled(
-                format!("{:>5} ", time),
-                styles::message_time_style(),
-            )];
+            let mut spans = vec![time_span];
             spans.push(Span::styled(
                 "[Empty message]".to_owned(),
                 styles::message_media_style(),
@@ -174,11 +189,14 @@ fn message_item(time: &str, sender: Option<&str>, content: &str) -> ListItem<'st
     ListItem::new(lines)
 }
 
-fn build_message_header_line(time: &str, sender: Option<&str>) -> Line<'static> {
-    let mut spans = vec![Span::styled(
-        format!("{:>5} ", time),
-        styles::message_time_style(),
-    )];
+fn build_message_header_line(time: &str, show_time: bool, sender: Option<&str>) -> Line<'static> {
+    let time_span = if show_time {
+        Span::styled(format!("{:>5} ", time), styles::message_time_style())
+    } else {
+        Span::raw("      ".to_owned()) // 6 spaces to preserve alignment
+    };
+
+    let mut spans = vec![time_span];
 
     if let Some(name) = sender {
         spans.push(Span::styled(
@@ -496,5 +514,122 @@ mod tests {
         let elements: Vec<MessageListElement> = vec![];
 
         assert_eq!(message_index_to_element_index(&elements, 0), None);
+    }
+
+    #[test]
+    fn hides_duplicate_time_for_same_sender_same_minute() {
+        // Two messages from Alice at exactly the same timestamp (same HH:MM)
+        let messages = vec![
+            msg(1, "Alice", "First", FEB_14_2026_10AM, false),
+            msg(2, "Alice", "Second", FEB_14_2026_10AM + 5000, false), // +5s, same minute
+        ];
+
+        let elements = build_message_list_elements(&messages);
+
+        // First message should show time
+        if let MessageListElement::Message { show_time, .. } = &elements[1] {
+            assert!(show_time, "First message in group should show time");
+        } else {
+            panic!("Expected Message element");
+        }
+
+        // Second message (same sender, same minute) should hide time
+        if let MessageListElement::Message { show_time, .. } = &elements[2] {
+            assert!(!show_time, "Same sender + same minute should hide time");
+        } else {
+            panic!("Expected Message element");
+        }
+    }
+
+    #[test]
+    fn shows_time_when_minute_changes_within_same_sender_group() {
+        // Two messages from Alice, 1 minute apart (different HH:MM)
+        let messages = vec![
+            msg(1, "Alice", "First", FEB_14_2026_10AM, false),
+            msg(2, "Alice", "Second", FEB_14_2026_10AM + 60000, false), // +1 min
+        ];
+
+        let elements = build_message_list_elements(&messages);
+
+        if let MessageListElement::Message { show_time, .. } = &elements[1] {
+            assert!(show_time, "First message should show time");
+        }
+
+        if let MessageListElement::Message { show_time, .. } = &elements[2] {
+            assert!(show_time, "Different minute in same group should show time");
+        }
+    }
+
+    #[test]
+    fn shows_time_when_sender_changes_even_if_same_minute() {
+        // Same timestamp but different senders
+        let messages = vec![
+            msg(1, "Alice", "Hi", FEB_14_2026_10AM, false),
+            msg(2, "Bob", "Hello", FEB_14_2026_10AM + 5000, false), // same minute
+        ];
+
+        let elements = build_message_list_elements(&messages);
+
+        if let MessageListElement::Message { show_time, .. } = &elements[1] {
+            assert!(show_time, "First message should show time");
+        }
+
+        if let MessageListElement::Message { show_time, .. } = &elements[2] {
+            assert!(
+                show_time,
+                "Different sender should always show time even if same minute"
+            );
+        }
+    }
+
+    #[test]
+    fn resets_time_grouping_on_date_change() {
+        let messages = vec![
+            msg(1, "Alice", "Day 1", FEB_14_2026_10AM, false),
+            msg(2, "Alice", "Day 2", FEB_15_2026_1PM, false),
+        ];
+
+        let elements = build_message_list_elements(&messages);
+
+        // Both messages should show time (date separator resets grouping)
+        if let MessageListElement::Message { show_time, .. } = &elements[1] {
+            assert!(show_time, "First message should show time");
+        }
+
+        if let MessageListElement::Message { show_time, .. } = &elements[3] {
+            assert!(show_time, "Message after date change should show time");
+        }
+    }
+
+    #[test]
+    fn first_message_always_shows_time() {
+        let messages = vec![msg(1, "Alice", "Hello", FEB_14_2026_10AM, false)];
+
+        let elements = build_message_list_elements(&messages);
+
+        if let MessageListElement::Message { show_time, .. } = &elements[1] {
+            assert!(show_time, "Single message should always show time");
+        }
+    }
+
+    #[test]
+    fn three_messages_same_sender_same_minute_only_first_shows_time() {
+        let messages = vec![
+            msg(1, "Alice", "One", FEB_14_2026_10AM, false),
+            msg(2, "Alice", "Two", FEB_14_2026_10AM + 10_000, false), // +10s
+            msg(3, "Alice", "Three", FEB_14_2026_10AM + 20_000, false), // +20s
+        ];
+
+        let elements = build_message_list_elements(&messages);
+
+        if let MessageListElement::Message { show_time, .. } = &elements[1] {
+            assert!(show_time, "First should show time");
+        }
+        if let MessageListElement::Message { show_time, .. } = &elements[2] {
+            assert!(!show_time, "Second should hide time");
+        }
+        if let MessageListElement::Message { show_time, .. } = &elements[3] {
+            assert!(!show_time, "Third should hide time");
+        }
     }
 }
