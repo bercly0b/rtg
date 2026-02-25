@@ -9,7 +9,7 @@ use ratatui::{
 use crate::domain::{
     chat::ChatSummary,
     chat_list_state::ChatListUiState,
-    open_chat_state::OpenChatUiState,
+    open_chat_state::{OpenChatUiState, SCROLL_MARGIN},
     shell_state::{ActivePane, ShellState},
 };
 
@@ -390,33 +390,29 @@ fn render_messages_panel(
                 let items: Vec<ListItem<'static>> =
                     elements.iter().map(element_to_list_item).collect();
 
-                // Calculate viewport height: area height minus 1 row consumed by the title.
-                // Block::inner() subtracts 1 for top-positioned title, even without borders.
-                let viewport_height = area.height.saturating_sub(1) as usize;
-
                 // Map message index to element index (accounting for date separators)
                 let element_index = state
                     .open_chat()
                     .selected_index()
                     .and_then(|msg_idx| message_index_to_element_index(&elements, msg_idx));
 
-                // Update scroll offset based on selection and viewport
-                if let Some(idx) = element_index {
-                    state
-                        .open_chat_mut()
-                        .update_scroll_offset(idx, viewport_height);
-                }
-
+                // Restore persisted scroll offset from previous frame
                 let scroll_offset = state.open_chat().scroll_offset();
 
-                let list = List::new(items).block(block()).highlight_style(
-                    Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-                );
+                let list = List::new(items)
+                    .block(block())
+                    .highlight_style(
+                        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
+                    )
+                    .scroll_padding(SCROLL_MARGIN);
 
                 let mut list_state = ListState::default();
                 list_state.select(element_index);
                 *list_state.offset_mut() = scroll_offset;
                 frame.render_stateful_widget(list, area, &mut list_state);
+
+                // Persist the offset computed by ratatui for the next frame
+                state.open_chat_mut().set_scroll_offset(list_state.offset());
             }
         }
     }
