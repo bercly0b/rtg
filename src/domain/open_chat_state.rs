@@ -8,8 +8,9 @@ pub enum OpenChatUiState {
     Error,
 }
 
-/// Scroll margin - number of items to keep visible above/below cursor before scrolling.
-const SCROLL_MARGIN: usize = 5;
+/// Scroll margin — number of items to keep visible above/below cursor before scrolling.
+/// Used by the UI layer via `List::scroll_padding()`.
+pub const SCROLL_MARGIN: usize = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenChatState {
@@ -57,9 +58,17 @@ impl OpenChatState {
         self.selected_index
     }
 
-    /// Returns the current scroll offset for the messages list.
+    /// Returns the current scroll offset (persisted between frames for ratatui `ListState`).
     pub fn scroll_offset(&self) -> usize {
         self.scroll_offset
+    }
+
+    /// Saves the scroll offset computed by ratatui after rendering, so it persists across frames.
+    ///
+    /// Note: `set_ready()` initializes this to `usize::MAX` as a sentinel to trigger
+    /// scroll-to-bottom on first render; ratatui clamps it to a valid range.
+    pub fn set_scroll_offset(&mut self, offset: usize) {
+        self.scroll_offset = offset;
     }
 
     pub fn set_loading(&mut self, chat_id: i64, chat_title: String) {
@@ -77,6 +86,10 @@ impl OpenChatState {
         } else {
             Some(messages.len() - 1)
         };
+        // When there are messages, set a large initial offset so ratatui places
+        // the last message at the bottom of the viewport on first render.
+        // The actual value will be clamped by ratatui's `get_items_bounds()`.
+        self.scroll_offset = if messages.is_empty() { 0 } else { usize::MAX };
         self.messages = messages;
         self.ui_state = OpenChatUiState::Ready;
     }
@@ -123,31 +136,6 @@ impl OpenChatState {
             Some(0) => Some(0), // Already at the first message
             Some(idx) => Some(idx - 1),
         };
-    }
-
-    /// Updates the scroll offset based on the current selection and viewport height.
-    /// This ensures the cursor stays visible with SCROLL_MARGIN items above/below.
-    ///
-    /// `element_index` is the visual index in the list (accounting for date separators).
-    /// `viewport_height` is the number of visible rows in the list area.
-    pub fn update_scroll_offset(&mut self, element_index: usize, viewport_height: usize) {
-        if viewport_height == 0 {
-            return;
-        }
-
-        let effective_margin = SCROLL_MARGIN.min(viewport_height / 2);
-
-        // If cursor is too close to the top, scroll up
-        if element_index < self.scroll_offset + effective_margin {
-            self.scroll_offset = element_index.saturating_sub(effective_margin);
-        }
-
-        // If cursor is too close to the bottom, scroll down
-        let visible_bottom = self.scroll_offset + viewport_height;
-        if element_index + effective_margin >= visible_bottom {
-            self.scroll_offset =
-                (element_index + effective_margin + 1).saturating_sub(viewport_height);
-        }
     }
 }
 
@@ -210,6 +198,7 @@ mod tests {
         assert_eq!(state.ui_state(), OpenChatUiState::Ready);
         assert!(state.messages().is_empty());
         assert_eq!(state.selected_index(), None);
+        assert_eq!(state.scroll_offset(), 0);
     }
 
     #[test]
@@ -342,65 +331,27 @@ mod tests {
     }
 
     #[test]
-    fn update_scroll_offset_scrolls_down_when_cursor_near_bottom() {
+    fn set_ready_initializes_scroll_offset_to_max() {
         let mut state = OpenChatState::default();
-        state.scroll_offset = 0;
+        state.set_loading(1, "Chat".to_owned());
 
-        // Viewport height 20, cursor at position 18 (too close to bottom)
-        // With SCROLL_MARGIN = 5, we need 5 items visible below cursor
-        // 18 + 5 + 1 = 24, 24 - 20 = 4
-        state.update_scroll_offset(18, 20);
+        state.set_ready(vec![message(1, "A"), message(2, "B")]);
 
-        assert!(state.scroll_offset() > 0);
+        // Large initial offset so ratatui scrolls to show the last message
+        assert_eq!(state.scroll_offset(), usize::MAX);
     }
 
     #[test]
-    fn update_scroll_offset_scrolls_up_when_cursor_near_top() {
+    fn set_scroll_offset_persists_value() {
         let mut state = OpenChatState::default();
-        state.scroll_offset = 10;
 
-        // Cursor at position 12, but scroll_offset is 10
-        // So cursor is at visual row 2, which is less than margin (5)
-        state.update_scroll_offset(12, 20);
+        state.set_scroll_offset(42);
 
-        // Should scroll up so cursor has margin above
-        assert!(state.scroll_offset() < 10);
+        assert_eq!(state.scroll_offset(), 42);
     }
 
     #[test]
-    fn update_scroll_offset_does_nothing_when_cursor_in_safe_zone() {
-        let mut state = OpenChatState::default();
-        state.scroll_offset = 5;
-
-        // Cursor at 10, viewport 20, scroll_offset 5
-        // Visual position: 10 - 5 = 5 (at margin, but safe)
-        // Bottom: 5 + 20 = 25, cursor + margin = 10 + 5 = 15 < 25 (safe)
-        state.update_scroll_offset(10, 20);
-
-        assert_eq!(state.scroll_offset(), 5);
-    }
-
-    #[test]
-    fn update_scroll_offset_handles_small_viewport() {
-        let mut state = OpenChatState::default();
-        state.scroll_offset = 0;
-
-        // Very small viewport (6 rows), margin should be reduced to 3 (6/2)
-        state.update_scroll_offset(5, 6);
-
-        // Cursor at 5, viewport 6, effective margin 3
-        // 5 + 3 + 1 = 9 > 6, so should scroll
-        assert!(state.scroll_offset() > 0);
-    }
-
-    #[test]
-    fn update_scroll_offset_handles_zero_viewport() {
-        let mut state = OpenChatState::default();
-        state.scroll_offset = 5;
-
-        // Zero viewport should not change anything
-        state.update_scroll_offset(10, 0);
-
-        assert_eq!(state.scroll_offset(), 5);
+    fn scroll_margin_constant_is_five() {
+        assert_eq!(SCROLL_MARGIN, 5);
     }
 }
