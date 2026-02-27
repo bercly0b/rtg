@@ -53,9 +53,11 @@ pub fn run(cli: Cli) -> Result<()> {
                     );
 
                     let mut terminal = StdTerminal;
+                    let telegram_mut = std::sync::Arc::get_mut(&mut context.telegram)
+                        .expect("single owner during guided auth");
                     let auth_outcome = run_guided_auth(
                         &mut terminal,
-                        &mut context.telegram,
+                        telegram_mut,
                         &startup.session_file(),
                         &RetryPolicy::default(),
                     )?;
@@ -90,7 +92,11 @@ pub fn run(cli: Cli) -> Result<()> {
 
 fn build_logout_telegram(config_path: Option<&std::path::Path>) -> TelegramAdapter {
     match bootstrap::bootstrap(config_path) {
-        Ok(context) => context.telegram,
+        Ok(context) => std::sync::Arc::try_unwrap(context.telegram).unwrap_or_else(|arc| {
+            tracing::warn!("logout: Arc had multiple owners, creating stub adapter");
+            drop(arc);
+            TelegramAdapter::stub()
+        }),
         Err(error) => {
             tracing::warn!(
                 error = ?error,

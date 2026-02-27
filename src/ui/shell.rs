@@ -35,44 +35,11 @@ pub fn start(
 mod tests {
     use super::*;
     use crate::{
-        domain::{chat::ChatSummary, events::AppEvent, message::Message},
+        domain::events::AppEvent,
         infra::stubs::{NoopOpener, StubStorageAdapter},
         ui::event_source::MockEventSource,
-        usecases::{
-            list_chats::{ListChatsSource, ListChatsSourceError},
-            load_messages::{MessagesSource, MessagesSourceError},
-            send_message::{MessageSender, SendMessageSourceError},
-            shell::DefaultShellOrchestrator,
-        },
+        usecases::{background::tests::StubTaskDispatcher, shell::DefaultShellOrchestrator},
     };
-
-    struct EmptyChatsSource;
-
-    impl ListChatsSource for EmptyChatsSource {
-        fn list_chats(&self, _limit: usize) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
-            Ok(vec![])
-        }
-    }
-
-    struct EmptyMessagesSource;
-
-    impl MessagesSource for EmptyMessagesSource {
-        fn list_messages(
-            &self,
-            _chat_id: i64,
-            _limit: usize,
-        ) -> Result<Vec<Message>, MessagesSourceError> {
-            Ok(vec![])
-        }
-    }
-
-    struct NoopMessageSender;
-
-    impl MessageSender for NoopMessageSender {
-        fn send_message(&self, _chat_id: i64, _text: &str) -> Result<(), SendMessageSourceError> {
-            Ok(())
-        }
-    }
 
     #[test]
     fn mock_source_produces_quit_event() {
@@ -85,13 +52,9 @@ mod tests {
     #[test]
     fn orchestrator_stops_on_quit_from_source() {
         let mut source = MockEventSource::from(vec![AppEvent::QuitRequested]);
-        let mut orchestrator = DefaultShellOrchestrator::new(
-            StubStorageAdapter::default(),
-            NoopOpener,
-            EmptyChatsSource,
-            EmptyMessagesSource,
-            NoopMessageSender,
-        );
+        let (dispatcher, _rx) = StubTaskDispatcher::new();
+        let mut orchestrator =
+            DefaultShellOrchestrator::new(StubStorageAdapter::default(), NoopOpener, dispatcher);
 
         if let Some(event) = source.next_event().expect("must read mock event") {
             orchestrator

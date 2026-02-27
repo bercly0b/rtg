@@ -1,5 +1,6 @@
 //! Use case layer: application workflows and orchestration.
 
+pub mod background;
 pub mod bootstrap;
 pub mod context;
 pub mod contracts;

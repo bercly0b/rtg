@@ -92,6 +92,14 @@ impl MessageInputState {
         self.cursor_position = 0;
     }
 
+    /// Replaces the current text and moves cursor to the end.
+    ///
+    /// Used to restore input text when a background send operation fails.
+    pub fn set_text(&mut self, text: &str) {
+        self.text = text.to_owned();
+        self.cursor_position = self.text.chars().count();
+    }
+
     /// Converts character index to byte index.
     fn char_to_byte_index(&self, char_idx: usize) -> usize {
         self.text

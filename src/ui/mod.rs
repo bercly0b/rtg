@@ -9,7 +9,8 @@ mod terminal;
 mod view;
 
 pub(crate) use event_source::{
-    ChannelChatUpdatesSignalSource, ChannelConnectivityStatusSource, CrosstermEventSource,
+    ChannelBackgroundResultSource, ChannelChatUpdatesSignalSource, ChannelConnectivityStatusSource,
+    CrosstermEventSource, StubChatUpdatesSignalSource, StubConnectivityStatusSource,
 };
 
 /// Returns the UI module name for smoke checks.
