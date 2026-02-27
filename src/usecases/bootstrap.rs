@@ -1,7 +1,7 @@
 use std::{path::Path, sync::mpsc::Sender};
 
 use crate::{
-    domain::events::ConnectivityStatus,
+    domain::events::{BackgroundTaskResult, ConnectivityStatus},
     infra::{
         self,
         config::{FileConfigAdapter, TelegramConfig},
@@ -14,8 +14,13 @@ use crate::{
         ChatUpdatesMonitorStartError, ConnectivityMonitorStartError, TelegramAdapter,
         TelegramChatUpdatesMonitor, TelegramConnectivityMonitor,
     },
-    ui::{ChannelChatUpdatesSignalSource, ChannelConnectivityStatusSource, CrosstermEventSource},
+    ui::{
+        ChannelBackgroundResultSource, ChannelChatUpdatesSignalSource,
+        ChannelConnectivityStatusSource, CrosstermEventSource, StubChatUpdatesSignalSource,
+        StubConnectivityStatusSource,
+    },
     usecases::{
+        background::ThreadTaskDispatcher,
         context::AppContext,
         contracts::{AppEventSource, ShellOrchestrator},
         guided_auth::AuthBackendError,
@@ -26,9 +31,9 @@ use crate::{
 const CONNECTIVITY_MONITOR_START_FAILED: &str = "TELEGRAM_CONNECTIVITY_MONITOR_START_FAILED";
 const CHAT_UPDATES_MONITOR_START_FAILED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_START_FAILED";
 
-pub struct ShellComposition<'a> {
+pub struct ShellComposition {
     pub event_source: Box<dyn AppEventSource>,
-    pub orchestrator: Box<dyn ShellOrchestrator + 'a>,
+    pub orchestrator: Box<dyn ShellOrchestrator>,
     _connectivity_monitor: Option<TelegramConnectivityMonitor>,
     _chat_updates_monitor: Option<TelegramChatUpdatesMonitor>,
 }
@@ -40,16 +45,19 @@ pub fn bootstrap(config_path: Option<&Path>) -> Result<AppContext, AppError> {
     Ok(context)
 }
 
-pub fn compose_shell(context: &AppContext) -> ShellComposition<'_> {
+pub fn compose_shell(context: &AppContext) -> ShellComposition {
     compose_shell_with_factory(context, &RealConnectivityMonitorFactory)
 }
 
-fn compose_shell_with_factory<'a>(
-    context: &'a AppContext,
+fn compose_shell_with_factory(
+    context: &AppContext,
     monitor_factory: &dyn ConnectivityMonitorFactory,
-) -> ShellComposition<'a> {
+) -> ShellComposition {
     let mut connectivity_monitor = None;
     let mut chat_updates_monitor = None;
+
+    let (bg_tx, bg_rx) = std::sync::mpsc::channel::<BackgroundTaskResult>();
+
     let event_source: Box<dyn AppEventSource> = if context.config.telegram.is_configured() {
         let (status_tx, status_rx) = std::sync::mpsc::channel::<ConnectivityStatus>();
         let (updates_tx, updates_rx) = std::sync::mpsc::channel::<()>();
@@ -85,19 +93,29 @@ fn compose_shell_with_factory<'a>(
         Box::new(CrosstermEventSource::with_sources(
             Box::new(ChannelConnectivityStatusSource::new(status_rx)),
             Box::new(ChannelChatUpdatesSignalSource::new(updates_rx)),
+            Box::new(ChannelBackgroundResultSource::new(bg_rx)),
         ))
     } else {
-        Box::new(CrosstermEventSource::default())
+        Box::new(CrosstermEventSource::with_sources(
+            Box::new(StubConnectivityStatusSource),
+            Box::new(StubChatUpdatesSignalSource),
+            Box::new(ChannelBackgroundResultSource::new(bg_rx)),
+        ))
     };
+
+    let dispatcher = ThreadTaskDispatcher::new(
+        std::sync::Arc::clone(&context.telegram),
+        std::sync::Arc::clone(&context.telegram),
+        std::sync::Arc::clone(&context.telegram),
+        bg_tx,
+    );
 
     ShellComposition {
         event_source,
         orchestrator: Box::new(DefaultShellOrchestrator::new(
             StubStorageAdapter::default(),
             NoopOpener,
-            &context.telegram,
-            &context.telegram,
-            &context.telegram,
+            dispatcher,
         )),
         _connectivity_monitor: connectivity_monitor,
         _chat_updates_monitor: chat_updates_monitor,

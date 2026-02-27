@@ -7,7 +7,7 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::{
-    domain::events::{AppEvent, ConnectivityStatus, KeyInput},
+    domain::events::{AppEvent, BackgroundTaskResult, ConnectivityStatus, KeyInput},
     usecases::contracts::AppEventSource,
 };
 
@@ -39,6 +39,19 @@ pub struct StubChatUpdatesSignalSource;
 impl ChatUpdatesSignalSource for StubChatUpdatesSignalSource {
     fn has_pending_refresh(&mut self) -> bool {
         false
+    }
+}
+
+pub trait BackgroundResultSource {
+    fn next_result(&mut self) -> Option<BackgroundTaskResult>;
+}
+
+#[derive(Default)]
+pub struct StubBackgroundResultSource;
+
+impl BackgroundResultSource for StubBackgroundResultSource {
+    fn next_result(&mut self) -> Option<BackgroundTaskResult> {
+        None
     }
 }
 
@@ -107,6 +120,22 @@ impl ChatUpdatesSignalSource for ChannelChatUpdatesSignalSource {
     }
 }
 
+pub struct ChannelBackgroundResultSource {
+    receiver: Receiver<BackgroundTaskResult>,
+}
+
+impl ChannelBackgroundResultSource {
+    pub fn new(receiver: Receiver<BackgroundTaskResult>) -> Self {
+        Self { receiver }
+    }
+}
+
+impl BackgroundResultSource for ChannelBackgroundResultSource {
+    fn next_result(&mut self) -> Option<BackgroundTaskResult> {
+        self.receiver.try_recv().ok()
+    }
+}
+
 trait TerminalEventSource {
     fn poll(&mut self, timeout: Duration) -> Result<bool>;
     fn read(&mut self) -> Result<Event>;
@@ -127,6 +156,7 @@ impl TerminalEventSource for CrosstermTerminalEventSource {
 pub struct CrosstermEventSource {
     connectivity_source: Box<dyn ConnectivityStatusSource>,
     chat_updates_source: Box<dyn ChatUpdatesSignalSource>,
+    background_result_source: Box<dyn BackgroundResultSource>,
     pending_connectivity: Option<ConnectivityStatus>,
     last_emitted_connectivity: Option<ConnectivityStatus>,
     connectivity_streak: u8,
@@ -137,6 +167,7 @@ impl Default for CrosstermEventSource {
         Self {
             connectivity_source: Box::new(StubConnectivityStatusSource),
             chat_updates_source: Box::new(StubChatUpdatesSignalSource),
+            background_result_source: Box::new(StubBackgroundResultSource),
             pending_connectivity: None,
             last_emitted_connectivity: None,
             connectivity_streak: 0,
@@ -147,16 +178,22 @@ impl Default for CrosstermEventSource {
 impl CrosstermEventSource {
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn new(connectivity_source: Box<dyn ConnectivityStatusSource>) -> Self {
-        Self::with_sources(connectivity_source, Box::new(StubChatUpdatesSignalSource))
+        Self::with_sources(
+            connectivity_source,
+            Box::new(StubChatUpdatesSignalSource),
+            Box::new(StubBackgroundResultSource),
+        )
     }
 
     pub fn with_sources(
         connectivity_source: Box<dyn ConnectivityStatusSource>,
         chat_updates_source: Box<dyn ChatUpdatesSignalSource>,
+        background_result_source: Box<dyn BackgroundResultSource>,
     ) -> Self {
         Self {
             connectivity_source,
             chat_updates_source,
+            background_result_source,
             pending_connectivity: None,
             last_emitted_connectivity: None,
             connectivity_streak: 0,
@@ -176,6 +213,13 @@ impl CrosstermEventSource {
                 return Ok(map_key_event(key));
             }
             return Ok(None);
+        }
+
+        // Background task results have high priority — deliver them before
+        // chat updates to keep the UI responsive after dispatched operations.
+        if let Some(result) = self.background_result_source.next_result() {
+            self.connectivity_streak = 0;
+            return Ok(Some(AppEvent::BackgroundTaskCompleted(result)));
         }
 
         if self.chat_updates_source.has_pending_refresh() {
@@ -615,6 +659,7 @@ mod tests {
                 ConnectivityStatus::Connected,
             ])),
             Box::new(StubChatUpdatesSignalSource),
+            Box::new(StubBackgroundResultSource),
         );
 
         let mut terminal = TestTerminalEventSource::with_polls_and_events(
@@ -653,6 +698,7 @@ mod tests {
         let mut source = CrosstermEventSource::with_sources(
             Box::new(StubConnectivityStatusSource),
             Box::new(TestChatUpdatesSource::from(vec![true, false])),
+            Box::new(StubBackgroundResultSource),
         );
         let mut terminal = TestTerminalEventSource::with_polls(vec![false, false]);
 
@@ -675,6 +721,7 @@ mod tests {
         let mut source = CrosstermEventSource::with_sources(
             Box::new(StubConnectivityStatusSource),
             Box::new(TestChatUpdatesSource::from(vec![true, true, false])),
+            Box::new(StubBackgroundResultSource),
         );
         let mut terminal = TestTerminalEventSource::with_polls(vec![false, false, false]);
 
@@ -703,6 +750,7 @@ mod tests {
         let mut source = CrosstermEventSource::with_sources(
             Box::new(StubConnectivityStatusSource),
             Box::new(BurstyChatUpdatesSource),
+            Box::new(StubBackgroundResultSource),
         );
         let mut terminal = TestTerminalEventSource::with_polls(vec![false; 32]);
 

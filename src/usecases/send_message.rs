@@ -53,6 +53,12 @@ impl<T: MessageSender + ?Sized> MessageSender for &T {
     }
 }
 
+impl<T: MessageSender + ?Sized> MessageSender for std::sync::Arc<T> {
+    fn send_message(&self, chat_id: i64, text: &str) -> Result<(), SendMessageSourceError> {
+        (**self).send_message(chat_id, text)
+    }
+}
+
 /// Sends a message to the specified chat.
 ///
 /// Validates the message text (must not be empty after trimming) and delegates

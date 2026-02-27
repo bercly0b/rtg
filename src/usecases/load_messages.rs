@@ -60,6 +60,19 @@ where
     }
 }
 
+impl<T> MessagesSource for std::sync::Arc<T>
+where
+    T: MessagesSource + ?Sized,
+{
+    fn list_messages(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<Message>, MessagesSourceError> {
+        (**self).list_messages(chat_id, limit)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadMessagesError {
     Unauthorized,
