@@ -58,7 +58,15 @@ where
             "dispatching chat list refresh to background"
         );
 
-        self.state.chat_list_mut().set_loading();
+        // Only show the loader when there is no data to display (initial load,
+        // after error, or empty state).  When the list is already visible
+        // (Ready), keep showing stale data while the background fetch runs —
+        // this prevents the "blink" where the chat list is momentarily replaced
+        // by a loading indicator on every Telegram update.
+        if self.state.chat_list().ui_state() != ChatListUiState::Ready {
+            self.state.chat_list_mut().set_loading();
+        }
+
         self.chat_list_in_flight = true;
         self.dispatcher.dispatch_chat_list(preferred_chat_id);
     }
@@ -681,6 +689,66 @@ mod tests {
         o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
             .unwrap();
         assert_eq!(o.dispatcher.chat_list_dispatch_count(), 2);
+    }
+
+    #[test]
+    fn refresh_from_ready_keeps_data_visible() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "General"), chat(2, "Backend")]);
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+
+        // Trigger refresh via "r" key
+        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .unwrap();
+
+        // State must stay Ready with existing data — no blink
+        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Ready);
+        assert_eq!(o.state().chat_list().chats().len(), 2);
+        assert_eq!(o.state().chat_list().selected_index(), Some(1));
+        // But a background dispatch was issued
+        assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+    }
+
+    #[test]
+    fn chat_list_update_event_keeps_data_visible() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+        o.handle_event(AppEvent::ChatListUpdateRequested).unwrap();
+
+        // Must not blink — state stays Ready while background fetch runs
+        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Ready);
+        assert_eq!(o.state().chat_list().chats().len(), 1);
+        assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+    }
+
+    #[test]
+    fn refresh_from_error_shows_loader() {
+        let mut o = make_orchestrator();
+        // Simulate an error state
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::ChatListLoaded {
+                preferred_chat_id: None,
+                result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
+            },
+        ))
+        .unwrap();
+        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Error);
+
+        // Refresh from error — should show loader since no data to display
+        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .unwrap();
+        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Loading);
+    }
+
+    #[test]
+    fn refresh_from_empty_shows_loader() {
+        let mut o = orchestrator_with_chats(vec![]);
+        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Empty);
+
+        // Refresh from empty — should show loader since no data to display
+        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .unwrap();
+        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Loading);
     }
 
     #[test]
