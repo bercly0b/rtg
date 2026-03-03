@@ -26,6 +26,17 @@ Layer boundaries:
   - `rustfmt` (usually via `rustup component add rustfmt`)
   - `clippy` (usually via `rustup component add clippy`)
 
+TDLib (Telegram Database Library) is downloaded automatically during build via the `download-tdlib` feature of `tdlib-rs`. No manual installation required.
+
+> **Note:** First build may take longer as TDLib (~50MB) is downloaded. Subsequent builds use the cached version.
+
+Supported platforms for automatic TDLib download:
+- Linux x86_64 / arm64
+- macOS Intel / Apple Silicon
+- Windows x86_64 / arm64
+
+For manual TDLib installation or other platforms, see [TDLib build instructions](https://tdlib.github.io/td/build.html).
+
 ## Installation
 
 ```bash
