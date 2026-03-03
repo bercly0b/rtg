@@ -53,6 +53,22 @@ impl StorageLayout {
     pub fn session_policy_invalid_file(&self) -> PathBuf {
         self.session_dir.join("session.policy.invalid")
     }
+
+    /// Returns the directory for TDLib's SQLite database.
+    ///
+    /// Will be used in Phase 3+ of TDLib migration.
+    #[allow(dead_code)]
+    pub fn tdlib_database_dir(&self) -> PathBuf {
+        self.cache_dir.join("tdlib")
+    }
+
+    /// Returns the directory for TDLib's downloaded files.
+    ///
+    /// Will be used in Phase 3+ of TDLib migration.
+    #[allow(dead_code)]
+    pub fn tdlib_files_dir(&self) -> PathBuf {
+        self.cache_dir.join("tdlib_files")
+    }
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -69,5 +85,13 @@ mod tests {
 
         assert!(layout.session_dir.starts_with(&layout.config_dir));
         assert!(layout.cache_dir.starts_with(&layout.config_dir));
+    }
+
+    #[test]
+    fn tdlib_dirs_are_under_cache_dir() {
+        let layout = StorageLayout::resolve().expect("layout should resolve");
+
+        assert!(layout.tdlib_database_dir().starts_with(&layout.cache_dir));
+        assert!(layout.tdlib_files_dir().starts_with(&layout.cache_dir));
     }
 }
