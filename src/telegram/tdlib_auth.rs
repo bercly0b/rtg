@@ -13,12 +13,15 @@ use std::time::Duration;
 
 use tdlib_rs::enums::AuthorizationState;
 
+use crate::domain::chat::ChatSummary;
 use crate::domain::status::AuthConnectivityStatus;
 use crate::infra::config::TelegramConfig;
 use crate::infra::storage_layout::StorageLayout;
 use crate::usecases::guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome};
+use crate::usecases::list_chats::ListChatsSourceError;
 
 use super::tdlib_client::{TdLibClient, TdLibConfig, TdLibError};
+use super::tdlib_mappers;
 
 /// Default timeout for waiting on authorization state changes.
 const AUTH_STATE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -319,6 +322,88 @@ impl TdLibAuthBackend {
     pub fn client_mut(&mut self) -> &mut TdLibClient {
         &mut self.client
     }
+
+    /// Lists chat summaries from TDLib.
+    ///
+    /// Fetches chats from the main chat list and maps them to domain `ChatSummary`.
+    pub fn list_chat_summaries(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+        let limit_i32 = i32::try_from(limit).unwrap_or(i32::MAX);
+
+        // Get chat IDs from TDLib
+        let chat_ids = self
+            .client
+            .get_chats(limit_i32)
+            .map_err(map_list_chats_error)?;
+
+        tracing::debug!(count = chat_ids.len(), "Fetched chat IDs from TDLib");
+
+        // Fetch full chat info for each chat and build summaries
+        let mut summaries = Vec::with_capacity(chat_ids.len());
+
+        for chat_id in chat_ids {
+            match self.client.get_chat(chat_id) {
+                Ok(chat) => {
+                    // Get sender name and online status for the chat
+                    let (sender_name, is_online) = self.resolve_chat_metadata(&chat);
+
+                    let summary = tdlib_mappers::map_chat_to_summary(&chat, sender_name, is_online);
+                    summaries.push(summary);
+                }
+                Err(e) => {
+                    tracing::warn!(chat_id, error = %e, "Failed to fetch chat details, skipping");
+                    // Skip this chat but continue with others
+                }
+            }
+        }
+
+        Ok(summaries)
+    }
+
+    /// Resolves additional metadata for a chat (sender name, online status).
+    fn resolve_chat_metadata(
+        &self,
+        chat: &tdlib_rs::types::Chat,
+    ) -> (Option<String>, Option<bool>) {
+        let chat_type = tdlib_mappers::map_chat_type(&chat.r#type);
+
+        // For private chats, get the user's online status
+        let is_online = if matches!(chat_type, crate::domain::chat::ChatType::Private) {
+            if let Some(user_id) = tdlib_mappers::get_private_chat_user_id(&chat.r#type) {
+                self.client
+                    .get_user(user_id)
+                    .ok()
+                    .map(|u| tdlib_mappers::is_user_online(&u.status))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // For group chats, get the sender name of the last message
+        let sender_name = if matches!(
+            chat_type,
+            crate::domain::chat::ChatType::Group | crate::domain::chat::ChatType::Channel
+        ) {
+            chat.last_message.as_ref().and_then(|msg| {
+                if let Some(user_id) = tdlib_mappers::get_sender_user_id(&msg.sender_id) {
+                    self.client
+                        .get_user(user_id)
+                        .ok()
+                        .map(|u| tdlib_mappers::format_user_name(&u))
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        };
+
+        (sender_name, is_online)
+    }
 }
 
 /// Maps TDLib initialization error to AuthBackendError.
@@ -428,6 +513,21 @@ fn parse_flood_wait_seconds(message: &str) -> Option<u32> {
                 .then(|| part.parse::<u32>().ok())
                 .flatten()
         })
+}
+
+/// Maps TDLib error to ListChatsSourceError.
+fn map_list_chats_error(error: TdLibError) -> ListChatsSourceError {
+    let msg = match &error {
+        TdLibError::Request { message } => message.to_ascii_lowercase(),
+        _ => String::new(),
+    };
+
+    // Check for unauthorized errors
+    if msg.contains("unauthorized") || msg.contains("auth") {
+        return ListChatsSourceError::Unauthorized;
+    }
+
+    ListChatsSourceError::Unavailable
 }
 
 #[cfg(test)]

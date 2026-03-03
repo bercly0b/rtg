@@ -291,6 +291,67 @@ impl TdLibClient {
         })
     }
 
+    /// Gets list of chat IDs from TDLib.
+    ///
+    /// Returns up to `limit` chat IDs from the main chat list, sorted by TDLib's order.
+    pub fn get_chats(&self, limit: i32) -> Result<Vec<i64>, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            // First, load chats to ensure TDLib has them cached
+            tdlib_rs::functions::load_chats(
+                Some(tdlib_rs::enums::ChatList::Main),
+                limit,
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request { message: e.message })?;
+
+            // Then get the chat IDs
+            let chats = tdlib_rs::functions::get_chats(
+                Some(tdlib_rs::enums::ChatList::Main),
+                limit,
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request { message: e.message })?;
+
+            match chats {
+                tdlib_rs::enums::Chats::Chats(c) => Ok(c.chat_ids),
+            }
+        })
+    }
+
+    /// Gets full chat information by ID.
+    pub fn get_chat(&self, chat_id: i64) -> Result<tdlib_rs::types::Chat, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let chat = tdlib_rs::functions::get_chat(chat_id, client_id)
+                .await
+                .map_err(|e| TdLibError::Request { message: e.message })?;
+
+            match chat {
+                tdlib_rs::enums::Chat::Chat(c) => Ok(c),
+            }
+        })
+    }
+
+    /// Gets user information by ID.
+    pub fn get_user(&self, user_id: i64) -> Result<tdlib_rs::types::User, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let user = tdlib_rs::functions::get_user(user_id, client_id)
+                .await
+                .map_err(|e| TdLibError::Request { message: e.message })?;
+
+            match user {
+                tdlib_rs::enums::User::User(u) => Ok(u),
+            }
+        })
+    }
+
     /// Graceful shutdown: sends `close()` and marks client as closed.
     ///
     /// After calling this method, the client should not be used for any

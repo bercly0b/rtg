@@ -6,6 +6,7 @@ mod connectivity;
 mod status_tracker;
 mod tdlib_auth;
 mod tdlib_client;
+mod tdlib_mappers;
 
 // Re-export TDLib types for external use if needed
 #[allow(unused_imports)]
@@ -203,14 +204,10 @@ impl TelegramAuthClient for TelegramAdapter {
 impl ListChatsSource for TelegramAdapter {
     fn list_chats(
         &self,
-        _limit: usize,
+        limit: usize,
     ) -> Result<Vec<crate::domain::chat::ChatSummary>, ListChatsSourceError> {
-        // TODO: Implement in Phase 4
         match self.tdlib_backend.as_ref() {
-            Some(_backend) => {
-                // Placeholder until Phase 4 implementation
-                Err(ListChatsSourceError::Unavailable)
-            }
+            Some(backend) => backend.list_chat_summaries(limit),
             None => Err(ListChatsSourceError::Unavailable),
         }
     }
