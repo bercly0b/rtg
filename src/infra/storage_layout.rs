@@ -55,17 +55,11 @@ impl StorageLayout {
     }
 
     /// Returns the directory for TDLib's SQLite database.
-    ///
-    /// Will be used in Phase 3+ of TDLib migration.
-    #[allow(dead_code)]
     pub fn tdlib_database_dir(&self) -> PathBuf {
         self.cache_dir.join("tdlib")
     }
 
     /// Returns the directory for TDLib's downloaded files.
-    ///
-    /// Will be used in Phase 3+ of TDLib migration.
-    #[allow(dead_code)]
     pub fn tdlib_files_dir(&self) -> PathBuf {
         self.cache_dir.join("tdlib_files")
     }

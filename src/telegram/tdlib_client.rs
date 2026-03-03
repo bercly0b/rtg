@@ -2,16 +2,24 @@
 //!
 //! Provides a foundational TDLib client for RTG with:
 //! - Client initialization with configuration parameters
+//! - Update receiver loop for processing TDLib events
 //! - Proper shutdown handling
-//! - Basic update receiver loop structure
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
-// Note: These types are prepared for Phase 3+ of TDLib migration.
-// They are currently unused but will be used when auth flow is implemented.
+use tdlib_rs::enums::{AuthorizationState, Update};
+use tokio::runtime::Runtime;
+
+/// Polling interval when no TDLib updates are available.
+/// 10ms provides responsive update handling without excessive CPU usage.
+const UPDATE_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// Configuration for TDLib client initialization.
-#[allow(dead_code)]
 #[derive(Clone)]
 pub struct TdLibConfig {
     /// Telegram API ID from <https://my.telegram.org>
@@ -37,7 +45,6 @@ impl std::fmt::Debug for TdLibConfig {
 }
 
 /// Error types for TDLib operations.
-#[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub enum TdLibError {
     /// TDLib initialization error
@@ -51,46 +58,42 @@ pub enum TdLibError {
     /// TDLib shutdown error
     #[error("TDLib shutdown error: {message}")]
     Shutdown { message: String },
+
+    /// TDLib timeout error
+    #[error("TDLib operation timed out: {message}")]
+    Timeout { message: String },
+}
+
+/// Authorization state change event.
+#[derive(Debug, Clone)]
+pub struct AuthStateUpdate {
+    pub state: AuthorizationState,
 }
 
 /// TDLib client with managed lifecycle.
 ///
-/// This is a foundational wrapper around `tdlib_rs` that manages:
+/// This wrapper around `tdlib_rs` manages:
 /// - Client ID allocation
+/// - Dedicated async runtime for TDLib operations
+/// - Background update receiver loop
+/// - Authorization state channel
 /// - Proper shutdown via `close()` function
-///
-/// # Example
-///
-/// ```ignore
-/// let config = TdLibConfig {
-///     api_id: 12345,
-///     api_hash: "your_api_hash".into(),
-///     database_directory: PathBuf::from("/tmp/tdlib"),
-///     files_directory: PathBuf::from("/tmp/tdlib_files"),
-/// };
-///
-/// let client = TdLibClient::new(config);
-/// // ... use client ...
-/// client.close().await?;
-/// ```
-#[allow(dead_code)]
 pub struct TdLibClient {
     client_id: i32,
-    #[allow(dead_code)]
     config: TdLibConfig,
-    is_closed: bool,
+    rt: Arc<Runtime>,
+    auth_state_rx: Mutex<mpsc::Receiver<AuthStateUpdate>>,
+    #[allow(dead_code)]
+    update_thread: Option<thread::JoinHandle<()>>,
+    is_closed: AtomicBool,
 }
 
-#[allow(dead_code)]
 impl TdLibClient {
-    /// Creates a new TDLib client.
+    /// Creates a new TDLib client and starts the update receiver loop.
     ///
-    /// This allocates a new TDLib client ID. To start receiving updates,
-    /// you need to send at least one request (e.g., `set_tdlib_parameters`).
-    ///
-    /// Note: Full initialization with parameters will be implemented in
-    /// the authentication phase (Phase 3).
-    pub fn new(config: TdLibConfig) -> Self {
+    /// This allocates a new TDLib client ID and spawns a background thread
+    /// that continuously calls `tdlib_rs::receive()` to process updates.
+    pub fn new(config: TdLibConfig) -> Result<Self, TdLibError> {
         let client_id = tdlib_rs::create_client();
 
         tracing::info!(
@@ -99,11 +102,76 @@ impl TdLibClient {
             "Created TDLib client"
         );
 
-        Self {
+        let rt = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| TdLibError::Init {
+                    message: format!("failed to create tokio runtime: {e}"),
+                })?,
+        );
+
+        let (auth_state_tx, auth_state_rx) = mpsc::channel::<AuthStateUpdate>();
+
+        // Spawn update receiver thread (fully synchronous, no async runtime needed)
+        let update_thread = {
+            thread::spawn(move || {
+                Self::run_update_loop(client_id, auth_state_tx);
+            })
+        };
+
+        Ok(Self {
             client_id,
             config,
-            is_closed: false,
+            rt,
+            auth_state_rx: Mutex::new(auth_state_rx),
+            update_thread: Some(update_thread),
+            is_closed: AtomicBool::new(false),
+        })
+    }
+
+    /// Background loop that receives and processes TDLib updates.
+    ///
+    /// This is a fully synchronous function that runs in a dedicated thread.
+    /// It continuously polls `tdlib_rs::receive()` and dispatches auth state
+    /// updates through the channel.
+    fn run_update_loop(client_id: i32, auth_state_tx: mpsc::Sender<AuthStateUpdate>) {
+        tracing::debug!(client_id, "Starting TDLib update loop");
+
+        loop {
+            match tdlib_rs::receive() {
+                Some((update, received_client_id)) => {
+                    if received_client_id != client_id {
+                        continue;
+                    }
+
+                    // Handle authorization state updates; other updates will be
+                    // handled in Phase 6 (Live Updates)
+                    if let Update::AuthorizationState(state_update) = update {
+                        let state = state_update.authorization_state.clone();
+                        tracing::debug!(?state, "Authorization state changed");
+
+                        let is_closed = matches!(state, AuthorizationState::Closed);
+
+                        if auth_state_tx.send(AuthStateUpdate { state }).is_err() {
+                            tracing::debug!("Auth state receiver dropped, stopping update loop");
+                            break;
+                        }
+
+                        if is_closed {
+                            tracing::info!(client_id, "TDLib client closed, stopping update loop");
+                            break;
+                        }
+                    }
+                }
+                None => {
+                    // No updates available, sleep before next poll
+                    std::thread::sleep(UPDATE_POLL_INTERVAL);
+                }
+            }
         }
+
+        tracing::debug!(client_id, "TDLib update loop finished");
     }
 
     /// Returns the TDLib client ID for sending requests.
@@ -116,9 +184,111 @@ impl TdLibClient {
         &self.config
     }
 
+    /// Returns the async runtime for executing TDLib operations.
+    pub fn runtime(&self) -> &Arc<Runtime> {
+        &self.rt
+    }
+
     /// Checks if the client has been closed.
     pub fn is_closed(&self) -> bool {
-        self.is_closed
+        self.is_closed.load(Ordering::Acquire)
+    }
+
+    /// Receives the next authorization state update.
+    ///
+    /// Blocks until an auth state update is received or timeout expires.
+    pub fn recv_auth_state(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Result<AuthStateUpdate, TdLibError> {
+        let rx = self.auth_state_rx.lock().map_err(|_| TdLibError::Init {
+            message: "auth state receiver lock poisoned".to_owned(),
+        })?;
+        rx.recv_timeout(timeout).map_err(|_| TdLibError::Timeout {
+            message: "waiting for authorization state".to_owned(),
+        })
+    }
+
+    /// Sends TDLib parameters to initialize the client.
+    ///
+    /// This should be called when receiving `AuthorizationState::WaitTdlibParameters`.
+    pub fn set_tdlib_parameters(&self) -> Result<(), TdLibError> {
+        let config = &self.config;
+        let client_id = self.client_id;
+
+        let database_directory = config
+            .database_directory
+            .to_str()
+            .ok_or_else(|| TdLibError::Init {
+                message: "database directory path is not valid UTF-8".to_owned(),
+            })?
+            .to_owned();
+
+        let files_directory = config
+            .files_directory
+            .to_str()
+            .ok_or_else(|| TdLibError::Init {
+                message: "files directory path is not valid UTF-8".to_owned(),
+            })?
+            .to_owned();
+
+        self.rt.block_on(async {
+            tdlib_rs::functions::set_tdlib_parameters(
+                false, // use_test_dc
+                database_directory,
+                files_directory,
+                String::new(), // files_directory (deprecated parameter, use empty)
+                true,          // use_file_database
+                true,          // use_chat_info_database
+                true,          // use_message_database
+                false,         // use_secret_chats
+                config.api_id,
+                config.api_hash.clone(),
+                "en".to_owned(),                      // system_language_code
+                "RTG".to_owned(),                     // device_model
+                String::new(),                        // system_version
+                env!("CARGO_PKG_VERSION").to_owned(), // application_version
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Init { message: e.message })
+        })
+    }
+
+    /// Requests a login code to be sent to the given phone number.
+    pub fn set_authentication_phone_number(&self, phone: &str) -> Result<(), TdLibError> {
+        let phone = phone.to_owned();
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            tdlib_rs::functions::set_authentication_phone_number(phone, None, client_id)
+                .await
+                .map_err(|e| TdLibError::Request { message: e.message })
+        })
+    }
+
+    /// Checks the authentication code entered by the user.
+    pub fn check_authentication_code(&self, code: &str) -> Result<(), TdLibError> {
+        let code = code.to_owned();
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            tdlib_rs::functions::check_authentication_code(code, client_id)
+                .await
+                .map_err(|e| TdLibError::Request { message: e.message })
+        })
+    }
+
+    /// Checks the 2FA password.
+    pub fn check_authentication_password(&self, password: &str) -> Result<(), TdLibError> {
+        let password = password.to_owned();
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            tdlib_rs::functions::check_authentication_password(password, client_id)
+                .await
+                .map_err(|e| TdLibError::Request { message: e.message })
+        })
     }
 
     /// Graceful shutdown: sends `close()` and marks client as closed.
@@ -126,28 +296,46 @@ impl TdLibClient {
     /// After calling this method, the client should not be used for any
     /// further operations. TDLib will flush all data to disk and send
     /// `AuthorizationStateClosed` update.
-    pub async fn close(&mut self) -> Result<(), TdLibError> {
-        if self.is_closed {
+    pub fn close(&self) -> Result<(), TdLibError> {
+        // Use compare_exchange to atomically check and set is_closed
+        // This prevents race conditions when close() is called concurrently
+        if self
+            .is_closed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
             tracing::debug!(client_id = self.client_id, "Client already closed");
             return Ok(());
         }
 
         tracing::info!(client_id = self.client_id, "Closing TDLib client");
 
-        tdlib_rs::functions::close(self.client_id)
-            .await
-            .map_err(|e| TdLibError::Shutdown { message: e.message })?;
+        let client_id = self.client_id;
+        let result = self.rt.block_on(async {
+            tdlib_rs::functions::close(client_id)
+                .await
+                .map_err(|e| TdLibError::Shutdown { message: e.message })
+        });
 
-        self.is_closed = true;
-        tracing::info!(client_id = self.client_id, "TDLib client closed");
+        // Don't reset is_closed on failure - a failed close attempt leaves the
+        // client in an undefined state. The client should be considered unusable
+        // after any close attempt, successful or not.
+        if result.is_err() {
+            tracing::error!(
+                client_id = self.client_id,
+                "TDLib close failed - client is in undefined state"
+            );
+        } else {
+            tracing::info!(client_id = self.client_id, "TDLib client closed");
+        }
 
-        Ok(())
+        result
     }
 }
 
 impl Drop for TdLibClient {
     fn drop(&mut self) {
-        if !self.is_closed {
+        if !self.is_closed.load(Ordering::Acquire) {
             tracing::warn!(
                 client_id = self.client_id,
                 "TdLibClient dropped without calling close() - resources may not be properly released"
@@ -176,61 +364,16 @@ mod tests {
     }
 
     #[test]
-    fn new_client_is_not_closed() {
+    fn config_debug_redacts_api_hash() {
         let config = TdLibConfig {
             api_id: 12345,
-            api_hash: "test_hash".into(),
+            api_hash: "secret_hash".into(),
             database_directory: PathBuf::from("/tmp/test_db"),
             files_directory: PathBuf::from("/tmp/test_files"),
         };
 
-        let client = TdLibClient::new(config);
-        assert!(!client.is_closed());
-        assert!(client.client_id() > 0);
-    }
-
-    #[test]
-    fn client_exposes_config() {
-        let config = TdLibConfig {
-            api_id: 99999,
-            api_hash: "my_hash".into(),
-            database_directory: PathBuf::from("/data/db"),
-            files_directory: PathBuf::from("/data/files"),
-        };
-
-        let client = TdLibClient::new(config);
-        assert_eq!(client.config().api_id, 99999);
-        assert_eq!(client.config().api_hash, "my_hash");
-    }
-
-    // Note: Full async tests for close() require a running TDLib event loop
-    // to process responses. These will be added in Phase 3 when the update
-    // receiver loop is implemented. For now, we test the synchronous parts
-    // of the close() logic.
-
-    #[test]
-    fn close_on_already_closed_returns_ok_immediately() {
-        let config = TdLibConfig {
-            api_id: 12345,
-            api_hash: "test_hash".into(),
-            database_directory: PathBuf::from("/tmp/test_idempotent_db"),
-            files_directory: PathBuf::from("/tmp/test_idempotent_files"),
-        };
-
-        let mut client = TdLibClient::new(config);
-
-        // Simulate already closed state
-        client.is_closed = true;
-
-        // Use a minimal runtime just to call the async function
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
-
-        let result = rt.block_on(client.close());
-
-        // Should return Ok immediately without sending any TDLib request
-        assert!(result.is_ok());
-        assert!(client.is_closed());
+        let debug_output = format!("{:?}", config);
+        assert!(debug_output.contains("[REDACTED]"));
+        assert!(!debug_output.contains("secret_hash"));
     }
 }

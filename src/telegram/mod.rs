@@ -4,17 +4,17 @@ mod auth;
 mod chat_updates;
 mod connectivity;
 mod status_tracker;
+mod tdlib_auth;
 mod tdlib_client;
 
-// TDLib types exported for use in Phase 3+ of TDLib migration.
-// Currently unused but will be used when auth flow is implemented.
+// Re-export TDLib types for external use if needed
 #[allow(unused_imports)]
 pub use tdlib_client::{TdLibClient, TdLibConfig, TdLibError};
 
 use std::sync::mpsc::{Receiver, Sender};
 
-use auth::GrammersAuthBackend;
 use status_tracker::StatusTracker;
+use tdlib_auth::TdLibAuthBackend;
 
 pub use chat_updates::{ChatUpdatesMonitorStartError, TelegramChatUpdatesMonitor};
 pub use connectivity::{ConnectivityMonitorStartError, TelegramConnectivityMonitor};
@@ -33,12 +33,12 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum BackendKind {
     Stub,
-    Grammers,
+    TdLib,
 }
 
 pub struct TelegramAdapter {
     backend_kind: BackendKind,
-    auth_backend: Option<GrammersAuthBackend>,
+    tdlib_backend: Option<TdLibAuthBackend>,
     status_tracker: StatusTracker,
 }
 
@@ -54,7 +54,7 @@ impl TelegramAdapter {
     pub fn stub() -> Self {
         Self {
             backend_kind: BackendKind::Stub,
-            auth_backend: None,
+            tdlib_backend: None,
             status_tracker: StatusTracker::new(),
         }
     }
@@ -64,24 +64,22 @@ impl TelegramAdapter {
             return Ok(Self::stub());
         }
 
-        let session_path = StorageLayout::resolve()
-            .map_err(|error| AuthBackendError::Transient {
-                code: "AUTH_SESSION_STORE_UNAVAILABLE",
-                message: format!("failed to resolve storage layout: {error}"),
-            })?
-            .session_file();
+        let layout = StorageLayout::resolve().map_err(|error| AuthBackendError::Transient {
+            code: "AUTH_SESSION_STORE_UNAVAILABLE",
+            message: format!("failed to resolve storage layout: {error}"),
+        })?;
 
-        let backend = GrammersAuthBackend::new(config, &session_path)?;
+        let backend = TdLibAuthBackend::new(config, &layout)?;
         Ok(Self {
-            backend_kind: BackendKind::Grammers,
-            auth_backend: Some(backend),
+            backend_kind: BackendKind::TdLib,
+            tdlib_backend: Some(backend),
             status_tracker: StatusTracker::new(),
         })
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn uses_real_backend(&self) -> bool {
-        matches!(self.backend_kind, BackendKind::Grammers)
+        matches!(self.backend_kind, BackendKind::TdLib)
     }
 
     pub fn start_connectivity_monitor(
@@ -96,12 +94,11 @@ impl TelegramAdapter {
 
     pub fn start_chat_updates_monitor(
         &self,
-        updates_tx: Sender<()>,
+        _updates_tx: Sender<()>,
     ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
-        match self.auth_backend.as_ref() {
-            Some(backend) => backend.start_chat_updates_monitor(updates_tx),
-            None => Err(ChatUpdatesMonitorStartError::StartupRejected),
-        }
+        // TODO: Implement TDLib-based chat updates monitor in Phase 6
+        // For now, return an error as grammers-based monitor is no longer available
+        Err(ChatUpdatesMonitorStartError::StartupRejected)
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
@@ -120,7 +117,7 @@ impl TelegramAdapter {
     }
 
     pub fn disconnect_and_reset(&mut self) {
-        if let Some(backend) = self.auth_backend.as_mut() {
+        if let Some(backend) = self.tdlib_backend.as_mut() {
             backend.disconnect_and_reset();
         }
         self.status_tracker.on_logout_reset();
@@ -135,7 +132,7 @@ impl TelegramAuthClient for TelegramAdapter {
     fn request_login_code(&mut self, phone: &str) -> Result<AuthCodeToken, AuthBackendError> {
         self.status_tracker.on_auth_start();
 
-        let result = match self.auth_backend.as_mut() {
+        let result = match self.tdlib_backend.as_mut() {
             Some(backend) => backend.request_login_code(phone),
             None => Err(AuthBackendError::Transient {
                 code: "AUTH_BACKEND_UNAVAILABLE",
@@ -155,7 +152,7 @@ impl TelegramAuthClient for TelegramAdapter {
         token: &AuthCodeToken,
         code: &str,
     ) -> Result<SignInOutcome, AuthBackendError> {
-        let result = match self.auth_backend.as_mut() {
+        let result = match self.tdlib_backend.as_mut() {
             Some(backend) => backend.sign_in_with_code(token, code),
             None => Err(AuthBackendError::Transient {
                 code: "AUTH_BACKEND_UNAVAILABLE",
@@ -173,7 +170,7 @@ impl TelegramAuthClient for TelegramAdapter {
     }
 
     fn verify_password(&mut self, password: &str) -> Result<(), AuthBackendError> {
-        let result = match self.auth_backend.as_mut() {
+        let result = match self.tdlib_backend.as_mut() {
             Some(backend) => backend.verify_password(password),
             None => Err(AuthBackendError::Transient {
                 code: "AUTH_BACKEND_UNAVAILABLE",
@@ -193,7 +190,7 @@ impl TelegramAuthClient for TelegramAdapter {
         &mut self,
         session_path: &std::path::Path,
     ) -> Result<(), AuthBackendError> {
-        match self.auth_backend.as_mut() {
+        match self.tdlib_backend.as_ref() {
             Some(backend) => backend.persist_authorized_session(session_path),
             None => Err(AuthBackendError::Transient {
                 code: "AUTH_BACKEND_UNAVAILABLE",
@@ -206,10 +203,14 @@ impl TelegramAuthClient for TelegramAdapter {
 impl ListChatsSource for TelegramAdapter {
     fn list_chats(
         &self,
-        limit: usize,
+        _limit: usize,
     ) -> Result<Vec<crate::domain::chat::ChatSummary>, ListChatsSourceError> {
-        match self.auth_backend.as_ref() {
-            Some(backend) => backend.list_chat_summaries(limit),
+        // TODO: Implement in Phase 4
+        match self.tdlib_backend.as_ref() {
+            Some(_backend) => {
+                // Placeholder until Phase 4 implementation
+                Err(ListChatsSourceError::Unavailable)
+            }
             None => Err(ListChatsSourceError::Unavailable),
         }
     }
@@ -218,20 +219,28 @@ impl ListChatsSource for TelegramAdapter {
 impl MessagesSource for TelegramAdapter {
     fn list_messages(
         &self,
-        chat_id: i64,
-        limit: usize,
+        _chat_id: i64,
+        _limit: usize,
     ) -> Result<Vec<Message>, MessagesSourceError> {
-        match self.auth_backend.as_ref() {
-            Some(backend) => backend.list_messages(chat_id, limit),
+        // TODO: Implement in Phase 5
+        match self.tdlib_backend.as_ref() {
+            Some(_backend) => {
+                // Placeholder until Phase 5 implementation
+                Err(MessagesSourceError::Unavailable)
+            }
             None => Err(MessagesSourceError::Unavailable),
         }
     }
 }
 
 impl MessageSender for TelegramAdapter {
-    fn send_message(&self, chat_id: i64, text: &str) -> Result<(), SendMessageSourceError> {
-        match self.auth_backend.as_ref() {
-            Some(backend) => backend.send_message(chat_id, text),
+    fn send_message(&self, _chat_id: i64, _text: &str) -> Result<(), SendMessageSourceError> {
+        // TODO: Implement in Phase 5
+        match self.tdlib_backend.as_ref() {
+            Some(_backend) => {
+                // Placeholder until Phase 5 implementation
+                Err(SendMessageSourceError::Unauthorized)
+            }
             None => Err(SendMessageSourceError::Unauthorized),
         }
     }
