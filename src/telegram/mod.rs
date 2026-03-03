@@ -4,6 +4,12 @@ mod auth;
 mod chat_updates;
 mod connectivity;
 mod status_tracker;
+mod tdlib_client;
+
+// TDLib types exported for use in Phase 3+ of TDLib migration.
+// Currently unused but will be used when auth flow is implemented.
+#[allow(unused_imports)]
+pub use tdlib_client::{TdLibClient, TdLibConfig, TdLibError};
 
 use std::sync::mpsc::{Receiver, Sender};
 
