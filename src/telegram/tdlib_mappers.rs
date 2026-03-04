@@ -7,6 +7,7 @@ use tdlib_rs::enums::{ChatType as TdChatType, MessageContent, MessageSender, Use
 use tdlib_rs::types::{Chat as TdChat, Message as TdMessage, User as TdUser};
 
 use crate::domain::chat::{ChatSummary, ChatType, OutgoingReadStatus};
+use crate::domain::message::{Message, MessageMedia};
 
 /// Maps a TDLib Chat to a domain ChatSummary.
 ///
@@ -233,6 +234,75 @@ pub fn get_private_chat_user_id(chat_type: &TdChatType) -> Option<i64> {
     }
 }
 
+/// Maps a TDLib Message to a domain Message.
+///
+/// Requires the sender name to be resolved externally (via get_user or chat title).
+#[allow(dead_code)] // Will be used in Phase 5.4
+pub fn map_tdlib_message_to_domain(msg: &TdMessage, sender_name: String) -> Message {
+    let text = extract_message_text(&msg.content);
+    let media = extract_message_media(&msg.content);
+    let timestamp_ms = i64::from(msg.date) * 1000;
+
+    Message {
+        id: msg.id,
+        sender_name,
+        text,
+        timestamp_ms,
+        is_outgoing: msg.is_outgoing,
+        media,
+    }
+}
+
+/// Extracts the media type from a TDLib MessageContent.
+#[allow(dead_code)] // Will be used in Phase 5.4
+pub fn extract_message_media(content: &MessageContent) -> MessageMedia {
+    match content {
+        MessageContent::MessageText(_) => MessageMedia::None,
+        MessageContent::MessagePhoto(_) => MessageMedia::Photo,
+        MessageContent::MessageVoiceNote(_) => MessageMedia::Voice,
+        MessageContent::MessageVideo(_) => MessageMedia::Video,
+        MessageContent::MessageVideoNote(_) => MessageMedia::VideoNote,
+        MessageContent::MessageSticker(_) => MessageMedia::Sticker,
+        MessageContent::MessageDocument(_) => MessageMedia::Document,
+        MessageContent::MessageAudio(_) => MessageMedia::Audio,
+        MessageContent::MessageAnimation(_) => MessageMedia::Animation,
+        MessageContent::MessageContact(_) => MessageMedia::Contact,
+        MessageContent::MessageLocation(_) | MessageContent::MessageVenue(_) => {
+            MessageMedia::Location
+        }
+        MessageContent::MessagePoll(_) => MessageMedia::Poll,
+        // Service messages and other types
+        _ => MessageMedia::Other,
+    }
+}
+
+/// Extracts the text content from a TDLib MessageContent.
+///
+/// For text messages, returns the message text.
+/// For media messages with captions, returns the caption.
+/// For service messages, returns an empty string.
+#[allow(dead_code)] // Will be used in Phase 5.4
+pub fn extract_message_text(content: &MessageContent) -> String {
+    match content {
+        MessageContent::MessageText(t) => t.text.text.clone(),
+        MessageContent::MessagePhoto(p) => p.caption.text.clone(),
+        MessageContent::MessageVideo(v) => v.caption.text.clone(),
+        MessageContent::MessageVoiceNote(v) => v.caption.text.clone(),
+        MessageContent::MessageDocument(d) => d.caption.text.clone(),
+        MessageContent::MessageAudio(a) => a.caption.text.clone(),
+        MessageContent::MessageAnimation(a) => a.caption.text.clone(),
+        // These types don't have captions or text
+        MessageContent::MessageVideoNote(_)
+        | MessageContent::MessageSticker(_)
+        | MessageContent::MessageContact(_)
+        | MessageContent::MessageLocation(_)
+        | MessageContent::MessageVenue(_)
+        | MessageContent::MessagePoll(_) => String::new(),
+        // Service messages and other types
+        _ => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,5 +376,180 @@ mod tests {
         assert!(!is_user_online(&UserStatus::Offline(Default::default())));
         assert!(!is_user_online(&UserStatus::Recently(Default::default())));
         assert!(!is_user_online(&UserStatus::Empty));
+    }
+
+    #[test]
+    fn extract_message_media_identifies_text_as_none() {
+        let content = MessageContent::MessageText(tdlib_rs::types::MessageText {
+            text: tdlib_rs::types::FormattedText {
+                text: "Hello".to_owned(),
+                entities: vec![],
+            },
+            link_preview: None,
+            link_preview_options: None,
+        });
+        assert_eq!(extract_message_media(&content), MessageMedia::None);
+    }
+
+    #[test]
+    fn extract_message_media_identifies_photo() {
+        let content = MessageContent::MessagePhoto(tdlib_rs::types::MessagePhoto {
+            photo: tdlib_rs::types::Photo {
+                minithumbnail: None,
+                sizes: vec![],
+                has_stickers: false,
+            },
+            caption: tdlib_rs::types::FormattedText {
+                text: String::new(),
+                entities: vec![],
+            },
+            show_caption_above_media: false,
+            has_spoiler: false,
+            is_secret: false,
+        });
+        assert_eq!(extract_message_media(&content), MessageMedia::Photo);
+    }
+
+    #[test]
+    fn extract_message_media_identifies_voice() {
+        let content = MessageContent::MessageVoiceNote(tdlib_rs::types::MessageVoiceNote {
+            voice_note: tdlib_rs::types::VoiceNote {
+                duration: 10,
+                waveform: String::new(),
+                mime_type: "audio/ogg".to_owned(),
+                speech_recognition_result: None,
+                voice: tdlib_rs::types::File {
+                    id: 1,
+                    size: 1000,
+                    expected_size: 1000,
+                    local: tdlib_rs::types::LocalFile {
+                        path: String::new(),
+                        can_be_downloaded: false,
+                        can_be_deleted: false,
+                        is_downloading_active: false,
+                        is_downloading_completed: false,
+                        download_offset: 0,
+                        downloaded_prefix_size: 0,
+                        downloaded_size: 0,
+                    },
+                    remote: tdlib_rs::types::RemoteFile {
+                        id: String::new(),
+                        unique_id: String::new(),
+                        is_uploading_active: false,
+                        is_uploading_completed: false,
+                        uploaded_size: 0,
+                    },
+                },
+            },
+            caption: tdlib_rs::types::FormattedText {
+                text: String::new(),
+                entities: vec![],
+            },
+            is_listened: false,
+        });
+        assert_eq!(extract_message_media(&content), MessageMedia::Voice);
+    }
+
+    #[test]
+    fn extract_message_text_returns_text_from_message_text() {
+        let content = MessageContent::MessageText(tdlib_rs::types::MessageText {
+            text: tdlib_rs::types::FormattedText {
+                text: "Hello, world!".to_owned(),
+                entities: vec![],
+            },
+            link_preview: None,
+            link_preview_options: None,
+        });
+        assert_eq!(extract_message_text(&content), "Hello, world!");
+    }
+
+    #[test]
+    fn extract_message_text_returns_caption_from_photo() {
+        let content = MessageContent::MessagePhoto(tdlib_rs::types::MessagePhoto {
+            photo: tdlib_rs::types::Photo {
+                minithumbnail: None,
+                sizes: vec![],
+                has_stickers: false,
+            },
+            caption: tdlib_rs::types::FormattedText {
+                text: "Photo caption".to_owned(),
+                entities: vec![],
+            },
+            show_caption_above_media: false,
+            has_spoiler: false,
+            is_secret: false,
+        });
+        assert_eq!(extract_message_text(&content), "Photo caption");
+    }
+
+    #[test]
+    fn map_tdlib_message_to_domain_creates_correct_message() {
+        let td_message = make_test_message(123, "Hello from TDLib", false);
+        let message = map_tdlib_message_to_domain(&td_message, "John Doe".to_owned());
+
+        assert_eq!(message.id, 123);
+        assert_eq!(message.sender_name, "John Doe");
+        assert_eq!(message.text, "Hello from TDLib");
+        assert!(!message.is_outgoing);
+        assert_eq!(message.media, MessageMedia::None);
+    }
+
+    #[test]
+    fn map_tdlib_message_to_domain_handles_outgoing() {
+        let td_message = make_test_message(456, "My message", true);
+        let message = map_tdlib_message_to_domain(&td_message, "Me".to_owned());
+
+        assert!(message.is_outgoing);
+    }
+
+    /// Creates a minimal TdMessage for testing.
+    fn make_test_message(id: i64, text: &str, is_outgoing: bool) -> TdMessage {
+        TdMessage {
+            id,
+            sender_id: MessageSender::User(tdlib_rs::types::MessageSenderUser { user_id: 1 }),
+            chat_id: 100,
+            sending_state: None,
+            scheduling_state: None,
+            is_outgoing,
+            is_pinned: false,
+            is_from_offline: false,
+            can_be_saved: true,
+            has_timestamped_media: false,
+            is_channel_post: false,
+            is_paid_star_suggested_post: false,
+            is_paid_ton_suggested_post: false,
+            contains_unread_mention: false,
+            date: 1609459200, // 2021-01-01 00:00:00 UTC
+            edit_date: 0,
+            forward_info: None,
+            import_info: None,
+            interaction_info: None,
+            unread_reactions: vec![],
+            fact_check: None,
+            suggested_post_info: None,
+            reply_to: None,
+            topic_id: None,
+            self_destruct_type: None,
+            self_destruct_in: 0.0,
+            auto_delete_in: 0.0,
+            via_bot_user_id: 0,
+            sender_business_bot_user_id: 0,
+            sender_boost_count: 0,
+            paid_message_star_count: 0,
+            author_signature: String::new(),
+            media_album_id: 0,
+            effect_id: 0,
+            restriction_info: None,
+            summary_language_code: String::new(),
+            content: MessageContent::MessageText(tdlib_rs::types::MessageText {
+                text: tdlib_rs::types::FormattedText {
+                    text: text.to_owned(),
+                    entities: vec![],
+                },
+                link_preview: None,
+                link_preview_options: None,
+            }),
+            reply_markup: None,
+        }
     }
 }
