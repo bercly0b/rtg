@@ -8,7 +8,7 @@
 /// These represent the subset of TDLib updates that are relevant for
 /// the RTG UI (chat list, message view, user status).
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Variants will be constructed in Phase 6.2
+#[allow(dead_code)] // Fields are used for pattern matching and future granular handling
 pub enum TdLibUpdate {
     /// New message received in a chat.
     NewMessage { chat_id: i64 },

@@ -15,6 +15,8 @@ use std::time::Duration;
 use tdlib_rs::enums::{AuthorizationState, Update};
 use tokio::runtime::Runtime;
 
+use super::tdlib_updates::TdLibUpdate;
+
 /// Polling interval when no TDLib updates are available.
 /// 10ms provides responsive update handling without excessive CPU usage.
 const UPDATE_POLL_INTERVAL: Duration = Duration::from_millis(10);
@@ -78,12 +80,16 @@ pub struct AuthStateUpdate {
 /// - Dedicated async runtime for TDLib operations
 /// - Background update receiver loop
 /// - Authorization state channel
+/// - Typed update events channel
 /// - Proper shutdown via `close()` function
 pub struct TdLibClient {
     client_id: i32,
     config: TdLibConfig,
     rt: Arc<Runtime>,
     auth_state_rx: Mutex<mpsc::Receiver<AuthStateUpdate>>,
+    /// Receiver for typed TDLib updates. Wrapped in Option to allow taking.
+    #[allow(dead_code)] // Read via take_update_receiver
+    update_rx: Mutex<Option<mpsc::Receiver<TdLibUpdate>>>,
     #[allow(dead_code)]
     update_thread: Option<thread::JoinHandle<()>>,
     is_closed: AtomicBool,
@@ -113,11 +119,12 @@ impl TdLibClient {
         );
 
         let (auth_state_tx, auth_state_rx) = mpsc::channel::<AuthStateUpdate>();
+        let (update_tx, update_rx) = mpsc::channel::<TdLibUpdate>();
 
         // Spawn update receiver thread (fully synchronous, no async runtime needed)
         let update_thread = {
             thread::spawn(move || {
-                Self::run_update_loop(client_id, auth_state_tx);
+                Self::run_update_loop(client_id, auth_state_tx, update_tx);
             })
         };
 
@@ -126,6 +133,7 @@ impl TdLibClient {
             config,
             rt,
             auth_state_rx: Mutex::new(auth_state_rx),
+            update_rx: Mutex::new(Some(update_rx)),
             update_thread: Some(update_thread),
             is_closed: AtomicBool::new(false),
         })
@@ -134,9 +142,13 @@ impl TdLibClient {
     /// Background loop that receives and processes TDLib updates.
     ///
     /// This is a fully synchronous function that runs in a dedicated thread.
-    /// It continuously polls `tdlib_rs::receive()` and dispatches auth state
-    /// updates through the channel.
-    fn run_update_loop(client_id: i32, auth_state_tx: mpsc::Sender<AuthStateUpdate>) {
+    /// It continuously polls `tdlib_rs::receive()` and dispatches updates
+    /// through the appropriate channels.
+    fn run_update_loop(
+        client_id: i32,
+        auth_state_tx: mpsc::Sender<AuthStateUpdate>,
+        update_tx: mpsc::Sender<TdLibUpdate>,
+    ) {
         tracing::debug!(client_id, "Starting TDLib update loop");
 
         loop {
@@ -146,22 +158,83 @@ impl TdLibClient {
                         continue;
                     }
 
-                    // Handle authorization state updates; other updates will be
-                    // handled in Phase 6 (Live Updates)
-                    if let Update::AuthorizationState(state_update) = update {
-                        let state = state_update.authorization_state.clone();
-                        tracing::debug!(?state, "Authorization state changed");
+                    match update {
+                        // Authorization state updates
+                        Update::AuthorizationState(state_update) => {
+                            let state = state_update.authorization_state.clone();
+                            tracing::debug!(?state, "Authorization state changed");
 
-                        let is_closed = matches!(state, AuthorizationState::Closed);
+                            let is_closed = matches!(state, AuthorizationState::Closed);
 
-                        if auth_state_tx.send(AuthStateUpdate { state }).is_err() {
-                            tracing::debug!("Auth state receiver dropped, stopping update loop");
-                            break;
+                            if auth_state_tx.send(AuthStateUpdate { state }).is_err() {
+                                tracing::debug!(
+                                    "Auth state receiver dropped, stopping update loop"
+                                );
+                                break;
+                            }
+
+                            if is_closed {
+                                tracing::info!(
+                                    client_id,
+                                    "TDLib client closed, stopping update loop"
+                                );
+                                break;
+                            }
                         }
 
-                        if is_closed {
-                            tracing::info!(client_id, "TDLib client closed, stopping update loop");
-                            break;
+                        // Message updates
+                        Update::NewMessage(u) => {
+                            let _ = update_tx.send(TdLibUpdate::NewMessage {
+                                chat_id: u.message.chat_id,
+                            });
+                        }
+                        Update::MessageContent(u) => {
+                            let _ = update_tx.send(TdLibUpdate::MessageContent {
+                                chat_id: u.chat_id,
+                                message_id: u.message_id,
+                            });
+                        }
+                        Update::DeleteMessages(u) => {
+                            let _ = update_tx.send(TdLibUpdate::DeleteMessages {
+                                chat_id: u.chat_id,
+                                message_ids: u.message_ids,
+                            });
+                        }
+                        Update::MessageSendSucceeded(u) => {
+                            let _ = update_tx.send(TdLibUpdate::MessageSendSucceeded {
+                                chat_id: u.message.chat_id,
+                                old_message_id: u.old_message_id,
+                            });
+                        }
+
+                        // Chat list updates
+                        Update::ChatLastMessage(u) => {
+                            let _ =
+                                update_tx.send(TdLibUpdate::ChatLastMessage { chat_id: u.chat_id });
+                        }
+                        Update::ChatPosition(u) => {
+                            let _ =
+                                update_tx.send(TdLibUpdate::ChatPosition { chat_id: u.chat_id });
+                        }
+
+                        // Read status updates
+                        Update::ChatReadInbox(u) => {
+                            let _ =
+                                update_tx.send(TdLibUpdate::ChatReadInbox { chat_id: u.chat_id });
+                        }
+                        Update::ChatReadOutbox(u) => {
+                            let _ =
+                                update_tx.send(TdLibUpdate::ChatReadOutbox { chat_id: u.chat_id });
+                        }
+
+                        // User status updates
+                        Update::UserStatus(u) => {
+                            let _ = update_tx.send(TdLibUpdate::UserStatus { user_id: u.user_id });
+                        }
+
+                        // Ignore other update types
+                        _ => {
+                            tracing::trace!("Unhandled TDLib update type");
                         }
                     }
                 }
@@ -173,6 +246,15 @@ impl TdLibClient {
         }
 
         tracing::debug!(client_id, "TDLib update loop finished");
+    }
+
+    /// Takes the typed update receiver.
+    ///
+    /// This can only be called once - subsequent calls return None.
+    /// Used by TelegramChatUpdatesMonitor to receive typed updates.
+    #[allow(dead_code)] // Will be used in Phase 6.4
+    pub fn take_update_receiver(&self) -> Option<mpsc::Receiver<TdLibUpdate>> {
+        self.update_rx.lock().ok()?.take()
     }
 
     /// Returns the TDLib client ID for sending requests.
