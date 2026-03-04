@@ -28,16 +28,16 @@ pub enum AppError {
         #[source]
         source: io::Error,
     },
-    #[error("session store is busy (another rtg instance may be running): {path}")]
-    SessionStoreBusy { path: PathBuf },
-    #[error("failed to create session lock file at {path}: {source}")]
-    SessionLockCreate {
+    #[error("another rtg instance is already running (lock held at {path})")]
+    InstanceBusy { path: PathBuf },
+    #[error("failed to create instance lock file at {path}: {source}")]
+    InstanceLockCreate {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("failed to probe session file at {path}: {source}")]
-    SessionProbe {
+    #[error("failed to remove TDLib data at {path}: {source}")]
+    TdlibDataCleanup {
         path: PathBuf,
         #[source]
         source: io::Error,

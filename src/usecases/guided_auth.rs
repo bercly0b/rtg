@@ -1,8 +1,4 @@
-use std::{
-    fs::{self, OpenOptions},
-    io::{self, Write},
-    path::Path,
-};
+use std::io;
 
 use crate::{domain::status::AuthConnectivityStatus, infra::secrets::sanitize_error_code};
 
@@ -56,13 +52,6 @@ pub trait TelegramAuthClient {
     fn auth_status_snapshot(&self) -> Option<AuthConnectivityStatus> {
         None
     }
-
-    fn persist_authorized_session(&mut self, session_path: &Path) -> Result<(), AuthBackendError> {
-        persist_session_marker(session_path).map_err(|source| AuthBackendError::Transient {
-            code: "AUTH_SESSION_PERSIST_FAILED",
-            message: format!("failed to persist authorized session: {source}"),
-        })
-    }
 }
 
 pub trait AuthTerminal {
@@ -109,10 +98,14 @@ pub enum GuidedAuthOutcome {
     ExitWithGuidance,
 }
 
+/// Runs interactive guided authentication flow.
+///
+/// TDLib handles session persistence automatically — no explicit session
+/// file management is needed. After successful auth, TDLib's database
+/// contains the session state.
 pub fn run_guided_auth(
     terminal: &mut dyn AuthTerminal,
     auth_client: &mut dyn TelegramAuthClient,
-    session_path: &Path,
     retry_policy: &RetryPolicy,
 ) -> io::Result<GuidedAuthOutcome> {
     terminal.print_line("No valid session found. Starting guided authentication.")?;
@@ -135,30 +128,6 @@ pub fn run_guided_auth(
     if matches!(outcome, SignInOutcome::PasswordRequired)
         && collect_password(terminal, auth_client, retry_policy.password_attempts)?.is_none()
     {
-        return Ok(GuidedAuthOutcome::ExitWithGuidance);
-    }
-
-    if let Err(err) = auth_client.persist_authorized_session(session_path) {
-        print_status_snapshot(terminal, auth_client, "session-persist")?;
-        let _ = handle_backend_error(terminal, err, 1, 1, "session-persist")?;
-        terminal.print_line("Failed to persist session safely. Please retry login.")?;
-        return Ok(GuidedAuthOutcome::ExitWithGuidance);
-    }
-
-    print_status_snapshot(terminal, auth_client, "session-persist")?;
-
-    if let Err(source) = clear_policy_invalid_marker(session_path) {
-        let _ = handle_backend_error(
-            terminal,
-            AuthBackendError::Transient {
-                code: "AUTH_POLICY_MARKER_CLEAR_FAILED",
-                message: format!("failed to clear invalid policy marker: {source}"),
-            },
-            1,
-            1,
-            "session-persist",
-        )?;
-        terminal.print_line("Failed to persist session safely. Please retry login.")?;
         return Ok(GuidedAuthOutcome::ExitWithGuidance);
     }
 
@@ -380,53 +349,6 @@ fn handle_backend_error(
     }
 }
 
-const SESSION_POLICY_INVALID_FILE: &str = "session.policy.invalid";
-
-fn clear_policy_invalid_marker(session_path: &Path) -> io::Result<()> {
-    let parent_dir = session_path.parent().unwrap_or_else(|| Path::new("."));
-    let marker_path = parent_dir.join(SESSION_POLICY_INVALID_FILE);
-
-    match fs::remove_file(&marker_path) {
-        Ok(()) => sync_directory(parent_dir),
-        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(source) => Err(source),
-    }
-}
-
-fn persist_session_marker(path: &Path) -> io::Result<()> {
-    let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(parent_dir)?;
-
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("session.dat");
-    let tmp_path = parent_dir.join(format!(".{file_name}.tmp-{}", std::process::id()));
-
-    {
-        let mut tmp_file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&tmp_path)?;
-        tmp_file.write_all(b"authorized")?;
-        tmp_file.sync_all()?;
-    }
-
-    if let Err(error) = fs::rename(&tmp_path, path) {
-        let _ = fs::remove_file(&tmp_path);
-        return Err(error);
-    }
-
-    sync_directory(parent_dir)?;
-
-    Ok(())
-}
-
-fn sync_directory(path: &Path) -> io::Result<()> {
-    OpenOptions::new().read(true).open(path)?.sync_all()
-}
-
 fn is_valid_phone(phone: &str) -> bool {
     let digits = phone.strip_prefix('+').unwrap_or_default();
     phone.starts_with('+')
@@ -440,7 +362,7 @@ fn is_valid_code(code: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::VecDeque, env};
+    use std::collections::VecDeque;
 
     use super::*;
 
@@ -538,44 +460,22 @@ mod tests {
         }
     }
 
-    fn temp_session_path() -> std::path::PathBuf {
-        let mut path = env::temp_dir();
-        path.push(format!(
-            "rtg-guided-auth-test-{}-session.dat",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system clock should be after unix epoch")
-                .as_nanos()
-        ));
-        path
-    }
-
     #[test]
-    fn e2e_happy_path_without_2fa_authenticates_and_persists_session() {
-        let session_path = temp_session_path();
+    fn e2e_happy_path_without_2fa_authenticates() {
         let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]);
         let mut client = FakeClient::new(vec![
             Action::RequestCode(Ok(AuthCodeToken("token".into()))),
             Action::SignIn(Ok(SignInOutcome::Authorized)),
         ]);
 
-        let result = run_guided_auth(
-            &mut terminal,
-            &mut client,
-            &session_path,
-            &RetryPolicy::default(),
-        )
-        .expect("guided auth should complete");
+        let result = run_guided_auth(&mut terminal, &mut client, &RetryPolicy::default())
+            .expect("guided auth should complete");
 
         assert_eq!(result, GuidedAuthOutcome::Authenticated);
-        assert!(session_path.exists());
-
-        let _ = fs::remove_file(session_path);
     }
 
     #[test]
     fn e2e_2fa_required_authenticates_after_password_step() {
-        let session_path = temp_session_path();
         let mut terminal =
             FakeTerminal::new(vec![Some("+15551234567"), Some("12345"), Some("s3cret")]);
         let mut client = FakeClient::new(vec![
@@ -584,23 +484,14 @@ mod tests {
             Action::Verify(Ok(())),
         ]);
 
-        let result = run_guided_auth(
-            &mut terminal,
-            &mut client,
-            &session_path,
-            &RetryPolicy::default(),
-        )
-        .expect("guided auth should complete");
+        let result = run_guided_auth(&mut terminal, &mut client, &RetryPolicy::default())
+            .expect("guided auth should complete");
 
         assert_eq!(result, GuidedAuthOutcome::Authenticated);
-        assert!(session_path.exists());
-
-        let _ = fs::remove_file(session_path);
     }
 
     #[test]
     fn e2e_2fa_password_preserves_boundary_spaces_for_verification() {
-        let session_path = temp_session_path();
         let mut terminal = FakeTerminal::new(vec![
             Some("+15551234567"),
             Some("12345"),
@@ -612,26 +503,18 @@ mod tests {
             Action::Verify(Ok(())),
         ]);
 
-        let result = run_guided_auth(
-            &mut terminal,
-            &mut client,
-            &session_path,
-            &RetryPolicy::default(),
-        )
-        .expect("guided auth should complete");
+        let result = run_guided_auth(&mut terminal, &mut client, &RetryPolicy::default())
+            .expect("guided auth should complete");
 
         assert_eq!(result, GuidedAuthOutcome::Authenticated);
         assert_eq!(
             client.verified_passwords,
             vec!["  pass phrase  ".to_owned()]
         );
-
-        let _ = fs::remove_file(session_path);
     }
 
     #[test]
     fn e2e_wrong_code_retries_then_succeeds() {
-        let session_path = temp_session_path();
         let mut terminal =
             FakeTerminal::new(vec![Some("+15551234567"), Some("000"), Some("12345")]);
         let mut client = FakeClient::new(vec![
@@ -640,26 +523,18 @@ mod tests {
             Action::SignIn(Ok(SignInOutcome::Authorized)),
         ]);
 
-        let result = run_guided_auth(
-            &mut terminal,
-            &mut client,
-            &session_path,
-            &RetryPolicy::default(),
-        )
-        .expect("guided auth should complete");
+        let result = run_guided_auth(&mut terminal, &mut client, &RetryPolicy::default())
+            .expect("guided auth should complete");
 
         assert_eq!(result, GuidedAuthOutcome::Authenticated);
         assert!(terminal
             .output
             .iter()
             .any(|line| line.contains("AUTH_INVALID_CODE")));
-
-        let _ = fs::remove_file(session_path);
     }
 
     #[test]
     fn e2e_wrong_password_exhausts_retries_and_exits_with_guidance() {
-        let session_path = temp_session_path();
         let mut terminal = FakeTerminal::new(vec![
             Some("+15551234567"),
             Some("12345"),
@@ -675,33 +550,21 @@ mod tests {
             Action::Verify(Err(AuthBackendError::WrongPassword)),
         ]);
 
-        let result = run_guided_auth(
-            &mut terminal,
-            &mut client,
-            &session_path,
-            &RetryPolicy::default(),
-        )
-        .expect("guided auth should complete");
+        let result = run_guided_auth(&mut terminal, &mut client, &RetryPolicy::default())
+            .expect("guided auth should complete");
 
         assert_eq!(result, GuidedAuthOutcome::ExitWithGuidance);
-        assert!(!session_path.exists());
     }
 
     #[test]
     fn flood_wait_exits_immediately() {
-        let session_path = temp_session_path();
         let mut terminal = FakeTerminal::new(vec![Some("+15551234567")]);
         let mut client = FakeClient::new(vec![Action::RequestCode(Err(
             AuthBackendError::FloodWait { seconds: 120 },
         ))]);
 
-        let result = run_guided_auth(
-            &mut terminal,
-            &mut client,
-            &session_path,
-            &RetryPolicy::default(),
-        )
-        .expect("guided auth should complete");
+        let result = run_guided_auth(&mut terminal, &mut client, &RetryPolicy::default())
+            .expect("guided auth should complete");
 
         assert_eq!(result, GuidedAuthOutcome::ExitWithGuidance);
         assert!(terminal
@@ -712,25 +575,17 @@ mod tests {
 
     #[test]
     fn eof_cancels_flow_cleanly() {
-        let session_path = temp_session_path();
         let mut terminal = FakeTerminal::new(vec![None]);
         let mut client = FakeClient::new(vec![]);
 
-        let result = run_guided_auth(
-            &mut terminal,
-            &mut client,
-            &session_path,
-            &RetryPolicy::default(),
-        )
-        .expect("guided auth should complete");
+        let result = run_guided_auth(&mut terminal, &mut client, &RetryPolicy::default())
+            .expect("guided auth should complete");
 
         assert_eq!(result, GuidedAuthOutcome::ExitWithGuidance);
-        assert!(!session_path.exists());
     }
 
     #[test]
     fn timeout_then_successful_retry() {
-        let session_path = temp_session_path();
         let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]);
         let mut client = FakeClient::new(vec![
             Action::RequestCode(Err(AuthBackendError::Timeout)),
@@ -738,26 +593,18 @@ mod tests {
             Action::SignIn(Ok(SignInOutcome::Authorized)),
         ]);
 
-        let result = run_guided_auth(
-            &mut terminal,
-            &mut client,
-            &session_path,
-            &RetryPolicy::default(),
-        )
-        .expect("guided auth should complete");
+        let result = run_guided_auth(&mut terminal, &mut client, &RetryPolicy::default())
+            .expect("guided auth should complete");
 
         assert_eq!(result, GuidedAuthOutcome::Authenticated);
         assert!(terminal
             .output
             .iter()
             .any(|line| line.contains("AUTH_TIMEOUT")));
-
-        let _ = fs::remove_file(session_path);
     }
 
     #[test]
     fn invalid_phone_from_backend_retries_then_exits() {
-        let session_path = temp_session_path();
         let mut terminal = FakeTerminal::new(vec![
             Some("+15551234567"),
             Some("+15551234567"),
@@ -769,13 +616,8 @@ mod tests {
             Action::RequestCode(Err(AuthBackendError::InvalidPhone)),
         ]);
 
-        let result = run_guided_auth(
-            &mut terminal,
-            &mut client,
-            &session_path,
-            &RetryPolicy::default(),
-        )
-        .expect("guided auth should complete");
+        let result = run_guided_auth(&mut terminal, &mut client, &RetryPolicy::default())
+            .expect("guided auth should complete");
 
         assert_eq!(result, GuidedAuthOutcome::ExitWithGuidance);
         assert!(terminal
@@ -786,7 +628,6 @@ mod tests {
 
     #[test]
     fn backend_unavailable_fails_fast_with_actionable_message_and_without_leaks() {
-        let session_path = temp_session_path();
         let mut terminal = FakeTerminal::new(vec![Some("+15551234567")]);
         let mut client = FakeClient::new(vec![Action::RequestCode(Err(
             AuthBackendError::Transient {
@@ -798,7 +639,6 @@ mod tests {
         let result = run_guided_auth(
             &mut terminal,
             &mut client,
-            &session_path,
             &RetryPolicy {
                 phone_attempts: 3,
                 code_attempts: 1,
@@ -819,7 +659,6 @@ mod tests {
 
     #[test]
     fn status_snapshot_is_printed_for_ui_actions_when_available() {
-        let session_path = temp_session_path();
         let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]);
         let snapshot = AuthConnectivityStatus {
             auth: crate::domain::status::AuthStatus::InProgress,
@@ -835,13 +674,8 @@ mod tests {
             snapshot,
         );
 
-        let result = run_guided_auth(
-            &mut terminal,
-            &mut client,
-            &session_path,
-            &RetryPolicy::default(),
-        )
-        .expect("guided auth should complete");
+        let result = run_guided_auth(&mut terminal, &mut client, &RetryPolicy::default())
+            .expect("guided auth should complete");
 
         assert_eq!(result, GuidedAuthOutcome::Authenticated);
         assert!(terminal
@@ -852,146 +686,5 @@ mod tests {
             .output
             .iter()
             .any(|line| line.contains("status[code]: auth=AUTH_IN_PROGRESS")));
-
-        let _ = fs::remove_file(session_path);
-    }
-
-    #[test]
-    fn persist_failure_exits_with_guidance() {
-        struct PersistFailClient;
-
-        impl TelegramAuthClient for PersistFailClient {
-            fn request_login_code(
-                &mut self,
-                _phone: &str,
-            ) -> Result<AuthCodeToken, AuthBackendError> {
-                Ok(AuthCodeToken("token".into()))
-            }
-
-            fn sign_in_with_code(
-                &mut self,
-                _token: &AuthCodeToken,
-                _code: &str,
-            ) -> Result<SignInOutcome, AuthBackendError> {
-                Ok(SignInOutcome::Authorized)
-            }
-
-            fn verify_password(&mut self, _password: &str) -> Result<(), AuthBackendError> {
-                Ok(())
-            }
-
-            fn persist_authorized_session(
-                &mut self,
-                _session_path: &Path,
-            ) -> Result<(), AuthBackendError> {
-                Err(AuthBackendError::Transient {
-                    code: "AUTH_SESSION_PERSIST_FAILED",
-                    message: "io failure".to_owned(),
-                })
-            }
-        }
-
-        let session_path = temp_session_path();
-        let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]);
-        let mut client = PersistFailClient;
-
-        let result = run_guided_auth(
-            &mut terminal,
-            &mut client,
-            &session_path,
-            &RetryPolicy::default(),
-        )
-        .expect("guided auth should complete");
-
-        assert_eq!(result, GuidedAuthOutcome::ExitWithGuidance);
-        assert!(terminal
-            .output
-            .iter()
-            .any(|line| line.contains("AUTH_SESSION_PERSIST_FAILED")));
-    }
-
-    #[test]
-    fn successful_auth_clears_policy_invalid_marker() {
-        let mut session_path = env::temp_dir();
-        session_path.push(format!(
-            "rtg-guided-auth-policy-marker-{}-{}/session.dat",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system clock should be after unix epoch")
-                .as_nanos()
-        ));
-
-        let parent = session_path
-            .parent()
-            .expect("session path should have parent")
-            .to_path_buf();
-        fs::create_dir_all(&parent).expect("parent should be creatable");
-        fs::write(
-            parent.join(SESSION_POLICY_INVALID_FILE),
-            b"SESSION_POLICY_INVALID",
-        )
-        .expect("policy marker should be writable");
-
-        let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]);
-        let mut client = FakeClient::new(vec![
-            Action::RequestCode(Ok(AuthCodeToken("token".into()))),
-            Action::SignIn(Ok(SignInOutcome::Authorized)),
-        ]);
-
-        let result = run_guided_auth(
-            &mut terminal,
-            &mut client,
-            &session_path,
-            &RetryPolicy::default(),
-        )
-        .expect("guided auth should complete");
-
-        assert_eq!(result, GuidedAuthOutcome::Authenticated);
-        assert!(session_path.exists());
-        assert!(!parent.join(SESSION_POLICY_INVALID_FILE).exists());
-
-        let _ = fs::remove_file(&session_path);
-        let _ = fs::remove_dir_all(parent);
-    }
-
-    #[test]
-    fn persist_session_marker_creates_parent_dir_and_replaces_existing_file() {
-        let mut session_path = env::temp_dir();
-        session_path.push(format!(
-            "rtg-guided-auth-persist-{}-{}/session.dat",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system clock should be after unix epoch")
-                .as_nanos()
-        ));
-
-        let parent = session_path
-            .parent()
-            .expect("session path should have parent")
-            .to_path_buf();
-
-        fs::create_dir_all(&parent).expect("parent should be creatable");
-        fs::write(&session_path, b"old").expect("pre-existing session should be writable");
-
-        persist_session_marker(&session_path).expect("persist should succeed");
-
-        let content = fs::read_to_string(&session_path).expect("session should be readable");
-        assert_eq!(content, "authorized");
-
-        let leftovers = fs::read_dir(&parent)
-            .expect("parent should be readable")
-            .filter_map(Result::ok)
-            .any(|entry| {
-                entry
-                    .file_name()
-                    .to_string_lossy()
-                    .contains(".session.dat.tmp-")
-            });
-        assert!(!leftovers, "temporary files should be cleaned up");
-
-        let _ = fs::remove_file(&session_path);
-        let _ = fs::remove_dir_all(parent);
     }
 }

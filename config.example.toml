@@ -15,6 +15,3 @@ max_log_files = 3
 api_id = 0
 api_hash = "replace-me"
 
-[startup]
-# Timeout for lightweight online session validity probe during startup.
-session_probe_timeout_ms = 1500

@@ -27,14 +27,7 @@ pub fn run(cli: Cli) -> Result<()> {
     match cli.command_or_default() {
         Command::Run => {
             let mut context = bootstrap::bootstrap(cli.config.as_deref())?;
-            let startup = usecases::startup::plan_startup(
-                &context.telegram,
-                Some(context.config.startup.session_probe_timeout_ms),
-            )?;
-
-            if let Some(code) = startup.probe_warning {
-                tracing::warn!(code, "startup probe fell back to local session validity");
-            }
+            let startup = usecases::startup::plan_startup(&context.telegram)?;
 
             match startup.state {
                 usecases::startup::StartupFlowState::LaunchTui => {
@@ -55,12 +48,8 @@ pub fn run(cli: Cli) -> Result<()> {
                     let mut terminal = StdTerminal;
                     let telegram_mut = std::sync::Arc::get_mut(&mut context.telegram)
                         .expect("single owner during guided auth");
-                    let auth_outcome = run_guided_auth(
-                        &mut terminal,
-                        telegram_mut,
-                        &startup.session_file(),
-                        &RetryPolicy::default(),
-                    )?;
+                    let auth_outcome =
+                        run_guided_auth(&mut terminal, telegram_mut, &RetryPolicy::default())?;
 
                     if matches!(auth_outcome, GuidedAuthOutcome::Authenticated) {
                         let mut shell = bootstrap::compose_shell(&context);
@@ -79,8 +68,7 @@ pub fn run(cli: Cli) -> Result<()> {
             let mut telegram = build_logout_telegram(cli.config.as_deref());
             let outcome = logout_and_reset(&mut telegram)?;
             tracing::info!(
-                session_removed = outcome.session_removed,
-                policy_marker_removed = outcome.policy_marker_removed,
+                tdlib_data_removed = outcome.tdlib_data_removed,
                 "logout/reset completed"
             );
             println!("Logout completed. State is disconnected and ready for clean re-login.");
@@ -111,7 +99,7 @@ fn report_post_auth_tui_bootstrap_failure(error: &anyhow::Error) {
     tracing::error!(
         code = AUTH_TUI_BOOTSTRAP_FAILED,
         error = ?error,
-        "post-auth TUI bootstrap failed after successful session persist"
+        "post-auth TUI bootstrap failed after successful authentication"
     );
 
     for line in post_auth_tui_fallback_lines(AUTH_TUI_BOOTSTRAP_FAILED) {
@@ -168,7 +156,11 @@ mod tests {
 
         let layout = crate::infra::storage_layout::StorageLayout::resolve().expect("layout");
         layout.ensure_dirs().expect("layout dirs should be created");
-        fs::write(layout.session_file(), b"session").expect("session should be written");
+
+        // Create fake TDLib data to verify it gets cleaned up
+        let db_dir = layout.tdlib_database_dir();
+        fs::create_dir_all(&db_dir).expect("db dir should be creatable");
+        fs::write(db_dir.join("td.binlog"), b"data").expect("fake data should be writable");
 
         let cli = Cli {
             config: Some(config_path),
@@ -176,7 +168,7 @@ mod tests {
         };
 
         run(cli).expect("logout should succeed despite bootstrap failure");
-        assert!(!layout.session_file().exists());
+        assert!(!layout.tdlib_session_exists());
 
         match old_xdg {
             Some(value) => {

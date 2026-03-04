@@ -40,7 +40,7 @@ impl MessageMedia {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
-    pub id: i32,
+    pub id: i64,
     pub sender_name: String,
     pub text: String,
     pub timestamp_ms: i64,
