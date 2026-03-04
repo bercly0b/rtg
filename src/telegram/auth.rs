@@ -319,9 +319,11 @@ impl GrammersAuthBackend {
 
     pub(super) fn start_chat_updates_monitor(
         &self,
-        updates_tx: std::sync::mpsc::Sender<()>,
+        _updates_tx: std::sync::mpsc::Sender<()>,
     ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
-        TelegramChatUpdatesMonitor::start(&self.rt, self.client.clone(), updates_tx)
+        // Grammers backend is no longer used - return error
+        // This method exists only for API compatibility during migration
+        Err(ChatUpdatesMonitorStartError::StartupRejected)
     }
 
     #[allow(dead_code)]

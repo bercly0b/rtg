@@ -56,7 +56,6 @@ impl TdLibUpdate {
     }
 
     /// Returns the kind of update for logging.
-    #[allow(dead_code)] // Will be used in Phase 6.3
     pub fn kind(&self) -> &'static str {
         match self {
             TdLibUpdate::NewMessage { .. } => "new_message",
