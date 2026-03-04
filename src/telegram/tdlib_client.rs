@@ -357,6 +357,84 @@ impl TdLibClient {
         })
     }
 
+    /// Gets message history for a chat.
+    ///
+    /// Returns messages in reverse chronological order (newest first).
+    /// Use `from_message_id: 0` to get the most recent messages.
+    #[allow(dead_code)] // Will be used in Phase 5.4
+    pub fn get_chat_history(
+        &self,
+        chat_id: i64,
+        from_message_id: i64,
+        offset: i32,
+        limit: i32,
+    ) -> Result<Vec<tdlib_rs::types::Message>, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let messages = tdlib_rs::functions::get_chat_history(
+                chat_id,
+                from_message_id,
+                offset,
+                limit,
+                false, // only_local: fetch from server if needed
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request { message: e.message })?;
+
+            match messages {
+                tdlib_rs::enums::Messages::Messages(m) => {
+                    // Filter out None values (deleted messages)
+                    Ok(m.messages.into_iter().flatten().collect())
+                }
+            }
+        })
+    }
+
+    /// Sends a text message to a chat.
+    ///
+    /// Returns the sent message (which may have a temporary ID until confirmed).
+    #[allow(dead_code)] // Will be used in Phase 5.4
+    pub fn send_message(
+        &self,
+        chat_id: i64,
+        text: &str,
+    ) -> Result<tdlib_rs::types::Message, TdLibError> {
+        let client_id = self.client_id;
+        let text = text.to_owned();
+
+        self.rt.block_on(async {
+            let formatted_text = tdlib_rs::types::FormattedText {
+                text,
+                entities: vec![],
+            };
+
+            let input_content = tdlib_rs::enums::InputMessageContent::InputMessageText(
+                tdlib_rs::types::InputMessageText {
+                    text: formatted_text,
+                    link_preview_options: None,
+                    clear_draft: true,
+                },
+            );
+
+            let message = tdlib_rs::functions::send_message(
+                chat_id,
+                None, // topic_id
+                None, // reply_to
+                None, // options
+                input_content,
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request { message: e.message })?;
+
+            match message {
+                tdlib_rs::enums::Message::Message(m) => Ok(m),
+            }
+        })
+    }
+
     /// Graceful shutdown: sends `close()` and marks client as closed.
     ///
     /// After calling this method, the client should not be used for any
