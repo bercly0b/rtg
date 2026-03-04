@@ -7,7 +7,6 @@ const APP_DIR_NAME: &str = "rtg";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageLayout {
     pub config_dir: PathBuf,
-    pub session_dir: PathBuf,
     pub cache_dir: PathBuf,
 }
 
@@ -21,18 +20,16 @@ impl StorageLayout {
             })?;
 
         let config_dir = config_base.join(APP_DIR_NAME);
-        let session_dir = config_dir.join("session");
         let cache_dir = config_dir.join("cache");
 
         Ok(Self {
             config_dir,
-            session_dir,
             cache_dir,
         })
     }
 
     pub fn ensure_dirs(&self) -> Result<(), AppError> {
-        for dir in [&self.config_dir, &self.session_dir, &self.cache_dir] {
+        for dir in [&self.config_dir, &self.cache_dir] {
             fs::create_dir_all(dir).map_err(|source| AppError::StorageDirCreate {
                 path: dir.clone(),
                 source,
@@ -42,16 +39,12 @@ impl StorageLayout {
         Ok(())
     }
 
-    pub fn session_file(&self) -> PathBuf {
-        self.session_dir.join("session.dat")
-    }
-
-    pub fn session_lock_file(&self) -> PathBuf {
-        self.session_dir.join("session.lock")
-    }
-
-    pub fn session_policy_invalid_file(&self) -> PathBuf {
-        self.session_dir.join("session.policy.invalid")
+    /// Returns the path for the single-instance advisory lock file.
+    ///
+    /// This prevents multiple RTG processes from running simultaneously,
+    /// which would cause conflicts with TDLib's SQLite database.
+    pub fn instance_lock_file(&self) -> PathBuf {
+        self.config_dir.join("rtg.lock")
     }
 
     /// Returns the directory for TDLib's SQLite database.
@@ -62,6 +55,18 @@ impl StorageLayout {
     /// Returns the directory for TDLib's downloaded files.
     pub fn tdlib_files_dir(&self) -> PathBuf {
         self.cache_dir.join("tdlib_files")
+    }
+
+    /// Checks whether a TDLib session (database) exists on disk.
+    ///
+    /// Returns `true` if the TDLib database directory exists and contains
+    /// at least one file, indicating a previous session was established.
+    pub fn tdlib_session_exists(&self) -> bool {
+        let db_dir = self.tdlib_database_dir();
+        db_dir.is_dir()
+            && fs::read_dir(&db_dir)
+                .map(|mut entries| entries.next().is_some())
+                .unwrap_or(false)
     }
 }
 
@@ -74,10 +79,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn session_and_cache_are_under_config_dir() {
+    fn cache_is_under_config_dir() {
         let layout = StorageLayout::resolve().expect("layout should resolve");
 
-        assert!(layout.session_dir.starts_with(&layout.config_dir));
         assert!(layout.cache_dir.starts_with(&layout.config_dir));
     }
 
@@ -87,5 +91,55 @@ mod tests {
 
         assert!(layout.tdlib_database_dir().starts_with(&layout.cache_dir));
         assert!(layout.tdlib_files_dir().starts_with(&layout.cache_dir));
+    }
+
+    #[test]
+    fn instance_lock_file_is_under_config_dir() {
+        let layout = StorageLayout::resolve().expect("layout should resolve");
+
+        assert!(layout.instance_lock_file().starts_with(&layout.config_dir));
+        assert!(layout
+            .instance_lock_file()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("rtg.lock"));
+    }
+
+    #[test]
+    fn tdlib_session_exists_returns_false_for_missing_dir() {
+        let layout = StorageLayout {
+            config_dir: PathBuf::from("/nonexistent/path"),
+            cache_dir: PathBuf::from("/nonexistent/path/cache"),
+        };
+        assert!(!layout.tdlib_session_exists());
+    }
+
+    #[test]
+    fn tdlib_session_exists_returns_false_for_empty_dir() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let db_dir = tmp.path().join("cache").join("tdlib");
+        fs::create_dir_all(&db_dir).expect("create db dir");
+
+        let layout = StorageLayout {
+            config_dir: tmp.path().to_path_buf(),
+            cache_dir: tmp.path().join("cache"),
+        };
+        assert!(!layout.tdlib_session_exists());
+    }
+
+    #[test]
+    fn tdlib_session_exists_returns_true_when_files_present() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let db_dir = tmp.path().join("cache").join("tdlib");
+        fs::create_dir_all(&db_dir).expect("create db dir");
+        fs::write(db_dir.join("td.binlog"), b"data").expect("write file");
+
+        let layout = StorageLayout {
+            config_dir: tmp.path().to_path_buf(),
+            cache_dir: tmp.path().join("cache"),
+        };
+        assert!(layout.tdlib_session_exists());
     }
 }

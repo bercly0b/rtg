@@ -1,6 +1,5 @@
 //! Telegram integration layer: API clients and event mapping.
 
-mod auth;
 mod chat_updates;
 mod connectivity;
 mod status_tracker;
@@ -9,7 +8,7 @@ mod tdlib_client;
 mod tdlib_mappers;
 mod tdlib_updates;
 
-// Re-export TDLib types for external use if needed
+// Re-export TDLib types for external use
 #[allow(unused_imports)]
 pub use tdlib_client::{TdLibClient, TdLibConfig, TdLibError};
 #[allow(unused_imports)]
@@ -194,19 +193,6 @@ impl TelegramAuthClient for TelegramAdapter {
         }
 
         result
-    }
-
-    fn persist_authorized_session(
-        &mut self,
-        session_path: &std::path::Path,
-    ) -> Result<(), AuthBackendError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.persist_authorized_session(session_path),
-            None => Err(AuthBackendError::Transient {
-                code: "AUTH_BACKEND_UNAVAILABLE",
-                message: "Telegram auth backend is not configured".into(),
-            }),
-        }
     }
 }
 

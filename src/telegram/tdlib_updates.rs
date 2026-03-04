@@ -8,7 +8,7 @@
 /// These represent the subset of TDLib updates that are relevant for
 /// the RTG UI (chat list, message view, user status).
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Fields are used for pattern matching and future granular handling
+#[allow(dead_code)] // Fields reserved for future granular update handling
 pub enum TdLibUpdate {
     /// New message received in a chat.
     NewMessage { chat_id: i64 },
@@ -40,7 +40,7 @@ pub enum TdLibUpdate {
 
 impl TdLibUpdate {
     /// Returns the chat_id affected by this update, if any.
-    #[allow(dead_code)] // Will be used for filtering updates
+    #[allow(dead_code)]
     pub fn chat_id(&self) -> Option<i64> {
         match self {
             TdLibUpdate::NewMessage { chat_id }

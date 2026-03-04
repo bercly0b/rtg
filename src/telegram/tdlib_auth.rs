@@ -8,7 +8,6 @@
 //! - WaitPassword → check_authentication_password
 //! - Ready → authorization complete
 
-use std::path::Path;
 use std::time::Duration;
 
 use tdlib_rs::enums::AuthorizationState;
@@ -153,7 +152,7 @@ impl TdLibAuthBackend {
     }
 
     /// Checks if we're already authorized (from cached session).
-    #[allow(dead_code)] // Will be used in Phase 5/6
+    #[allow(dead_code)]
     pub fn is_authorized(&mut self) -> Result<bool, AuthBackendError> {
         // Check cached state first
         if let Some(ref state) = self.last_auth_state {
@@ -291,19 +290,8 @@ impl TdLibAuthBackend {
         }
     }
 
-    /// Persists the authorized session.
-    ///
-    /// Note: TDLib handles session persistence automatically.
-    /// This method exists for API compatibility with the trait.
-    pub fn persist_authorized_session(&self, _session_path: &Path) -> Result<(), AuthBackendError> {
-        // TDLib automatically persists the session to its database directory.
-        // No additional action needed.
-        tracing::debug!("Session persistence handled by TDLib automatically");
-        Ok(())
-    }
-
     /// Returns the current authentication status snapshot.
-    #[allow(dead_code)] // Will be used in status integration
+    #[allow(dead_code)]
     pub fn auth_status_snapshot(&self) -> Option<AuthConnectivityStatus> {
         // For now, return None. Full status tracking will be added
         // when integrating with StatusTracker.

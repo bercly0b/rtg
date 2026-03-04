@@ -46,25 +46,14 @@ pub fn init(config: &LogConfig) -> Result<(), AppError> {
 ///
 /// If `RUST_LOG` environment variable is set, uses that directly.
 /// Otherwise, applies `app_level` to the `rtg` crate while limiting
-/// dependencies (tokio, hyper, grammers, etc.) to `warn` level to
+/// dependencies (tokio, hyper, tdlib, etc.) to `warn` level to
 /// prevent log flooding.
 fn build_env_filter(app_level: &str) -> EnvFilter {
     if let Ok(env_filter) = EnvFilter::try_from_default_env() {
         return env_filter;
     }
 
-    const NOISY_DEPENDENCIES: &[&str] = &[
-        "grammers_client",
-        "grammers_session",
-        "grammers_mtsender",
-        "grammers_mtproto",
-        "grammers_tl_types",
-        "tokio",
-        "hyper",
-        "reqwest",
-        "rustls",
-        "h2",
-    ];
+    const NOISY_DEPENDENCIES: &[&str] = &["tdlib_rs", "tokio", "hyper", "reqwest", "rustls", "h2"];
 
     let mut directives = vec![format!("warn,rtg={}", app_level)];
     for dep in NOISY_DEPENDENCIES {

@@ -6,30 +6,34 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogoutOutcome {
-    pub session_removed: bool,
-    pub policy_marker_removed: bool,
+    pub tdlib_data_removed: bool,
 }
 
 pub fn logout_and_reset(telegram: &mut TelegramAdapter) -> Result<LogoutOutcome, AppError> {
     let layout = StorageLayout::resolve()?;
     layout.ensure_dirs()?;
 
-    let session_removed = remove_if_exists(&layout.session_file())?;
-    let policy_marker_removed = remove_if_exists(&layout.session_policy_invalid_file())?;
+    let tdlib_data_removed = remove_tdlib_data(&layout)?;
 
     telegram.disconnect_and_reset();
 
-    Ok(LogoutOutcome {
-        session_removed,
-        policy_marker_removed,
-    })
+    Ok(LogoutOutcome { tdlib_data_removed })
 }
 
-fn remove_if_exists(path: &Path) -> Result<bool, AppError> {
-    match fs::remove_file(path) {
+/// Removes TDLib database and files directories.
+///
+/// Returns `true` if any TDLib data was actually removed.
+fn remove_tdlib_data(layout: &StorageLayout) -> Result<bool, AppError> {
+    let db_removed = remove_dir_if_exists(&layout.tdlib_database_dir())?;
+    let files_removed = remove_dir_if_exists(&layout.tdlib_files_dir())?;
+    Ok(db_removed || files_removed)
+}
+
+fn remove_dir_if_exists(path: &Path) -> Result<bool, AppError> {
+    match fs::remove_dir_all(path) {
         Ok(()) => Ok(true),
         Err(source) if source.kind() == ErrorKind::NotFound => Ok(false),
-        Err(source) => Err(AppError::SessionProbe {
+        Err(source) => Err(AppError::TdlibDataCleanup {
             path: path.to_path_buf(),
             source,
         }),
@@ -44,7 +48,7 @@ mod tests {
     use crate::test_support::env_lock;
 
     #[test]
-    fn logout_removes_session_and_policy_marker() {
+    fn logout_removes_tdlib_data() {
         let _guard = env_lock();
 
         let root = env::temp_dir().join(format!(
@@ -63,20 +67,21 @@ mod tests {
 
         let layout = StorageLayout::resolve().expect("layout should resolve");
         layout.ensure_dirs().expect("dirs should be created");
-        fs::write(layout.session_file(), b"session").expect("session should be written");
-        fs::write(
-            layout.session_policy_invalid_file(),
-            b"SESSION_POLICY_INVALID",
-        )
-        .expect("marker should be written");
+
+        // Create fake TDLib data
+        let db_dir = layout.tdlib_database_dir();
+        let files_dir = layout.tdlib_files_dir();
+        fs::create_dir_all(&db_dir).expect("db dir should be creatable");
+        fs::create_dir_all(&files_dir).expect("files dir should be creatable");
+        fs::write(db_dir.join("td.binlog"), b"data").expect("fake data should be writable");
+        fs::write(files_dir.join("photo.jpg"), b"photo").expect("fake file should be writable");
 
         let mut adapter = TelegramAdapter::stub();
         let outcome = logout_and_reset(&mut adapter).expect("logout should succeed");
 
-        assert!(outcome.session_removed);
-        assert!(outcome.policy_marker_removed);
-        assert!(!layout.session_file().exists());
-        assert!(!layout.session_policy_invalid_file().exists());
+        assert!(outcome.tdlib_data_removed);
+        assert!(!db_dir.exists());
+        assert!(!files_dir.exists());
 
         let snapshot = adapter.status_snapshot();
         assert_eq!(snapshot.auth.as_label(), "AUTH_NOT_STARTED");
@@ -97,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    fn logout_is_idempotent_when_no_files_exist() {
+    fn logout_is_idempotent_when_no_data_exists() {
         let _guard = env_lock();
 
         let mut adapter = TelegramAdapter::stub();
@@ -118,8 +123,7 @@ mod tests {
         unsafe { env::set_var("XDG_CONFIG_HOME", &xdg) };
 
         let outcome = logout_and_reset(&mut adapter).expect("logout should succeed");
-        assert!(!outcome.session_removed);
-        assert!(!outcome.policy_marker_removed);
+        assert!(!outcome.tdlib_data_removed);
 
         let snapshot = adapter.status_snapshot();
         assert_eq!(snapshot.auth.as_label(), "AUTH_NOT_STARTED");

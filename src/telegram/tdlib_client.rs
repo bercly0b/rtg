@@ -59,7 +59,6 @@ pub enum TdLibError {
 
     /// TDLib shutdown error
     #[error("TDLib shutdown error: {message}")]
-    #[allow(dead_code)] // Will be used in error handling
     Shutdown { message: String },
 
     /// TDLib timeout error
@@ -88,10 +87,9 @@ pub struct TdLibClient {
     rt: Arc<Runtime>,
     auth_state_rx: Mutex<mpsc::Receiver<AuthStateUpdate>>,
     /// Receiver for typed TDLib updates. Wrapped in Option to allow taking.
-    #[allow(dead_code)] // Read via take_update_receiver
     update_rx: Mutex<Option<mpsc::Receiver<TdLibUpdate>>>,
-    #[allow(dead_code)]
-    update_thread: Option<thread::JoinHandle<()>>,
+    /// Update loop thread handle. Kept alive for the client's lifetime.
+    _update_thread: Option<thread::JoinHandle<()>>,
     is_closed: AtomicBool,
 }
 
@@ -134,7 +132,7 @@ impl TdLibClient {
             rt,
             auth_state_rx: Mutex::new(auth_state_rx),
             update_rx: Mutex::new(Some(update_rx)),
-            update_thread: Some(update_thread),
+            _update_thread: Some(update_thread),
             is_closed: AtomicBool::new(false),
         })
     }
@@ -257,25 +255,25 @@ impl TdLibClient {
     }
 
     /// Returns the TDLib client ID for sending requests.
-    #[allow(dead_code)] // Will be used in extended API
+    #[allow(dead_code)]
     pub fn client_id(&self) -> i32 {
         self.client_id
     }
 
     /// Returns the configuration used to create this client.
-    #[allow(dead_code)] // Will be used in extended API
+    #[allow(dead_code)]
     pub fn config(&self) -> &TdLibConfig {
         &self.config
     }
 
     /// Returns the async runtime for executing TDLib operations.
-    #[allow(dead_code)] // Will be used in extended API
+    #[allow(dead_code)]
     pub fn runtime(&self) -> &Arc<Runtime> {
         &self.rt
     }
 
     /// Checks if the client has been closed.
-    #[allow(dead_code)] // Will be used in lifecycle management
+    #[allow(dead_code)]
     pub fn is_closed(&self) -> bool {
         self.is_closed.load(Ordering::Acquire)
     }
@@ -519,7 +517,7 @@ impl TdLibClient {
     /// After calling this method, the client should not be used for any
     /// further operations. TDLib will flush all data to disk and send
     /// `AuthorizationStateClosed` update.
-    #[allow(dead_code)] // Will be used in shutdown handling
+    #[allow(dead_code)]
     pub fn close(&self) -> Result<(), TdLibError> {
         // Use compare_exchange to atomically check and set is_closed
         // This prevents race conditions when close() is called concurrently
