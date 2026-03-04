@@ -126,6 +126,17 @@ impl TdLibClient {
             })
         };
 
+        // TDLib requires at least one request to be sent before it starts
+        // delivering updates for a client. Without this, `receive()` will
+        // never return the initial `WaitTdlibParameters` state update.
+        // See: tdlib-rs examples/get_me.rs and lib.rs documentation.
+        rt.block_on(async { tdlib_rs::functions::set_log_verbosity_level(2, client_id).await })
+            .map_err(|e| TdLibError::Init {
+                message: format!("failed to send initial TDLib request: {}", e.message),
+            })?;
+
+        tracing::debug!(client_id, "Initial TDLib request sent, updates activated");
+
         Ok(Self {
             client_id,
             config,
