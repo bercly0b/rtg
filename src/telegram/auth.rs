@@ -1,3 +1,7 @@
+// This module contains the legacy grammers backend, which is being replaced by TDLib.
+// It remains for reference during migration and will be removed in Phase 7 (Cleanup).
+#![allow(dead_code)]
+
 use std::{
     fs,
     path::Path,
@@ -716,7 +720,7 @@ async fn fetch_messages_from_chat(
                 let ts = data.date as i64 * 1000;
                 let media_type = parse_message_media(&data.media);
                 (
-                    data.id,
+                    i64::from(data.id),
                     data.message.clone(),
                     ts,
                     data.out,
@@ -728,7 +732,7 @@ async fn fetch_messages_from_chat(
             grammers_client::grammers_tl_types::enums::Message::Service(data) => {
                 let ts = data.date as i64 * 1000;
                 (
-                    data.id,
+                    i64::from(data.id),
                     String::new(),
                     ts,
                     data.out,

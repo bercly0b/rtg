@@ -143,7 +143,7 @@ impl OpenChatState {
 mod tests {
     use super::*;
 
-    fn message(id: i32, text: &str) -> Message {
+    fn message(id: i64, text: &str) -> Message {
         Message {
             id,
             sender_name: "User".to_owned(),

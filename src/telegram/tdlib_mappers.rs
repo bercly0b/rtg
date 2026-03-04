@@ -185,6 +185,7 @@ fn normalize_preview_text(text: &str) -> Option<String> {
 }
 
 /// Extracts the sender name from a TDLib message.
+#[allow(dead_code)] // Will be used in message loading (Phase 5.4)
 pub fn extract_sender_name_from_message(
     msg: &TdMessage,
     users: &[(i64, TdUser)],

@@ -150,6 +150,7 @@ impl TdLibAuthBackend {
     }
 
     /// Checks if we're already authorized (from cached session).
+    #[allow(dead_code)] // Will be used in Phase 5/6
     pub fn is_authorized(&mut self) -> Result<bool, AuthBackendError> {
         // Check cached state first
         if let Some(ref state) = self.last_auth_state {
@@ -299,6 +300,7 @@ impl TdLibAuthBackend {
     }
 
     /// Returns the current authentication status snapshot.
+    #[allow(dead_code)] // Will be used in status integration
     pub fn auth_status_snapshot(&self) -> Option<AuthConnectivityStatus> {
         // For now, return None. Full status tracking will be added
         // when integrating with StatusTracker.
@@ -314,11 +316,13 @@ impl TdLibAuthBackend {
     }
 
     /// Returns the underlying TDLib client.
+    #[allow(dead_code)] // Will be used in Phase 6
     pub fn client(&self) -> &TdLibClient {
         &self.client
     }
 
     /// Returns mutable reference to the underlying TDLib client.
+    #[allow(dead_code)] // Will be used in Phase 6
     pub fn client_mut(&mut self) -> &mut TdLibClient {
         &mut self.client
     }

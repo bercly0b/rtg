@@ -1,5 +1,6 @@
 /// Type of media attached to a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(dead_code)] // Variants will be used in TDLib message mapper (Phase 5.3)
 pub enum MessageMedia {
     #[default]
     None,
@@ -40,7 +41,7 @@ impl MessageMedia {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
-    pub id: i32,
+    pub id: i64,
     pub sender_name: String,
     pub text: String,
     pub timestamp_ms: i64,
