@@ -319,15 +319,24 @@ impl TdLibAuthBackend {
     }
 
     /// Returns the underlying TDLib client.
-    #[allow(dead_code)] // Will be used in Phase 6
+    #[allow(dead_code)]
     pub fn client(&self) -> &TdLibClient {
         &self.client
     }
 
     /// Returns mutable reference to the underlying TDLib client.
-    #[allow(dead_code)] // Will be used in Phase 6
+    #[allow(dead_code)]
     pub fn client_mut(&mut self) -> &mut TdLibClient {
         &mut self.client
+    }
+
+    /// Takes the typed update receiver from the underlying TDLib client.
+    ///
+    /// This can only be called once - subsequent calls return None.
+    pub fn take_update_receiver(
+        &self,
+    ) -> Option<std::sync::mpsc::Receiver<super::tdlib_updates::TdLibUpdate>> {
+        self.client.take_update_receiver()
     }
 
     /// Lists chat summaries from TDLib.

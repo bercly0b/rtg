@@ -252,7 +252,6 @@ impl TdLibClient {
     ///
     /// This can only be called once - subsequent calls return None.
     /// Used by TelegramChatUpdatesMonitor to receive typed updates.
-    #[allow(dead_code)] // Will be used in Phase 6.4
     pub fn take_update_receiver(&self) -> Option<mpsc::Receiver<TdLibUpdate>> {
         self.update_rx.lock().ok()?.take()
     }

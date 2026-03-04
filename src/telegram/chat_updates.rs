@@ -9,16 +9,12 @@ use std::time::Duration;
 
 use super::tdlib_updates::TdLibUpdate;
 
-#[allow(dead_code)] // Used in tracing calls
 const CHAT_UPDATES_MONITOR_STARTED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_STARTED";
-#[allow(dead_code)] // Used in tracing calls
 const CHAT_UPDATES_MONITOR_STOPPED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_STOPPED";
-#[allow(dead_code)] // Used in tracing calls
 const CHAT_UPDATES_MONITOR_SIGNAL_SEND_FAILED: &str =
     "TELEGRAM_CHAT_UPDATES_MONITOR_SIGNAL_SEND_FAILED";
 
 /// Timeout for receiving updates from TDLib channel.
-#[allow(dead_code)] // Will be used when wired in Phase 6.4
 const UPDATE_RECV_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// Monitor that converts TDLib typed updates to simple refresh signals.
@@ -38,7 +34,6 @@ impl TelegramChatUpdatesMonitor {
     /// # Arguments
     /// - `update_rx`: Receiver for typed TDLib updates from `TdLibClient::take_update_receiver()`
     /// - `signal_tx`: Sender for simple refresh signals consumed by the UI layer
-    #[allow(dead_code)] // Will be used when wired in Phase 6.4
     pub fn start(
         update_rx: Receiver<TdLibUpdate>,
         signal_tx: Sender<()>,
@@ -90,7 +85,6 @@ impl Drop for TelegramChatUpdatesMonitor {
 }
 
 /// Background loop that processes TDLib updates and sends refresh signals.
-#[allow(dead_code)] // Will be used when wired in Phase 6.4
 fn run_update_monitor(update_rx: Receiver<TdLibUpdate>, signal_tx: Sender<()>) {
     loop {
         match update_rx.recv_timeout(UPDATE_RECV_TIMEOUT) {

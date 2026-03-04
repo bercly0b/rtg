@@ -98,11 +98,17 @@ impl TelegramAdapter {
 
     pub fn start_chat_updates_monitor(
         &self,
-        _updates_tx: Sender<()>,
+        updates_tx: Sender<()>,
     ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
-        // TODO: Implement TDLib-based chat updates monitor in Phase 6
-        // For now, return an error as grammers-based monitor is no longer available
-        Err(ChatUpdatesMonitorStartError::StartupRejected)
+        // Get the TDLib update receiver from the backend
+        let update_rx = self
+            .tdlib_backend
+            .as_ref()
+            .and_then(|backend| backend.take_update_receiver())
+            .ok_or(ChatUpdatesMonitorStartError::StartupRejected)?;
+
+        // Start the monitor with TDLib updates
+        TelegramChatUpdatesMonitor::start(update_rx, updates_tx)
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
