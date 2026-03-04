@@ -7,10 +7,13 @@ mod status_tracker;
 mod tdlib_auth;
 mod tdlib_client;
 mod tdlib_mappers;
+mod tdlib_updates;
 
 // Re-export TDLib types for external use if needed
 #[allow(unused_imports)]
 pub use tdlib_client::{TdLibClient, TdLibConfig, TdLibError};
+#[allow(unused_imports)]
+pub use tdlib_updates::TdLibUpdate;
 
 use std::sync::mpsc::{Receiver, Sender};
 
