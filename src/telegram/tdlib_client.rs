@@ -361,7 +361,6 @@ impl TdLibClient {
     ///
     /// Returns messages in reverse chronological order (newest first).
     /// Use `from_message_id: 0` to get the most recent messages.
-    #[allow(dead_code)] // Will be used in Phase 5.4
     pub fn get_chat_history(
         &self,
         chat_id: i64,
@@ -395,7 +394,6 @@ impl TdLibClient {
     /// Sends a text message to a chat.
     ///
     /// Returns the sent message (which may have a temporary ID until confirmed).
-    #[allow(dead_code)] // Will be used in Phase 5.4
     pub fn send_message(
         &self,
         chat_id: i64,

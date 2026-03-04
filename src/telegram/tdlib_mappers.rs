@@ -237,7 +237,6 @@ pub fn get_private_chat_user_id(chat_type: &TdChatType) -> Option<i64> {
 /// Maps a TDLib Message to a domain Message.
 ///
 /// Requires the sender name to be resolved externally (via get_user or chat title).
-#[allow(dead_code)] // Will be used in Phase 5.4
 pub fn map_tdlib_message_to_domain(msg: &TdMessage, sender_name: String) -> Message {
     let text = extract_message_text(&msg.content);
     let media = extract_message_media(&msg.content);
@@ -254,7 +253,6 @@ pub fn map_tdlib_message_to_domain(msg: &TdMessage, sender_name: String) -> Mess
 }
 
 /// Extracts the media type from a TDLib MessageContent.
-#[allow(dead_code)] // Will be used in Phase 5.4
 pub fn extract_message_media(content: &MessageContent) -> MessageMedia {
     match content {
         MessageContent::MessageText(_) => MessageMedia::None,
@@ -281,7 +279,6 @@ pub fn extract_message_media(content: &MessageContent) -> MessageMedia {
 /// For text messages, returns the message text.
 /// For media messages with captions, returns the caption.
 /// For service messages, returns an empty string.
-#[allow(dead_code)] // Will be used in Phase 5.4
 pub fn extract_message_text(content: &MessageContent) -> String {
     match content {
         MessageContent::MessageText(t) => t.text.text.clone(),

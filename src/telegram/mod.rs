@@ -216,28 +216,20 @@ impl ListChatsSource for TelegramAdapter {
 impl MessagesSource for TelegramAdapter {
     fn list_messages(
         &self,
-        _chat_id: i64,
-        _limit: usize,
+        chat_id: i64,
+        limit: usize,
     ) -> Result<Vec<Message>, MessagesSourceError> {
-        // TODO: Implement in Phase 5
         match self.tdlib_backend.as_ref() {
-            Some(_backend) => {
-                // Placeholder until Phase 5 implementation
-                Err(MessagesSourceError::Unavailable)
-            }
+            Some(backend) => backend.list_messages(chat_id, limit),
             None => Err(MessagesSourceError::Unavailable),
         }
     }
 }
 
 impl MessageSender for TelegramAdapter {
-    fn send_message(&self, _chat_id: i64, _text: &str) -> Result<(), SendMessageSourceError> {
-        // TODO: Implement in Phase 5
+    fn send_message(&self, chat_id: i64, text: &str) -> Result<(), SendMessageSourceError> {
         match self.tdlib_backend.as_ref() {
-            Some(_backend) => {
-                // Placeholder until Phase 5 implementation
-                Err(SendMessageSourceError::Unauthorized)
-            }
+            Some(backend) => backend.send_message(chat_id, text),
             None => Err(SendMessageSourceError::Unauthorized),
         }
     }

@@ -14,11 +14,14 @@ use std::time::Duration;
 use tdlib_rs::enums::AuthorizationState;
 
 use crate::domain::chat::ChatSummary;
+use crate::domain::message::Message;
 use crate::domain::status::AuthConnectivityStatus;
 use crate::infra::config::TelegramConfig;
 use crate::infra::storage_layout::StorageLayout;
 use crate::usecases::guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome};
 use crate::usecases::list_chats::ListChatsSourceError;
+use crate::usecases::load_messages::MessagesSourceError;
+use crate::usecases::send_message::SendMessageSourceError;
 
 use super::tdlib_client::{TdLibClient, TdLibConfig, TdLibError};
 use super::tdlib_mappers;
@@ -408,6 +411,71 @@ impl TdLibAuthBackend {
 
         (sender_name, is_online)
     }
+
+    /// Lists messages from a chat.
+    ///
+    /// Returns messages in chronological order (oldest first).
+    pub fn list_messages(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<Message>, MessagesSourceError> {
+        let limit_i32 = i32::try_from(limit.min(100)).unwrap_or(100);
+
+        // Get message history from TDLib (returns newest first)
+        let td_messages = self
+            .client
+            .get_chat_history(chat_id, 0, 0, limit_i32)
+            .map_err(map_messages_error)?;
+
+        tracing::debug!(
+            chat_id,
+            count = td_messages.len(),
+            "Fetched messages from TDLib"
+        );
+
+        // Convert to domain messages
+        let mut messages: Vec<Message> = td_messages
+            .iter()
+            .map(|msg| {
+                let sender_name = self.resolve_message_sender_name(msg);
+                tdlib_mappers::map_tdlib_message_to_domain(msg, sender_name)
+            })
+            .collect();
+
+        // Reverse to get oldest first (UI expects chronological order)
+        messages.reverse();
+
+        Ok(messages)
+    }
+
+    /// Sends a text message to a chat.
+    pub fn send_message(&self, chat_id: i64, text: &str) -> Result<(), SendMessageSourceError> {
+        self.client
+            .send_message(chat_id, text)
+            .map_err(map_send_message_error)?;
+
+        tracing::debug!(chat_id, text_len = text.len(), "Message sent via TDLib");
+        Ok(())
+    }
+
+    /// Resolves the sender name for a message.
+    fn resolve_message_sender_name(&self, msg: &tdlib_rs::types::Message) -> String {
+        match &msg.sender_id {
+            tdlib_rs::enums::MessageSender::User(u) => self
+                .client
+                .get_user(u.user_id)
+                .map(|user| tdlib_mappers::format_user_name(&user))
+                .unwrap_or_else(|_| "Unknown".to_owned()),
+            tdlib_rs::enums::MessageSender::Chat(c) => {
+                // For channel posts, use the chat title
+                self.client
+                    .get_chat(c.chat_id)
+                    .map(|chat| chat.title.clone())
+                    .unwrap_or_else(|_| "Channel".to_owned())
+            }
+        }
+    }
 }
 
 /// Maps TDLib initialization error to AuthBackendError.
@@ -532,6 +600,42 @@ fn map_list_chats_error(error: TdLibError) -> ListChatsSourceError {
     }
 
     ListChatsSourceError::Unavailable
+}
+
+/// Maps TDLib error to MessagesSourceError.
+fn map_messages_error(error: TdLibError) -> MessagesSourceError {
+    let msg = match &error {
+        TdLibError::Request { message } => message.to_ascii_lowercase(),
+        _ => String::new(),
+    };
+
+    if msg.contains("unauthorized") || msg.contains("auth") {
+        return MessagesSourceError::Unauthorized;
+    }
+
+    if msg.contains("chat") && msg.contains("not found") {
+        return MessagesSourceError::ChatNotFound;
+    }
+
+    MessagesSourceError::Unavailable
+}
+
+/// Maps TDLib error to SendMessageSourceError.
+fn map_send_message_error(error: TdLibError) -> SendMessageSourceError {
+    let msg = match &error {
+        TdLibError::Request { message } => message.to_ascii_lowercase(),
+        _ => String::new(),
+    };
+
+    if msg.contains("unauthorized") || msg.contains("auth") {
+        return SendMessageSourceError::Unauthorized;
+    }
+
+    if msg.contains("chat") && msg.contains("not found") {
+        return SendMessageSourceError::ChatNotFound;
+    }
+
+    SendMessageSourceError::Unavailable
 }
 
 #[cfg(test)]

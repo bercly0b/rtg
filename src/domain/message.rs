@@ -1,6 +1,5 @@
 /// Type of media attached to a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[allow(dead_code)] // Variants will be used in TDLib message mapper (Phase 5.3)
 pub enum MessageMedia {
     #[default]
     None,
