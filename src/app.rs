@@ -27,7 +27,12 @@ pub fn run(cli: Cli) -> Result<()> {
     match cli.command_or_default() {
         Command::Run => {
             let mut context = bootstrap::bootstrap(cli.config.as_deref())?;
-            let startup = usecases::startup::plan_startup(&context.telegram)?;
+            // Safe: no Arc clones exist yet — context was just created by bootstrap()
+            let startup = {
+                let telegram_mut = std::sync::Arc::get_mut(&mut context.telegram)
+                    .expect("single owner during startup planning");
+                usecases::startup::plan_startup(telegram_mut)?
+            };
 
             match startup.state {
                 usecases::startup::StartupFlowState::LaunchTui => {

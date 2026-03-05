@@ -36,6 +36,9 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum BackendKind {
     Stub,
+    /// Stub that reports as authorized (for testing startup flow).
+    #[cfg(test)]
+    StubAuthorized,
     TdLib,
 }
 
@@ -57,6 +60,19 @@ impl TelegramAdapter {
     pub fn stub() -> Self {
         Self {
             backend_kind: BackendKind::Stub,
+            tdlib_backend: None,
+            status_tracker: StatusTracker::new(),
+        }
+    }
+
+    /// Creates a stub adapter that reports as authorized.
+    ///
+    /// Used in tests to verify the `LaunchTui` startup path without
+    /// requiring a real TDLib connection.
+    #[cfg(test)]
+    pub fn stub_authorized() -> Self {
+        Self {
+            backend_kind: BackendKind::StubAuthorized,
             tdlib_backend: None,
             status_tracker: StatusTracker::new(),
         }
@@ -123,6 +139,22 @@ impl TelegramAdapter {
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn record_connectivity_status(&self, status: ConnectivityStatus) {
         self.status_tracker.on_connectivity_changed(status);
+    }
+
+    /// Checks whether the TDLib client is fully authorized (session is valid).
+    ///
+    /// Returns `false` for stub backends or when TDLib is not yet authorized
+    /// (e.g. waiting for phone number, code, or password).
+    pub fn is_authorized(&mut self) -> Result<bool, AuthBackendError> {
+        #[cfg(test)]
+        if matches!(self.backend_kind, BackendKind::StubAuthorized) {
+            return Ok(true);
+        }
+
+        match self.tdlib_backend.as_mut() {
+            Some(backend) => backend.is_authorized(),
+            None => Ok(false),
+        }
     }
 
     pub fn disconnect_and_reset(&mut self) {

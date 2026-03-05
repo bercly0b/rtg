@@ -152,7 +152,11 @@ impl TdLibAuthBackend {
     }
 
     /// Checks if we're already authorized (from cached session).
-    #[allow(dead_code)]
+    ///
+    /// Returns `Ok(true)` if TDLib reports `AuthorizationState::Ready`,
+    /// `Ok(false)` if the cached state is not `Ready` or if a short poll
+    /// times out (no state available yet). Propagates non-timeout errors
+    /// so the caller can distinguish "not yet authorized" from "broken client".
     pub fn is_authorized(&mut self) -> Result<bool, AuthBackendError> {
         // Check cached state first
         if let Some(ref state) = self.last_auth_state {
@@ -166,7 +170,8 @@ impl TdLibAuthBackend {
                 self.last_auth_state = Some(update.state);
                 Ok(is_ready)
             }
-            Err(_) => Ok(false), // Timeout is not an error here
+            Err(TdLibError::Timeout { .. }) => Ok(false),
+            Err(other) => Err(map_tdlib_error(other)),
         }
     }
 

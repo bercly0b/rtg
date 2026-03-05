@@ -60,7 +60,8 @@ impl StorageLayout {
     /// Checks whether a TDLib session (database) exists on disk.
     ///
     /// Returns `true` if the TDLib database directory exists and contains
-    /// at least one file, indicating a previous session was established.
+    /// at least one file. Used by logout/cleanup tests to verify data removal.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn tdlib_session_exists(&self) -> bool {
         let db_dir = self.tdlib_database_dir();
         db_dir.is_dir()
