@@ -55,6 +55,7 @@ impl TdLibAuthBackend {
             api_hash: config.api_hash.clone(),
             database_directory: layout.tdlib_database_dir(),
             files_directory: layout.tdlib_files_dir(),
+            log_file: layout.tdlib_log_file(),
         };
 
         // Ensure directories exist
@@ -70,6 +71,12 @@ impl TdLibAuthBackend {
                 message: format!("failed to create TDLib files directory: {e}"),
             }
         })?;
+        if let Some(log_parent) = tdlib_config.log_file.parent() {
+            std::fs::create_dir_all(log_parent).map_err(|e| AuthBackendError::Transient {
+                code: "AUTH_STORAGE_UNAVAILABLE",
+                message: format!("failed to create TDLib log directory: {e}"),
+            })?;
+        }
 
         let client = TdLibClient::new(tdlib_config).map_err(map_init_error)?;
 

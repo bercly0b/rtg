@@ -57,6 +57,16 @@ impl StorageLayout {
         self.cache_dir.join("tdlib_files")
     }
 
+    /// Returns the path for TDLib's internal log file.
+    ///
+    /// TDLib (C++ library) has its own logger that writes to stderr by default.
+    /// This file is used to redirect TDLib logs away from the terminal so they
+    /// don't corrupt the TUI. TDLib handles rotation via `max_file_size`,
+    /// creating a `.old` backup automatically.
+    pub fn tdlib_log_file(&self) -> PathBuf {
+        self.config_dir.join("tdlib.log")
+    }
+
     /// Checks whether a TDLib session (database) exists on disk.
     ///
     /// Returns `true` if the TDLib database directory exists and contains
@@ -106,6 +116,22 @@ mod tests {
             .to_str()
             .unwrap()
             .contains("rtg.lock"));
+    }
+
+    #[test]
+    fn tdlib_log_file_is_under_config_dir() {
+        let layout = StorageLayout::resolve().expect("layout should resolve");
+
+        assert!(layout.tdlib_log_file().starts_with(&layout.config_dir));
+        assert_eq!(
+            layout
+                .tdlib_log_file()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "tdlib.log"
+        );
     }
 
     #[test]

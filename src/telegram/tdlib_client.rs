@@ -21,6 +21,10 @@ use super::tdlib_updates::TdLibUpdate;
 /// 10ms provides responsive update handling without excessive CPU usage.
 const UPDATE_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
+/// Maximum size of TDLib's internal log file before automatic rotation.
+/// TDLib creates a `.old` backup when this limit is reached.
+const TDLIB_LOG_MAX_SIZE: i64 = 10 * 1024 * 1024; // 10 MB
+
 /// Configuration for TDLib client initialization.
 #[derive(Clone)]
 pub struct TdLibConfig {
@@ -32,6 +36,11 @@ pub struct TdLibConfig {
     pub database_directory: PathBuf,
     /// Directory for downloaded files
     pub files_directory: PathBuf,
+    /// Path for TDLib's internal log file.
+    ///
+    /// TDLib (C++ library) has its own logger that writes to stderr by default,
+    /// which corrupts the TUI alternate screen. This redirects it to a file.
+    pub log_file: PathBuf,
 }
 
 // Custom Debug implementation to redact sensitive api_hash field.
@@ -42,6 +51,7 @@ impl std::fmt::Debug for TdLibConfig {
             .field("api_hash", &"[REDACTED]")
             .field("database_directory", &self.database_directory)
             .field("files_directory", &self.files_directory)
+            .field("log_file", &self.log_file)
             .finish()
     }
 }
@@ -126,16 +136,46 @@ impl TdLibClient {
             })
         };
 
-        // TDLib requires at least one request to be sent before it starts
-        // delivering updates for a client. Without this, `receive()` will
-        // never return the initial `WaitTdlibParameters` state update.
+        // Redirect TDLib's internal C++ logger from stderr to a file FIRST,
+        // before any other request. TDLib (C++ library) writes logs to stderr
+        // by default, which corrupts the TUI alternate screen (ratatui).
+        // This also serves as the mandatory initial request that activates
+        // TDLib's update delivery — without at least one request, `receive()`
+        // will never return the initial `WaitTdlibParameters` state update.
         // See: tdlib-rs examples/get_me.rs and lib.rs documentation.
+        let log_path = config
+            .log_file
+            .to_str()
+            .ok_or_else(|| TdLibError::Init {
+                message: "TDLib log file path is not valid UTF-8".to_owned(),
+            })?
+            .to_owned();
+        rt.block_on(async {
+            tdlib_rs::functions::set_log_stream(
+                tdlib_rs::enums::LogStream::File(tdlib_rs::types::LogStreamFile {
+                    path: log_path,
+                    max_file_size: TDLIB_LOG_MAX_SIZE,
+                    redirect_stderr: false,
+                }),
+                client_id,
+            )
+            .await
+        })
+        .map_err(|e| TdLibError::Init {
+            message: format!("failed to redirect TDLib log stream to file: {}", e.message),
+        })?;
+
+        // Set TDLib internal log verbosity: 2 = warnings and errors only.
         rt.block_on(async { tdlib_rs::functions::set_log_verbosity_level(2, client_id).await })
             .map_err(|e| TdLibError::Init {
-                message: format!("failed to send initial TDLib request: {}", e.message),
+                message: format!("failed to set TDLib log verbosity: {}", e.message),
             })?;
 
-        tracing::debug!(client_id, "Initial TDLib request sent, updates activated");
+        tracing::debug!(
+            client_id,
+            log_file = %config.log_file.display(),
+            "TDLib client initialized, logs redirected to file"
+        );
 
         Ok(Self {
             client_id,
@@ -588,12 +628,14 @@ mod tests {
             api_hash: "test_hash".into(),
             database_directory: PathBuf::from("/tmp/test_db"),
             files_directory: PathBuf::from("/tmp/test_files"),
+            log_file: PathBuf::from("/tmp/test_logs/tdlib.log"),
         };
 
         assert_eq!(config.api_id, 12345);
         assert_eq!(config.api_hash, "test_hash");
         assert_eq!(config.database_directory, PathBuf::from("/tmp/test_db"));
         assert_eq!(config.files_directory, PathBuf::from("/tmp/test_files"));
+        assert_eq!(config.log_file, PathBuf::from("/tmp/test_logs/tdlib.log"));
     }
 
     #[test]
@@ -603,6 +645,7 @@ mod tests {
             api_hash: "secret_hash".into(),
             database_directory: PathBuf::from("/tmp/test_db"),
             files_directory: PathBuf::from("/tmp/test_files"),
+            log_file: PathBuf::from("/tmp/test_logs/tdlib.log"),
         };
 
         let debug_output = format!("{:?}", config);
