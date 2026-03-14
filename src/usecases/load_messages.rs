@@ -73,6 +73,45 @@ where
     }
 }
 
+/// Source of cached (local-only) messages.
+///
+/// Returns messages already present in TDLib's local database without
+/// triggering any network requests. Used for instant chat display
+/// before a full background refresh.
+pub trait CachedMessagesSource: Send + Sync {
+    fn list_cached_messages(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<Message>, MessagesSourceError>;
+}
+
+impl<T> CachedMessagesSource for &T
+where
+    T: CachedMessagesSource + ?Sized,
+{
+    fn list_cached_messages(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<Message>, MessagesSourceError> {
+        (*self).list_cached_messages(chat_id, limit)
+    }
+}
+
+impl<T> CachedMessagesSource for std::sync::Arc<T>
+where
+    T: CachedMessagesSource + ?Sized,
+{
+    fn list_cached_messages(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<Message>, MessagesSourceError> {
+        (**self).list_cached_messages(chat_id, limit)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadMessagesError {
     Unauthorized,

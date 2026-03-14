@@ -445,6 +445,45 @@ impl TdLibAuthBackend {
         (sender_name, is_online)
     }
 
+    /// Lists messages from TDLib's local cache only.
+    ///
+    /// Does **not** call `openChat`/`closeChat` or trigger any network requests.
+    /// Returns whatever messages TDLib has cached locally for this chat.
+    /// Used for instant chat display before a full background refresh.
+    ///
+    /// Returns messages in chronological order (oldest first).
+    pub fn list_cached_messages(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<Message>, MessagesSourceError> {
+        let limit_i32 = i32::try_from(limit).unwrap_or(i32::MAX);
+
+        let td_messages = self
+            .client
+            .get_cached_chat_history(chat_id, 0, 0, limit_i32)
+            .map_err(map_messages_error)?;
+
+        tracing::debug!(
+            chat_id,
+            count = td_messages.len(),
+            "fetched cached messages from TDLib"
+        );
+
+        let mut messages: Vec<Message> = td_messages
+            .iter()
+            .map(|msg| {
+                let sender_name = self.resolve_message_sender_name(msg);
+                tdlib_mappers::map_tdlib_message_to_domain(msg, sender_name)
+            })
+            .collect();
+
+        // TDLib returns newest-first; UI expects chronological (oldest-first)
+        messages.reverse();
+
+        Ok(messages)
+    }
+
     /// Lists messages from a chat.
     ///
     /// Returns messages in chronological order (oldest first).

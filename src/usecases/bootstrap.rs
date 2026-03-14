@@ -140,6 +140,18 @@ fn compose_shell_with_factory(
         }
     };
 
+    // Provide the cache source to the orchestrator for instant message display.
+    let cache_source: Option<
+        std::sync::Arc<dyn crate::usecases::load_messages::CachedMessagesSource>,
+    > = if context.config.telegram.is_configured() {
+        Some(std::sync::Arc::clone(&context.telegram)
+            as std::sync::Arc<
+                dyn crate::usecases::load_messages::CachedMessagesSource,
+            >)
+    } else {
+        None
+    };
+
     ShellComposition {
         event_source,
         orchestrator: Box::new(DefaultShellOrchestrator::new_with_initial_state(
@@ -147,6 +159,7 @@ fn compose_shell_with_factory(
             NoopOpener,
             dispatcher,
             initial_state,
+            cache_source,
         )),
         _connectivity_monitor: connectivity_monitor,
         _chat_updates_monitor: chat_updates_monitor,

@@ -29,7 +29,7 @@ use crate::{
     usecases::{
         guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome, TelegramAuthClient},
         list_chats::{CachedChatsSource, ListChatsSource, ListChatsSourceError},
-        load_messages::{MessagesSource, MessagesSourceError},
+        load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
         send_message::{MessageSender, SendMessageSourceError},
     },
 };
@@ -262,6 +262,19 @@ impl MessagesSource for TelegramAdapter {
         match self.tdlib_backend.as_ref() {
             Some(backend) => backend.list_messages(chat_id, limit),
             None => Err(MessagesSourceError::Unavailable),
+        }
+    }
+}
+
+impl CachedMessagesSource for TelegramAdapter {
+    fn list_cached_messages(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<Message>, MessagesSourceError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.list_cached_messages(chat_id, limit),
+            None => Ok(Vec::new()),
         }
     }
 }

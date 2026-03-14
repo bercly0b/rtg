@@ -593,6 +593,46 @@ impl TdLibClient {
         })
     }
 
+    /// Gets message history from TDLib's local database only.
+    ///
+    /// Unlike [`get_chat_history`](Self::get_chat_history), this uses
+    /// `only_local: true`, so it never triggers a network request. Returns
+    /// whatever messages TDLib has cached locally from previous fetches.
+    ///
+    /// Useful for instant chat display: show cached messages immediately,
+    /// then refresh from the server in the background.
+    pub fn get_cached_chat_history(
+        &self,
+        chat_id: i64,
+        from_message_id: i64,
+        offset: i32,
+        limit: i32,
+    ) -> Result<Vec<tdlib_rs::types::Message>, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let messages = tdlib_rs::functions::get_chat_history(
+                chat_id,
+                from_message_id,
+                offset,
+                limit,
+                true, // only_local: read from cache only, no network
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })?;
+
+            match messages {
+                tdlib_rs::enums::Messages::Messages(m) => {
+                    Ok(m.messages.into_iter().flatten().collect())
+                }
+            }
+        })
+    }
+
     /// Gets message history for a chat.
     ///
     /// Returns messages in reverse chronological order (newest first).
