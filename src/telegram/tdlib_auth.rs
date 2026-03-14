@@ -424,26 +424,70 @@ impl TdLibAuthBackend {
     /// Lists messages from a chat.
     ///
     /// Returns messages in chronological order (oldest first).
+    ///
+    /// Uses the TDLib `openChat`/`closeChat` lifecycle to ensure message
+    /// history is available, and paginates via `from_message_id` because
+    /// TDLib may return fewer messages than the requested limit.
     pub fn list_messages(
         &self,
         chat_id: i64,
         limit: usize,
     ) -> Result<Vec<Message>, MessagesSourceError> {
-        let limit_i32 = i32::try_from(limit.min(100)).unwrap_or(100);
+        // Signal TDLib that we're viewing this chat (improves data availability).
+        // Non-critical: log and continue if it fails.
+        if let Err(e) = self.client.open_chat(chat_id) {
+            tracing::warn!(chat_id, error = %e, "openChat failed, continuing without it");
+        }
 
-        // Get message history from TDLib (returns newest first)
-        let td_messages = self
-            .client
-            .get_chat_history(chat_id, 0, 0, limit_i32)
-            .map_err(map_messages_error)?;
+        let result = self.fetch_messages_paginated(chat_id, limit);
+
+        // Always close the chat, even on error.
+        if let Err(e) = self.client.close_chat(chat_id) {
+            tracing::warn!(chat_id, error = %e, "closeChat failed");
+        }
+
+        result
+    }
+
+    /// Fetches up to `limit` messages using paginated `getChatHistory` calls.
+    ///
+    /// TDLib documentation states that the number of returned messages is
+    /// chosen by TDLib and can be smaller than the specified limit. This
+    /// method accumulates results across multiple calls until the requested
+    /// amount is reached or TDLib returns no more messages.
+    fn fetch_messages_paginated(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<Message>, MessagesSourceError> {
+        use super::message_pagination::{fetch_paginated, PageResult};
+
+        let td_messages = fetch_paginated(
+            limit,
+            |from_message_id, page_limit| {
+                let batch = self
+                    .client
+                    .get_chat_history(chat_id, from_message_id, 0, page_limit)
+                    .map_err(map_messages_error)?;
+
+                tracing::debug!(
+                    chat_id,
+                    batch_len = batch.len(),
+                    "getChatHistory page fetched"
+                );
+
+                Ok(PageResult { messages: batch })
+            },
+            |msg| msg.id,
+        )?;
 
         tracing::debug!(
             chat_id,
-            count = td_messages.len(),
-            "Fetched messages from TDLib"
+            total = td_messages.len(),
+            "message pagination complete"
         );
 
-        // Convert to domain messages
+        // Convert to domain messages (accumulated is newest-first)
         let mut messages: Vec<Message> = td_messages
             .iter()
             .map(|msg| {

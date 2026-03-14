@@ -2,6 +2,7 @@
 
 mod chat_updates;
 mod connectivity;
+mod message_pagination;
 mod status_tracker;
 mod tdlib_auth;
 mod tdlib_client;

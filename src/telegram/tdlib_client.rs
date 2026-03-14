@@ -529,6 +529,41 @@ impl TdLibClient {
         })
     }
 
+    /// Informs TDLib that the chat is opened by the user.
+    ///
+    /// Many useful activities depend on the chat being opened or closed
+    /// (e.g., in supergroups and channels all updates are received only
+    /// for opened chats). Must be paired with [`close_chat`](Self::close_chat).
+    pub fn open_chat(&self, chat_id: i64) -> Result<(), TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            tdlib_rs::functions::open_chat(chat_id, client_id)
+                .await
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })
+        })
+    }
+
+    /// Informs TDLib that the chat is closed by the user.
+    ///
+    /// Must be called for every chat previously opened via
+    /// [`open_chat`](Self::open_chat).
+    pub fn close_chat(&self, chat_id: i64) -> Result<(), TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            tdlib_rs::functions::close_chat(chat_id, client_id)
+                .await
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })
+        })
+    }
+
     /// Gets message history for a chat.
     ///
     /// Returns messages in reverse chronological order (newest first).
