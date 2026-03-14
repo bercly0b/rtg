@@ -23,6 +23,9 @@ where
     dispatcher: D,
     /// Guards against dispatching duplicate chat list requests while one is in-flight.
     chat_list_in_flight: bool,
+    /// When `true`, the orchestrator was initialised with cached data and needs
+    /// a background refresh on the first Tick to pick up server-side changes.
+    initial_refresh_needed: bool,
 }
 
 impl<S, O, D> DefaultShellOrchestrator<S, O, D>
@@ -31,6 +34,7 @@ where
     O: ExternalOpener,
     D: TaskDispatcher,
 {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn new(storage: S, opener: O, dispatcher: D) -> Self {
         Self {
             state: ShellState::default(),
@@ -38,6 +42,29 @@ where
             opener,
             dispatcher,
             chat_list_in_flight: false,
+            initial_refresh_needed: false,
+        }
+    }
+
+    /// Creates an orchestrator pre-populated with an initial state.
+    ///
+    /// When the initial state already has a `Ready` chat list (e.g. from
+    /// TDLib cache), `initial_refresh_needed` is set so the first Tick
+    /// triggers a background refresh to pick up server-side changes.
+    pub fn new_with_initial_state(
+        storage: S,
+        opener: O,
+        dispatcher: D,
+        initial_state: ShellState,
+    ) -> Self {
+        let initial_refresh_needed = initial_state.chat_list().ui_state() == ChatListUiState::Ready;
+        Self {
+            state: initial_state,
+            storage,
+            opener,
+            dispatcher,
+            chat_list_in_flight: false,
+            initial_refresh_needed,
         }
     }
 
@@ -263,6 +290,11 @@ where
             AppEvent::Tick => {
                 if self.state.chat_list().ui_state() == ChatListUiState::Loading {
                     self.dispatch_chat_list_refresh();
+                } else if self.initial_refresh_needed {
+                    // Chat list was pre-populated from cache; trigger a background
+                    // refresh to pick up any server-side changes.
+                    self.initial_refresh_needed = false;
+                    self.dispatch_chat_list_refresh();
                 }
                 self.storage.save_last_action("tick")?;
             }
@@ -318,6 +350,7 @@ mod tests {
             },
             message::Message,
             open_chat_state::OpenChatUiState,
+            shell_state::ShellState,
         },
         infra::stubs::{NoopOpener, StubStorageAdapter},
     };
@@ -454,6 +487,18 @@ mod tests {
         // Inject the messages result
         inject_messages(&mut o, chat_id, messages);
         o
+    }
+
+    // ── Orchestrator factory with pre-populated cache ──
+
+    fn make_orchestrator_with_cached_chats(chats: Vec<ChatSummary>) -> TestOrchestrator {
+        let state = ShellState::with_initial_chat_list(chats);
+        DefaultShellOrchestrator::new_with_initial_state(
+            StubStorageAdapter::default(),
+            NoopOpener::default(),
+            RecordingDispatcher::new(),
+            state,
+        )
     }
 
     // ── Tests ──
@@ -1227,5 +1272,109 @@ mod tests {
         assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Empty);
         assert_eq!(o.state().chat_list().selected_index(), None);
         assert!(o.state().is_running());
+    }
+
+    // ── Cached startup tests ──
+
+    #[test]
+    fn cached_startup_shows_ready_immediately() {
+        let o = make_orchestrator_with_cached_chats(vec![chat(1, "Alpha"), chat(2, "Beta")]);
+
+        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Ready);
+        assert_eq!(o.state().chat_list().chats().len(), 2);
+        assert_eq!(o.state().chat_list().selected_index(), Some(0));
+    }
+
+    #[test]
+    fn cached_startup_empty_cache_falls_back_to_loading() {
+        let o = make_orchestrator_with_cached_chats(vec![]);
+
+        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Loading);
+        assert!(o.state().chat_list().chats().is_empty());
+    }
+
+    #[test]
+    fn cached_startup_first_tick_triggers_background_refresh() {
+        let mut o = make_orchestrator_with_cached_chats(vec![chat(1, "Alpha"), chat(2, "Beta")]);
+
+        // State is Ready from cache
+        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Ready);
+
+        // First tick should trigger a background refresh even though state is Ready
+        o.handle_event(AppEvent::Tick).unwrap();
+        assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+
+        // Data should remain visible (no blink)
+        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Ready);
+        assert_eq!(o.state().chat_list().chats().len(), 2);
+    }
+
+    #[test]
+    fn cached_startup_refresh_only_fires_once() {
+        let mut o = make_orchestrator_with_cached_chats(vec![chat(1, "Alpha"), chat(2, "Beta")]);
+
+        // First tick: triggers refresh
+        o.handle_event(AppEvent::Tick).unwrap();
+        assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+
+        // Simulate result arriving
+        inject_chat_list(
+            &mut o,
+            vec![chat(1, "Alpha"), chat(2, "Beta"), chat(3, "Gamma")],
+        );
+
+        // Second tick: should NOT trigger another refresh (initial_refresh_needed is false)
+        o.handle_event(AppEvent::Tick).unwrap();
+        assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+    }
+
+    #[test]
+    fn cached_startup_background_result_updates_list() {
+        let mut o = make_orchestrator_with_cached_chats(vec![chat(1, "Alpha"), chat(2, "Beta")]);
+
+        // Navigate to second chat
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        assert_eq!(
+            o.state().chat_list().selected_chat().map(|c| c.chat_id),
+            Some(2)
+        );
+
+        // Trigger refresh via Tick
+        o.handle_event(AppEvent::Tick).unwrap();
+
+        // Background result arrives with updated data (new chat appeared at top)
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::ChatListLoaded {
+                result: Ok(vec![chat(3, "Gamma"), chat(1, "Alpha"), chat(2, "Beta")]),
+            },
+        ))
+        .unwrap();
+
+        // Selection should be preserved on chat_id=2
+        assert_eq!(
+            o.state().chat_list().selected_chat().map(|c| c.chat_id),
+            Some(2)
+        );
+        assert_eq!(o.state().chat_list().chats().len(), 3);
+    }
+
+    #[test]
+    fn non_cached_startup_does_not_set_initial_refresh_flag() {
+        let mut o = make_orchestrator();
+
+        // Default state is Loading, NOT Ready
+        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Loading);
+
+        // First tick triggers the standard Loading -> dispatch path
+        o.handle_event(AppEvent::Tick).unwrap();
+        assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+
+        // Result arrives
+        inject_chat_list(&mut o, vec![chat(1, "Alpha")]);
+
+        // Second tick should NOT dispatch again (no initial_refresh_needed flag)
+        o.handle_event(AppEvent::Tick).unwrap();
+        assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
     }
 }

@@ -1,7 +1,10 @@
 use std::{path::Path, sync::mpsc::Sender};
 
 use crate::{
-    domain::events::{BackgroundTaskResult, ConnectivityStatus},
+    domain::{
+        events::{BackgroundTaskResult, ConnectivityStatus},
+        shell_state::ShellState,
+    },
     infra::{
         self,
         config::{FileConfigAdapter, TelegramConfig},
@@ -24,12 +27,16 @@ use crate::{
         context::AppContext,
         contracts::{AppEventSource, ShellOrchestrator},
         guided_auth::AuthBackendError,
+        list_chats::CachedChatsSource,
         shell::DefaultShellOrchestrator,
     },
 };
 
 const CONNECTIVITY_MONITOR_START_FAILED: &str = "TELEGRAM_CONNECTIVITY_MONITOR_START_FAILED";
 const CHAT_UPDATES_MONITOR_START_FAILED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_START_FAILED";
+
+/// Number of chats to preload from TDLib cache on startup.
+const DEFAULT_CACHED_CHAT_LIMIT: usize = 50;
 
 pub struct ShellComposition {
     pub event_source: Box<dyn AppEventSource>,
@@ -110,12 +117,36 @@ fn compose_shell_with_factory(
         bg_tx,
     );
 
+    // Try to preload chats from TDLib's local cache for instant display.
+    // This is a synchronous call that reads from SQLite — no network involved.
+    let initial_state = match context
+        .telegram
+        .list_cached_chats(DEFAULT_CACHED_CHAT_LIMIT)
+    {
+        Ok(chats) if !chats.is_empty() => {
+            tracing::info!(count = chats.len(), "preloaded chat list from TDLib cache");
+            ShellState::with_initial_chat_list(chats)
+        }
+        Ok(_) => {
+            tracing::debug!("TDLib cache is empty, starting with Loading state");
+            ShellState::default()
+        }
+        Err(error) => {
+            tracing::debug!(
+                ?error,
+                "failed to preload cached chats, starting with Loading state"
+            );
+            ShellState::default()
+        }
+    };
+
     ShellComposition {
         event_source,
-        orchestrator: Box::new(DefaultShellOrchestrator::new(
+        orchestrator: Box::new(DefaultShellOrchestrator::new_with_initial_state(
             StubStorageAdapter::default(),
             NoopOpener,
             dispatcher,
+            initial_state,
         )),
         _connectivity_monitor: connectivity_monitor,
         _chat_updates_monitor: chat_updates_monitor,

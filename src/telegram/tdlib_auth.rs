@@ -339,6 +339,27 @@ impl TdLibAuthBackend {
         self.client.take_update_receiver()
     }
 
+    /// Lists chat summaries from TDLib's local cache only.
+    ///
+    /// Does **not** call `loadChats`, so no network request is made.
+    /// Returns whatever chats are already present in TDLib's SQLite database
+    /// from previous sessions. Useful for instant startup display.
+    pub fn list_cached_chat_summaries(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+        let limit_i32 = i32::try_from(limit).unwrap_or(i32::MAX);
+
+        let chat_ids = self
+            .client
+            .get_cached_chats(limit_i32)
+            .map_err(map_list_chats_error)?;
+
+        tracing::debug!(count = chat_ids.len(), "Fetched cached chat IDs from TDLib");
+
+        Ok(self.build_summaries_from_ids(chat_ids))
+    }
+
     /// Lists chat summaries from TDLib.
     ///
     /// Fetches chats from the main chat list and maps them to domain `ChatSummary`.
@@ -348,7 +369,6 @@ impl TdLibAuthBackend {
     ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
         let limit_i32 = i32::try_from(limit).unwrap_or(i32::MAX);
 
-        // Get chat IDs from TDLib
         let chat_ids = self
             .client
             .get_chats(limit_i32)
@@ -356,26 +376,30 @@ impl TdLibAuthBackend {
 
         tracing::debug!(count = chat_ids.len(), "Fetched chat IDs from TDLib");
 
-        // Fetch full chat info for each chat and build summaries
+        Ok(self.build_summaries_from_ids(chat_ids))
+    }
+
+    /// Builds domain `ChatSummary` list from raw TDLib chat IDs.
+    ///
+    /// Fetches full chat info for each ID and maps to domain types.
+    /// Skips individual chats that fail to load.
+    fn build_summaries_from_ids(&self, chat_ids: Vec<i64>) -> Vec<ChatSummary> {
         let mut summaries = Vec::with_capacity(chat_ids.len());
 
         for chat_id in chat_ids {
             match self.client.get_chat(chat_id) {
                 Ok(chat) => {
-                    // Get sender name and online status for the chat
                     let (sender_name, is_online) = self.resolve_chat_metadata(&chat);
-
                     let summary = tdlib_mappers::map_chat_to_summary(&chat, sender_name, is_online);
                     summaries.push(summary);
                 }
                 Err(e) => {
                     tracing::warn!(chat_id, error = %e, "Failed to fetch chat details, skipping");
-                    // Skip this chat but continue with others
                 }
             }
         }
 
-        Ok(summaries)
+        summaries
     }
 
     /// Resolves additional metadata for a chat (sender name, online status).

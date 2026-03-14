@@ -441,6 +441,35 @@ impl TdLibClient {
         })
     }
 
+    /// Gets chat IDs already present in TDLib's local database.
+    ///
+    /// Unlike [`get_chats`](Self::get_chats), this does **not** call `loadChats`
+    /// first, so it never triggers a network request. Returns whatever TDLib
+    /// has cached locally from previous sessions (SQLite database).
+    ///
+    /// Useful for instant startup: show cached chats immediately, then
+    /// refresh from the server in the background.
+    pub fn get_cached_chats(&self, limit: i32) -> Result<Vec<i64>, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let chats = tdlib_rs::functions::get_chats(
+                Some(tdlib_rs::enums::ChatList::Main),
+                limit,
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })?;
+
+            match chats {
+                tdlib_rs::enums::Chats::Chats(c) => Ok(c.chat_ids),
+            }
+        })
+    }
+
     /// Gets list of chat IDs from TDLib.
     ///
     /// Returns up to `limit` chat IDs from the main chat list, sorted by TDLib's order.
