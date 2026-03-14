@@ -19,7 +19,6 @@ pub enum AppEvent {
 pub enum BackgroundTaskResult {
     /// Chat list fetch completed.
     ChatListLoaded {
-        preferred_chat_id: Option<i64>,
         result: Result<Vec<super::chat::ChatSummary>, BackgroundError>,
     },
     /// Messages fetch for a specific chat completed.

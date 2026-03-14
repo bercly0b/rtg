@@ -56,7 +56,7 @@ impl ChatListState {
         self.set_ready_with_selection_hint(chats, previous_selected_chat_id);
     }
 
-    pub fn set_ready_with_selection_hint(
+    fn set_ready_with_selection_hint(
         &mut self,
         chats: Vec<ChatSummary>,
         preferred_chat_id: Option<i64>,

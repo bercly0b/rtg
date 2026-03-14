@@ -47,16 +47,7 @@ where
             return;
         }
 
-        let preferred_chat_id = self
-            .state
-            .chat_list()
-            .selected_chat()
-            .map(|chat| chat.chat_id);
-
-        tracing::debug!(
-            preferred_chat_id = preferred_chat_id,
-            "dispatching chat list refresh to background"
-        );
+        tracing::debug!("dispatching chat list refresh to background");
 
         // Only show the loader when there is no data to display (initial load,
         // after error, or empty state).  When the list is already visible
@@ -68,7 +59,7 @@ where
         }
 
         self.chat_list_in_flight = true;
-        self.dispatcher.dispatch_chat_list(preferred_chat_id);
+        self.dispatcher.dispatch_chat_list();
     }
 
     fn open_selected_chat(&mut self) {
@@ -159,17 +150,16 @@ where
 
     fn handle_background_result(&mut self, result: BackgroundTaskResult) {
         match result {
-            BackgroundTaskResult::ChatListLoaded {
-                preferred_chat_id,
-                result,
-            } => {
+            BackgroundTaskResult::ChatListLoaded { result } => {
                 self.chat_list_in_flight = false;
                 match result {
                     Ok(chats) => {
                         tracing::debug!(chat_count = chats.len(), "background: chat list loaded");
-                        self.state
-                            .chat_list_mut()
-                            .set_ready_with_selection_hint(chats, preferred_chat_id);
+                        // Always use the *current* selected chat_id from state
+                        // to preserve the user's cursor position. This prevents
+                        // cursor jumps when background TDLib updates trigger
+                        // chat list refreshes while the user is navigating.
+                        self.state.chat_list_mut().set_ready(chats);
                     }
                     Err(error) => {
                         tracing::warn!(code = error.code, "background: chat list load failed");
@@ -365,7 +355,7 @@ mod tests {
 
     /// Records what the orchestrator dispatched and allows inspection.
     struct RecordingDispatcher {
-        dispatched_chat_lists: RefCell<Vec<Option<i64>>>,
+        dispatched_chat_list_count: RefCell<usize>,
         dispatched_messages: RefCell<Vec<i64>>,
         dispatched_sends: RefCell<Vec<(i64, String)>>,
     }
@@ -373,14 +363,14 @@ mod tests {
     impl RecordingDispatcher {
         fn new() -> Self {
             Self {
-                dispatched_chat_lists: RefCell::new(Vec::new()),
+                dispatched_chat_list_count: RefCell::new(0),
                 dispatched_messages: RefCell::new(Vec::new()),
                 dispatched_sends: RefCell::new(Vec::new()),
             }
         }
 
         fn chat_list_dispatch_count(&self) -> usize {
-            self.dispatched_chat_lists.borrow().len()
+            *self.dispatched_chat_list_count.borrow()
         }
 
         fn messages_dispatch_count(&self) -> usize {
@@ -397,10 +387,8 @@ mod tests {
     }
 
     impl TaskDispatcher for RecordingDispatcher {
-        fn dispatch_chat_list(&self, preferred_chat_id: Option<i64>) {
-            self.dispatched_chat_lists
-                .borrow_mut()
-                .push(preferred_chat_id);
+        fn dispatch_chat_list(&self) {
+            *self.dispatched_chat_list_count.borrow_mut() += 1;
         }
 
         fn dispatch_load_messages(&self, chat_id: i64) {
@@ -429,10 +417,7 @@ mod tests {
     fn inject_chat_list(orchestrator: &mut TestOrchestrator, chats: Vec<ChatSummary>) {
         orchestrator
             .handle_event(AppEvent::BackgroundTaskCompleted(
-                BackgroundTaskResult::ChatListLoaded {
-                    preferred_chat_id: None,
-                    result: Ok(chats),
-                },
+                BackgroundTaskResult::ChatListLoaded { result: Ok(chats) },
             ))
             .unwrap();
     }
@@ -533,7 +518,6 @@ mod tests {
         let mut o = make_orchestrator();
         o.handle_event(AppEvent::BackgroundTaskCompleted(
             BackgroundTaskResult::ChatListLoaded {
-                preferred_chat_id: None,
                 result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
             },
         ))
@@ -543,24 +527,112 @@ mod tests {
     }
 
     #[test]
-    fn chat_list_loaded_preserves_selection_by_preferred_chat_id() {
-        let mut o = make_orchestrator();
+    fn chat_list_reload_preserves_selection_by_current_chat_id() {
+        let mut o =
+            orchestrator_with_chats(vec![chat(1, "General"), chat(2, "Backend"), chat(3, "Ops")]);
+        // Navigate to "Backend" (index 1)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        assert_eq!(
+            o.state().chat_list().selected_chat().map(|c| c.chat_id),
+            Some(2)
+        );
+
+        // Simulate a background reload where chat order changed
+        // (e.g. chat 3 got a new message and moved to the top)
         o.handle_event(AppEvent::BackgroundTaskCompleted(
             BackgroundTaskResult::ChatListLoaded {
-                preferred_chat_id: Some(2),
+                result: Ok(vec![chat(3, "Ops"), chat(1, "General"), chat(2, "Backend")]),
+            },
+        ))
+        .unwrap();
+
+        // Selection should follow chat_id 2 ("Backend"), now at index 2
+        assert_eq!(o.state().chat_list().selected_index(), Some(2));
+        assert_eq!(
+            o.state().chat_list().selected_chat().map(|c| c.chat_id),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn chat_list_reload_cursor_follows_current_selection_not_dispatch_time() {
+        // Regression test: cursor should not jump when the user navigates
+        // with j/k while a background chat list refresh is in flight.
+        let mut o = orchestrator_with_chats(vec![
+            chat(1, "Alpha"),
+            chat(2, "Beta"),
+            chat(3, "Gamma"),
+            chat(4, "Delta"),
+            chat(5, "Epsilon"),
+        ]);
+        assert_eq!(o.state().chat_list().selected_index(), Some(0));
+
+        // Trigger a background refresh (e.g. from TDLib update)
+        o.handle_event(AppEvent::ChatListUpdateRequested).unwrap();
+        assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+
+        // User navigates down while refresh is in-flight
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        assert_eq!(
+            o.state().chat_list().selected_chat().map(|c| c.chat_id),
+            Some(4) // "Delta"
+        );
+
+        // Background result arrives with reordered chats
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::ChatListLoaded {
                 result: Ok(vec![
-                    chat(100, "Infra"),
-                    chat(2, "Backend"),
-                    chat(200, "Design"),
+                    chat(5, "Epsilon"),
+                    chat(1, "Alpha"),
+                    chat(4, "Delta"),
+                    chat(2, "Beta"),
+                    chat(3, "Gamma"),
                 ]),
             },
         ))
         .unwrap();
 
-        assert_eq!(o.state().chat_list().selected_index(), Some(1));
+        // Selection must stay on "Delta" (chat_id=4), now at index 2
         assert_eq!(
             o.state().chat_list().selected_chat().map(|c| c.chat_id),
-            Some(2)
+            Some(4)
+        );
+        assert_eq!(o.state().chat_list().selected_index(), Some(2));
+    }
+
+    #[test]
+    fn chat_list_reload_falls_back_when_selected_chat_disappears() {
+        let mut o =
+            orchestrator_with_chats(vec![chat(1, "Alpha"), chat(2, "Beta"), chat(3, "Gamma")]);
+        // Navigate to "Gamma"
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        assert_eq!(
+            o.state().chat_list().selected_chat().map(|c| c.chat_id),
+            Some(3)
+        );
+
+        // Background refresh arrives without chat 3
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::ChatListLoaded {
+                result: Ok(vec![chat(1, "Alpha"), chat(2, "Beta")]),
+            },
+        ))
+        .unwrap();
+
+        // Should fall back to first chat
+        assert_eq!(o.state().chat_list().selected_index(), Some(0));
+        assert_eq!(
+            o.state().chat_list().selected_chat().map(|c| c.chat_id),
+            Some(1)
         );
     }
 
@@ -727,7 +799,6 @@ mod tests {
         // Simulate an error state
         o.handle_event(AppEvent::BackgroundTaskCompleted(
             BackgroundTaskResult::ChatListLoaded {
-                preferred_chat_id: None,
                 result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
             },
         ))
@@ -1104,7 +1175,6 @@ mod tests {
         // Simulate result
         o.handle_event(AppEvent::BackgroundTaskCompleted(
             BackgroundTaskResult::ChatListLoaded {
-                preferred_chat_id: None,
                 result: Ok(vec![chat(1, "General"), chat(2, "Backend"), chat(3, "Ops")]),
             },
         ))
@@ -1139,7 +1209,6 @@ mod tests {
         // Error result
         o.handle_event(AppEvent::BackgroundTaskCompleted(
             BackgroundTaskResult::ChatListLoaded {
-                preferred_chat_id: None,
                 result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
             },
         ))
@@ -1151,10 +1220,7 @@ mod tests {
             .unwrap();
         // Empty list result
         o.handle_event(AppEvent::BackgroundTaskCompleted(
-            BackgroundTaskResult::ChatListLoaded {
-                preferred_chat_id: None,
-                result: Ok(vec![]),
-            },
+            BackgroundTaskResult::ChatListLoaded { result: Ok(vec![]) },
         ))
         .unwrap();
 
