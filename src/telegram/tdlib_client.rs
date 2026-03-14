@@ -56,6 +56,12 @@ impl std::fmt::Debug for TdLibConfig {
     }
 }
 
+/// TDLib error code returned by `loadChats` when all chats are already cached.
+///
+/// This is a normal "nothing more to load" signal, not a real failure.
+/// See TDLib docs: "Returns a 404 error if all chats have been loaded."
+const TDLIB_ERROR_ALL_CHATS_LOADED: i32 = 404;
+
 /// Error types for TDLib operations.
 #[derive(Debug, thiserror::Error)]
 pub enum TdLibError {
@@ -63,9 +69,9 @@ pub enum TdLibError {
     #[error("TDLib initialization error: {message}")]
     Init { message: String },
 
-    /// TDLib request error
-    #[error("TDLib request error: {message}")]
-    Request { message: String },
+    /// TDLib request error (carries TDLib error code for discrimination)
+    #[error("TDLib request error {code}: {message}")]
+    Request { code: i32, message: String },
 
     /// TDLib shutdown error
     #[error("TDLib shutdown error: {message}")]
@@ -398,7 +404,10 @@ impl TdLibClient {
         self.rt.block_on(async {
             tdlib_rs::functions::set_authentication_phone_number(phone, None, client_id)
                 .await
-                .map_err(|e| TdLibError::Request { message: e.message })
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })
         })
     }
 
@@ -410,7 +419,10 @@ impl TdLibClient {
         self.rt.block_on(async {
             tdlib_rs::functions::check_authentication_code(code, client_id)
                 .await
-                .map_err(|e| TdLibError::Request { message: e.message })
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })
         })
     }
 
@@ -422,7 +434,10 @@ impl TdLibClient {
         self.rt.block_on(async {
             tdlib_rs::functions::check_authentication_password(password, client_id)
                 .await
-                .map_err(|e| TdLibError::Request { message: e.message })
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })
         })
     }
 
@@ -433,14 +448,32 @@ impl TdLibClient {
         let client_id = self.client_id;
 
         self.rt.block_on(async {
-            // First, load chats to ensure TDLib has them cached
-            tdlib_rs::functions::load_chats(
+            // First, load chats to ensure TDLib has them cached.
+            // TDLib returns error 404 when all chats have already been loaded —
+            // this is a normal "nothing more to load" signal, not a real failure.
+            // We must continue to `get_chats` regardless, because already-cached
+            // chats are still available for retrieval.
+            if let Err(e) = tdlib_rs::functions::load_chats(
                 Some(tdlib_rs::enums::ChatList::Main),
                 limit,
                 client_id,
             )
             .await
-            .map_err(|e| TdLibError::Request { message: e.message })?;
+            {
+                if e.code == TDLIB_ERROR_ALL_CHATS_LOADED {
+                    tracing::debug!("load_chats returned 404: all chats already loaded");
+                } else {
+                    tracing::warn!(
+                        code = e.code,
+                        message = %e.message,
+                        "load_chats failed with unexpected error"
+                    );
+                    return Err(TdLibError::Request {
+                        code: e.code,
+                        message: e.message,
+                    });
+                }
+            }
 
             // Then get the chat IDs
             let chats = tdlib_rs::functions::get_chats(
@@ -449,7 +482,10 @@ impl TdLibClient {
                 client_id,
             )
             .await
-            .map_err(|e| TdLibError::Request { message: e.message })?;
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })?;
 
             match chats {
                 tdlib_rs::enums::Chats::Chats(c) => Ok(c.chat_ids),
@@ -464,7 +500,10 @@ impl TdLibClient {
         self.rt.block_on(async {
             let chat = tdlib_rs::functions::get_chat(chat_id, client_id)
                 .await
-                .map_err(|e| TdLibError::Request { message: e.message })?;
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })?;
 
             match chat {
                 tdlib_rs::enums::Chat::Chat(c) => Ok(c),
@@ -479,7 +518,10 @@ impl TdLibClient {
         self.rt.block_on(async {
             let user = tdlib_rs::functions::get_user(user_id, client_id)
                 .await
-                .map_err(|e| TdLibError::Request { message: e.message })?;
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })?;
 
             match user {
                 tdlib_rs::enums::User::User(u) => Ok(u),
@@ -510,7 +552,10 @@ impl TdLibClient {
                 client_id,
             )
             .await
-            .map_err(|e| TdLibError::Request { message: e.message })?;
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })?;
 
             match messages {
                 tdlib_rs::enums::Messages::Messages(m) => {
@@ -555,7 +600,10 @@ impl TdLibClient {
                 client_id,
             )
             .await
-            .map_err(|e| TdLibError::Request { message: e.message })?;
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })?;
 
             match message {
                 tdlib_rs::enums::Message::Message(m) => Ok(m),
@@ -636,6 +684,22 @@ mod tests {
         assert_eq!(config.database_directory, PathBuf::from("/tmp/test_db"));
         assert_eq!(config.files_directory, PathBuf::from("/tmp/test_files"));
         assert_eq!(config.log_file, PathBuf::from("/tmp/test_logs/tdlib.log"));
+    }
+
+    #[test]
+    fn tdlib_error_all_chats_loaded_code_is_404() {
+        assert_eq!(TDLIB_ERROR_ALL_CHATS_LOADED, 404);
+    }
+
+    #[test]
+    fn request_error_displays_code_and_message() {
+        let error = TdLibError::Request {
+            code: 404,
+            message: "Chat list loading completed".to_owned(),
+        };
+        let display = format!("{error}");
+        assert!(display.contains("404"));
+        assert!(display.contains("Chat list loading completed"));
     }
 
     #[test]

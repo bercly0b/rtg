@@ -499,7 +499,7 @@ fn map_init_error(error: TdLibError) -> AuthBackendError {
 fn map_tdlib_error(error: TdLibError) -> AuthBackendError {
     match error {
         TdLibError::Timeout { .. } => AuthBackendError::Timeout,
-        TdLibError::Init { message } | TdLibError::Request { message } => {
+        TdLibError::Init { message } | TdLibError::Request { message, .. } => {
             AuthBackendError::Transient {
                 code: "AUTH_BACKEND_UNAVAILABLE",
                 message,
@@ -514,7 +514,7 @@ fn map_tdlib_error(error: TdLibError) -> AuthBackendError {
 
 /// Maps phone number request error.
 fn map_request_code_error(error: TdLibError) -> AuthBackendError {
-    let TdLibError::Request { message } = error else {
+    let TdLibError::Request { message, .. } = error else {
         return map_tdlib_error(error);
     };
 
@@ -536,7 +536,7 @@ fn map_request_code_error(error: TdLibError) -> AuthBackendError {
 
 /// Maps sign-in error.
 fn map_sign_in_error(error: TdLibError) -> AuthBackendError {
-    let TdLibError::Request { message } = error else {
+    let TdLibError::Request { message, .. } = error else {
         return map_tdlib_error(error);
     };
 
@@ -560,7 +560,7 @@ fn map_sign_in_error(error: TdLibError) -> AuthBackendError {
 
 /// Maps password verification error.
 fn map_password_error(error: TdLibError) -> AuthBackendError {
-    let TdLibError::Request { message } = error else {
+    let TdLibError::Request { message, .. } = error else {
         return map_tdlib_error(error);
     };
 
@@ -599,7 +599,7 @@ fn parse_flood_wait_seconds(message: &str) -> Option<u32> {
 /// Maps TDLib error to ListChatsSourceError.
 fn map_list_chats_error(error: TdLibError) -> ListChatsSourceError {
     let msg = match &error {
-        TdLibError::Request { message } => message.to_ascii_lowercase(),
+        TdLibError::Request { message, .. } => message.to_ascii_lowercase(),
         _ => String::new(),
     };
 
@@ -614,7 +614,7 @@ fn map_list_chats_error(error: TdLibError) -> ListChatsSourceError {
 /// Maps TDLib error to MessagesSourceError.
 fn map_messages_error(error: TdLibError) -> MessagesSourceError {
     let msg = match &error {
-        TdLibError::Request { message } => message.to_ascii_lowercase(),
+        TdLibError::Request { message, .. } => message.to_ascii_lowercase(),
         _ => String::new(),
     };
 
@@ -632,7 +632,7 @@ fn map_messages_error(error: TdLibError) -> MessagesSourceError {
 /// Maps TDLib error to SendMessageSourceError.
 fn map_send_message_error(error: TdLibError) -> SendMessageSourceError {
     let msg = match &error {
-        TdLibError::Request { message } => message.to_ascii_lowercase(),
+        TdLibError::Request { message, .. } => message.to_ascii_lowercase(),
         _ => String::new(),
     };
 
@@ -662,6 +662,7 @@ mod tests {
     #[test]
     fn map_request_code_error_detects_invalid_phone() {
         let error = TdLibError::Request {
+            code: 400,
             message: "PHONE_NUMBER_INVALID".to_owned(),
         };
         assert_eq!(
@@ -673,6 +674,7 @@ mod tests {
     #[test]
     fn map_sign_in_error_detects_invalid_code() {
         let error = TdLibError::Request {
+            code: 400,
             message: "PHONE_CODE_INVALID".to_owned(),
         };
         assert_eq!(map_sign_in_error(error), AuthBackendError::InvalidCode);
@@ -681,6 +683,7 @@ mod tests {
     #[test]
     fn map_password_error_detects_wrong_password() {
         let error = TdLibError::Request {
+            code: 400,
             message: "PASSWORD_HASH_INVALID".to_owned(),
         };
         assert_eq!(map_password_error(error), AuthBackendError::WrongPassword);
@@ -689,11 +692,51 @@ mod tests {
     #[test]
     fn map_flood_wait_in_request_code() {
         let error = TdLibError::Request {
+            code: 429,
             message: "FLOOD_WAIT_300".to_owned(),
         };
         assert_eq!(
             map_request_code_error(error),
             AuthBackendError::FloodWait { seconds: 300 }
+        );
+    }
+
+    #[test]
+    fn map_list_chats_error_returns_unavailable_for_generic_error() {
+        let error = TdLibError::Request {
+            code: 500,
+            message: "Internal Server Error".to_owned(),
+        };
+        assert_eq!(
+            map_list_chats_error(error),
+            ListChatsSourceError::Unavailable,
+        );
+    }
+
+    #[test]
+    fn map_list_chats_error_returns_unauthorized_for_auth_error() {
+        let error = TdLibError::Request {
+            code: 401,
+            message: "Unauthorized".to_owned(),
+        };
+        assert_eq!(
+            map_list_chats_error(error),
+            ListChatsSourceError::Unauthorized,
+        );
+    }
+
+    #[test]
+    fn map_tdlib_error_maps_request_to_transient() {
+        let error = TdLibError::Request {
+            code: 400,
+            message: "BAD_REQUEST".to_owned(),
+        };
+        assert_eq!(
+            map_tdlib_error(error),
+            AuthBackendError::Transient {
+                code: "AUTH_BACKEND_UNAVAILABLE",
+                message: "BAD_REQUEST".to_owned(),
+            }
         );
     }
 }
