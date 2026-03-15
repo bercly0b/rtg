@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, List, ListItem, ListState, Padding, Paragraph},
     Frame,
@@ -85,6 +85,12 @@ fn render_chat_list_panel(
             let chat_count = chats.len();
 
             let title = format!("Chats ({})", chat_count);
+            let highlight = if is_active {
+                styles::highlight_style()
+            } else {
+                Style::default()
+            };
+
             let list = List::new(items)
                 .block(
                     Block::new()
@@ -92,13 +98,15 @@ fn render_chat_list_panel(
                         .title_style(title_style)
                         .padding(Padding::horizontal(1)),
                 )
-                .highlight_style(
-                    Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-                );
+                .highlight_style(highlight);
 
-            let visual_index = chat_list
-                .selected_index()
-                .map(|idx| compute_visual_index(chats, idx));
+            let visual_index = if is_active {
+                chat_list
+                    .selected_index()
+                    .map(|idx| compute_visual_index(chats, idx))
+            } else {
+                None
+            };
 
             let mut list_state = ListState::default();
             list_state.select(visual_index);
@@ -202,11 +210,17 @@ fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
         .filter(|text| !text.is_empty())
         .unwrap_or_else(|| "No messages yet".to_owned());
 
-    // Build prefix segments (read indicator, sender name, etc.)
+    // Build prefix segments (sender name for groups)
     let prefix_segments = build_preview_prefix_segments(chat);
     let prefix_total_len = prefix_segments_len(&prefix_segments);
 
-    // Build suffix badges: unread count and online indicator
+    // Build suffix components: outgoing status, unread count, online indicator
+    let outgoing_suffix = build_outgoing_status_suffix(chat);
+    let outgoing_suffix_len = outgoing_suffix
+        .as_ref()
+        .map(|(t, _)| t.chars().count())
+        .unwrap_or(0);
+
     let unread_badge = if chat.unread_count > 0 {
         format!(" [{}]", chat.unread_count)
     } else {
@@ -219,11 +233,10 @@ fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
         ""
     };
 
-    let suffix = format!("{}{}", unread_badge, online_indicator);
-
     // Calculate layout
     let fixed_prefix_len = 5 + 3; // timestamp (5) + " | " (3)
-    let suffix_len = suffix.chars().count();
+    let suffix_len =
+        outgoing_suffix_len + unread_badge.chars().count() + online_indicator.chars().count();
     let name_len = chat.title.chars().count();
 
     // Total = fixed_prefix + name + 1 (space) + prefix_segments + preview + padding + suffix
@@ -262,6 +275,11 @@ fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
         spans.push(Span::raw(" ".repeat(padding)));
     }
 
+    // Add outgoing status indicator (after preview, before unread badge)
+    if let Some((text, style)) = outgoing_suffix {
+        spans.push(Span::styled(text, style));
+    }
+
     // Add unread badge
     if !unread_badge.is_empty() {
         spans.push(Span::styled(unread_badge, styles::unread_count_style()));
@@ -284,15 +302,15 @@ struct PrefixSegment {
     style: Style,
 }
 
-/// Builds the prefix segments for the preview text based on chat type and message status.
+/// Builds the prefix segments for the preview text based on chat type.
 /// Returns a vector of styled segments that should be prepended to the preview.
-/// Order: sender name first (for groups), then read indicator (for outgoing messages).
+/// Currently only includes sender name for group chats.
 fn build_preview_prefix_segments(chat: &ChatSummary) -> Vec<PrefixSegment> {
     use crate::domain::chat::ChatType;
 
     let mut segments = Vec::new();
 
-    // Add sender name for group chats (comes first)
+    // Add sender name for group chats
     if chat.chat_type == ChatType::Group {
         if let Some(ref sender) = chat.last_message_sender {
             segments.push(PrefixSegment {
@@ -302,20 +320,22 @@ fn build_preview_prefix_segments(chat: &ChatSummary) -> Vec<PrefixSegment> {
         }
     }
 
-    // Add read status indicator for outgoing messages (all chat types, after sender name)
+    segments
+}
+
+/// Builds the outgoing status suffix segment for the chat list item.
+/// Returns `Some((text, style))` for outgoing messages, `None` for incoming.
+fn build_outgoing_status_suffix(chat: &ChatSummary) -> Option<(String, Style)> {
     if chat.outgoing_status.is_outgoing {
         let (text, style) = if chat.outgoing_status.is_read {
-            ("\u{2713} ", styles::outgoing_read_style()) // checkmark
+            (" \u{2713}", styles::outgoing_read_style()) // checkmark
         } else {
-            ("\u{2022} ", styles::outgoing_unread_style()) // bullet
+            (" \u{2022}", styles::outgoing_unread_style()) // bullet
         };
-        segments.push(PrefixSegment {
-            text: text.to_owned(),
-            style,
-        });
+        Some((text.to_owned(), style))
+    } else {
+        None
     }
-
-    segments
 }
 
 /// Calculates the total character length of all prefix segments.
@@ -410,20 +430,30 @@ fn render_messages_panel(
                     persisted_offset
                 };
 
+                let highlight = if is_active {
+                    styles::highlight_style()
+                } else {
+                    Style::default()
+                };
+
                 let list = List::new(items)
                     .block(block())
-                    .highlight_style(
-                        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-                    )
+                    .highlight_style(highlight)
                     .scroll_padding(SCROLL_MARGIN);
+
+                let element_index = if is_active { element_index } else { None };
 
                 let mut list_state = ListState::default();
                 list_state.select(element_index);
                 *list_state.offset_mut() = scroll_offset;
                 frame.render_stateful_widget(list, area, &mut list_state);
 
-                // Persist the offset computed by ratatui for the next frame
-                state.open_chat_mut().set_scroll_offset(list_state.offset());
+                // Persist the offset computed by ratatui for the next frame.
+                // Only update when active to prevent scroll drift from ratatui
+                // recalculating offset without a selected item.
+                if is_active {
+                    state.open_chat_mut().set_scroll_offset(list_state.offset());
+                }
             }
         }
     }
@@ -826,7 +856,7 @@ mod tests {
     }
 
     #[test]
-    fn group_chat_outgoing_unread_shows_sender_then_bullet() {
+    fn group_chat_outgoing_unread_shows_bullet_after_preview() {
         let line = chat_list_item_line(
             &group_chat_outgoing(1, "Dev Team", Some("I fixed it"), Some("You"), false),
             70, // wider to fit all content
@@ -834,20 +864,20 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("Dev Team"));
-        assert!(text.contains("You: ")); // sender name comes first
-        assert!(text.contains("\u{2022} ")); // bullet indicator after sender
+        assert!(text.contains("You: ")); // sender name in prefix
+        assert!(text.contains(" \u{2022}")); // bullet indicator in suffix
         assert!(text.contains("I fixed it"));
-        // Verify order: sender before bullet
-        let sender_pos = text.find("You: ").unwrap();
+        // Verify order: preview before bullet (status is now a suffix)
+        let preview_pos = text.find("I fixed it").unwrap();
         let bullet_pos = text.find("\u{2022}").unwrap();
         assert!(
-            sender_pos < bullet_pos,
-            "Sender name should come before read indicator"
+            preview_pos < bullet_pos,
+            "Preview should come before status indicator"
         );
     }
 
     #[test]
-    fn group_chat_outgoing_read_shows_sender_then_checkmark() {
+    fn group_chat_outgoing_read_shows_checkmark_after_preview() {
         let line = chat_list_item_line(
             &group_chat_outgoing(1, "Dev Team", Some("Done"), Some("You"), true),
             70,
@@ -855,15 +885,15 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("Dev Team"));
-        assert!(text.contains("You: ")); // sender name comes first
-        assert!(text.contains("\u{2713} ")); // checkmark indicator after sender
+        assert!(text.contains("You: ")); // sender name in prefix
+        assert!(text.contains(" \u{2713}")); // checkmark indicator in suffix
         assert!(text.contains("Done"));
-        // Verify order: sender before checkmark
-        let sender_pos = text.find("You: ").unwrap();
+        // Verify order: preview before checkmark (status is now a suffix)
+        let preview_pos = text.find("Done").unwrap();
         let check_pos = text.find("\u{2713}").unwrap();
         assert!(
-            sender_pos < check_pos,
-            "Sender name should come before read indicator"
+            preview_pos < check_pos,
+            "Preview should come before status indicator"
         );
     }
 
@@ -900,7 +930,7 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("My Channel"));
-        assert!(text.contains("\u{2713} ")); // checkmark
+        assert!(text.contains(" \u{2713}")); // checkmark in suffix
         assert!(text.contains("New post"));
     }
 
@@ -913,7 +943,7 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("My Channel"));
-        assert!(text.contains("\u{2022} ")); // bullet
+        assert!(text.contains(" \u{2022}")); // bullet in suffix
         assert!(text.contains("Draft post"));
     }
 
@@ -951,7 +981,7 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("Jane"));
-        assert!(text.contains("\u{2022} ")); // bullet + space
+        assert!(text.contains(" \u{2022}")); // space + bullet (suffix)
         assert!(text.contains("See you tomorrow"));
     }
 
@@ -964,7 +994,7 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("Jane"));
-        assert!(text.contains("\u{2713} ")); // checkmark + space
+        assert!(text.contains(" \u{2713}")); // space + checkmark (suffix)
         assert!(text.contains("Got it"));
     }
 
