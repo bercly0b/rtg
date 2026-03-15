@@ -1,21 +1,15 @@
 use std::{
-    fs::{self, File, OpenOptions},
-    io::{ErrorKind, Write},
-    path::{Path, PathBuf},
-    time::Duration,
+    fs::{File, OpenOptions},
+    path::PathBuf,
 };
 
 use fs2::FileExt;
 
-use grammers_session::Session;
-
 use crate::{
     infra::{error::AppError, storage_layout::StorageLayout},
     telegram::TelegramAdapter,
+    usecases::guided_auth::AuthBackendError,
 };
-
-const POLICY_INVALID_MARKER: &str = "SESSION_POLICY_INVALID";
-const DEFAULT_PROBE_TIMEOUT_MS: u64 = 1_500;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StartupFlowState {
@@ -26,352 +20,141 @@ pub enum StartupFlowState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GuidedAuthReason {
     Missing,
-    Broken,
-    Revoked,
-    PolicyInvalid,
 }
 
 impl GuidedAuthReason {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Missing => "AUTH_SESSION_MISSING",
-            Self::Broken => "AUTH_SESSION_BROKEN",
-            Self::Revoked => "AUTH_SESSION_REVOKED",
-            Self::PolicyInvalid => "AUTH_SESSION_POLICY_INVALID",
         }
     }
 
     pub fn user_message(&self) -> &'static str {
         match self {
-            Self::Missing => "no saved session found",
-            Self::Broken => "saved session is unreadable or corrupted",
-            Self::Revoked => "saved session is no longer valid on Telegram",
-            Self::PolicyInvalid => {
-                "saved session is marked invalid locally and requires re-authorization"
-            }
+            Self::Missing => "no TDLib session found — authentication required",
         }
     }
 }
 
-/// Holds an OS-level advisory lock (`flock`) on the session lock file.
+/// Holds an OS-level advisory lock (`flock`) on the instance lock file.
 ///
 /// The lock is automatically released by the OS when the file handle is
 /// dropped — even if the process is killed with SIGKILL. This eliminates
 /// stale-lock problems that occur with file-existence-based locking.
 ///
 /// **Caveat:** Advisory locks may not be enforced across hosts on network
-/// filesystems (NFS, SMB). The session directory should reside on a local
+/// filesystems (NFS, SMB). The data directory should reside on a local
 /// filesystem for reliable mutual exclusion.
 #[derive(Debug)]
-pub struct SessionLockGuard {
+pub struct InstanceLockGuard {
     _file: File,
 }
 
 pub struct StartupPlan {
     pub state: StartupFlowState,
-    pub probe_warning: Option<&'static str>,
     _layout: StorageLayout,
-    _lock_guard: SessionLockGuard,
+    _lock_guard: InstanceLockGuard,
 }
 
-impl StartupPlan {
-    pub fn session_file(&self) -> PathBuf {
-        self._layout.session_file()
-    }
-}
-
-pub trait SessionProtocolProber {
-    fn probe_session_protocol(
-        &self,
-        _session_file: &Path,
-        _timeout: Duration,
-    ) -> Result<ProtocolSessionValidity, ProtocolProbeError>;
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProtocolSessionValidity {
-    Valid,
-    Revoked,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProtocolProbeError {
-    Timeout,
-    Network,
-}
-
-impl SessionProtocolProber for TelegramAdapter {
-    fn probe_session_protocol(
-        &self,
-        _session_file: &Path,
-        _timeout: Duration,
-    ) -> Result<ProtocolSessionValidity, ProtocolProbeError> {
-        match std::env::var("RTG_STARTUP_PROBE_STUB").ok().as_deref() {
-            Some("valid") => Ok(ProtocolSessionValidity::Valid),
-            Some("revoked") => Ok(ProtocolSessionValidity::Revoked),
-            Some("timeout") => Err(ProtocolProbeError::Timeout),
-            _ => Err(ProtocolProbeError::Network),
-        }
-    }
-}
-
-pub fn plan_startup(
-    telegram: &TelegramAdapter,
-    probe_timeout_ms: Option<u64>,
-) -> Result<StartupPlan, AppError> {
+pub fn plan_startup(telegram: &mut TelegramAdapter) -> Result<StartupPlan, AppError> {
     let layout = StorageLayout::resolve()?;
-    plan_startup_with_layout(&layout, telegram, probe_timeout_ms)
+    plan_startup_with(telegram, &layout)
 }
 
-fn plan_startup_with_layout(
+fn plan_startup_with(
+    telegram: &mut TelegramAdapter,
     layout: &StorageLayout,
-    prober: &dyn SessionProtocolProber,
-    probe_timeout_ms: Option<u64>,
 ) -> Result<StartupPlan, AppError> {
     layout.ensure_dirs()?;
 
-    let lock_guard = acquire_session_lock(layout.session_lock_file())?;
+    let lock_guard = acquire_instance_lock(layout.instance_lock_file())?;
 
-    let (state, probe_warning) = evaluate_session_validity(layout, prober, probe_timeout_ms)?;
+    let state = evaluate_session_state(telegram);
 
     Ok(StartupPlan {
         state,
-        probe_warning,
         _layout: layout.clone(),
         _lock_guard: lock_guard,
     })
 }
 
-fn evaluate_session_validity(
-    layout: &StorageLayout,
-    prober: &dyn SessionProtocolProber,
-    probe_timeout_ms: Option<u64>,
-) -> Result<(StartupFlowState, Option<&'static str>), AppError> {
-    if is_policy_invalid(layout)? {
-        return Ok((
-            StartupFlowState::GuidedAuth {
-                reason: GuidedAuthReason::PolicyInvalid,
-            },
-            None,
-        ));
-    }
-
-    let session_file = layout.session_file();
-
-    match local_session_validity(&session_file) {
-        LocalSessionValidity::Missing => Ok((
+/// Determines startup flow based on TDLib authorization state.
+///
+/// Queries the TelegramAdapter for the actual TDLib authorization status.
+/// If the client reports `Ready`, we launch the TUI. Otherwise, we route
+/// to guided auth so the user can authenticate.
+///
+/// This replaces the previous filesystem-based check which was unreliable:
+/// TDLib creates database files during `set_tdlib_parameters()`, before the
+/// user has actually authenticated, causing the old check to always return
+/// `true` after the first run.
+fn evaluate_session_state(telegram: &mut TelegramAdapter) -> StartupFlowState {
+    match telegram.is_authorized() {
+        Ok(true) => StartupFlowState::LaunchTui,
+        Ok(false) => StartupFlowState::GuidedAuth {
+            reason: GuidedAuthReason::Missing,
+        },
+        Err(error) => {
+            tracing::warn!(
+                error = %map_auth_check_error(&error),
+                "failed to check authorization state, routing to guided auth"
+            );
             StartupFlowState::GuidedAuth {
                 reason: GuidedAuthReason::Missing,
-            },
-            None,
-        )),
-        LocalSessionValidity::Broken => Ok((
-            StartupFlowState::GuidedAuth {
-                reason: GuidedAuthReason::Broken,
-            },
-            None,
-        )),
-        LocalSessionValidity::Valid => {
-            let timeout =
-                Duration::from_millis(probe_timeout_ms.unwrap_or(DEFAULT_PROBE_TIMEOUT_MS));
-            match prober.probe_session_protocol(&session_file, timeout) {
-                Ok(ProtocolSessionValidity::Valid) => Ok((StartupFlowState::LaunchTui, None)),
-                Ok(ProtocolSessionValidity::Revoked) => {
-                    mark_policy_invalid(layout)?;
-                    Ok((
-                        StartupFlowState::GuidedAuth {
-                            reason: GuidedAuthReason::Revoked,
-                        },
-                        None,
-                    ))
-                }
-                Err(ProtocolProbeError::Timeout) => Ok((
-                    StartupFlowState::LaunchTui,
-                    Some("AUTH_PROBE_TIMEOUT_FALLBACK"),
-                )),
-                Err(ProtocolProbeError::Network) => Ok((
-                    StartupFlowState::LaunchTui,
-                    Some("AUTH_PROBE_NETWORK_FALLBACK"),
-                )),
             }
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum LocalSessionValidity {
-    Missing,
-    Broken,
-    Valid,
-}
-
-fn local_session_validity(session_file: &Path) -> LocalSessionValidity {
-    match Session::load_file(session_file) {
-        Ok(session) if session.signed_in() => LocalSessionValidity::Valid,
-        Ok(_) => LocalSessionValidity::Broken,
-        Err(source) if source.kind() == ErrorKind::NotFound => LocalSessionValidity::Missing,
-        Err(_) => LocalSessionValidity::Broken,
+/// Formats an auth check error for logging without leaking sensitive data.
+fn map_auth_check_error(error: &AuthBackendError) -> String {
+    match error {
+        AuthBackendError::Timeout => "auth state check timed out".to_owned(),
+        AuthBackendError::Transient { code, .. } => {
+            format!("auth state check failed [{code}]")
+        }
+        AuthBackendError::InvalidPhone => "unexpected: invalid phone during auth check".to_owned(),
+        AuthBackendError::InvalidCode => "unexpected: invalid code during auth check".to_owned(),
+        AuthBackendError::WrongPassword => {
+            "unexpected: wrong password during auth check".to_owned()
+        }
+        AuthBackendError::FloodWait { seconds } => {
+            format!("flood wait ({seconds}s) during auth check")
+        }
     }
 }
 
-fn policy_invalid_path(layout: &StorageLayout) -> PathBuf {
-    layout.session_policy_invalid_file()
-}
-
-fn is_policy_invalid(layout: &StorageLayout) -> Result<bool, AppError> {
-    let path = policy_invalid_path(layout);
-    match fs::read_to_string(&path) {
-        Ok(contents) => Ok(contents.trim() == POLICY_INVALID_MARKER),
-        Err(source) if source.kind() == ErrorKind::NotFound => Ok(false),
-        Err(source) => Err(AppError::SessionProbe { path, source }),
-    }
-}
-
-fn mark_policy_invalid(layout: &StorageLayout) -> Result<(), AppError> {
-    let path = policy_invalid_path(layout);
-    let mut file = File::create(&path).map_err(|source| AppError::SessionProbe {
-        path: path.clone(),
-        source,
-    })?;
-
-    file.write_all(POLICY_INVALID_MARKER.as_bytes())
-        .map_err(|source| AppError::SessionProbe { path, source })
-}
-
-fn acquire_session_lock(path: PathBuf) -> Result<SessionLockGuard, AppError> {
+fn acquire_instance_lock(path: PathBuf) -> Result<InstanceLockGuard, AppError> {
     let file = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(false)
         .open(&path)
-        .map_err(|source| AppError::SessionLockCreate {
+        .map_err(|source| AppError::InstanceLockCreate {
             path: path.clone(),
             source,
         })?;
 
     file.try_lock_exclusive().map_err(|source| {
         if source.kind() == fs2::lock_contended_error().kind() {
-            AppError::SessionStoreBusy { path }
+            AppError::InstanceBusy { path }
         } else {
-            AppError::SessionLockCreate { path, source }
+            AppError::InstanceLockCreate { path, source }
         }
     })?;
 
-    Ok(SessionLockGuard { _file: file })
+    Ok(InstanceLockGuard { _file: file })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        test_support::env_lock,
-        usecases::{
-            guided_auth::{
-                run_guided_auth, AuthBackendError, AuthCodeToken, AuthTerminal, GuidedAuthOutcome,
-                RetryPolicy, SignInOutcome, TelegramAuthClient,
-            },
-            logout::logout_and_reset,
-        },
-    };
+    use crate::{test_support::env_lock, usecases::logout::logout_and_reset};
     use std::{
         env,
-        fs::{self, create_dir_all},
-        sync::{Arc, Mutex},
+        fs::{self},
         time::{SystemTime, UNIX_EPOCH},
     };
-
-    struct StubSessionProber {
-        outcome: Result<ProtocolSessionValidity, ProtocolProbeError>,
-        captured_timeout: Arc<Mutex<Option<Duration>>>,
-    }
-
-    impl StubSessionProber {
-        fn valid() -> Self {
-            Self {
-                outcome: Ok(ProtocolSessionValidity::Valid),
-                captured_timeout: Arc::new(Mutex::new(None)),
-            }
-        }
-    }
-
-    impl SessionProtocolProber for StubSessionProber {
-        fn probe_session_protocol(
-            &self,
-            _session_file: &Path,
-            timeout: Duration,
-        ) -> Result<ProtocolSessionValidity, ProtocolProbeError> {
-            *self.captured_timeout.lock().expect("timeout lock") = Some(timeout);
-            self.outcome.clone()
-        }
-    }
-
-    struct FakeTerminal {
-        inputs: std::collections::VecDeque<Option<String>>,
-    }
-
-    impl FakeTerminal {
-        fn new(inputs: Vec<Option<&str>>) -> Self {
-            Self {
-                inputs: inputs
-                    .into_iter()
-                    .map(|item| item.map(std::string::ToString::to_string))
-                    .collect(),
-            }
-        }
-    }
-
-    impl AuthTerminal for FakeTerminal {
-        fn print_line(&mut self, _line: &str) -> std::io::Result<()> {
-            Ok(())
-        }
-
-        fn prompt_line(&mut self, _prompt: &str) -> std::io::Result<Option<String>> {
-            Ok(self.inputs.pop_front().flatten())
-        }
-
-        fn prompt_secret(&mut self, _prompt: &str) -> std::io::Result<Option<String>> {
-            Ok(self.inputs.pop_front().flatten())
-        }
-    }
-
-    struct SessionPersistClient;
-
-    impl TelegramAuthClient for SessionPersistClient {
-        fn request_login_code(&mut self, _phone: &str) -> Result<AuthCodeToken, AuthBackendError> {
-            Ok(AuthCodeToken("token".to_owned()))
-        }
-
-        fn sign_in_with_code(
-            &mut self,
-            _token: &AuthCodeToken,
-            _code: &str,
-        ) -> Result<SignInOutcome, AuthBackendError> {
-            Ok(SignInOutcome::Authorized)
-        }
-
-        fn verify_password(&mut self, _password: &str) -> Result<(), AuthBackendError> {
-            Ok(())
-        }
-
-        fn persist_authorized_session(
-            &mut self,
-            session_path: &Path,
-        ) -> Result<(), AuthBackendError> {
-            let session = Session::load_file_or_create(session_path).map_err(|source| {
-                AuthBackendError::Transient {
-                    code: "AUTH_SESSION_PERSIST_FAILED",
-                    message: source.to_string(),
-                }
-            })?;
-            session.set_user(1, 1, false);
-            session
-                .save_to_file(session_path)
-                .map_err(|source| AuthBackendError::Transient {
-                    code: "AUTH_SESSION_PERSIST_FAILED",
-                    message: source.to_string(),
-                })
-        }
-    }
 
     fn make_layout() -> StorageLayout {
         let suffix = SystemTime::now()
@@ -382,62 +165,24 @@ mod tests {
 
         StorageLayout {
             config_dir: root.clone(),
-            session_dir: root.join("session"),
             cache_dir: root.join("cache"),
         }
     }
 
-    fn write_signed_in_session(path: &Path) {
-        let session = Session::load_file_or_create(path)
-            .expect("session fixture file should be created before save");
-        session.set_user(1, 1, false);
-        session
-            .save_to_file(path)
-            .expect("signed-in session should be writable");
+    /// Creates a fake TDLib session by populating the database directory.
+    fn write_tdlib_session(layout: &StorageLayout) {
+        let db_dir = layout.tdlib_database_dir();
+        fs::create_dir_all(&db_dir).expect("tdlib db dir should be creatable");
+        fs::write(db_dir.join("td.binlog"), b"fake-session-data")
+            .expect("fake tdlib session should be writable");
     }
 
     #[test]
-    fn valid_session_and_probe_launch_tui() {
+    fn stub_adapter_routes_to_guided_auth() {
         let layout = make_layout();
-        layout.ensure_dirs().expect("dirs should be created");
-        write_signed_in_session(&layout.session_file());
+        let mut adapter = TelegramAdapter::stub();
 
-        let prober = StubSessionProber::valid();
-        let plan = plan_startup_with_layout(&layout, &prober, Some(2500)).expect("startup plan");
-
-        assert_eq!(plan.state, StartupFlowState::LaunchTui);
-        assert_eq!(plan.probe_warning, None);
-        assert_eq!(
-            *prober.captured_timeout.lock().expect("timeout lock"),
-            Some(Duration::from_millis(2500))
-        );
-    }
-
-    #[test]
-    fn e2e_restart_reconnect_reuses_persisted_session() {
-        let layout = make_layout();
-        layout.ensure_dirs().expect("dirs should be created");
-        write_signed_in_session(&layout.session_file());
-
-        let first_start_prober = StubSessionProber::valid();
-        let first_plan =
-            plan_startup_with_layout(&layout, &first_start_prober, None).expect("first startup");
-        assert_eq!(first_plan.state, StartupFlowState::LaunchTui);
-
-        drop(first_plan);
-
-        let second_start_prober = StubSessionProber::valid();
-        let second_plan =
-            plan_startup_with_layout(&layout, &second_start_prober, None).expect("second startup");
-        assert_eq!(second_plan.state, StartupFlowState::LaunchTui);
-    }
-
-    #[test]
-    fn missing_session_goes_to_guided_auth() {
-        let layout = make_layout();
-        let prober = StubSessionProber::valid();
-
-        let plan = plan_startup_with_layout(&layout, &prober, None).expect("startup plan");
+        let plan = plan_startup_with(&mut adapter, &layout).expect("startup plan");
 
         assert_eq!(
             plan.state,
@@ -448,154 +193,55 @@ mod tests {
     }
 
     #[test]
-    fn broken_session_goes_to_guided_auth() {
+    fn stub_adapter_routes_to_guided_auth_even_with_tdlib_files_on_disk() {
         let layout = make_layout();
         layout.ensure_dirs().expect("dirs should be created");
-        fs::write(layout.session_file(), b"").expect("broken empty session written");
-        let prober = StubSessionProber::valid();
+        write_tdlib_session(&layout);
+        let mut adapter = TelegramAdapter::stub();
 
-        let plan = plan_startup_with_layout(&layout, &prober, None).expect("startup plan");
+        let plan = plan_startup_with(&mut adapter, &layout).expect("startup plan");
 
+        // Even though TDLib database files exist, the stub adapter is not
+        // authorized — so we must route to guided auth, not TUI.
         assert_eq!(
             plan.state,
             StartupFlowState::GuidedAuth {
-                reason: GuidedAuthReason::Broken
+                reason: GuidedAuthReason::Missing
             }
         );
     }
 
     #[test]
-    fn legacy_marker_session_is_treated_as_broken_and_forces_reauth() {
-        let layout = make_layout();
-        layout.ensure_dirs().expect("dirs should be created");
-        fs::write(layout.session_file(), b"authorized").expect("legacy marker written");
-        let prober = StubSessionProber::valid();
+    fn evaluate_session_state_returns_guided_auth_for_stub() {
+        let mut adapter = TelegramAdapter::stub();
 
-        let plan = plan_startup_with_layout(&layout, &prober, None).expect("startup plan");
+        let state = evaluate_session_state(&mut adapter);
 
         assert_eq!(
-            plan.state,
+            state,
             StartupFlowState::GuidedAuth {
-                reason: GuidedAuthReason::Broken
+                reason: GuidedAuthReason::Missing
             }
         );
     }
 
     #[test]
-    fn revoked_protocol_session_goes_to_guided_auth_and_marks_policy_invalid() {
+    fn authorized_adapter_routes_to_tui() {
         let layout = make_layout();
-        layout.ensure_dirs().expect("dirs should be created");
-        write_signed_in_session(&layout.session_file());
+        let mut adapter = TelegramAdapter::stub_authorized();
 
-        let prober = StubSessionProber {
-            outcome: Ok(ProtocolSessionValidity::Revoked),
-            captured_timeout: Arc::new(Mutex::new(None)),
-        };
-
-        let plan = plan_startup_with_layout(&layout, &prober, None).expect("startup plan");
-
-        assert_eq!(
-            plan.state,
-            StartupFlowState::GuidedAuth {
-                reason: GuidedAuthReason::Revoked
-            }
-        );
-        assert!(layout.session_policy_invalid_file().exists());
-    }
-
-    #[test]
-    fn policy_invalid_marker_short_circuits_to_guided_auth_without_probe() {
-        let layout = make_layout();
-        create_dir_all(&layout.session_dir).expect("session dir should exist");
-        fs::write(layout.session_policy_invalid_file(), POLICY_INVALID_MARKER)
-            .expect("policy marker should be written");
-
-        let prober = StubSessionProber::valid();
-        let plan = plan_startup_with_layout(&layout, &prober, None).expect("startup plan");
-
-        assert_eq!(
-            plan.state,
-            StartupFlowState::GuidedAuth {
-                reason: GuidedAuthReason::PolicyInvalid
-            }
-        );
-        assert_eq!(*prober.captured_timeout.lock().expect("timeout lock"), None);
-    }
-
-    #[test]
-    fn revoked_then_successful_guided_auth_clears_policy_marker_and_next_startup_launches_tui() {
-        let layout = make_layout();
-        layout.ensure_dirs().expect("dirs should be created");
-        write_signed_in_session(&layout.session_file());
-
-        let revoked_prober = StubSessionProber {
-            outcome: Ok(ProtocolSessionValidity::Revoked),
-            captured_timeout: Arc::new(Mutex::new(None)),
-        };
-
-        let revoked_plan =
-            plan_startup_with_layout(&layout, &revoked_prober, None).expect("startup plan");
-
-        assert_eq!(
-            revoked_plan.state,
-            StartupFlowState::GuidedAuth {
-                reason: GuidedAuthReason::Revoked
-            }
-        );
-        assert!(layout.session_policy_invalid_file().exists());
-
-        drop(revoked_plan);
-
-        let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]);
-        let mut auth_client = SessionPersistClient;
-        let auth_outcome = run_guided_auth(
-            &mut terminal,
-            &mut auth_client,
-            &layout.session_file(),
-            &RetryPolicy::default(),
-        )
-        .expect("guided auth should complete");
-
-        assert_eq!(auth_outcome, GuidedAuthOutcome::Authenticated);
-        assert!(!layout.session_policy_invalid_file().exists());
-
-        let valid_prober = StubSessionProber::valid();
-        let next_plan = plan_startup_with_layout(&layout, &valid_prober, None).expect("startup");
-        assert_eq!(next_plan.state, StartupFlowState::LaunchTui);
-    }
-
-    #[test]
-    fn probe_timeout_falls_back_to_launch_tui_with_warning() {
-        let layout = make_layout();
-        layout.ensure_dirs().expect("dirs should be created");
-        write_signed_in_session(&layout.session_file());
-
-        let prober = StubSessionProber {
-            outcome: Err(ProtocolProbeError::Timeout),
-            captured_timeout: Arc::new(Mutex::new(None)),
-        };
-
-        let plan = plan_startup_with_layout(&layout, &prober, None).expect("startup plan");
+        let plan = plan_startup_with(&mut adapter, &layout).expect("startup plan");
 
         assert_eq!(plan.state, StartupFlowState::LaunchTui);
-        assert_eq!(plan.probe_warning, Some("AUTH_PROBE_TIMEOUT_FALLBACK"));
     }
 
     #[test]
-    fn probe_network_error_falls_back_to_launch_tui_with_warning() {
-        let layout = make_layout();
-        layout.ensure_dirs().expect("dirs should be created");
-        write_signed_in_session(&layout.session_file());
+    fn evaluate_session_state_returns_launch_tui_when_authorized() {
+        let mut adapter = TelegramAdapter::stub_authorized();
 
-        let prober = StubSessionProber {
-            outcome: Err(ProtocolProbeError::Network),
-            captured_timeout: Arc::new(Mutex::new(None)),
-        };
+        let state = evaluate_session_state(&mut adapter);
 
-        let plan = plan_startup_with_layout(&layout, &prober, None).expect("startup plan");
-
-        assert_eq!(plan.state, StartupFlowState::LaunchTui);
-        assert_eq!(plan.probe_warning, Some("AUTH_PROBE_NETWORK_FALLBACK"));
+        assert_eq!(state, StartupFlowState::LaunchTui);
     }
 
     #[test]
@@ -618,12 +264,12 @@ mod tests {
 
         let layout = StorageLayout::resolve().expect("layout should resolve");
         layout.ensure_dirs().expect("dirs should be created");
-        write_signed_in_session(&layout.session_file());
+        write_tdlib_session(&layout);
 
         let mut adapter = TelegramAdapter::stub();
         let outcome = logout_and_reset(&mut adapter).expect("logout should succeed");
-        assert!(outcome.session_removed);
-        assert!(!layout.session_file().exists());
+        assert!(outcome.tdlib_data_removed);
+        assert!(!layout.tdlib_session_exists());
 
         let snapshot = adapter.status_snapshot();
         assert_eq!(snapshot.auth, crate::domain::status::AuthStatus::NotStarted);
@@ -632,8 +278,7 @@ mod tests {
             crate::domain::status::ConnectivityHealth::Unavailable
         );
 
-        let prober = StubSessionProber::valid();
-        let plan = plan_startup_with_layout(&layout, &prober, None).expect("startup plan");
+        let plan = plan_startup_with(&mut adapter, &layout).expect("startup plan");
         assert_eq!(
             plan.state,
             StartupFlowState::GuidedAuth {
@@ -662,11 +307,11 @@ mod tests {
 
         // Simulate a stale lock file left behind by a crashed process.
         // With advisory locking, the file exists but no flock is held.
-        fs::write(layout.session_lock_file(), b"").expect("stale lock file should be writable");
-        assert!(layout.session_lock_file().exists());
+        fs::write(layout.instance_lock_file(), b"").expect("stale lock file should be writable");
+        assert!(layout.instance_lock_file().exists());
 
-        let prober = StubSessionProber::valid();
-        let plan = plan_startup_with_layout(&layout, &prober, None)
+        let mut adapter = TelegramAdapter::stub();
+        let plan = plan_startup_with(&mut adapter, &layout)
             .expect("startup should succeed despite stale lock file on disk");
 
         assert_eq!(
@@ -682,18 +327,18 @@ mod tests {
         let layout = make_layout();
         layout.ensure_dirs().expect("dirs should be created");
 
-        let first_guard = acquire_session_lock(layout.session_lock_file())
+        let first_guard = acquire_instance_lock(layout.instance_lock_file())
             .expect("first lock should be acquired");
 
-        let second_result = acquire_session_lock(layout.session_lock_file());
+        let second_result = acquire_instance_lock(layout.instance_lock_file());
         match second_result {
-            Err(AppError::SessionStoreBusy { .. }) => {} // expected
-            other => panic!("expected SessionStoreBusy, got: {other:?}"),
+            Err(AppError::InstanceBusy { .. }) => {} // expected
+            other => panic!("expected InstanceBusy, got: {other:?}"),
         }
 
         drop(first_guard);
 
-        let third_guard = acquire_session_lock(layout.session_lock_file());
+        let third_guard = acquire_instance_lock(layout.instance_lock_file());
         assert!(
             third_guard.is_ok(),
             "lock should be acquirable after first guard is dropped"

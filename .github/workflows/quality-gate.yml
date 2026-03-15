@@ -12,6 +12,11 @@ jobs:
       - name: Repository checkout
         uses: actions/checkout@v4
 
+      - name: Install TDLib runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libc++-dev libc++abi-dev
+
       - name: Rust env bootstrap (stable + rustfmt + clippy)
         uses: dtolnay/rust-toolchain@stable
         with:

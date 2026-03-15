@@ -18,7 +18,7 @@ use super::{
 /// Implementations must be non-blocking: they enqueue work and return immediately.
 /// Results are delivered asynchronously via the background result channel.
 pub trait TaskDispatcher {
-    fn dispatch_chat_list(&self, preferred_chat_id: Option<i64>);
+    fn dispatch_chat_list(&self);
     fn dispatch_load_messages(&self, chat_id: i64);
     fn dispatch_send_message(&self, chat_id: i64, text: String);
 }
@@ -67,7 +67,7 @@ where
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + Send + Sync + 'static,
 {
-    fn dispatch_chat_list(&self, preferred_chat_id: Option<i64>) {
+    fn dispatch_chat_list(&self) {
         let source = Arc::clone(&self.chats_source);
         let tx = self.result_tx.clone();
         let tx_fallback = self.result_tx.clone();
@@ -83,16 +83,12 @@ where
                         BackgroundError::new(map_list_chats_error(&error))
                     });
 
-                let _ = tx.send(BackgroundTaskResult::ChatListLoaded {
-                    preferred_chat_id,
-                    result,
-                });
+                let _ = tx.send(BackgroundTaskResult::ChatListLoaded { result });
             });
 
         if let Err(error) = spawn_result {
             tracing::error!(error = %error, "failed to spawn chat list background thread");
             let _ = tx_fallback.send(BackgroundTaskResult::ChatListLoaded {
-                preferred_chat_id,
                 result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
             });
         }
@@ -197,7 +193,6 @@ fn map_load_messages_error(error: &super::load_messages::LoadMessagesError) -> &
     match error {
         super::load_messages::LoadMessagesError::Unauthorized => "MESSAGES_UNAUTHORIZED",
         super::load_messages::LoadMessagesError::TemporarilyUnavailable => "MESSAGES_UNAVAILABLE",
-        super::load_messages::LoadMessagesError::DataContractViolation => "MESSAGES_DATA_ERROR",
         super::load_messages::LoadMessagesError::ChatNotFound => "MESSAGES_CHAT_NOT_FOUND",
     }
 }
@@ -235,7 +230,7 @@ pub mod tests {
     }
 
     impl TaskDispatcher for StubTaskDispatcher {
-        fn dispatch_chat_list(&self, _preferred_chat_id: Option<i64>) {
+        fn dispatch_chat_list(&self) {
             // Stub: does not dispatch; tests inject results manually
         }
 

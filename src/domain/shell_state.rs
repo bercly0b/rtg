@@ -1,5 +1,5 @@
 use super::{
-    chat_list_state::ChatListState, events::ConnectivityStatus,
+    chat::ChatSummary, chat_list_state::ChatListState, events::ConnectivityStatus,
     message_input_state::MessageInputState, open_chat_state::OpenChatState,
 };
 
@@ -39,6 +39,17 @@ impl Default for ShellState {
 }
 
 impl ShellState {
+    /// Creates a state pre-populated with cached chat list data.
+    ///
+    /// If `chats` is non-empty, `ChatListState` starts as `Ready` immediately,
+    /// allowing the TUI to display cached chats on the very first frame.
+    pub fn with_initial_chat_list(chats: Vec<ChatSummary>) -> Self {
+        Self {
+            chat_list: ChatListState::with_initial_chats(chats),
+            ..Default::default()
+        }
+    }
+
     pub fn is_running(&self) -> bool {
         self.running
     }

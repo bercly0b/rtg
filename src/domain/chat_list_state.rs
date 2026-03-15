@@ -27,6 +27,25 @@ impl Default for ChatListState {
     }
 }
 
+impl ChatListState {
+    /// Creates a pre-populated state from cached data.
+    ///
+    /// If `chats` is non-empty, the state starts as `Ready` with the first
+    /// chat selected. If `chats` is empty, falls back to `Loading` (same as
+    /// [`Default`]).
+    pub fn with_initial_chats(chats: Vec<ChatSummary>) -> Self {
+        if chats.is_empty() {
+            return Self::default();
+        }
+
+        Self {
+            ui_state: ChatListUiState::Ready,
+            selected_index: Some(0),
+            chats,
+        }
+    }
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 impl ChatListState {
     pub fn ui_state(&self) -> ChatListUiState {
@@ -56,7 +75,7 @@ impl ChatListState {
         self.set_ready_with_selection_hint(chats, previous_selected_chat_id);
     }
 
-    pub fn set_ready_with_selection_hint(
+    fn set_ready_with_selection_hint(
         &mut self,
         chats: Vec<ChatSummary>,
         preferred_chat_id: Option<i64>,
@@ -229,6 +248,25 @@ mod tests {
 
         assert_eq!(state.selected_index(), Some(0));
         assert_eq!(state.selected_chat().map(|item| item.chat_id), Some(10));
+    }
+
+    #[test]
+    fn with_initial_chats_starts_ready_when_data_present() {
+        let state = ChatListState::with_initial_chats(vec![chat(1, "Alpha"), chat(2, "Beta")]);
+
+        assert_eq!(state.ui_state(), ChatListUiState::Ready);
+        assert_eq!(state.chats().len(), 2);
+        assert_eq!(state.selected_index(), Some(0));
+        assert_eq!(state.selected_chat().map(|c| c.chat_id), Some(1));
+    }
+
+    #[test]
+    fn with_initial_chats_falls_back_to_loading_when_empty() {
+        let state = ChatListState::with_initial_chats(vec![]);
+
+        assert_eq!(state.ui_state(), ChatListUiState::Loading);
+        assert!(state.chats().is_empty());
+        assert_eq!(state.selected_index(), None);
     }
 
     #[test]

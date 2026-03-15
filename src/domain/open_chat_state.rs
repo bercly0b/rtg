@@ -94,6 +94,45 @@ impl OpenChatState {
         self.ui_state = OpenChatUiState::Ready;
     }
 
+    /// Updates messages in an already-`Ready` chat without resetting scroll.
+    ///
+    /// If the previously selected message (by ID) still exists in the new
+    /// list, the selection stays on it. Otherwise, the selection moves to
+    /// the last (newest) message and scroll resets to bottom.
+    ///
+    /// This is used when background-refreshed messages replace an initially
+    /// cached snapshot, avoiding jarring scroll jumps.
+    pub fn update_messages(&mut self, messages: Vec<Message>) {
+        let previous_message_id = self
+            .selected_index
+            .and_then(|idx| self.messages.get(idx))
+            .map(|m| m.id);
+
+        self.messages = messages;
+        self.ui_state = OpenChatUiState::Ready;
+
+        // Try to preserve selection by message ID
+        if let Some(prev_id) = previous_message_id {
+            if let Some(new_idx) = self.messages.iter().position(|m| m.id == prev_id) {
+                self.selected_index = Some(new_idx);
+                // Keep current scroll_offset — the UI will adjust
+                return;
+            }
+        }
+
+        // Fallback: select last message and scroll to bottom
+        self.selected_index = if self.messages.is_empty() {
+            None
+        } else {
+            Some(self.messages.len() - 1)
+        };
+        self.scroll_offset = if self.messages.is_empty() {
+            0
+        } else {
+            usize::MAX
+        };
+    }
+
     pub fn set_error(&mut self) {
         self.ui_state = OpenChatUiState::Error;
     }
@@ -143,7 +182,7 @@ impl OpenChatState {
 mod tests {
     use super::*;
 
-    fn message(id: i32, text: &str) -> Message {
+    fn message(id: i64, text: &str) -> Message {
         Message {
             id,
             sender_name: "User".to_owned(),
@@ -353,5 +392,89 @@ mod tests {
     #[test]
     fn scroll_margin_constant_is_five() {
         assert_eq!(SCROLL_MARGIN, 5);
+    }
+
+    // ── update_messages tests ──
+
+    #[test]
+    fn update_messages_preserves_selection_by_message_id() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B"), message(3, "C")]);
+
+        // Select message 2 (index 1)
+        state.selected_index = Some(1);
+        state.set_scroll_offset(10);
+
+        // Update with reordered messages — message 2 is now at index 2
+        state.update_messages(vec![message(4, "D"), message(1, "A"), message(2, "B")]);
+
+        assert_eq!(state.selected_index(), Some(2));
+        assert_eq!(state.ui_state(), OpenChatUiState::Ready);
+        // Scroll offset preserved (not reset)
+        assert_eq!(state.scroll_offset(), 10);
+    }
+
+    #[test]
+    fn update_messages_falls_back_to_last_when_selected_message_disappears() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B"), message(3, "C")]);
+
+        // Select message 3 (index 2)
+        assert_eq!(state.selected_index(), Some(2));
+
+        // Update without message 3
+        state.update_messages(vec![message(1, "A"), message(2, "B")]);
+
+        // Should fall back to last message (index 1)
+        assert_eq!(state.selected_index(), Some(1));
+        assert_eq!(state.scroll_offset(), usize::MAX);
+    }
+
+    #[test]
+    fn update_messages_handles_empty_replacement() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B")]);
+
+        state.update_messages(vec![]);
+
+        assert_eq!(state.selected_index(), None);
+        assert_eq!(state.scroll_offset(), 0);
+        assert_eq!(state.ui_state(), OpenChatUiState::Ready);
+    }
+
+    #[test]
+    fn update_messages_on_empty_state_with_new_messages() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![]);
+
+        state.update_messages(vec![message(1, "A"), message(2, "B")]);
+
+        // No previous selection, so falls back to last message
+        assert_eq!(state.selected_index(), Some(1));
+        assert_eq!(state.scroll_offset(), usize::MAX);
+        assert_eq!(state.ui_state(), OpenChatUiState::Ready);
+    }
+
+    #[test]
+    fn update_messages_preserves_selection_same_position() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B")]);
+
+        // Selected last message (index 1, id 2)
+        assert_eq!(state.selected_index(), Some(1));
+        state.set_scroll_offset(5);
+
+        // Update with same messages + one new one at the end
+        state.update_messages(vec![message(1, "A"), message(2, "B"), message(3, "C")]);
+
+        // Message 2 is still at index 1
+        assert_eq!(state.selected_index(), Some(1));
+        // Scroll offset preserved
+        assert_eq!(state.scroll_offset(), 5);
     }
 }

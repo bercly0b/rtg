@@ -271,7 +271,7 @@ mod tests {
     use super::*;
     use crate::domain::message::MessageMedia;
 
-    fn msg(id: i32, sender: &str, text: &str, ts_ms: i64, outgoing: bool) -> Message {
+    fn msg(id: i64, sender: &str, text: &str, ts_ms: i64, outgoing: bool) -> Message {
         Message {
             id,
             sender_name: sender.to_owned(),
@@ -283,7 +283,7 @@ mod tests {
     }
 
     fn msg_with_media(
-        id: i32,
+        id: i64,
         sender: &str,
         text: &str,
         ts_ms: i64,
