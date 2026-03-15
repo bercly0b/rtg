@@ -193,7 +193,6 @@ fn map_load_messages_error(error: &super::load_messages::LoadMessagesError) -> &
     match error {
         super::load_messages::LoadMessagesError::Unauthorized => "MESSAGES_UNAUTHORIZED",
         super::load_messages::LoadMessagesError::TemporarilyUnavailable => "MESSAGES_UNAVAILABLE",
-        super::load_messages::LoadMessagesError::DataContractViolation => "MESSAGES_DATA_ERROR",
         super::load_messages::LoadMessagesError::ChatNotFound => "MESSAGES_CHAT_NOT_FOUND",
     }
 }

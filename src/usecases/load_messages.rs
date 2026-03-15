@@ -35,7 +35,6 @@ pub struct LoadMessagesOutput {
 pub enum MessagesSourceError {
     Unauthorized,
     Unavailable,
-    InvalidData,
     ChatNotFound,
 }
 
@@ -116,7 +115,6 @@ where
 pub enum LoadMessagesError {
     Unauthorized,
     TemporarilyUnavailable,
-    DataContractViolation,
     ChatNotFound,
 }
 
@@ -136,7 +134,6 @@ fn map_source_error(error: MessagesSourceError) -> LoadMessagesError {
     match error {
         MessagesSourceError::Unauthorized => LoadMessagesError::Unauthorized,
         MessagesSourceError::Unavailable => LoadMessagesError::TemporarilyUnavailable,
-        MessagesSourceError::InvalidData => LoadMessagesError::DataContractViolation,
         MessagesSourceError::ChatNotFound => LoadMessagesError::ChatNotFound,
     }
 }
