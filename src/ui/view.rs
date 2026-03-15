@@ -1,10 +1,11 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, List, ListItem, ListState, Padding, Paragraph},
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::domain::{
     chat::ChatSummary,
@@ -85,6 +86,12 @@ fn render_chat_list_panel(
             let chat_count = chats.len();
 
             let title = format!("Chats ({})", chat_count);
+            let highlight = if is_active {
+                styles::highlight_style()
+            } else {
+                Style::default()
+            };
+
             let list = List::new(items)
                 .block(
                     Block::new()
@@ -92,13 +99,15 @@ fn render_chat_list_panel(
                         .title_style(title_style)
                         .padding(Padding::horizontal(1)),
                 )
-                .highlight_style(
-                    Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-                );
+                .highlight_style(highlight);
 
-            let visual_index = chat_list
-                .selected_index()
-                .map(|idx| compute_visual_index(chats, idx));
+            let visual_index = if is_active {
+                chat_list
+                    .selected_index()
+                    .map(|idx| compute_visual_index(chats, idx))
+            } else {
+                None
+            };
 
             let mut list_state = ListState::default();
             list_state.select(visual_index);
@@ -202,11 +211,17 @@ fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
         .filter(|text| !text.is_empty())
         .unwrap_or_else(|| "No messages yet".to_owned());
 
-    // Build prefix segments (read indicator, sender name, etc.)
+    // Build prefix segments (sender name for groups)
     let prefix_segments = build_preview_prefix_segments(chat);
-    let prefix_total_len = prefix_segments_len(&prefix_segments);
+    let prefix_total_width = prefix_segments_width(&prefix_segments);
 
-    // Build suffix badges: unread count and online indicator
+    // Build suffix components: outgoing status, unread count, online indicator
+    let outgoing_suffix = build_outgoing_status_suffix(chat);
+    let outgoing_suffix_width = outgoing_suffix
+        .as_ref()
+        .map(|(t, _)| t.width())
+        .unwrap_or(0);
+
     let unread_badge = if chat.unread_count > 0 {
         format!(" [{}]", chat.unread_count)
     } else {
@@ -214,33 +229,23 @@ fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
     };
 
     let online_indicator = if chat.chat_type == ChatType::Private && chat.is_online == Some(true) {
-        " \u{25CF}" // Unicode filled circle
+        " \u{2022}" // bullet
     } else {
         ""
     };
 
-    let suffix = format!("{}{}", unread_badge, online_indicator);
-
-    // Calculate layout
-    let fixed_prefix_len = 5 + 3; // timestamp (5) + " | " (3)
-    let suffix_len = suffix.chars().count();
-    let name_len = chat.title.chars().count();
+    // Calculate layout using display widths (handles emoji and wide chars correctly)
+    let fixed_prefix_width = 5 + 3; // timestamp (5) + " | " (3)
+    let suffix_width = outgoing_suffix_width + unread_badge.width() + online_indicator.width();
+    let name_width = chat.title.width();
 
     // Total = fixed_prefix + name + 1 (space) + prefix_segments + preview + padding + suffix
-    let content_len = fixed_prefix_len + name_len + 1 + prefix_total_len;
-    let available_for_preview_and_padding = width.saturating_sub(content_len + suffix_len);
+    let content_width = fixed_prefix_width + name_width + 1 + prefix_total_width;
+    let available_for_preview_and_padding = width.saturating_sub(content_width + suffix_width);
 
     // Truncate preview if needed and calculate padding
-    let preview_chars: Vec<char> = raw_preview.chars().collect();
-    let (display_preview, padding) = if preview_chars.len() <= available_for_preview_and_padding {
-        let pad = available_for_preview_and_padding.saturating_sub(preview_chars.len());
-        (raw_preview, pad)
-    } else {
-        // Truncate preview with ellipsis
-        let max_preview = available_for_preview_and_padding.saturating_sub(3);
-        let truncated: String = preview_chars.iter().take(max_preview).collect();
-        (format!("{}...", truncated), 0)
-    };
+    let (display_preview, padding) =
+        truncate_to_display_width(&raw_preview, available_for_preview_and_padding);
 
     // Build spans
     let mut spans = vec![
@@ -260,6 +265,11 @@ fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
 
     if padding > 0 {
         spans.push(Span::raw(" ".repeat(padding)));
+    }
+
+    // Add outgoing status indicator (after preview, before unread badge)
+    if let Some((text, style)) = outgoing_suffix {
+        spans.push(Span::styled(text, style));
     }
 
     // Add unread badge
@@ -284,15 +294,15 @@ struct PrefixSegment {
     style: Style,
 }
 
-/// Builds the prefix segments for the preview text based on chat type and message status.
+/// Builds the prefix segments for the preview text based on chat type.
 /// Returns a vector of styled segments that should be prepended to the preview.
-/// Order: sender name first (for groups), then read indicator (for outgoing messages).
+/// Currently only includes sender name for group chats.
 fn build_preview_prefix_segments(chat: &ChatSummary) -> Vec<PrefixSegment> {
     use crate::domain::chat::ChatType;
 
     let mut segments = Vec::new();
 
-    // Add sender name for group chats (comes first)
+    // Add sender name for group chats
     if chat.chat_type == ChatType::Group {
         if let Some(ref sender) = chat.last_message_sender {
             segments.push(PrefixSegment {
@@ -302,25 +312,65 @@ fn build_preview_prefix_segments(chat: &ChatSummary) -> Vec<PrefixSegment> {
         }
     }
 
-    // Add read status indicator for outgoing messages (all chat types, after sender name)
-    if chat.outgoing_status.is_outgoing {
-        let (text, style) = if chat.outgoing_status.is_read {
-            ("\u{2713} ", styles::outgoing_read_style()) // checkmark
-        } else {
-            ("\u{2022} ", styles::outgoing_unread_style()) // bullet
-        };
-        segments.push(PrefixSegment {
-            text: text.to_owned(),
-            style,
-        });
-    }
-
     segments
 }
 
-/// Calculates the total character length of all prefix segments.
-fn prefix_segments_len(segments: &[PrefixSegment]) -> usize {
-    segments.iter().map(|s| s.text.chars().count()).sum()
+/// Builds the outgoing status suffix segment for the chat list item.
+/// Returns `Some((text, style))` for outgoing messages, `None` for incoming.
+fn build_outgoing_status_suffix(chat: &ChatSummary) -> Option<(String, Style)> {
+    if chat.outgoing_status.is_outgoing {
+        let (text, style) = if chat.outgoing_status.is_read {
+            (" \u{2713}\u{2713}", styles::outgoing_read_style()) // double checkmark
+        } else {
+            (" \u{2713}", styles::outgoing_unread_style()) // single checkmark
+        };
+        Some((text.to_owned(), style))
+    } else {
+        None
+    }
+}
+
+/// Calculates the total display width of all prefix segments.
+fn prefix_segments_width(segments: &[PrefixSegment]) -> usize {
+    segments.iter().map(|s| s.text.width()).sum()
+}
+
+/// Truncates a string to fit within a given display width.
+///
+/// Returns `(display_text, padding)`:
+/// - If the text fits, returns the original text with remaining padding.
+/// - If it doesn't fit, truncates at a character boundary and appends "...".
+///
+/// Uses Unicode display width so that emoji and wide characters are measured
+/// correctly (e.g. 🚀 counts as 2 cells, not 1).
+fn truncate_to_display_width(text: &str, max_width: usize) -> (String, usize) {
+    use unicode_width::UnicodeWidthChar;
+
+    let text_width = text.width();
+    if text_width <= max_width {
+        return (text.to_owned(), max_width.saturating_sub(text_width));
+    }
+
+    // If we can't even fit "...", return empty string
+    if max_width < 3 {
+        return (String::new(), max_width);
+    }
+
+    // Need to truncate: reserve 3 cells for "..."
+    let target_width = max_width - 3;
+    let mut current_width = 0;
+    let mut truncated = String::new();
+
+    for ch in text.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if current_width + ch_width > target_width {
+            break;
+        }
+        truncated.push(ch);
+        current_width += ch_width;
+    }
+
+    (format!("{}...", truncated), 0)
 }
 
 fn format_chat_timestamp(timestamp_ms: i64) -> String {
@@ -410,20 +460,30 @@ fn render_messages_panel(
                     persisted_offset
                 };
 
+                let highlight = if is_active {
+                    styles::highlight_style()
+                } else {
+                    Style::default()
+                };
+
                 let list = List::new(items)
                     .block(block())
-                    .highlight_style(
-                        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-                    )
+                    .highlight_style(highlight)
                     .scroll_padding(SCROLL_MARGIN);
+
+                let element_index = if is_active { element_index } else { None };
 
                 let mut list_state = ListState::default();
                 list_state.select(element_index);
                 *list_state.offset_mut() = scroll_offset;
                 frame.render_stateful_widget(list, area, &mut list_state);
 
-                // Persist the offset computed by ratatui for the next frame
-                state.open_chat_mut().set_scroll_offset(list_state.offset());
+                // Persist the offset computed by ratatui for the next frame.
+                // Only update when active to prevent scroll drift from ratatui
+                // recalculating offset without a selected item.
+                if is_active {
+                    state.open_chat_mut().set_scroll_offset(list_state.offset());
+                }
             }
         }
     }
@@ -826,7 +886,7 @@ mod tests {
     }
 
     #[test]
-    fn group_chat_outgoing_unread_shows_sender_then_bullet() {
+    fn group_chat_outgoing_delivered_shows_single_check_after_preview() {
         let line = chat_list_item_line(
             &group_chat_outgoing(1, "Dev Team", Some("I fixed it"), Some("You"), false),
             70, // wider to fit all content
@@ -834,20 +894,21 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("Dev Team"));
-        assert!(text.contains("You: ")); // sender name comes first
-        assert!(text.contains("\u{2022} ")); // bullet indicator after sender
+        assert!(text.contains("You: ")); // sender name in prefix
+        assert!(text.contains(" \u{2713}")); // single checkmark in suffix
+        assert!(!text.contains("\u{2713}\u{2713}")); // NOT double checkmark
         assert!(text.contains("I fixed it"));
-        // Verify order: sender before bullet
-        let sender_pos = text.find("You: ").unwrap();
-        let bullet_pos = text.find("\u{2022}").unwrap();
+        // Verify order: preview before checkmark (status is now a suffix)
+        let preview_pos = text.find("I fixed it").unwrap();
+        let check_pos = text.find("\u{2713}").unwrap();
         assert!(
-            sender_pos < bullet_pos,
-            "Sender name should come before read indicator"
+            preview_pos < check_pos,
+            "Preview should come before status indicator"
         );
     }
 
     #[test]
-    fn group_chat_outgoing_read_shows_sender_then_checkmark() {
+    fn group_chat_outgoing_read_shows_double_check_after_preview() {
         let line = chat_list_item_line(
             &group_chat_outgoing(1, "Dev Team", Some("Done"), Some("You"), true),
             70,
@@ -855,16 +916,130 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("Dev Team"));
-        assert!(text.contains("You: ")); // sender name comes first
-        assert!(text.contains("\u{2713} ")); // checkmark indicator after sender
+        assert!(text.contains("You: ")); // sender name in prefix
+        assert!(text.contains(" \u{2713}\u{2713}")); // double checkmark in suffix
         assert!(text.contains("Done"));
-        // Verify order: sender before checkmark
-        let sender_pos = text.find("You: ").unwrap();
+        // Verify order: preview before checkmark (status is now a suffix)
+        let preview_pos = text.find("Done").unwrap();
         let check_pos = text.find("\u{2713}").unwrap();
         assert!(
-            sender_pos < check_pos,
-            "Sender name should come before read indicator"
+            preview_pos < check_pos,
+            "Preview should come before status indicator"
         );
+    }
+
+    #[test]
+    fn group_chat_outgoing_narrow_width_still_shows_status() {
+        // Simulate a narrow chat list panel (30% of 80-col terminal, minus padding)
+        let line = chat_list_item_line(
+            &group_chat_outgoing(1, "Dev Team", Some("I fixed the bug"), Some("Alex"), true),
+            34, // narrow width
+        );
+        let text = line_to_string(&line);
+
+        assert!(text.contains("Dev Team"));
+        assert!(text.contains("Alex: "));
+        assert!(
+            text.contains("\u{2713}"),
+            "Status indicator must be present even at narrow width. Got: '{}'",
+            text
+        );
+    }
+
+    #[test]
+    fn group_chat_emoji_in_sender_name_shows_status_indicator() {
+        // Regression: emoji in sender name takes 2 terminal cells but .chars().count()
+        // treated it as 1, causing the line to overflow and clip the status indicator.
+        let line = chat_list_item_line(
+            &group_chat_outgoing(
+                1,
+                "Group",
+                Some("hello"),
+                Some("\u{1F680} vlad"), // "🚀 vlad" — emoji is 2 cells wide
+                true,
+            ),
+            40,
+        );
+        let text = line_to_string(&line);
+
+        assert!(
+            text.contains("\u{2713}"),
+            "Status indicator must be present with emoji sender. Got: '{}'",
+            text
+        );
+    }
+
+    #[test]
+    fn group_chat_emoji_in_title_shows_status_indicator() {
+        // Emoji in chat title should also be measured by display width
+        let line = chat_list_item_line(
+            &group_chat_outgoing(
+                1,
+                "\u{1F525} Fire Chat", // "🔥 Fire Chat" — emoji is 2 cells wide
+                Some("done"),
+                Some("Alex"),
+                true,
+            ),
+            50,
+        );
+        let text = line_to_string(&line);
+
+        assert!(
+            text.contains("\u{2713}"),
+            "Status indicator must be present with emoji title. Got: '{}'",
+            text
+        );
+    }
+
+    #[test]
+    fn truncate_to_display_width_fits_ascii() {
+        let (text, padding) = truncate_to_display_width("hello", 10);
+        assert_eq!(text, "hello");
+        assert_eq!(padding, 5);
+    }
+
+    #[test]
+    fn truncate_to_display_width_truncates_with_ellipsis() {
+        let (text, padding) = truncate_to_display_width("hello world", 8);
+        assert_eq!(text, "hello...");
+        assert_eq!(padding, 0);
+    }
+
+    #[test]
+    fn truncate_to_display_width_counts_emoji_as_double_width() {
+        // "🚀 hi" = 2+1+1+1 = 5 display cells
+        let (text, padding) = truncate_to_display_width("\u{1F680} hi", 5);
+        assert_eq!(text, "\u{1F680} hi");
+        assert_eq!(padding, 0);
+    }
+
+    #[test]
+    fn truncate_to_display_width_truncates_emoji_correctly() {
+        // "🚀🚀🚀" = 6 display cells; max_width=5 → target=2 → "🚀..."
+        let (text, padding) = truncate_to_display_width("\u{1F680}\u{1F680}\u{1F680}", 5);
+        assert_eq!(text, "\u{1F680}...");
+        assert_eq!(padding, 0);
+    }
+
+    #[test]
+    fn truncate_to_display_width_exact_fit() {
+        let (text, padding) = truncate_to_display_width("abc", 3);
+        assert_eq!(text, "abc");
+        assert_eq!(padding, 0);
+    }
+
+    #[test]
+    fn truncate_to_display_width_zero_width_returns_empty() {
+        let (text, padding) = truncate_to_display_width("hello", 0);
+        assert_eq!(text, "");
+        assert_eq!(padding, 0);
+    }
+
+    #[test]
+    fn truncate_to_display_width_less_than_ellipsis_returns_empty() {
+        let (text, padding) = truncate_to_display_width("hello", 2);
+        assert_eq!(text, "");
+        assert_eq!(padding, 2);
     }
 
     fn channel_chat_outgoing(
@@ -900,12 +1075,12 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("My Channel"));
-        assert!(text.contains("\u{2713} ")); // checkmark
+        assert!(text.contains(" \u{2713}\u{2713}")); // double checkmark in suffix
         assert!(text.contains("New post"));
     }
 
     #[test]
-    fn channel_outgoing_unread_shows_bullet() {
+    fn channel_outgoing_delivered_shows_single_check() {
         let line = chat_list_item_line(
             &channel_chat_outgoing(1, "My Channel", Some("Draft post"), false),
             TEST_WIDTH,
@@ -913,12 +1088,13 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("My Channel"));
-        assert!(text.contains("\u{2022} ")); // bullet
+        assert!(text.contains(" \u{2713}")); // single checkmark in suffix
+        assert!(!text.contains("\u{2713}\u{2713}")); // NOT double
         assert!(text.contains("Draft post"));
     }
 
     #[test]
-    fn private_chat_online_shows_green_dot() {
+    fn private_chat_online_shows_bullet() {
         let line = chat_list_item_line(
             &private_chat_online(1, "John", Some("Hey there"), true),
             TEST_WIDTH,
@@ -927,11 +1103,11 @@ mod tests {
 
         assert!(text.contains("John"));
         assert!(text.contains("Hey there"));
-        assert!(text.contains("\u{25CF}")); // Unicode filled circle
+        assert!(text.contains("\u{2022}")); // bullet
     }
 
     #[test]
-    fn private_chat_offline_no_dot() {
+    fn private_chat_offline_no_bullet() {
         let line = chat_list_item_line(
             &private_chat_online(1, "John", Some("Hey there"), false),
             TEST_WIDTH,
@@ -939,11 +1115,14 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("John"));
-        assert!(!text.contains("\u{25CF}"));
+        // Should not contain the online bullet indicator at the end
+        // (Note: the text might contain \u{2022} from an outgoing status,
+        // but this chat has default outgoing_status so no indicators at all)
+        assert!(!text.contains("\u{2022}"));
     }
 
     #[test]
-    fn private_chat_outgoing_unread_shows_bullet() {
+    fn private_chat_outgoing_delivered_shows_single_check() {
         let line = chat_list_item_line(
             &private_chat_outgoing(1, "Jane", Some("See you tomorrow"), false),
             TEST_WIDTH,
@@ -951,12 +1130,13 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("Jane"));
-        assert!(text.contains("\u{2022} ")); // bullet + space
+        assert!(text.contains(" \u{2713}")); // space + single checkmark (suffix)
+        assert!(!text.contains("\u{2713}\u{2713}")); // NOT double
         assert!(text.contains("See you tomorrow"));
     }
 
     #[test]
-    fn private_chat_outgoing_read_shows_checkmark() {
+    fn private_chat_outgoing_read_shows_double_check() {
         let line = chat_list_item_line(
             &private_chat_outgoing(1, "Jane", Some("Got it"), true),
             TEST_WIDTH,
@@ -964,7 +1144,7 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("Jane"));
-        assert!(text.contains("\u{2713} ")); // checkmark + space
+        assert!(text.contains(" \u{2713}\u{2713}")); // space + double checkmark (suffix)
         assert!(text.contains("Got it"));
     }
 
@@ -974,7 +1154,6 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("Hello!"));
-        assert!(!text.contains("\u{2022}")); // no bullet
         assert!(!text.contains("\u{2713}")); // no checkmark
     }
 
@@ -998,7 +1177,7 @@ mod tests {
         let text = line_to_string(&line);
 
         assert!(text.contains("[5]"));
-        assert!(text.contains("\u{25CF}"));
+        assert!(text.contains("\u{2022}")); // online bullet
     }
 
     // =========================================================================

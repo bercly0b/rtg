@@ -101,6 +101,12 @@ pub fn date_separator_style() -> Style {
 // accent used for unread badges, online indicators, and the input prompt.
 // =============================================================================
 
+/// Style for the highlighted (selected) item in a list.
+/// Uses a uniform background and foreground so the entire row looks consistent.
+pub fn highlight_style() -> Style {
+    Style::default().fg(Color::Black).bg(Color::Gray)
+}
+
 /// Style for the panel title when the panel is active.
 pub fn active_title_style() -> Style {
     Style::default()
@@ -221,6 +227,13 @@ mod tests {
     fn group_sender_style_is_cyan() {
         let style = group_sender_style();
         assert_eq!(style.fg, Some(Color::Cyan));
+    }
+
+    #[test]
+    fn highlight_style_is_gray_bg_black_fg() {
+        let style = highlight_style();
+        assert_eq!(style.fg, Some(Color::Black));
+        assert_eq!(style.bg, Some(Color::Gray));
     }
 
     #[test]
