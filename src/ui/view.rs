@@ -14,9 +14,10 @@ use crate::domain::{
     shell_state::{ActivePane, ShellState},
 };
 
+use super::chat_message_list::{ChatMessageList, ChatMessageListState};
 use super::message_input::render_message_input;
 use super::message_rendering::{
-    build_message_list_elements, element_to_list_item, message_index_to_element_index,
+    build_message_list_elements, element_to_text, message_index_to_element_index,
 };
 use super::styles;
 
@@ -454,8 +455,6 @@ fn render_messages_panel(
                 frame.render_widget(panel, area);
             } else {
                 let elements = build_message_list_elements(messages);
-                let items: Vec<ListItem<'static>> =
-                    elements.iter().map(element_to_list_item).collect();
 
                 // Map message index to element index (accounting for date separators)
                 let element_index = state
@@ -463,62 +462,35 @@ fn render_messages_panel(
                     .selected_index()
                     .and_then(|msg_idx| message_index_to_element_index(&elements, msg_idx));
 
-                // On first render after set_ready(), scroll_offset is usize::MAX
-                // (sentinel). Compute a bottom-aligned offset so the last message
-                // sits at the bottom of the viewport. On subsequent frames the
-                // persisted offset from the previous render is reused directly.
-                // Note: ratatui's scroll_padding may further adjust the offset on
-                // the first frame to maintain padding around the selected item.
-                let persisted_offset = state.open_chat().scroll_offset();
-                let viewport_height = area.height.saturating_sub(1) as usize;
-                let scroll_offset = if persisted_offset == usize::MAX {
-                    bottom_aligned_offset(&items, viewport_height)
-                } else {
-                    persisted_offset
-                };
-
                 let highlight = if is_active {
                     styles::highlight_style()
                 } else {
                     Style::default()
                 };
 
-                let list = List::new(items)
+                let element_index = if is_active { element_index } else { None };
+
+                let texts: Vec<ratatui::text::Text<'static>> =
+                    elements.iter().map(element_to_text).collect();
+
+                let list = ChatMessageList::new(texts)
                     .block(block())
                     .highlight_style(highlight)
                     .scroll_padding(SCROLL_MARGIN);
 
-                let element_index = if is_active { element_index } else { None };
-
-                let mut list_state = ListState::default();
-                list_state.select(element_index);
-                *list_state.offset_mut() = scroll_offset;
+                let scroll_offset = state.open_chat().scroll_offset();
+                let mut list_state = ChatMessageListState::new(scroll_offset, element_index);
                 frame.render_stateful_widget(list, area, &mut list_state);
 
-                // Persist the offset computed by ratatui for the next frame.
-                // Only update when active to prevent scroll drift from ratatui
-                // recalculating offset without a selected item.
+                // Persist the offset computed by the widget for the next frame.
+                // Only update when active to prevent scroll drift when the pane
+                // is inactive and has no selected item.
                 if is_active {
                     state.open_chat_mut().set_scroll_offset(list_state.offset());
                 }
             }
         }
     }
-}
-
-/// Calculates the first item index so that the last item appears at the bottom of the viewport.
-///
-/// Walks items backwards, summing their row heights until the viewport is filled.
-/// Returns the index of the first item that should be visible.
-fn bottom_aligned_offset(items: &[ListItem<'_>], viewport_height: usize) -> usize {
-    let mut total_height = 0;
-    for (i, item) in items.iter().enumerate().rev() {
-        total_height += item.height();
-        if total_height > viewport_height {
-            return i + 1;
-        }
-    }
-    0
 }
 
 fn open_chat_title(open_chat: &crate::domain::open_chat_state::OpenChatState) -> String {
@@ -1195,83 +1167,5 @@ mod tests {
 
         assert!(text.contains("[5]"));
         assert!(text.contains("\u{2022}")); // online bullet
-    }
-
-    // =========================================================================
-    // Tests for bottom_aligned_offset
-    // =========================================================================
-
-    #[test]
-    fn bottom_aligned_offset_all_items_fit_returns_zero() {
-        // 3 single-line items, viewport 10 rows → all fit, start from 0
-        let items: Vec<ListItem<'_>> =
-            vec![ListItem::new("A"), ListItem::new("B"), ListItem::new("C")];
-
-        assert_eq!(bottom_aligned_offset(&items, 10), 0);
-    }
-
-    #[test]
-    fn bottom_aligned_offset_exact_fit_returns_zero() {
-        // 3 single-line items, viewport exactly 3 rows
-        let items: Vec<ListItem<'_>> =
-            vec![ListItem::new("A"), ListItem::new("B"), ListItem::new("C")];
-
-        assert_eq!(bottom_aligned_offset(&items, 3), 0);
-    }
-
-    #[test]
-    fn bottom_aligned_offset_skips_overflowing_items() {
-        // 5 single-line items, viewport 3 rows → show items 2,3,4 → offset = 2
-        let items: Vec<ListItem<'_>> = vec![
-            ListItem::new("A"),
-            ListItem::new("B"),
-            ListItem::new("C"),
-            ListItem::new("D"),
-            ListItem::new("E"),
-        ];
-
-        assert_eq!(bottom_aligned_offset(&items, 3), 2);
-    }
-
-    #[test]
-    fn bottom_aligned_offset_handles_multi_line_items() {
-        // Item heights: 1, 3, 1, 2 = total 7. Viewport = 4.
-        // Walking backwards: item3(2) + item2(1) + item1(3) = 6 > 4 → return index 1+1 = 2
-        let items: Vec<ListItem<'_>> = vec![
-            ListItem::new("A"),
-            ListItem::new("B\nB\nB"),
-            ListItem::new("C"),
-            ListItem::new("D\nD"),
-        ];
-
-        assert_eq!(bottom_aligned_offset(&items, 4), 2);
-    }
-
-    #[test]
-    fn bottom_aligned_offset_empty_items_returns_zero() {
-        let items: Vec<ListItem<'_>> = vec![];
-
-        assert_eq!(bottom_aligned_offset(&items, 20), 0);
-    }
-
-    #[test]
-    fn bottom_aligned_offset_zero_viewport_returns_last() {
-        // Zero viewport can't fit anything; first item that overflows is item 2 (last),
-        // so offset = items.len() (all items overflow)
-        let items: Vec<ListItem<'_>> =
-            vec![ListItem::new("A"), ListItem::new("B"), ListItem::new("C")];
-
-        // With 0 viewport: walking backwards, item2 height(1) > 0, return 2+1=3
-        // but 3 is past last index. ratatui will clamp to items.len()-1.
-        assert_eq!(bottom_aligned_offset(&items, 0), 3);
-    }
-
-    #[test]
-    fn bottom_aligned_offset_single_oversized_item() {
-        // Single item taller than viewport: returns 1 (out of bounds for 1 item),
-        // ratatui clamps to 0 so the item renders from the top.
-        let items: Vec<ListItem<'_>> = vec![ListItem::new("A\nB\nC\nD\nE")];
-
-        assert_eq!(bottom_aligned_offset(&items, 3), 1);
     }
 }

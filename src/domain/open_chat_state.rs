@@ -1,5 +1,34 @@
 use super::message::Message;
 
+// ─── Scroll offset ──────────────────────────────────────────────────────────
+
+/// Scroll offset with line-level precision.
+///
+/// `(item, line)` — the index of the first visible item and how many of its
+/// top lines are clipped (hidden above the viewport).
+///
+/// Defined in the domain layer because it is part of `OpenChatState` and must
+/// be independent of any specific UI widget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScrollOffset {
+    pub item: usize,
+    pub line: usize,
+}
+
+impl ScrollOffset {
+    pub const ZERO: Self = Self { item: 0, line: 0 };
+
+    /// Sentinel value meaning "compute bottom-aligned offset on first render".
+    pub const BOTTOM: Self = Self {
+        item: usize::MAX,
+        line: 0,
+    };
+
+    pub fn is_bottom_sentinel(self) -> bool {
+        self.item == usize::MAX
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpenChatUiState {
     Empty,
@@ -9,7 +38,7 @@ pub enum OpenChatUiState {
 }
 
 /// Scroll margin — number of items to keep visible above/below cursor before scrolling.
-/// Used by the UI layer via `List::scroll_padding()`.
+/// Used by the UI layer via `ChatMessageList::scroll_padding()`.
 pub const SCROLL_MARGIN: usize = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,7 +48,7 @@ pub struct OpenChatState {
     messages: Vec<Message>,
     ui_state: OpenChatUiState,
     selected_index: Option<usize>,
-    scroll_offset: usize,
+    scroll_offset: ScrollOffset,
 }
 
 impl Default for OpenChatState {
@@ -30,7 +59,7 @@ impl Default for OpenChatState {
             messages: Vec::new(),
             ui_state: OpenChatUiState::Empty,
             selected_index: None,
-            scroll_offset: 0,
+            scroll_offset: ScrollOffset::ZERO,
         }
     }
 }
@@ -58,16 +87,16 @@ impl OpenChatState {
         self.selected_index
     }
 
-    /// Returns the current scroll offset (persisted between frames for ratatui `ListState`).
-    pub fn scroll_offset(&self) -> usize {
+    /// Returns the current scroll offset (persisted between frames).
+    pub fn scroll_offset(&self) -> ScrollOffset {
         self.scroll_offset
     }
 
-    /// Saves the scroll offset computed by ratatui after rendering, so it persists across frames.
+    /// Saves the scroll offset computed after rendering, so it persists across frames.
     ///
-    /// Note: `set_ready()` initializes this to `usize::MAX` as a sentinel to trigger
-    /// scroll-to-bottom on first render; ratatui clamps it to a valid range.
-    pub fn set_scroll_offset(&mut self, offset: usize) {
+    /// Note: `set_ready()` initializes this to `ScrollOffset::BOTTOM` as a sentinel
+    /// to trigger scroll-to-bottom on first render.
+    pub fn set_scroll_offset(&mut self, offset: ScrollOffset) {
         self.scroll_offset = offset;
     }
 
@@ -77,7 +106,7 @@ impl OpenChatState {
         self.messages.clear();
         self.ui_state = OpenChatUiState::Loading;
         self.selected_index = None;
-        self.scroll_offset = 0;
+        self.scroll_offset = ScrollOffset::ZERO;
     }
 
     pub fn set_ready(&mut self, messages: Vec<Message>) {
@@ -86,10 +115,13 @@ impl OpenChatState {
         } else {
             Some(messages.len() - 1)
         };
-        // When there are messages, set a large initial offset so ratatui places
-        // the last message at the bottom of the viewport on first render.
-        // The actual value will be clamped by ratatui's `get_items_bounds()`.
-        self.scroll_offset = if messages.is_empty() { 0 } else { usize::MAX };
+        // When there are messages, use the BOTTOM sentinel so the custom
+        // ChatMessageList widget computes a bottom-aligned offset on first render.
+        self.scroll_offset = if messages.is_empty() {
+            ScrollOffset::ZERO
+        } else {
+            ScrollOffset::BOTTOM
+        };
         self.messages = messages;
         self.ui_state = OpenChatUiState::Ready;
     }
@@ -127,9 +159,9 @@ impl OpenChatState {
             Some(self.messages.len() - 1)
         };
         self.scroll_offset = if self.messages.is_empty() {
-            0
+            ScrollOffset::ZERO
         } else {
-            usize::MAX
+            ScrollOffset::BOTTOM
         };
     }
 
@@ -144,7 +176,7 @@ impl OpenChatState {
         self.messages.clear();
         self.ui_state = OpenChatUiState::Empty;
         self.selected_index = None;
-        self.scroll_offset = 0;
+        self.scroll_offset = ScrollOffset::ZERO;
     }
 
     pub fn is_open(&self) -> bool {
@@ -237,7 +269,7 @@ mod tests {
         assert_eq!(state.ui_state(), OpenChatUiState::Ready);
         assert!(state.messages().is_empty());
         assert_eq!(state.selected_index(), None);
-        assert_eq!(state.scroll_offset(), 0);
+        assert_eq!(state.scroll_offset(), ScrollOffset::ZERO);
     }
 
     #[test]
@@ -356,37 +388,37 @@ mod tests {
     #[test]
     fn scroll_offset_starts_at_zero() {
         let state = OpenChatState::default();
-        assert_eq!(state.scroll_offset(), 0);
+        assert_eq!(state.scroll_offset(), ScrollOffset::ZERO);
     }
 
     #[test]
     fn scroll_offset_resets_on_set_loading() {
         let mut state = OpenChatState::default();
-        state.scroll_offset = 10;
+        state.scroll_offset = ScrollOffset { item: 5, line: 2 };
 
         state.set_loading(1, "Chat".to_owned());
 
-        assert_eq!(state.scroll_offset(), 0);
+        assert_eq!(state.scroll_offset(), ScrollOffset::ZERO);
     }
 
     #[test]
-    fn set_ready_initializes_scroll_offset_to_max() {
+    fn set_ready_initializes_scroll_offset_to_bottom() {
         let mut state = OpenChatState::default();
         state.set_loading(1, "Chat".to_owned());
 
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
 
-        // Large initial offset so ratatui scrolls to show the last message
-        assert_eq!(state.scroll_offset(), usize::MAX);
+        assert_eq!(state.scroll_offset(), ScrollOffset::BOTTOM);
     }
 
     #[test]
     fn set_scroll_offset_persists_value() {
         let mut state = OpenChatState::default();
+        let offset = ScrollOffset { item: 3, line: 1 };
 
-        state.set_scroll_offset(42);
+        state.set_scroll_offset(offset);
 
-        assert_eq!(state.scroll_offset(), 42);
+        assert_eq!(state.scroll_offset(), offset);
     }
 
     #[test]
@@ -404,7 +436,8 @@ mod tests {
 
         // Select message 2 (index 1)
         state.selected_index = Some(1);
-        state.set_scroll_offset(10);
+        let saved_offset = ScrollOffset { item: 2, line: 3 };
+        state.set_scroll_offset(saved_offset);
 
         // Update with reordered messages — message 2 is now at index 2
         state.update_messages(vec![message(4, "D"), message(1, "A"), message(2, "B")]);
@@ -412,7 +445,7 @@ mod tests {
         assert_eq!(state.selected_index(), Some(2));
         assert_eq!(state.ui_state(), OpenChatUiState::Ready);
         // Scroll offset preserved (not reset)
-        assert_eq!(state.scroll_offset(), 10);
+        assert_eq!(state.scroll_offset(), saved_offset);
     }
 
     #[test]
@@ -429,7 +462,7 @@ mod tests {
 
         // Should fall back to last message (index 1)
         assert_eq!(state.selected_index(), Some(1));
-        assert_eq!(state.scroll_offset(), usize::MAX);
+        assert_eq!(state.scroll_offset(), ScrollOffset::BOTTOM);
     }
 
     #[test]
@@ -441,7 +474,7 @@ mod tests {
         state.update_messages(vec![]);
 
         assert_eq!(state.selected_index(), None);
-        assert_eq!(state.scroll_offset(), 0);
+        assert_eq!(state.scroll_offset(), ScrollOffset::ZERO);
         assert_eq!(state.ui_state(), OpenChatUiState::Ready);
     }
 
@@ -455,7 +488,7 @@ mod tests {
 
         // No previous selection, so falls back to last message
         assert_eq!(state.selected_index(), Some(1));
-        assert_eq!(state.scroll_offset(), usize::MAX);
+        assert_eq!(state.scroll_offset(), ScrollOffset::BOTTOM);
         assert_eq!(state.ui_state(), OpenChatUiState::Ready);
     }
 
@@ -467,7 +500,8 @@ mod tests {
 
         // Selected last message (index 1, id 2)
         assert_eq!(state.selected_index(), Some(1));
-        state.set_scroll_offset(5);
+        let saved_offset = ScrollOffset { item: 1, line: 0 };
+        state.set_scroll_offset(saved_offset);
 
         // Update with same messages + one new one at the end
         state.update_messages(vec![message(1, "A"), message(2, "B"), message(3, "C")]);
@@ -475,6 +509,6 @@ mod tests {
         // Message 2 is still at index 1
         assert_eq!(state.selected_index(), Some(1));
         // Scroll offset preserved
-        assert_eq!(state.scroll_offset(), 5);
+        assert_eq!(state.scroll_offset(), saved_offset);
     }
 }

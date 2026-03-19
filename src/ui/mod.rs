@@ -1,5 +1,6 @@
 //! UI layer: rendering and interaction entry points (CLI/TUI).
 
+pub(crate) mod chat_message_list;
 mod event_source;
 mod message_input;
 mod message_rendering;
