@@ -21,9 +21,13 @@ use super::message_rendering::{
 use super::styles;
 
 pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
-    let [content_area, status_area] = Layout::default()
+    let [content_area, status_separator_area, status_area] = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Min(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
         .areas(frame.area());
 
     // Horizontal split: chat list | separator (1 char) | messages+input
@@ -36,18 +40,24 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
         ])
         .areas(content_area);
 
-    // Split right panel into messages area and input field (1 line for input text)
-    let [messages_area, input_area] = Layout::default()
+    // Split right panel into messages area, horizontal separator, and input field
+    let [messages_area, input_separator_area, input_area] = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Min(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
         .areas(messages_with_input_area);
 
     let active_pane = state.active_pane();
     render_chat_list_panel(frame, chats_area, state, active_pane);
     render_vertical_separator(frame, separator_area);
     render_messages_panel(frame, messages_area, state, active_pane);
+    render_horizontal_separator(frame, input_separator_area);
     render_message_input(frame, input_area, state.message_input(), active_pane);
 
+    render_horizontal_separator(frame, status_separator_area);
     let status = Paragraph::new(status_line(state)).style(styles::status_bar_style());
     frame.render_widget(status, status_area);
 }
@@ -133,6 +143,13 @@ fn render_vertical_separator(frame: &mut Frame<'_>, area: Rect) {
         .map(|_| Line::styled("\u{2502}", sep_style))
         .collect();
     let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
+}
+
+fn render_horizontal_separator(frame: &mut Frame<'_>, area: Rect) {
+    let sep_style = styles::panel_separator_style();
+    let line_str: String = "\u{2500}".repeat(area.width as usize);
+    let paragraph = Paragraph::new(Line::styled(line_str, sep_style));
     frame.render_widget(paragraph, area);
 }
 
