@@ -62,11 +62,43 @@ pub fn group_sender_style() -> Style {
 // Message list styles
 // =============================================================================
 
-/// Style for message sender name (white, bold).
-pub fn message_sender_style() -> Style {
-    Style::default()
-        .fg(Color::White)
-        .add_modifier(Modifier::BOLD)
+/// Palette of distinguishable colors for sender names on dark backgrounds.
+const SENDER_COLOR_PALETTE: &[Color] = &[
+    Color::Red,
+    Color::Magenta,
+    Color::Yellow,
+    Color::LightBlue,
+    Color::LightCyan,
+    Color::LightMagenta,
+    Color::LightGreen,
+    Color::LightRed,
+];
+
+/// Deterministic hash of a name to a palette index.
+///
+/// Uses FNV-1a-inspired hashing for stable, well-distributed results.
+fn name_to_color_index(name: &str) -> usize {
+    let mut hash: u32 = 2_166_136_261;
+    for byte in name.as_bytes() {
+        hash ^= u32::from(*byte);
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    (hash as usize) % SENDER_COLOR_PALETTE.len()
+}
+
+/// Style for a sender name, colored by identity.
+///
+/// - Outgoing messages ("You") are always Cyan + Bold.
+/// - Other senders get a deterministic color from the palette based on their name.
+pub fn sender_name_style(name: &str, is_outgoing: bool) -> Style {
+    if is_outgoing {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        let color = SENDER_COLOR_PALETTE[name_to_color_index(name)];
+        Style::default().fg(color).add_modifier(Modifier::BOLD)
+    }
 }
 
 /// Style for message time in the messages panel.
@@ -169,10 +201,53 @@ mod tests {
     }
 
     #[test]
-    fn message_sender_style_is_bold_white() {
-        let style = message_sender_style();
-        assert_eq!(style.fg, Some(Color::White));
+    fn sender_name_style_outgoing_is_cyan_bold() {
+        let style = sender_name_style("You", true);
+        assert_eq!(style.fg, Some(Color::Cyan));
         assert!(style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn sender_name_style_incoming_is_bold() {
+        let style = sender_name_style("Alice", false);
+        assert!(style.add_modifier.contains(Modifier::BOLD));
+        // Should not be cyan (that's reserved for outgoing)
+        assert_ne!(style.fg, Some(Color::White));
+    }
+
+    #[test]
+    fn sender_name_style_is_deterministic() {
+        let style1 = sender_name_style("Alice", false);
+        let style2 = sender_name_style("Alice", false);
+        assert_eq!(style1.fg, style2.fg);
+    }
+
+    #[test]
+    fn sender_name_style_different_names_can_differ() {
+        // With 8 colors and different names, at least some should differ
+        let names = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank"];
+        let colors: Vec<_> = names
+            .iter()
+            .map(|n| sender_name_style(n, false).fg)
+            .collect();
+        let unique: std::collections::HashSet<_> = colors.iter().collect();
+        assert!(
+            unique.len() > 1,
+            "Expected different colors for different names"
+        );
+    }
+
+    #[test]
+    fn name_to_color_index_stays_in_bounds() {
+        let names = ["", "a", "Alice", "Bob", "Very Long Name With Spaces"];
+        for name in &names {
+            let idx = name_to_color_index(name);
+            assert!(
+                idx < SENDER_COLOR_PALETTE.len(),
+                "Index out of bounds for '{}'",
+                name
+            );
+        }
     }
 
     #[test]

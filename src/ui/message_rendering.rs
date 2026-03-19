@@ -27,6 +27,7 @@ pub enum MessageListElement {
         time: String,
         show_time: bool,
         sender: Option<String>,
+        is_outgoing: bool,
         content: String,
     },
 }
@@ -69,6 +70,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             time: time.clone(),
             show_time,
             sender,
+            is_outgoing: message.is_outgoing,
             content: message.display_content(),
         });
 
@@ -111,8 +113,9 @@ pub fn element_to_list_item(element: &MessageListElement) -> ListItem<'static> {
             time,
             show_time,
             sender,
+            is_outgoing,
             content,
-        } => message_item(time, *show_time, sender.as_deref(), content),
+        } => message_item(time, *show_time, sender.as_deref(), *is_outgoing, content),
     }
 }
 
@@ -130,6 +133,7 @@ fn message_item(
     time: &str,
     show_time: bool,
     sender: Option<&str>,
+    is_outgoing: bool,
     content: &str,
 ) -> ListItem<'static> {
     let mut lines = Vec::new();
@@ -137,7 +141,7 @@ fn message_item(
 
     if sender.is_some() {
         // First message in group: header line (time + sender), then content on separate lines
-        let header_line = build_message_header_line(time, show_time, sender);
+        let header_line = build_message_header_line(time, show_time, sender, is_outgoing);
         lines.push(header_line);
 
         for text_line in content.lines() {
@@ -189,7 +193,12 @@ fn message_item(
     ListItem::new(lines)
 }
 
-fn build_message_header_line(time: &str, show_time: bool, sender: Option<&str>) -> Line<'static> {
+fn build_message_header_line(
+    time: &str,
+    show_time: bool,
+    sender: Option<&str>,
+    is_outgoing: bool,
+) -> Line<'static> {
     let time_span = if show_time {
         Span::styled(format!("{:>5} ", time), styles::message_time_style())
     } else {
@@ -201,7 +210,7 @@ fn build_message_header_line(time: &str, show_time: bool, sender: Option<&str>) 
     if let Some(name) = sender {
         spans.push(Span::styled(
             format!("{}:", name),
-            styles::message_sender_style(),
+            styles::sender_name_style(name, is_outgoing),
         ));
     }
 
@@ -406,6 +415,41 @@ mod tests {
 
         if let MessageListElement::Message { sender, .. } = &elements[1] {
             assert_eq!(sender.as_deref(), Some("You"));
+        }
+    }
+
+    #[test]
+    fn outgoing_message_sets_is_outgoing_flag() {
+        let messages = vec![msg(1, "MyName", "Hello", FEB_14_2026_10AM, true)];
+
+        let elements = build_message_list_elements(&messages);
+
+        if let MessageListElement::Message {
+            is_outgoing,
+            sender,
+            ..
+        } = &elements[1]
+        {
+            assert!(is_outgoing, "Outgoing message should have is_outgoing=true");
+            assert_eq!(sender.as_deref(), Some("You"));
+        } else {
+            panic!("Expected Message element");
+        }
+    }
+
+    #[test]
+    fn incoming_message_sets_is_outgoing_false() {
+        let messages = vec![msg(1, "Alice", "Hi", FEB_14_2026_10AM, false)];
+
+        let elements = build_message_list_elements(&messages);
+
+        if let MessageListElement::Message { is_outgoing, .. } = &elements[1] {
+            assert!(
+                !is_outgoing,
+                "Incoming message should have is_outgoing=false"
+            );
+        } else {
+            panic!("Expected Message element");
         }
     }
 
