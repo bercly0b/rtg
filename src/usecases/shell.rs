@@ -36,6 +36,9 @@ where
     /// When `true`, the orchestrator was initialised with cached data and needs
     /// a background refresh on the first Tick to pick up server-side changes.
     initial_refresh_needed: bool,
+    /// Tracks the chat_id that is currently "opened" in TDLib via `openChat`.
+    /// Used to ensure proper `closeChat` pairing when navigating away.
+    tdlib_opened_chat_id: Option<i64>,
 }
 
 impl<S, O, D> DefaultShellOrchestrator<S, O, D>
@@ -54,6 +57,7 @@ where
             cache_source: None,
             chat_list_in_flight: false,
             initial_refresh_needed: false,
+            tdlib_opened_chat_id: None,
         }
     }
 
@@ -81,6 +85,7 @@ where
             cache_source,
             chat_list_in_flight: false,
             initial_refresh_needed,
+            tdlib_opened_chat_id: None,
         }
     }
 
@@ -114,14 +119,29 @@ where
         let chat_title = selected.title.clone();
 
         // If the same chat is already open and Ready, just switch focus — no reload.
+        // But always ensure the TDLib lifecycle is maintained.
         if self.state.open_chat().chat_id() == Some(chat_id)
             && self.state.open_chat().ui_state() == OpenChatUiState::Ready
         {
             tracing::debug!(chat_id, "chat already open and ready, skipping reload");
+            // Re-open in TDLib if it was closed (e.g. user pressed h then l)
+            if self.tdlib_opened_chat_id != Some(chat_id) {
+                self.dispatcher.dispatch_open_chat(chat_id);
+                self.tdlib_opened_chat_id = Some(chat_id);
+                // Mark existing messages as read in the reopened chat
+                self.mark_open_chat_messages_as_read();
+            }
             return;
         }
 
         tracing::debug!(chat_id, chat_title = %chat_title, "opening chat (non-blocking)");
+
+        // Close the previously opened TDLib chat if switching to a different one.
+        self.close_tdlib_chat_if_needed(chat_id);
+
+        // Open this chat in TDLib for update delivery and read tracking.
+        self.dispatcher.dispatch_open_chat(chat_id);
+        self.tdlib_opened_chat_id = Some(chat_id);
 
         // Try to show cached messages immediately before the full fetch.
         let showed_cache = self.try_show_cached_messages(chat_id, &chat_title);
@@ -130,8 +150,44 @@ where
             self.state.open_chat_mut().set_loading(chat_id, chat_title);
         }
 
-        // Always dispatch a full background load (with openChat/closeChat + pagination)
+        // Dispatch a full background load (pagination).
         self.dispatcher.dispatch_load_messages(chat_id);
+    }
+
+    /// Closes the currently TDLib-opened chat if it differs from `next_chat_id`.
+    ///
+    /// Called before opening a new chat or when navigating away.
+    fn close_tdlib_chat_if_needed(&mut self, next_chat_id: i64) {
+        if let Some(prev_id) = self.tdlib_opened_chat_id {
+            if prev_id != next_chat_id {
+                tracing::debug!(prev_id, "closing previous TDLib chat");
+                self.dispatcher.dispatch_close_chat(prev_id);
+                self.tdlib_opened_chat_id = None;
+            }
+        }
+    }
+
+    /// Closes the currently TDLib-opened chat unconditionally.
+    fn close_tdlib_chat(&mut self) {
+        if let Some(chat_id) = self.tdlib_opened_chat_id.take() {
+            tracing::debug!(chat_id, "closing TDLib chat on navigate away");
+            self.dispatcher.dispatch_close_chat(chat_id);
+        }
+    }
+
+    /// Dispatches a mark-as-read request for all messages currently loaded in the open chat.
+    fn mark_open_chat_messages_as_read(&self) {
+        let Some(chat_id) = self.state.open_chat().chat_id() else {
+            return;
+        };
+
+        let messages = self.state.open_chat().messages();
+        if messages.is_empty() {
+            return;
+        }
+
+        let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
+        self.dispatcher.dispatch_mark_as_read(chat_id, message_ids);
     }
 
     /// Attempts to synchronously load cached messages for instant display.
@@ -187,7 +243,10 @@ where
         match key {
             "j" => self.state.open_chat_mut().select_next(),
             "k" => self.state.open_chat_mut().select_previous(),
-            "h" | "esc" => self.state.set_active_pane(ActivePane::ChatList),
+            "h" | "esc" => {
+                self.close_tdlib_chat();
+                self.state.set_active_pane(ActivePane::ChatList);
+            }
             "i" => {
                 if self.state.open_chat().is_open() {
                     self.state.set_active_pane(ActivePane::MessageInput);
@@ -281,6 +340,9 @@ where
                         } else {
                             self.state.open_chat_mut().set_ready(messages);
                         }
+                        // Mark all loaded messages as read via TDLib viewMessages.
+                        // This triggers Update::ChatReadInbox → reactive unread_count update.
+                        self.mark_open_chat_messages_as_read();
                     }
                     Err(error) => {
                         tracing::warn!(
@@ -328,6 +390,8 @@ where
                         // scroll to the bottom after sending — the user expects
                         // to see their new message at the end of the list.
                         self.state.open_chat_mut().set_ready(messages);
+                        // Mark new messages as read (including the one just sent).
+                        self.mark_open_chat_messages_as_read();
                     }
                     Err(error) => {
                         tracing::warn!(
@@ -376,6 +440,8 @@ where
                 if self.state.active_pane() == ActivePane::MessageInput {
                     self.handle_message_input_key("q");
                 } else {
+                    // Ensure TDLib lifecycle is clean before shutting down
+                    self.close_tdlib_chat();
                     self.state.stop();
                 }
             }
@@ -463,6 +529,9 @@ mod tests {
         dispatched_chat_list_count: RefCell<usize>,
         dispatched_messages: RefCell<Vec<i64>>,
         dispatched_sends: RefCell<Vec<(i64, String)>>,
+        dispatched_open_chats: RefCell<Vec<i64>>,
+        dispatched_close_chats: RefCell<Vec<i64>>,
+        dispatched_mark_as_read: RefCell<Vec<(i64, Vec<i64>)>>,
     }
 
     impl RecordingDispatcher {
@@ -471,6 +540,9 @@ mod tests {
                 dispatched_chat_list_count: RefCell::new(0),
                 dispatched_messages: RefCell::new(Vec::new()),
                 dispatched_sends: RefCell::new(Vec::new()),
+                dispatched_open_chats: RefCell::new(Vec::new()),
+                dispatched_close_chats: RefCell::new(Vec::new()),
+                dispatched_mark_as_read: RefCell::new(Vec::new()),
             }
         }
 
@@ -489,6 +561,22 @@ mod tests {
         fn last_send(&self) -> Option<(i64, String)> {
             self.dispatched_sends.borrow().last().cloned()
         }
+
+        fn open_chat_dispatch_count(&self) -> usize {
+            self.dispatched_open_chats.borrow().len()
+        }
+
+        fn close_chat_dispatch_count(&self) -> usize {
+            self.dispatched_close_chats.borrow().len()
+        }
+
+        fn mark_as_read_dispatch_count(&self) -> usize {
+            self.dispatched_mark_as_read.borrow().len()
+        }
+
+        fn last_mark_as_read(&self) -> Option<(i64, Vec<i64>)> {
+            self.dispatched_mark_as_read.borrow().last().cloned()
+        }
     }
 
     impl TaskDispatcher for RecordingDispatcher {
@@ -502,6 +590,20 @@ mod tests {
 
         fn dispatch_send_message(&self, chat_id: i64, text: String) {
             self.dispatched_sends.borrow_mut().push((chat_id, text));
+        }
+
+        fn dispatch_open_chat(&self, chat_id: i64) {
+            self.dispatched_open_chats.borrow_mut().push(chat_id);
+        }
+
+        fn dispatch_close_chat(&self, chat_id: i64) {
+            self.dispatched_close_chats.borrow_mut().push(chat_id);
+        }
+
+        fn dispatch_mark_as_read(&self, chat_id: i64, message_ids: Vec<i64>) {
+            self.dispatched_mark_as_read
+                .borrow_mut()
+                .push((chat_id, message_ids));
         }
     }
 
@@ -1687,5 +1789,244 @@ mod tests {
         assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
         assert_eq!(o.state().open_chat().messages()[0].text, "Chat2 cached");
         assert_eq!(o.dispatcher.messages_dispatch_count(), 2);
+    }
+
+    // ── Chat lifecycle (openChat/closeChat/viewMessages) tests ──
+
+    #[test]
+    fn open_chat_dispatches_tdlib_open_chat() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        assert_eq!(o.dispatcher.open_chat_dispatch_count(), 1);
+        assert_eq!(o.tdlib_opened_chat_id, Some(1));
+    }
+
+    #[test]
+    fn navigate_away_from_chat_dispatches_tdlib_close_chat() {
+        let o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+
+        assert_eq!(o.tdlib_opened_chat_id, Some(1));
+
+        let mut o = o;
+        o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+            .unwrap();
+
+        assert_eq!(o.dispatcher.close_chat_dispatch_count(), 1);
+        assert_eq!(o.tdlib_opened_chat_id, None);
+    }
+
+    #[test]
+    fn esc_from_messages_dispatches_tdlib_close_chat() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
+            .unwrap();
+
+        assert_eq!(o.dispatcher.close_chat_dispatch_count(), 1);
+        assert_eq!(o.tdlib_opened_chat_id, None);
+    }
+
+    #[test]
+    fn switching_chats_closes_previous_and_opens_new() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "A"), chat(2, "B")]);
+
+        // Open chat 1
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        assert_eq!(o.dispatcher.open_chat_dispatch_count(), 1);
+        assert_eq!(o.tdlib_opened_chat_id, Some(1));
+
+        // Navigate back to chat list
+        o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+            .unwrap();
+        assert_eq!(o.dispatcher.close_chat_dispatch_count(), 1);
+
+        // Move to chat 2 and open it
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        assert_eq!(o.dispatcher.open_chat_dispatch_count(), 2);
+        assert_eq!(o.tdlib_opened_chat_id, Some(2));
+    }
+
+    #[test]
+    fn switching_directly_to_different_chat_closes_previous_first() {
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "A"), chat(2, "B")],
+            1,
+            vec![message(1, "Hello")],
+        );
+        assert_eq!(o.tdlib_opened_chat_id, Some(1));
+
+        // Navigate back
+        o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+            .unwrap();
+        // Move down and open different chat
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // Should have closed chat 1 and opened chat 2
+        assert_eq!(o.tdlib_opened_chat_id, Some(2));
+        // close_chat: once when pressing h, no extra close when opening chat 2 (already None)
+        assert_eq!(o.dispatcher.close_chat_dispatch_count(), 1);
+        assert_eq!(o.dispatcher.open_chat_dispatch_count(), 2);
+    }
+
+    #[test]
+    fn messages_loaded_dispatches_mark_as_read() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+        // Open chat
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // Simulate messages loaded
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesLoaded {
+                chat_id: 1,
+                result: Ok(vec![message(10, "A"), message(20, "B"), message(30, "C")]),
+            },
+        ))
+        .unwrap();
+
+        assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 1);
+        let (mark_chat_id, mark_ids) = o.dispatcher.last_mark_as_read().unwrap();
+        assert_eq!(mark_chat_id, 1);
+        assert_eq!(mark_ids, vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn messages_loaded_does_not_mark_as_read_when_empty() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesLoaded {
+                chat_id: 1,
+                result: Ok(vec![]),
+            },
+        ))
+        .unwrap();
+
+        assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 0);
+    }
+
+    #[test]
+    fn message_sent_refresh_dispatches_mark_as_read() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+
+        // After send refresh arrives with updated messages
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessageSentRefreshCompleted {
+                chat_id: 1,
+                result: Ok(vec![message(1, "Hello"), message(2, "My reply")]),
+            },
+        ))
+        .unwrap();
+
+        // mark_as_read dispatched: once from initial messages load + once from refresh
+        assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 2);
+        let (mark_chat_id, mark_ids) = o.dispatcher.last_mark_as_read().unwrap();
+        assert_eq!(mark_chat_id, 1);
+        assert_eq!(mark_ids, vec![1, 2]);
+    }
+
+    #[test]
+    fn reopen_same_ready_chat_does_not_dispatch_open_chat_again() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+
+        // Focus back to chat list, then reopen same chat
+        // Note: h closes the TDLib chat
+        o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .unwrap();
+
+        // Re-opening the same Ready chat triggers a new open_chat
+        // (since we closed it with h)
+        assert_eq!(o.dispatcher.open_chat_dispatch_count(), 2);
+    }
+
+    #[test]
+    fn quit_while_chat_open_dispatches_close_chat() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+        assert_eq!(o.tdlib_opened_chat_id, Some(1));
+
+        // Go back to chat list pane (but don't press h — stay with chat "open" in TDLib)
+        // Actually, we need to be in ChatList or Messages pane for QuitRequested to quit
+        o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+            .unwrap();
+        // h already closed it, let's reopen
+        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .unwrap();
+        assert_eq!(o.tdlib_opened_chat_id, Some(1));
+
+        // Now quit
+        o.handle_event(AppEvent::QuitRequested).unwrap();
+
+        assert!(!o.state().is_running());
+        assert_eq!(o.tdlib_opened_chat_id, None);
+        // close_chat dispatched: once from h, once from quit
+        assert_eq!(o.dispatcher.close_chat_dispatch_count(), 2);
+    }
+
+    #[test]
+    fn stale_messages_do_not_dispatch_mark_as_read() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "A"), chat(2, "B")]);
+
+        // Open chat 1
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        // Navigate away
+        o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+            .unwrap();
+        // Open chat 2
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // Stale result for chat 1 arrives
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesLoaded {
+                chat_id: 1,
+                result: Ok(vec![message(10, "Stale")]),
+            },
+        ))
+        .unwrap();
+
+        // Should not dispatch mark_as_read since chat 1 is no longer viewed
+        assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 0);
+    }
+
+    #[test]
+    fn messages_load_error_does_not_dispatch_mark_as_read() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesLoaded {
+                chat_id: 1,
+                result: Err(BackgroundError::new("MESSAGES_UNAVAILABLE")),
+            },
+        ))
+        .unwrap();
+
+        assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 0);
     }
 }

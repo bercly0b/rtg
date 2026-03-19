@@ -114,6 +114,7 @@ fn compose_shell_with_factory(
         std::sync::Arc::clone(&context.telegram),
         std::sync::Arc::clone(&context.telegram),
         std::sync::Arc::clone(&context.telegram),
+        std::sync::Arc::clone(&context.telegram),
         bg_tx,
     );
 
