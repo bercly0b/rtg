@@ -576,6 +576,33 @@ impl TdLibClient {
         })
     }
 
+    /// Informs TDLib that messages are being viewed by the user.
+    ///
+    /// This marks messages as read and updates view counters.
+    /// The chat should be opened via [`open_chat`](Self::open_chat) before
+    /// calling this method for `force_read: false` to work correctly.
+    ///
+    /// Uses `MessageSource::ChatHistory` as the source since messages
+    /// are viewed from chat history in the TUI.
+    pub fn view_messages(&self, chat_id: i64, message_ids: Vec<i64>) -> Result<(), TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            tdlib_rs::functions::view_messages(
+                chat_id,
+                message_ids,
+                Some(tdlib_rs::enums::MessageSource::ChatHistory),
+                false, // force_read: false — rely on proper openChat/closeChat lifecycle
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })
+        })
+    }
+
     /// Informs TDLib that the chat is closed by the user.
     ///
     /// Must be called for every chat previously opened via

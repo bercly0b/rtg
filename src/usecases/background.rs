@@ -8,6 +8,7 @@ use std::sync::{mpsc::Sender, Arc};
 use crate::domain::events::{BackgroundError, BackgroundTaskResult};
 
 use super::{
+    chat_lifecycle::{ChatLifecycle, ChatReadMarker},
     list_chats::{list_chats, ListChatsQuery, ListChatsSource},
     load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
     send_message::{send_message, MessageSender, SendMessageCommand},
@@ -17,10 +18,23 @@ use super::{
 ///
 /// Implementations must be non-blocking: they enqueue work and return immediately.
 /// Results are delivered asynchronously via the background result channel.
+///
+/// Lifecycle operations (`dispatch_open_chat`, `dispatch_close_chat`,
+/// `dispatch_mark_as_read`) are fire-and-forget: errors are logged
+/// but do not produce `BackgroundTaskResult`.
 pub trait TaskDispatcher {
     fn dispatch_chat_list(&self);
     fn dispatch_load_messages(&self, chat_id: i64);
     fn dispatch_send_message(&self, chat_id: i64, text: String);
+
+    /// Informs TDLib that the user has opened a chat (fire-and-forget).
+    fn dispatch_open_chat(&self, chat_id: i64);
+
+    /// Informs TDLib that the user has closed a chat (fire-and-forget).
+    fn dispatch_close_chat(&self, chat_id: i64);
+
+    /// Marks messages as read in a chat (fire-and-forget).
+    fn dispatch_mark_as_read(&self, chat_id: i64, message_ids: Vec<i64>);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -28,44 +42,50 @@ pub trait TaskDispatcher {
 /// Each dispatched operation spawns a short-lived thread that calls the
 /// synchronous source trait method (which internally does `rt.block_on()`),
 /// then sends the result through the shared channel.
-pub struct ThreadTaskDispatcher<C, M, MS>
+pub struct ThreadTaskDispatcher<C, M, MS, L>
 where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + Send + Sync + 'static,
+    L: ChatLifecycle + ChatReadMarker + Send + Sync + 'static,
 {
     chats_source: Arc<C>,
     messages_source: Arc<M>,
     message_sender: Arc<MS>,
+    lifecycle: Arc<L>,
     result_tx: Sender<BackgroundTaskResult>,
 }
 
-impl<C, M, MS> ThreadTaskDispatcher<C, M, MS>
+impl<C, M, MS, L> ThreadTaskDispatcher<C, M, MS, L>
 where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + Send + Sync + 'static,
+    L: ChatLifecycle + ChatReadMarker + Send + Sync + 'static,
 {
     pub fn new(
         chats_source: Arc<C>,
         messages_source: Arc<M>,
         message_sender: Arc<MS>,
+        lifecycle: Arc<L>,
         result_tx: Sender<BackgroundTaskResult>,
     ) -> Self {
         Self {
             chats_source,
             messages_source,
             message_sender,
+            lifecycle,
             result_tx,
         }
     }
 }
 
-impl<C, M, MS> TaskDispatcher for ThreadTaskDispatcher<C, M, MS>
+impl<C, M, MS, L> TaskDispatcher for ThreadTaskDispatcher<C, M, MS, L>
 where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + Send + Sync + 'static,
+    L: ChatLifecycle + ChatReadMarker + Send + Sync + 'static,
 {
     fn dispatch_chat_list(&self) {
         let source = Arc::clone(&self.chats_source);
@@ -179,6 +199,58 @@ where
             });
         }
     }
+
+    fn dispatch_open_chat(&self, chat_id: i64) {
+        let lifecycle = Arc::clone(&self.lifecycle);
+
+        if let Err(error) = std::thread::Builder::new()
+            .name("rtg-bg-open-chat".into())
+            .spawn(move || {
+                tracing::debug!(chat_id, "background: opening chat in TDLib");
+                if let Err(e) = lifecycle.open_chat(chat_id) {
+                    tracing::warn!(chat_id, error = ?e, "background: openChat failed");
+                }
+            })
+        {
+            tracing::error!(error = %error, "failed to spawn open chat background thread");
+        }
+    }
+
+    fn dispatch_close_chat(&self, chat_id: i64) {
+        let lifecycle = Arc::clone(&self.lifecycle);
+
+        if let Err(error) = std::thread::Builder::new()
+            .name("rtg-bg-close-chat".into())
+            .spawn(move || {
+                tracing::debug!(chat_id, "background: closing chat in TDLib");
+                if let Err(e) = lifecycle.close_chat(chat_id) {
+                    tracing::warn!(chat_id, error = ?e, "background: closeChat failed");
+                }
+            })
+        {
+            tracing::error!(error = %error, "failed to spawn close chat background thread");
+        }
+    }
+
+    fn dispatch_mark_as_read(&self, chat_id: i64, message_ids: Vec<i64>) {
+        let lifecycle = Arc::clone(&self.lifecycle);
+
+        if let Err(error) = std::thread::Builder::new()
+            .name("rtg-bg-mark-read".into())
+            .spawn(move || {
+                tracing::debug!(
+                    chat_id,
+                    message_count = message_ids.len(),
+                    "background: marking messages as read"
+                );
+                if let Err(e) = lifecycle.mark_messages_read(chat_id, message_ids) {
+                    tracing::warn!(chat_id, error = ?e, "background: viewMessages failed");
+                }
+            })
+        {
+            tracing::error!(error = %error, "failed to spawn mark-as-read background thread");
+        }
+    }
 }
 
 fn map_list_chats_error(error: &super::list_chats::ListChatsError) -> &'static str {
@@ -240,6 +312,18 @@ pub mod tests {
 
         fn dispatch_send_message(&self, _chat_id: i64, _text: String) {
             // Stub: does not dispatch; tests inject results manually
+        }
+
+        fn dispatch_open_chat(&self, _chat_id: i64) {
+            // Stub: fire-and-forget, no action needed in tests
+        }
+
+        fn dispatch_close_chat(&self, _chat_id: i64) {
+            // Stub: fire-and-forget, no action needed in tests
+        }
+
+        fn dispatch_mark_as_read(&self, _chat_id: i64, _message_ids: Vec<i64>) {
+            // Stub: fire-and-forget, no action needed in tests
         }
     }
 }

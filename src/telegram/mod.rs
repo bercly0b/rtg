@@ -27,6 +27,7 @@ use crate::{
     domain::{events::ConnectivityStatus, message::Message, status::AuthConnectivityStatus},
     infra::{config::TelegramConfig, storage_layout::StorageLayout},
     usecases::{
+        chat_lifecycle::{ChatLifecycle, ChatLifecycleError, ChatReadMarker},
         guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome, TelegramAuthClient},
         list_chats::{CachedChatsSource, ListChatsSource, ListChatsSourceError},
         load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
@@ -288,6 +289,44 @@ impl MessageSender for TelegramAdapter {
     }
 }
 
+impl ChatLifecycle for TelegramAdapter {
+    fn open_chat(&self, chat_id: i64) -> Result<(), ChatLifecycleError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.open_chat(chat_id).map_err(|e| {
+                tracing::debug!(chat_id, error = ?e, "open_chat mapped to lifecycle error");
+                ChatLifecycleError::Unavailable
+            }),
+            None => Err(ChatLifecycleError::Unavailable),
+        }
+    }
+
+    fn close_chat(&self, chat_id: i64) -> Result<(), ChatLifecycleError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.close_chat(chat_id).map_err(|e| {
+                tracing::debug!(chat_id, error = ?e, "close_chat mapped to lifecycle error");
+                ChatLifecycleError::Unavailable
+            }),
+            None => Err(ChatLifecycleError::Unavailable),
+        }
+    }
+}
+
+impl ChatReadMarker for TelegramAdapter {
+    fn mark_messages_read(
+        &self,
+        chat_id: i64,
+        message_ids: Vec<i64>,
+    ) -> Result<(), ChatLifecycleError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.view_messages(chat_id, message_ids).map_err(|e| {
+                tracing::debug!(chat_id, error = ?e, "view_messages mapped to lifecycle error");
+                ChatLifecycleError::Unavailable
+            }),
+            None => Err(ChatLifecycleError::Unavailable),
+        }
+    }
+}
+
 /// Returns the telegram module name for smoke checks.
 pub fn module_name() -> &'static str {
     "telegram"
@@ -389,5 +428,34 @@ mod tests {
             .expect_err("stub adapter should fail");
 
         assert_eq!(error, SendMessageSourceError::Unauthorized);
+    }
+
+    #[test]
+    fn open_chat_returns_unavailable_when_backend_is_not_configured() {
+        let adapter = TelegramAdapter::stub();
+
+        let error = adapter.open_chat(1).expect_err("stub adapter should fail");
+
+        assert_eq!(error, ChatLifecycleError::Unavailable);
+    }
+
+    #[test]
+    fn close_chat_returns_unavailable_when_backend_is_not_configured() {
+        let adapter = TelegramAdapter::stub();
+
+        let error = adapter.close_chat(1).expect_err("stub adapter should fail");
+
+        assert_eq!(error, ChatLifecycleError::Unavailable);
+    }
+
+    #[test]
+    fn mark_messages_read_returns_unavailable_when_backend_is_not_configured() {
+        let adapter = TelegramAdapter::stub();
+
+        let error = adapter
+            .mark_messages_read(1, vec![1, 2, 3])
+            .expect_err("stub adapter should fail");
+
+        assert_eq!(error, ChatLifecycleError::Unavailable);
     }
 }

@@ -488,28 +488,48 @@ impl TdLibAuthBackend {
     ///
     /// Returns messages in chronological order (oldest first).
     ///
-    /// Uses the TDLib `openChat`/`closeChat` lifecycle to ensure message
-    /// history is available, and paginates via `from_message_id` because
-    /// TDLib may return fewer messages than the requested limit.
+    /// **Note:** The caller is responsible for the TDLib `openChat`/`closeChat`
+    /// lifecycle. This method only fetches messages via paginated
+    /// `getChatHistory` calls.
     pub fn list_messages(
         &self,
         chat_id: i64,
         limit: usize,
     ) -> Result<Vec<Message>, MessagesSourceError> {
-        // Signal TDLib that we're viewing this chat (improves data availability).
-        // Non-critical: log and continue if it fails.
-        if let Err(e) = self.client.open_chat(chat_id) {
-            tracing::warn!(chat_id, error = %e, "openChat failed, continuing without it");
-        }
+        self.fetch_messages_paginated(chat_id, limit)
+    }
 
-        let result = self.fetch_messages_paginated(chat_id, limit);
+    /// Informs TDLib that the user has opened a chat.
+    ///
+    /// Must be paired with [`close_chat`](Self::close_chat). While a chat
+    /// is open, TDLib delivers all updates for it (important for supergroups
+    /// and channels) and `viewMessages` with `force_read: false` can mark
+    /// messages as read.
+    pub fn open_chat(&self, chat_id: i64) -> Result<(), MessagesSourceError> {
+        self.client.open_chat(chat_id).map_err(map_messages_error)
+    }
 
-        // Always close the chat, even on error.
-        if let Err(e) = self.client.close_chat(chat_id) {
-            tracing::warn!(chat_id, error = %e, "closeChat failed");
-        }
+    /// Informs TDLib that the user has closed a chat.
+    ///
+    /// Must be called for every chat previously opened via
+    /// [`open_chat`](Self::open_chat).
+    pub fn close_chat(&self, chat_id: i64) -> Result<(), MessagesSourceError> {
+        self.client.close_chat(chat_id).map_err(map_messages_error)
+    }
 
-        result
+    /// Marks the given messages as viewed/read in a chat.
+    ///
+    /// The chat must be opened via [`open_chat`](Self::open_chat) first.
+    /// TDLib will send `Update::ChatReadInbox` when the read state changes,
+    /// which triggers a reactive chat list refresh with updated `unread_count`.
+    pub fn view_messages(
+        &self,
+        chat_id: i64,
+        message_ids: Vec<i64>,
+    ) -> Result<(), MessagesSourceError> {
+        self.client
+            .view_messages(chat_id, message_ids)
+            .map_err(map_messages_error)
     }
 
     /// Fetches up to `limit` messages using paginated `getChatHistory` calls.
