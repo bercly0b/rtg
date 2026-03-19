@@ -63,15 +63,18 @@ pub fn group_sender_style() -> Style {
 // =============================================================================
 
 /// Palette of distinguishable colors for sender names on dark backgrounds.
+///
+/// Intentionally excludes Cyan (used for media indicators like `[Photo]`)
+/// and Green (used for outgoing "You:" sender).
 const SENDER_COLOR_PALETTE: &[Color] = &[
-    Color::Red,
+    Color::LightBlue,
     Color::Magenta,
     Color::Yellow,
-    Color::LightBlue,
-    Color::LightCyan,
+    Color::LightRed,
     Color::LightMagenta,
     Color::LightGreen,
-    Color::LightRed,
+    Color::LightYellow,
+    Color::Red,
 ];
 
 /// Deterministic hash of a name to a palette index.
@@ -88,12 +91,12 @@ fn name_to_color_index(name: &str) -> usize {
 
 /// Style for a sender name, colored by identity.
 ///
-/// - Outgoing messages ("You") are always Cyan + Bold.
+/// - Outgoing messages ("You") are always Green + Bold.
 /// - Other senders get a deterministic color from the palette based on their name.
 pub fn sender_name_style(name: &str, is_outgoing: bool) -> Style {
     if is_outgoing {
         Style::default()
-            .fg(Color::Cyan)
+            .fg(Color::Green)
             .add_modifier(Modifier::BOLD)
     } else {
         let color = SENDER_COLOR_PALETTE[name_to_color_index(name)];
@@ -201,18 +204,23 @@ mod tests {
     }
 
     #[test]
-    fn sender_name_style_outgoing_is_cyan_bold() {
+    fn sender_name_style_outgoing_is_green_bold() {
         let style = sender_name_style("You", true);
-        assert_eq!(style.fg, Some(Color::Cyan));
+        assert_eq!(style.fg, Some(Color::Green));
         assert!(style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
-    fn sender_name_style_incoming_is_bold() {
+    fn sender_name_style_incoming_is_bold_and_avoids_reserved_colors() {
         let style = sender_name_style("Alice", false);
         assert!(style.add_modifier.contains(Modifier::BOLD));
-        // Should not be cyan (that's reserved for outgoing)
-        assert_ne!(style.fg, Some(Color::White));
+        // Must not collide with outgoing sender (Green) or media indicators (Cyan)
+        assert_ne!(
+            style.fg,
+            Some(Color::Green),
+            "Should not use Green (outgoing)"
+        );
+        assert_ne!(style.fg, Some(Color::Cyan), "Should not use Cyan (media)");
     }
 
     #[test]
@@ -235,6 +243,22 @@ mod tests {
             unique.len() > 1,
             "Expected different colors for different names"
         );
+    }
+
+    #[test]
+    fn sender_palette_avoids_reserved_colors() {
+        for color in SENDER_COLOR_PALETTE {
+            assert_ne!(
+                *color,
+                Color::Cyan,
+                "Palette must not contain Cyan (media indicators)"
+            );
+            assert_ne!(
+                *color,
+                Color::Green,
+                "Palette must not contain Green (outgoing sender)"
+            );
+        }
     }
 
     #[test]
