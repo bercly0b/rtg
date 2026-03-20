@@ -4,7 +4,7 @@ pub enum AppEvent {
     QuitRequested,
     InputKey(KeyInput),
     ConnectivityChanged(ConnectivityStatus),
-    ChatListUpdateRequested,
+    ChatUpdateReceived { affected_chat_ids: Vec<i64> },
     BackgroundTaskCompleted(BackgroundTaskResult),
 }
 

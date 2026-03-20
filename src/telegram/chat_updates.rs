@@ -36,7 +36,7 @@ impl TelegramChatUpdatesMonitor {
     /// - `signal_tx`: Sender for simple refresh signals consumed by the UI layer
     pub fn start(
         update_rx: Receiver<TdLibUpdate>,
-        signal_tx: Sender<()>,
+        signal_tx: Sender<Option<i64>>,
     ) -> Result<Self, ChatUpdatesMonitorStartError> {
         // Test switch for failure injection
         if std::env::var("RTG_TELEGRAM_CHAT_UPDATES_MONITOR_FAIL")
@@ -85,7 +85,7 @@ impl Drop for TelegramChatUpdatesMonitor {
 }
 
 /// Background loop that processes TDLib updates and sends refresh signals.
-fn run_update_monitor(update_rx: Receiver<TdLibUpdate>, signal_tx: Sender<()>) {
+fn run_update_monitor(update_rx: Receiver<TdLibUpdate>, signal_tx: Sender<Option<i64>>) {
     loop {
         match update_rx.recv_timeout(UPDATE_RECV_TIMEOUT) {
             Ok(update) => {
@@ -95,8 +95,7 @@ fn run_update_monitor(update_rx: Receiver<TdLibUpdate>, signal_tx: Sender<()>) {
                     "telegram update observed by chat monitor"
                 );
 
-                // Send refresh signal for any update
-                if signal_tx.send(()).is_err() {
+                if signal_tx.send(update.chat_id()).is_err() {
                     tracing::warn!(
                         code = CHAT_UPDATES_MONITOR_SIGNAL_SEND_FAILED,
                         "chat updates monitor failed to send refresh signal; stopping"
@@ -147,24 +146,39 @@ mod tests {
     use std::sync::mpsc;
 
     #[test]
-    fn monitor_sends_signal_on_update() {
+    fn monitor_sends_chat_id_on_update() {
         let (update_tx, update_rx) = mpsc::channel();
         let (signal_tx, signal_rx) = mpsc::channel();
 
-        // Start monitor in separate thread
         let monitor =
             TelegramChatUpdatesMonitor::start(update_rx, signal_tx).expect("monitor should start");
 
-        // Send an update
         update_tx
             .send(TdLibUpdate::NewMessage { chat_id: 123 })
             .expect("update should be sent");
 
-        // Verify signal received
         let result = signal_rx.recv_timeout(Duration::from_millis(500));
-        assert!(result.is_ok(), "should receive refresh signal");
+        assert_eq!(result, Ok(Some(123)));
 
-        // Close the channel so monitor can exit
+        drop(update_tx);
+        drop(monitor);
+    }
+
+    #[test]
+    fn monitor_sends_none_for_user_status_update() {
+        let (update_tx, update_rx) = mpsc::channel();
+        let (signal_tx, signal_rx) = mpsc::channel();
+
+        let monitor =
+            TelegramChatUpdatesMonitor::start(update_rx, signal_tx).expect("monitor should start");
+
+        update_tx
+            .send(TdLibUpdate::UserStatus { user_id: 456 })
+            .expect("update should be sent");
+
+        let result = signal_rx.recv_timeout(Duration::from_millis(500));
+        assert_eq!(result, Ok(None));
+
         drop(update_tx);
         drop(monitor);
     }

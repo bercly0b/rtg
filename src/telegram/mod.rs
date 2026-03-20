@@ -115,7 +115,7 @@ impl TelegramAdapter {
 
     pub fn start_chat_updates_monitor(
         &self,
-        updates_tx: Sender<()>,
+        updates_tx: Sender<Option<i64>>,
     ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
         // Get the TDLib update receiver from the backend
         let update_rx = self
