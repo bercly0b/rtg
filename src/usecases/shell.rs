@@ -33,6 +33,8 @@ where
     cache_source: Option<Arc<dyn CachedMessagesSource>>,
     /// Guards against dispatching duplicate chat list requests while one is in-flight.
     chat_list_in_flight: bool,
+    /// Guards against dispatching duplicate message refresh requests while one is in-flight.
+    messages_refresh_in_flight: bool,
     /// When `true`, the orchestrator was initialised with cached data and needs
     /// a background refresh on the first Tick to pick up server-side changes.
     initial_refresh_needed: bool,
@@ -56,6 +58,7 @@ where
             dispatcher,
             cache_source: None,
             chat_list_in_flight: false,
+            messages_refresh_in_flight: false,
             initial_refresh_needed: false,
             tdlib_opened_chat_id: None,
         }
@@ -84,6 +87,7 @@ where
             dispatcher,
             cache_source,
             chat_list_in_flight: false,
+            messages_refresh_in_flight: false,
             initial_refresh_needed,
             tdlib_opened_chat_id: None,
         }
@@ -151,6 +155,7 @@ where
         }
 
         // Dispatch a full background load (pagination).
+        self.messages_refresh_in_flight = true;
         self.dispatcher.dispatch_load_messages(chat_id);
     }
 
@@ -172,7 +177,33 @@ where
         if let Some(chat_id) = self.tdlib_opened_chat_id.take() {
             tracing::debug!(chat_id, "closing TDLib chat on navigate away");
             self.dispatcher.dispatch_close_chat(chat_id);
+            self.messages_refresh_in_flight = false;
         }
+    }
+
+    fn maybe_refresh_open_chat_messages(&mut self, affected_chat_ids: &[i64]) {
+        if self.messages_refresh_in_flight {
+            return;
+        }
+
+        let Some(open_id) = self.state.open_chat().chat_id() else {
+            return;
+        };
+
+        if self.state.open_chat().ui_state() != OpenChatUiState::Ready {
+            return;
+        }
+
+        if !affected_chat_ids.contains(&open_id) {
+            return;
+        }
+
+        tracing::debug!(
+            chat_id = open_id,
+            "refreshing open chat messages from update"
+        );
+        self.messages_refresh_in_flight = true;
+        self.dispatcher.dispatch_load_messages(open_id);
     }
 
     /// Dispatches a mark-as-read request for all messages currently loaded in the open chat.
@@ -317,7 +348,8 @@ where
                 }
             }
             BackgroundTaskResult::MessagesLoaded { chat_id, result } => {
-                // Only apply result if the user is still looking at the same chat
+                self.messages_refresh_in_flight = false;
+
                 if self.state.open_chat().chat_id() != Some(chat_id) {
                     tracing::debug!(
                         chat_id,
@@ -374,7 +406,8 @@ where
                 }
             },
             BackgroundTaskResult::MessageSentRefreshCompleted { chat_id, result } => {
-                // Only apply if user is still viewing the same chat
+                self.messages_refresh_in_flight = false;
+
                 if self.state.open_chat().chat_id() != Some(chat_id) {
                     return;
                 }
@@ -461,9 +494,10 @@ where
             AppEvent::ConnectivityChanged(status) => {
                 self.state.set_connectivity_status(status);
             }
-            AppEvent::ChatListUpdateRequested => {
-                tracing::debug!("orchestrator received chat list update request");
+            AppEvent::ChatUpdateReceived { affected_chat_ids } => {
+                tracing::debug!(?affected_chat_ids, "orchestrator received chat update");
                 self.dispatch_chat_list_refresh();
+                self.maybe_refresh_open_chat_messages(&affected_chat_ids);
             }
             AppEvent::BackgroundTaskCompleted(result) => {
                 self.handle_background_result(result);
@@ -836,7 +870,10 @@ mod tests {
         assert_eq!(o.state().chat_list().selected_index(), Some(0));
 
         // Trigger a background refresh (e.g. from TDLib update)
-        o.handle_event(AppEvent::ChatListUpdateRequested).unwrap();
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            affected_chat_ids: vec![],
+        })
+        .unwrap();
         assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
 
         // User navigates down while refresh is in-flight
@@ -995,7 +1032,10 @@ mod tests {
     #[test]
     fn chat_list_update_event_dispatches_refresh() {
         let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
-        o.handle_event(AppEvent::ChatListUpdateRequested).unwrap();
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            affected_chat_ids: vec![],
+        })
+        .unwrap();
         assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
     }
 
@@ -1052,7 +1092,10 @@ mod tests {
     fn chat_list_update_event_keeps_data_visible() {
         let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
 
-        o.handle_event(AppEvent::ChatListUpdateRequested).unwrap();
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            affected_chat_ids: vec![],
+        })
+        .unwrap();
 
         // Must not blink — state stays Ready while background fetch runs
         assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Ready);
@@ -2011,6 +2054,97 @@ mod tests {
 
         // Should not dispatch mark_as_read since chat 1 is no longer viewed
         assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 0);
+    }
+
+    // ── Chat update → open chat message refresh tests ──
+
+    #[test]
+    fn chat_update_for_open_chat_dispatches_message_refresh() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+        let before = o.dispatcher.messages_dispatch_count();
+
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            affected_chat_ids: vec![1],
+        })
+        .unwrap();
+
+        assert_eq!(o.dispatcher.messages_dispatch_count(), before + 1);
+    }
+
+    #[test]
+    fn chat_update_for_unrelated_chat_does_not_dispatch_message_refresh() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+        let before = o.dispatcher.messages_dispatch_count();
+
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            affected_chat_ids: vec![999],
+        })
+        .unwrap();
+
+        assert_eq!(o.dispatcher.messages_dispatch_count(), before);
+    }
+
+    #[test]
+    fn chat_update_debounces_while_messages_refresh_in_flight() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+        let before = o.dispatcher.messages_dispatch_count();
+
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            affected_chat_ids: vec![1],
+        })
+        .unwrap();
+        assert_eq!(o.dispatcher.messages_dispatch_count(), before + 1);
+
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            affected_chat_ids: vec![1],
+        })
+        .unwrap();
+        assert_eq!(
+            o.dispatcher.messages_dispatch_count(),
+            before + 1,
+            "second update while in-flight should be skipped"
+        );
+    }
+
+    #[test]
+    fn messages_refresh_in_flight_resets_after_messages_loaded() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+        let before = o.dispatcher.messages_dispatch_count();
+
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            affected_chat_ids: vec![1],
+        })
+        .unwrap();
+        assert_eq!(o.dispatcher.messages_dispatch_count(), before + 1);
+
+        inject_messages(&mut o, 1, vec![message(1, "Hello"), message(2, "World")]);
+
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            affected_chat_ids: vec![1],
+        })
+        .unwrap();
+        assert_eq!(
+            o.dispatcher.messages_dispatch_count(),
+            before + 2,
+            "after MessagesLoaded, new update should dispatch again"
+        );
+    }
+
+    #[test]
+    fn chat_update_with_no_open_chat_only_refreshes_chat_list() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            affected_chat_ids: vec![1],
+        })
+        .unwrap();
+
+        assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+        assert_eq!(o.dispatcher.messages_dispatch_count(), 0);
     }
 
     #[test]

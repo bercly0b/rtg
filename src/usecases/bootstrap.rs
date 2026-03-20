@@ -67,7 +67,7 @@ fn compose_shell_with_factory(
 
     let event_source: Box<dyn AppEventSource> = if context.config.telegram.is_configured() {
         let (status_tx, status_rx) = std::sync::mpsc::channel::<ConnectivityStatus>();
-        let (updates_tx, updates_rx) = std::sync::mpsc::channel::<()>();
+        let (updates_tx, updates_rx) = std::sync::mpsc::channel::<Option<i64>>();
 
         match monitor_factory.start(&context.telegram, status_tx) {
             Ok(monitor) => {
@@ -251,7 +251,7 @@ trait ConnectivityMonitorFactory {
     fn start_chat_updates(
         &self,
         telegram: &TelegramAdapter,
-        updates_tx: Sender<()>,
+        updates_tx: Sender<Option<i64>>,
     ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError>;
 }
 
@@ -269,7 +269,7 @@ impl ConnectivityMonitorFactory for RealConnectivityMonitorFactory {
     fn start_chat_updates(
         &self,
         telegram: &TelegramAdapter,
-        updates_tx: Sender<()>,
+        updates_tx: Sender<Option<i64>>,
     ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
         telegram.start_chat_updates_monitor(updates_tx)
     }
@@ -335,14 +335,14 @@ mod tests {
         fn start_chat_updates(
             &self,
             _telegram: &TelegramAdapter,
-            updates_tx: Sender<()>,
+            updates_tx: Sender<Option<i64>>,
         ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
             if self.chat_updates_should_fail {
                 return Err(ChatUpdatesMonitorStartError::StartupRejected);
             }
 
             updates_tx
-                .send(())
+                .send(Some(1))
                 .expect("chat update signal should be sent");
 
             Ok(TelegramChatUpdatesMonitor::inert())
@@ -483,7 +483,9 @@ mod tests {
             .expect("second event should be readable");
 
         let events = [first_event, second_event];
-        assert!(events.contains(&Some(AppEvent::ChatListUpdateRequested)));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Some(AppEvent::ChatUpdateReceived { .. }))));
         assert!(events.contains(&Some(AppEvent::ConnectivityChanged(
             ConnectivityStatus::Connected
         ))));
@@ -532,6 +534,6 @@ mod tests {
             .next_event()
             .expect("event should be readable");
 
-        assert_eq!(event, Some(AppEvent::ChatListUpdateRequested));
+        assert!(matches!(event, Some(AppEvent::ChatUpdateReceived { .. })));
     }
 }
