@@ -10,7 +10,6 @@ use chrono::{Local, TimeZone};
 use ratatui::{
     layout::Alignment,
     text::{Line, Span},
-    widgets::ListItem,
 };
 
 use crate::domain::message::Message;
@@ -105,37 +104,39 @@ pub fn message_index_to_element_index(
     None
 }
 
-/// Converts a list element to a ListItem for ratatui rendering.
-pub fn element_to_list_item(element: &MessageListElement) -> ListItem<'static> {
+/// Converts a list element to `Text` for the custom `ChatMessageList` widget.
+pub fn element_to_text(element: &MessageListElement) -> ratatui::text::Text<'static> {
     match element {
-        MessageListElement::DateSeparator(date) => date_separator_item(date),
+        MessageListElement::DateSeparator(date) => {
+            let separator = format!("——— {} ———", date);
+            let line = Line::from(vec![Span::styled(
+                separator,
+                styles::date_separator_style(),
+            )])
+            .alignment(Alignment::Center);
+            ratatui::text::Text::from(vec![Line::default(), line, Line::default()])
+        }
         MessageListElement::Message {
             time,
             show_time,
             sender,
             is_outgoing,
             content,
-        } => message_item(time, *show_time, sender.as_deref(), *is_outgoing, content),
+        } => {
+            let lines =
+                build_message_lines(time, *show_time, sender.as_deref(), *is_outgoing, content);
+            ratatui::text::Text::from(lines)
+        }
     }
 }
 
-fn date_separator_item(date: &str) -> ListItem<'static> {
-    let separator = format!("——— {} ———", date);
-    let line = Line::from(vec![Span::styled(
-        separator,
-        styles::date_separator_style(),
-    )])
-    .alignment(Alignment::Center);
-    ListItem::new(vec![Line::default(), line, Line::default()])
-}
-
-fn message_item(
+fn build_message_lines(
     time: &str,
     show_time: bool,
     sender: Option<&str>,
     is_outgoing: bool,
     content: &str,
-) -> ListItem<'static> {
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let indent = "      "; // 6 spaces to align with time column
 
@@ -190,7 +191,7 @@ fn message_item(
         }
     }
 
-    ListItem::new(lines)
+    lines
 }
 
 fn build_message_header_line(
