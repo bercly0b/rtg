@@ -252,15 +252,10 @@ fn render_item_lines(
             height: 1,
         };
 
-        // If selected, fill the row background with highlight style first.
-        if is_selected {
-            buf.set_style(line_area, ctx.highlight_style);
-        }
-
         // Compute alignment padding before rendering (single-pass).
         let alignment_padding = compute_alignment_padding(line, area.width as usize);
 
-        // Render the line content with alignment offset applied.
+        // Render the line content first.
         let mut x = area
             .x
             .saturating_add(u16::try_from(alignment_padding).unwrap_or(u16::MAX));
@@ -272,6 +267,12 @@ fn render_item_lines(
             let (written_x, _) =
                 buf.set_stringn(x, row, &span.content, remaining_width, span.style);
             x = written_x;
+        }
+
+        // Apply highlight AFTER content so it overrides text colors (matches
+        // ratatui List behavior: selected row gets uniform fg/bg).
+        if is_selected {
+            buf.set_style(line_area, ctx.highlight_style);
         }
     }
 }
@@ -369,6 +370,21 @@ fn ensure_selected_visible(
     // Check if selected item (with padding) is already visible.
     let desired_top = sel_start.saturating_sub(padding_above);
     let desired_bottom = sel_end + padding_below;
+
+    // Guard: if the padded range exceeds the viewport, drop padding to avoid
+    // oscillation (frame N scrolls up for padding_above, frame N+1 scrolls
+    // down because selection fell off-screen, repeat).
+    if desired_bottom.saturating_sub(desired_top) > viewport_height {
+        // Fall back to showing just the selected item without padding.
+        if sel_start >= viewport_top && sel_end <= viewport_bottom {
+            return current;
+        }
+        if sel_start < viewport_top {
+            return absolute_line_to_offset(items, sel_start);
+        }
+        let new_viewport_top = sel_end.saturating_sub(viewport_height);
+        return absolute_line_to_offset(items, new_viewport_top);
+    }
 
     if desired_top >= viewport_top && desired_bottom <= viewport_bottom {
         // Already visible with padding — no adjustment needed.
@@ -733,5 +749,82 @@ mod tests {
     fn scroll_offset_bottom_sentinel() {
         assert!(ScrollOffset::BOTTOM.is_bottom_sentinel());
         assert!(!ScrollOffset::ZERO.is_bottom_sentinel());
+    }
+
+    // ── Bug fix: highlight after content ──
+
+    #[test]
+    fn highlight_style_overrides_span_colors() {
+        use ratatui::style::Color;
+
+        // Create an item with colored spans.
+        let line = Line::from(vec![
+            ratatui::text::Span::styled("Hello", Style::default().fg(Color::Red)),
+            ratatui::text::Span::styled(" world", Style::default().fg(Color::Blue)),
+        ]);
+        let text = Text::from(vec![line]);
+        let highlight = Style::default().fg(Color::Black).bg(Color::Gray);
+        let widget = ChatMessageList::new(vec![text]).highlight_style(highlight);
+
+        let area = Rect::new(0, 0, 20, 3);
+        let mut buf = Buffer::empty(area);
+        let mut state = ChatMessageListState::new(ScrollOffset::ZERO, Some(0));
+
+        widget.render(area, &mut buf, &mut state);
+
+        // Every cell in the rendered row should have highlight fg/bg, not the
+        // original span fg.
+        let cell_h = &buf[(0, 0)]; // 'H' from "Hello"
+        assert_eq!(cell_h.fg, Color::Black);
+        assert_eq!(cell_h.bg, Color::Gray);
+
+        let cell_w = &buf[(6, 0)]; // 'w' from " world"
+        assert_eq!(cell_w.fg, Color::Black);
+        assert_eq!(cell_w.bg, Color::Gray);
+    }
+
+    // ── Bug fix: scroll oscillation ──
+
+    #[test]
+    fn ensure_selected_visible_no_oscillation_with_tall_padding() {
+        // Scenario: 3 items, the padding items are tall, viewport is small.
+        // Items: [10 lines, 10 lines, 4 lines], viewport = 8, scroll_padding = 1
+        // Selecting item 2: padding_above = item1(10), selection = item2(4)
+        // desired range = 10 + 4 = 14 > viewport(8) → should fall back.
+        let items = make_items(&[10, 10, 4]);
+        let offset = ScrollOffset { item: 2, line: 0 }; // viewport starts at item 2
+
+        let result = ensure_selected_visible(&items, offset, 2, 8, 1);
+
+        // Call again with the result — must be idempotent (no oscillation).
+        let result2 = ensure_selected_visible(&items, result, 2, 8, 1);
+        assert_eq!(
+            result, result2,
+            "ensure_selected_visible must be idempotent"
+        );
+
+        // The selected item (starts at line 20, 4 lines tall) must be visible.
+        let sel_start = absolute_line_start(&items, 2);
+        let sel_end = sel_start + items[2].height();
+        let vp_top = absolute_line_start(&items, result.item) + result.line;
+        let vp_bottom = vp_top + 8;
+        assert!(
+            sel_start >= vp_top && sel_end <= vp_bottom,
+            "selected item must be fully visible: sel={sel_start}..{sel_end}, vp={vp_top}..{vp_bottom}"
+        );
+    }
+
+    #[test]
+    fn ensure_selected_visible_idempotent_last_item_large_padding() {
+        // Edge case: last item selected, padding items are very tall.
+        // Items: [20 lines, 20 lines, 3 lines], viewport = 10, padding = 2
+        let items = make_items(&[20, 20, 3]);
+        let offset = compute_bottom_aligned_offset(&items, 10);
+
+        let r1 = ensure_selected_visible(&items, offset, 2, 10, 2);
+        let r2 = ensure_selected_visible(&items, r1, 2, 10, 2);
+        let r3 = ensure_selected_visible(&items, r2, 2, 10, 2);
+        assert_eq!(r1, r2, "first re-call must be stable");
+        assert_eq!(r2, r3, "second re-call must be stable");
     }
 }
