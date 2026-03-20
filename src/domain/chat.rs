@@ -34,6 +34,8 @@ pub struct ChatSummary {
     pub last_message_sender: Option<String>,
     /// Whether the chat partner is online (only for private chats).
     pub is_online: Option<bool>,
+    /// Whether the chat partner is a bot (only for private chats).
+    pub is_bot: bool,
     /// Read status of the last outgoing message.
     pub outgoing_status: OutgoingReadStatus,
 }

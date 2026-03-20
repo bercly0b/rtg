@@ -389,8 +389,9 @@ impl TdLibAuthBackend {
         for chat_id in chat_ids {
             match self.client.get_chat(chat_id) {
                 Ok(chat) => {
-                    let (sender_name, is_online) = self.resolve_chat_metadata(&chat);
-                    let summary = tdlib_mappers::map_chat_to_summary(&chat, sender_name, is_online);
+                    let (sender_name, is_online, is_bot) = self.resolve_chat_metadata(&chat);
+                    let summary =
+                        tdlib_mappers::map_chat_to_summary(&chat, sender_name, is_online, is_bot);
                     summaries.push(summary);
                 }
                 Err(e) => {
@@ -406,21 +407,23 @@ impl TdLibAuthBackend {
     fn resolve_chat_metadata(
         &self,
         chat: &tdlib_rs::types::Chat,
-    ) -> (Option<String>, Option<bool>) {
+    ) -> (Option<String>, Option<bool>, bool) {
         let chat_type = tdlib_mappers::map_chat_type(&chat.r#type);
 
-        // For private chats, get the user's online status
-        let is_online = if matches!(chat_type, crate::domain::chat::ChatType::Private) {
+        let (is_online, is_bot) = if matches!(chat_type, crate::domain::chat::ChatType::Private) {
             if let Some(user_id) = tdlib_mappers::get_private_chat_user_id(&chat.r#type) {
-                self.client
-                    .get_user(user_id)
-                    .ok()
-                    .map(|u| tdlib_mappers::is_user_online(&u.status))
+                match self.client.get_user(user_id).ok() {
+                    Some(u) => (
+                        Some(tdlib_mappers::is_user_online(&u.status)),
+                        matches!(u.r#type, tdlib_rs::enums::UserType::Bot(_)),
+                    ),
+                    None => (None, false),
+                }
             } else {
-                None
+                (None, false)
             }
         } else {
-            None
+            (None, false)
         };
 
         // For group chats, get the sender name of the last message
@@ -442,7 +445,7 @@ impl TdLibAuthBackend {
             None
         };
 
-        (sender_name, is_online)
+        (sender_name, is_online, is_bot)
     }
 
     /// Lists messages from TDLib's local cache only.

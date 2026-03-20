@@ -150,6 +150,7 @@ mod tests {
             chat_type: ChatType::Private,
             last_message_sender: None,
             is_online: None,
+            is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
         }
     }

@@ -17,6 +17,7 @@ pub fn map_chat_to_summary(
     chat: &TdChat,
     sender_name: Option<String>,
     is_sender_online: Option<bool>,
+    is_bot: bool,
 ) -> ChatSummary {
     let chat_type = map_chat_type(&chat.r#type);
     let is_pinned = chat
@@ -47,6 +48,7 @@ pub fn map_chat_to_summary(
             ChatType::Private => None, // Don't show sender name in private chats
         },
         is_online,
+        is_bot,
         outgoing_status,
     }
 }

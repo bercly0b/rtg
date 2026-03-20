@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, List, ListItem, ListState, Padding, Paragraph},
@@ -108,6 +108,7 @@ fn render_chat_list_panel(
                     Block::new()
                         .title(title)
                         .title_style(title_style)
+                        .title_alignment(Alignment::Center)
                         .padding(Padding::horizontal(1)),
                 )
                 .highlight_style(highlight);
@@ -132,6 +133,7 @@ fn render_chat_list_message(frame: &mut Frame<'_>, area: Rect, message: &str, ti
         Block::new()
             .title("Chats")
             .title_style(title_style)
+            .title_alignment(Alignment::Center)
             .padding(Padding::horizontal(1)),
     );
     frame.render_widget(message, area);
@@ -246,11 +248,12 @@ fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
         String::new()
     };
 
-    let online_indicator = if chat.chat_type == ChatType::Private && chat.is_online == Some(true) {
-        " \u{2022}" // bullet
-    } else {
-        ""
-    };
+    let online_indicator =
+        if chat.chat_type == ChatType::Private && !chat.is_bot && chat.is_online == Some(true) {
+            " \u{2022}" // bullet
+        } else {
+            ""
+        };
 
     // Calculate layout using display widths (handles emoji and wide chars correctly)
     let fixed_prefix_width = 5 + 3; // timestamp (5) + " | " (3)
@@ -285,22 +288,19 @@ fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
         spans.push(Span::raw(" ".repeat(padding)));
     }
 
-    // Add outgoing status indicator (after preview, before unread badge)
     if let Some((text, style)) = outgoing_suffix {
         spans.push(Span::styled(text, style));
     }
 
-    // Add unread badge
-    if !unread_badge.is_empty() {
-        spans.push(Span::styled(unread_badge, styles::unread_count_style()));
-    }
-
-    // Add online indicator
     if !online_indicator.is_empty() {
         spans.push(Span::styled(
             online_indicator.to_owned(),
             styles::online_indicator_style(),
         ));
+    }
+
+    if !unread_badge.is_empty() {
+        spans.push(Span::styled(unread_badge, styles::unread_count_style()));
     }
 
     Line::from(spans)
@@ -431,6 +431,7 @@ fn render_messages_panel(
         Block::new()
             .title(title.clone())
             .title_style(title_style)
+            .title_alignment(Alignment::Center)
             .padding(Padding::horizontal(1))
     };
 
@@ -543,6 +544,7 @@ mod tests {
             chat_type: ChatType::Private,
             last_message_sender: None,
             is_online: None,
+            is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
         }
     }
@@ -775,6 +777,7 @@ mod tests {
             chat_type: ChatType::Group,
             last_message_sender: sender.map(ToOwned::to_owned),
             is_online: None,
+            is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
         }
     }
@@ -796,6 +799,7 @@ mod tests {
             chat_type: ChatType::Private,
             last_message_sender: None,
             is_online: Some(is_online),
+            is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
         }
     }
@@ -817,6 +821,7 @@ mod tests {
             chat_type: ChatType::Private,
             last_message_sender: None,
             is_online: None,
+            is_bot: false,
             outgoing_status: OutgoingReadStatus {
                 is_outgoing: true,
                 is_read,
@@ -867,6 +872,7 @@ mod tests {
             chat_type: ChatType::Group,
             last_message_sender: sender.map(ToOwned::to_owned),
             is_online: None,
+            is_bot: false,
             outgoing_status: OutgoingReadStatus {
                 is_outgoing: true,
                 is_read,
@@ -1048,6 +1054,7 @@ mod tests {
             chat_type: ChatType::Channel,
             last_message_sender: None,
             is_online: None,
+            is_bot: false,
             outgoing_status: OutgoingReadStatus {
                 is_outgoing: true,
                 is_read,
@@ -1159,6 +1166,7 @@ mod tests {
             chat_type: ChatType::Private,
             last_message_sender: None,
             is_online: Some(true),
+            is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
         };
 
@@ -1167,5 +1175,31 @@ mod tests {
 
         assert!(text.contains("[5]"));
         assert!(text.contains("\u{2022}")); // online bullet
+    }
+
+    #[test]
+    fn bot_chat_online_does_not_show_online_indicator() {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
+        let chat = ChatSummary {
+            chat_id: 1,
+            title: "BotName".to_owned(),
+            unread_count: 0,
+            last_message_preview: Some("Hello".to_owned()),
+            last_message_unix_ms: None,
+            is_pinned: false,
+            chat_type: ChatType::Private,
+            last_message_sender: None,
+            is_online: Some(true),
+            is_bot: true,
+            outgoing_status: OutgoingReadStatus::default(),
+        };
+
+        let line = chat_list_item_line(&chat, 70);
+        let text = line_to_string(&line);
+
+        assert!(
+            !text.contains("\u{2022}"),
+            "online bullet must not appear for bots"
+        );
     }
 }
