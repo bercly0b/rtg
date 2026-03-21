@@ -64,6 +64,7 @@ impl FileTelegramConfig {
 pub struct FileCacheConfig {
     pub max_cached_chats: Option<usize>,
     pub max_messages_per_chat: Option<usize>,
+    pub min_display_messages: Option<usize>,
 }
 
 impl FileCacheConfig {
@@ -73,6 +74,9 @@ impl FileCacheConfig {
         }
         if let Some(max_messages_per_chat) = self.max_messages_per_chat {
             config.max_messages_per_chat = max_messages_per_chat;
+        }
+        if let Some(min_display_messages) = self.min_display_messages {
+            config.min_display_messages = min_display_messages;
         }
     }
 }
@@ -95,6 +99,7 @@ api_hash = "abc"
 [cache]
 max_cached_chats = 100
 max_messages_per_chat = 500
+min_display_messages = 3
 "#;
         let config: FileConfig = toml::from_str(toml).unwrap();
         let logging = config.logging.unwrap();
@@ -108,6 +113,7 @@ max_messages_per_chat = 500
         let cache = config.cache.unwrap();
         assert_eq!(cache.max_cached_chats.unwrap(), 100);
         assert_eq!(cache.max_messages_per_chat.unwrap(), 500);
+        assert_eq!(cache.min_display_messages.unwrap(), 3);
     }
 
     #[test]
@@ -141,6 +147,7 @@ level = "warn"
             cache: Some(FileCacheConfig {
                 max_cached_chats: Some(75),
                 max_messages_per_chat: None,
+                min_display_messages: None,
             }),
         };
 
@@ -154,6 +161,10 @@ level = "warn"
         assert_eq!(
             config.cache.max_messages_per_chat,
             crate::domain::message_cache::DEFAULT_MAX_MESSAGES_PER_CHAT
+        );
+        assert_eq!(
+            config.cache.min_display_messages,
+            crate::domain::message_cache::DEFAULT_MIN_DISPLAY_MESSAGES
         );
     }
 
@@ -171,6 +182,7 @@ level = "warn"
             cache: Some(FileCacheConfig {
                 max_cached_chats: Some(100),
                 max_messages_per_chat: Some(500),
+                min_display_messages: Some(10),
             }),
         };
 
@@ -183,5 +195,6 @@ level = "warn"
         assert_eq!(config.telegram.api_hash, "hash");
         assert_eq!(config.cache.max_cached_chats, 100);
         assert_eq!(config.cache.max_messages_per_chat, 500);
+        assert_eq!(config.cache.min_display_messages, 10);
     }
 }

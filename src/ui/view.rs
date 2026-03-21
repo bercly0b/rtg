@@ -10,7 +10,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::domain::{
     chat::ChatSummary,
     chat_list_state::ChatListUiState,
-    open_chat_state::{OpenChatUiState, SCROLL_MARGIN},
+    open_chat_state::{MessageSource, OpenChatUiState, SCROLL_MARGIN},
     shell_state::{ActivePane, ShellState},
 };
 
@@ -511,7 +511,12 @@ fn render_messages_panel(
 
 fn open_chat_title(open_chat: &crate::domain::open_chat_state::OpenChatState) -> String {
     if open_chat.is_open() {
-        format!("Messages — {}", open_chat.chat_title())
+        let refreshing = if open_chat.is_refreshing() {
+            " ↻"
+        } else {
+            ""
+        };
+        format!("Messages — {}{refreshing}", open_chat.chat_title())
     } else {
         "Messages".to_owned()
     }
@@ -548,7 +553,18 @@ fn status_line(state: &ShellState) -> String {
         }
         ActivePane::MessageInput => "Esc: cancel | type your message",
     };
-    format!("mode: {mode} | connectivity: {connectivity} | {nav_hint}")
+
+    let source_hint = if state.open_chat().is_open() {
+        match state.open_chat().message_source() {
+            MessageSource::Cache => " | [cached]",
+            MessageSource::Live => " | [live]",
+            MessageSource::None => "",
+        }
+    } else {
+        ""
+    };
+
+    format!("mode: {mode} | connectivity: {connectivity} | {nav_hint}{source_hint}")
 }
 
 #[cfg(test)]
@@ -674,6 +690,91 @@ mod tests {
         let title = open_chat_title(state.open_chat());
 
         assert_eq!(title, "Messages — General");
+    }
+
+    #[test]
+    fn open_chat_title_shows_refreshing_indicator_when_refreshing() {
+        let mut state = ShellState::default();
+        state.open_chat_mut().set_loading(1, "General".to_owned());
+        state
+            .open_chat_mut()
+            .set_ready(vec![crate::domain::message::Message {
+                id: 1,
+                sender_name: "User".to_owned(),
+                text: "msg".to_owned(),
+                timestamp_ms: 1000,
+                is_outgoing: false,
+                media: crate::domain::message::MessageMedia::None,
+                status: crate::domain::message::MessageStatus::Delivered,
+            }]);
+        state.open_chat_mut().set_refreshing(true);
+
+        let title = open_chat_title(state.open_chat());
+
+        assert!(
+            title.contains("↻"),
+            "expected refreshing indicator in title"
+        );
+        assert!(title.contains("General"));
+    }
+
+    #[test]
+    fn open_chat_title_no_refreshing_indicator_when_not_refreshing() {
+        let mut state = ShellState::default();
+        state.open_chat_mut().set_loading(1, "General".to_owned());
+        state
+            .open_chat_mut()
+            .set_ready(vec![crate::domain::message::Message {
+                id: 1,
+                sender_name: "User".to_owned(),
+                text: "msg".to_owned(),
+                timestamp_ms: 1000,
+                is_outgoing: false,
+                media: crate::domain::message::MessageMedia::None,
+                status: crate::domain::message::MessageStatus::Delivered,
+            }]);
+
+        let title = open_chat_title(state.open_chat());
+
+        assert!(!title.contains("↻"), "no refreshing indicator expected");
+    }
+
+    #[test]
+    fn status_line_shows_cached_source() {
+        let mut state = ShellState::default();
+        state.open_chat_mut().set_loading(1, "Chat".to_owned());
+        state
+            .open_chat_mut()
+            .set_message_source(MessageSource::Cache);
+
+        let line = status_line(&state);
+
+        assert!(line.contains("[cached]"));
+        assert!(!line.contains("[live]"));
+    }
+
+    #[test]
+    fn status_line_shows_live_source() {
+        let mut state = ShellState::default();
+        state.open_chat_mut().set_loading(1, "Chat".to_owned());
+        state
+            .open_chat_mut()
+            .set_message_source(MessageSource::Live);
+
+        let line = status_line(&state);
+
+        assert!(line.contains("[live]"));
+        assert!(!line.contains("[cached]"));
+    }
+
+    #[test]
+    fn status_line_no_source_indicator_when_no_chat() {
+        let state = ShellState::default();
+
+        let line = status_line(&state);
+
+        assert!(!line.contains("[cached]"));
+        assert!(!line.contains("[live]"));
     }
 
     #[test]

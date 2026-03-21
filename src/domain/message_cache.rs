@@ -8,6 +8,11 @@ pub const DEFAULT_MAX_CACHED_CHATS: usize = 50;
 /// Default maximum number of messages to retain per chat.
 pub const DEFAULT_MAX_MESSAGES_PER_CHAT: usize = 200;
 
+/// Default minimum number of cached messages required to show them immediately.
+/// If the cache holds fewer messages than this threshold, the UI shows a
+/// "Loading" state instead of a sparse preview (eliminates the "1 message flash").
+pub const DEFAULT_MIN_DISPLAY_MESSAGES: usize = 5;
+
 /// Per-chat cached message storage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ChatMessages {

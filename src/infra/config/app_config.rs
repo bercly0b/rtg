@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::domain::message_cache::{DEFAULT_MAX_CACHED_CHATS, DEFAULT_MAX_MESSAGES_PER_CHAT};
+use crate::domain::message_cache::{
+    DEFAULT_MAX_CACHED_CHATS, DEFAULT_MAX_MESSAGES_PER_CHAT, DEFAULT_MIN_DISPLAY_MESSAGES,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AppConfig {
@@ -56,6 +58,8 @@ pub struct CacheConfig {
     pub max_cached_chats: usize,
     #[serde(default = "default_max_messages_per_chat")]
     pub max_messages_per_chat: usize,
+    #[serde(default = "default_min_display_messages")]
+    pub min_display_messages: usize,
 }
 
 fn default_max_cached_chats() -> usize {
@@ -66,11 +70,16 @@ fn default_max_messages_per_chat() -> usize {
     DEFAULT_MAX_MESSAGES_PER_CHAT
 }
 
+fn default_min_display_messages() -> usize {
+    DEFAULT_MIN_DISPLAY_MESSAGES
+}
+
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
             max_cached_chats: default_max_cached_chats(),
             max_messages_per_chat: default_max_messages_per_chat(),
+            min_display_messages: default_min_display_messages(),
         }
     }
 }
@@ -142,5 +151,6 @@ mod tests {
         let config = CacheConfig::default();
         assert_eq!(config.max_cached_chats, DEFAULT_MAX_CACHED_CHATS);
         assert_eq!(config.max_messages_per_chat, DEFAULT_MAX_MESSAGES_PER_CHAT);
+        assert_eq!(config.min_display_messages, DEFAULT_MIN_DISPLAY_MESSAGES);
     }
 }

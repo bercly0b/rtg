@@ -176,6 +176,7 @@ fn compose_shell_with_factory(
             dispatcher,
             initial_state,
             cache_source,
+            cache_cfg.min_display_messages,
         )),
         _connectivity_monitor: connectivity_monitor,
         _chat_updates_monitor: chat_updates_monitor,
