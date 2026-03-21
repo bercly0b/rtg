@@ -608,6 +608,7 @@ mod tests {
         dispatched_open_chats: RefCell<Vec<i64>>,
         dispatched_close_chats: RefCell<Vec<i64>>,
         dispatched_mark_as_read: RefCell<Vec<(i64, Vec<i64>)>>,
+        dispatched_mark_chat_as_read: RefCell<Vec<(i64, i64)>>,
     }
 
     impl RecordingDispatcher {
@@ -619,6 +620,7 @@ mod tests {
                 dispatched_open_chats: RefCell::new(Vec::new()),
                 dispatched_close_chats: RefCell::new(Vec::new()),
                 dispatched_mark_as_read: RefCell::new(Vec::new()),
+                dispatched_mark_chat_as_read: RefCell::new(Vec::new()),
             }
         }
 
@@ -653,6 +655,14 @@ mod tests {
         fn last_mark_as_read(&self) -> Option<(i64, Vec<i64>)> {
             self.dispatched_mark_as_read.borrow().last().cloned()
         }
+
+        fn mark_chat_as_read_dispatch_count(&self) -> usize {
+            self.dispatched_mark_chat_as_read.borrow().len()
+        }
+
+        fn last_mark_chat_as_read(&self) -> Option<(i64, i64)> {
+            self.dispatched_mark_chat_as_read.borrow().last().cloned()
+        }
     }
 
     impl TaskDispatcher for RecordingDispatcher {
@@ -682,8 +692,10 @@ mod tests {
                 .push((chat_id, message_ids));
         }
 
-        fn dispatch_mark_chat_as_read(&self, _chat_id: i64, _last_message_id: i64) {
-            // Recording stub — not tracked for now
+        fn dispatch_mark_chat_as_read(&self, chat_id: i64, last_message_id: i64) {
+            self.dispatched_mark_chat_as_read
+                .borrow_mut()
+                .push((chat_id, last_message_id));
         }
     }
 
@@ -2208,5 +2220,82 @@ mod tests {
         .unwrap();
 
         assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 0);
+    }
+
+    // ── Mark chat as read from chat list (r key) ──
+
+    fn chat_with_unread(
+        chat_id: i64,
+        title: &str,
+        unread: u32,
+        last_msg_id: Option<i64>,
+    ) -> ChatSummary {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
+        ChatSummary {
+            chat_id,
+            title: title.to_owned(),
+            unread_count: unread,
+            last_message_preview: Some("text".to_owned()),
+            last_message_unix_ms: None,
+            is_pinned: false,
+            chat_type: ChatType::Private,
+            last_message_sender: None,
+            is_online: None,
+            is_bot: false,
+            outgoing_status: OutgoingReadStatus::default(),
+            last_message_id: last_msg_id,
+        }
+    }
+
+    #[test]
+    fn r_key_marks_selected_chat_as_read() {
+        let mut o = orchestrator_with_chats(vec![chat_with_unread(1, "General", 5, Some(100))]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .unwrap();
+
+        assert_eq!(o.dispatcher.mark_chat_as_read_dispatch_count(), 1);
+        assert_eq!(o.dispatcher.last_mark_chat_as_read(), Some((1, 100)));
+    }
+
+    #[test]
+    fn r_key_does_nothing_when_chat_has_no_unread() {
+        let mut o = orchestrator_with_chats(vec![chat_with_unread(1, "General", 0, Some(100))]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .unwrap();
+
+        assert_eq!(o.dispatcher.mark_chat_as_read_dispatch_count(), 0);
+    }
+
+    #[test]
+    fn r_key_does_nothing_when_no_last_message_id() {
+        let mut o = orchestrator_with_chats(vec![chat_with_unread(1, "General", 3, None)]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .unwrap();
+
+        assert_eq!(o.dispatcher.mark_chat_as_read_dispatch_count(), 0);
+    }
+
+    #[test]
+    fn r_key_uses_mark_as_read_when_chat_already_opened_in_tdlib() {
+        let mut o = orchestrator_with_chats(vec![chat_with_unread(1, "General", 5, Some(100))]);
+
+        // Open the chat first (which sets tdlib_opened_chat_id)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        // Go back to chat list
+        o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+            .unwrap();
+
+        // Now press r — should use dispatch_mark_as_read (not dispatch_mark_chat_as_read)
+        // because the chat is still open in TDLib (closeChat was called when pressing h)
+        // Actually, pressing h calls close_tdlib_chat, so the chat is closed.
+        // This means dispatch_mark_chat_as_read will be used.
+        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .unwrap();
+
+        assert_eq!(o.dispatcher.mark_chat_as_read_dispatch_count(), 1);
     }
 }

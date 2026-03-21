@@ -1239,4 +1239,41 @@ mod tests {
             "online bullet must not appear for bots"
         );
     }
+
+    // ── compute_input_height tests ──
+
+    #[test]
+    fn compute_input_height_empty_text_returns_one() {
+        assert_eq!(compute_input_height("", 80), 1);
+    }
+
+    #[test]
+    fn compute_input_height_short_text_returns_one() {
+        assert_eq!(compute_input_height("Hello", 80), 1);
+    }
+
+    #[test]
+    fn compute_input_height_long_text_wraps() {
+        // Width 20, padding+prompt = 4, effective = 16
+        // 32 chars / 16 = 2 lines
+        let text = "a".repeat(32);
+        assert_eq!(compute_input_height(&text, 20), 2);
+    }
+
+    #[test]
+    fn compute_input_height_capped_at_five() {
+        let text = "a".repeat(500);
+        assert_eq!(compute_input_height(&text, 20), 5);
+    }
+
+    #[test]
+    fn compute_input_height_zero_width_returns_one() {
+        assert_eq!(compute_input_height("hello", 0), 1);
+    }
+
+    #[test]
+    fn compute_input_height_narrow_width_returns_one() {
+        // Width 4, padding+prompt = 4, effective = 0
+        assert_eq!(compute_input_height("hello", 4), 1);
+    }
 }

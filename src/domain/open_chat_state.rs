@@ -626,4 +626,43 @@ mod tests {
             crate::domain::message::MessageStatus::Delivered
         );
     }
+
+    // ── selected_message tests ──
+
+    #[test]
+    fn selected_message_returns_message_at_selected_index() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![
+            message(1, "First"),
+            message(2, "Second"),
+            message(3, "Third"),
+        ]);
+
+        // Initially selected = last (index 2)
+        let msg = state.selected_message().unwrap();
+        assert_eq!(msg.id, 3);
+        assert_eq!(msg.text, "Third");
+    }
+
+    #[test]
+    fn selected_message_returns_none_when_empty() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![]);
+
+        assert!(state.selected_message().is_none());
+    }
+
+    #[test]
+    fn selected_message_follows_navigation() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B")]);
+
+        state.select_previous();
+        let msg = state.selected_message().unwrap();
+        assert_eq!(msg.id, 1);
+        assert_eq!(msg.text, "A");
+    }
 }

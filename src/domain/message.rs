@@ -136,6 +136,39 @@ mod tests {
     }
 
     #[test]
+    fn display_content_media_with_text_uses_newline_separator() {
+        let message = msg("Caption text", MessageMedia::Video);
+        let content = message.display_content();
+
+        assert!(
+            content.contains('\n'),
+            "Media + text should be separated by newline"
+        );
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0], "[Video]");
+        assert_eq!(lines[1], "Caption text");
+    }
+
+    #[test]
+    fn display_content_media_only_has_no_newline() {
+        let message = msg("", MessageMedia::Photo);
+        let content = message.display_content();
+
+        assert!(!content.contains('\n'));
+        assert_eq!(content, "[Photo]");
+    }
+
+    #[test]
+    fn display_content_text_only_has_no_media_prefix() {
+        let message = msg("Just text", MessageMedia::None);
+        let content = message.display_content();
+
+        assert_eq!(content, "Just text");
+        assert!(!content.starts_with('['));
+    }
+
+    #[test]
     fn display_content_handles_all_media_types() {
         let types = [
             (MessageMedia::Photo, "[Photo]"),

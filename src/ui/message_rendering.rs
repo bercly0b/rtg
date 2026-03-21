@@ -764,4 +764,212 @@ mod tests {
             assert!(!show_time, "Third should hide time");
         }
     }
+
+    // ── wrap_line tests ──
+
+    #[test]
+    fn wrap_line_short_text_no_wrapping() {
+        let result = wrap_line("hello", 10);
+        assert_eq!(result, vec!["hello"]);
+    }
+
+    #[test]
+    fn wrap_line_exact_fit() {
+        let result = wrap_line("12345", 5);
+        assert_eq!(result, vec!["12345"]);
+    }
+
+    #[test]
+    fn wrap_line_splits_long_text() {
+        let result = wrap_line("abcdefghij", 5);
+        assert_eq!(result, vec!["abcde", "fghij"]);
+    }
+
+    #[test]
+    fn wrap_line_splits_into_three() {
+        let result = wrap_line("abcdefghijklmno", 5);
+        assert_eq!(result, vec!["abcde", "fghij", "klmno"]);
+    }
+
+    #[test]
+    fn wrap_line_handles_remainder() {
+        let result = wrap_line("abcdefgh", 5);
+        assert_eq!(result, vec!["abcde", "fgh"]);
+    }
+
+    #[test]
+    fn wrap_line_empty_text() {
+        let result = wrap_line("", 10);
+        assert_eq!(result, vec![""]);
+    }
+
+    #[test]
+    fn wrap_line_zero_width_returns_original() {
+        let result = wrap_line("hello", 0);
+        assert_eq!(result, vec!["hello"]);
+    }
+
+    #[test]
+    fn wrap_line_unicode_emoji() {
+        // 🚀 is 2 cells wide, "ab" is 2 cells. Total = 4 cells.
+        let result = wrap_line("🚀ab", 4);
+        assert_eq!(result, vec!["🚀ab"]);
+    }
+
+    #[test]
+    fn wrap_line_unicode_emoji_wraps_correctly() {
+        // 🚀 = 2 cells, a = 1 cell. Total "🚀a🚀b" = 2+1+2+1 = 6 cells.
+        // With width 4: first line "🚀a" (3 cells), second "🚀b" (3 cells)
+        let result = wrap_line("🚀a🚀b", 4);
+        assert_eq!(result, vec!["🚀a", "🚀b"]);
+    }
+
+    // ── sending status inline tests ──
+
+    #[test]
+    fn sending_status_on_same_line_as_content() {
+        let messages = vec![Message {
+            id: 1,
+            sender_name: "User".to_owned(),
+            text: "Hello".to_owned(),
+            timestamp_ms: FEB_14_2026_10AM,
+            is_outgoing: true,
+            media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Sending,
+        }];
+
+        let elements = build_message_list_elements(&messages);
+
+        // The message element should NOT have a separate "sending..." line
+        let msg_text = element_to_text(&elements[1], 80);
+        let line_count = msg_text.lines.len();
+
+        // Header line (time + sender) + content line with "sending..." appended = 2 lines
+        assert_eq!(
+            line_count, 2,
+            "Expected header + content/status on same line, got {} lines",
+            line_count
+        );
+
+        // Verify "sending..." is on the content line, not a separate line
+        let last_line = &msg_text.lines[1];
+        let last_line_text: String = last_line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            last_line_text.contains("sending..."),
+            "Last line should contain 'sending...', got: '{}'",
+            last_line_text
+        );
+        assert!(
+            last_line_text.contains("Hello"),
+            "Last line should contain message text, got: '{}'",
+            last_line_text
+        );
+    }
+
+    #[test]
+    fn delivered_message_has_no_sending_indicator() {
+        let messages = vec![Message {
+            id: 1,
+            sender_name: "User".to_owned(),
+            text: "Hello".to_owned(),
+            timestamp_ms: FEB_14_2026_10AM,
+            is_outgoing: true,
+            media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
+        }];
+
+        let elements = build_message_list_elements(&messages);
+        let msg_text = element_to_text(&elements[1], 80);
+
+        // Should be 2 lines: header + content (no "sending..." at all)
+        assert_eq!(msg_text.lines.len(), 2);
+        let all_text: String = msg_text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert!(!all_text.contains("sending..."));
+    }
+
+    // ── media on separate line tests ──
+
+    #[test]
+    fn media_with_text_renders_on_separate_lines() {
+        let messages = vec![msg_with_media(
+            1,
+            "Alice",
+            "Check this out",
+            FEB_14_2026_10AM,
+            MessageMedia::Photo,
+        )];
+
+        let elements = build_message_list_elements(&messages);
+        let msg_text = element_to_text(&elements[1], 80);
+
+        // Header line + [Photo] line + text line = 3 lines
+        assert_eq!(
+            msg_text.lines.len(),
+            3,
+            "Expected 3 lines (header + media + text), got {}",
+            msg_text.lines.len()
+        );
+
+        // Second line should contain [Photo]
+        let media_line: String = msg_text.lines[1]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            media_line.contains("[Photo]"),
+            "Second line should be media indicator"
+        );
+
+        // Third line should contain the text
+        let text_line: String = msg_text.lines[2]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            text_line.contains("Check this out"),
+            "Third line should be message text"
+        );
+    }
+
+    #[test]
+    fn media_only_renders_single_content_line() {
+        let messages = vec![msg_with_media(
+            1,
+            "Alice",
+            "",
+            FEB_14_2026_10AM,
+            MessageMedia::Photo,
+        )];
+
+        let elements = build_message_list_elements(&messages);
+        let msg_text = element_to_text(&elements[1], 80);
+
+        // Header line + [Photo] line = 2 lines
+        assert_eq!(msg_text.lines.len(), 2);
+    }
+
+    // ── text wrapping in message rendering ──
+
+    #[test]
+    fn long_message_wraps_within_width() {
+        let long_text = "a".repeat(50);
+        let messages = vec![msg(1, "Alice", &long_text, FEB_14_2026_10AM, false)];
+
+        let elements = build_message_list_elements(&messages);
+        // Use narrow width: 30 total - 6 indent = 24 content width
+        let msg_text = element_to_text(&elements[1], 30);
+
+        // Header (1) + wrapped content lines (50 chars / 24 = 3 lines)
+        assert!(
+            msg_text.lines.len() >= 3,
+            "Long text should wrap into multiple lines, got {} lines",
+            msg_text.lines.len()
+        );
+    }
 }
