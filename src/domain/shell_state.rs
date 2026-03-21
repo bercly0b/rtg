@@ -1,6 +1,7 @@
 use super::{
     chat::ChatSummary, chat_list_state::ChatListState, events::ConnectivityStatus,
-    message_input_state::MessageInputState, open_chat_state::OpenChatState,
+    message_cache::MessageCache, message_input_state::MessageInputState,
+    open_chat_state::OpenChatState,
 };
 
 /// Represents which panel currently has focus for keyboard navigation.
@@ -21,6 +22,7 @@ pub struct ShellState {
     connectivity_status: ConnectivityStatus,
     chat_list: ChatListState,
     open_chat: OpenChatState,
+    message_cache: MessageCache,
     message_input: MessageInputState,
     active_pane: ActivePane,
     help_visible: bool,
@@ -33,6 +35,7 @@ impl Default for ShellState {
             connectivity_status: ConnectivityStatus::Connecting,
             chat_list: ChatListState::default(),
             open_chat: OpenChatState::default(),
+            message_cache: MessageCache::default(),
             message_input: MessageInputState::default(),
             active_pane: ActivePane::default(),
             help_visible: false,
@@ -84,6 +87,14 @@ impl ShellState {
 
     pub fn open_chat_mut(&mut self) -> &mut OpenChatState {
         &mut self.open_chat
+    }
+
+    pub fn message_cache(&self) -> &MessageCache {
+        &self.message_cache
+    }
+
+    pub fn message_cache_mut(&mut self) -> &mut MessageCache {
+        &mut self.message_cache
     }
 
     pub fn active_pane(&self) -> ActivePane {
