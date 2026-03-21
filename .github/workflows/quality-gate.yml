@@ -36,3 +36,48 @@ jobs:
 
       - name: Gate 4 — cargo check
         run: cargo check
+
+  coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Repository checkout
+        uses: actions/checkout@v4
+
+      - name: Install TDLib runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libc++-dev libc++abi-dev
+
+      - name: Rust env bootstrap (stable + llvm-tools)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Cargo cache (registry + target)
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Generate coverage report
+        id: coverage
+        run: |
+          cargo llvm-cov --no-fail-fast --lcov --output-path lcov.info
+          {
+            echo 'SUMMARY<<EOF'
+            cargo llvm-cov report --summary-only 2>&1
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post coverage comment on PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: coverage-report
+          message: |
+            ## Test Coverage Report
+            ```
+            ${{ steps.coverage.outputs.SUMMARY }}
+            ```

@@ -54,3 +54,89 @@ impl FileTelegramConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserialize_full_config() {
+        let toml = r#"
+[logging]
+level = "debug"
+max_log_files = 5
+
+[telegram]
+api_id = 123
+api_hash = "abc"
+"#;
+        let config: FileConfig = toml::from_str(toml).unwrap();
+        let logging = config.logging.unwrap();
+        assert_eq!(logging.level.unwrap(), "debug");
+        assert_eq!(logging.max_log_files.unwrap(), 5);
+
+        let telegram = config.telegram.unwrap();
+        assert_eq!(telegram.api_id.unwrap(), 123);
+        assert_eq!(telegram.api_hash.unwrap(), "abc");
+    }
+
+    #[test]
+    fn deserialize_partial_config_omits_none_fields() {
+        let toml = r#"
+[logging]
+level = "warn"
+"#;
+        let config: FileConfig = toml::from_str(toml).unwrap();
+        let logging = config.logging.unwrap();
+        assert_eq!(logging.level.unwrap(), "warn");
+        assert!(logging.max_log_files.is_none());
+        assert!(config.telegram.is_none());
+    }
+
+    #[test]
+    fn deserialize_empty_config() {
+        let config: FileConfig = toml::from_str("").unwrap();
+        assert!(config.logging.is_none());
+        assert!(config.telegram.is_none());
+    }
+
+    #[test]
+    fn merge_into_overrides_only_set_fields() {
+        let file = FileConfig {
+            logging: Some(FileLogConfig {
+                level: Some("trace".to_owned()),
+                max_log_files: None,
+            }),
+            telegram: None,
+        };
+
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config);
+
+        assert_eq!(config.logging.level, "trace");
+        assert_eq!(config.logging.max_log_files, 3); // default preserved
+        assert_eq!(config.telegram.api_id, 0); // default preserved
+    }
+
+    #[test]
+    fn merge_into_with_all_fields() {
+        let file = FileConfig {
+            logging: Some(FileLogConfig {
+                level: Some("error".to_owned()),
+                max_log_files: Some(10),
+            }),
+            telegram: Some(FileTelegramConfig {
+                api_id: Some(999),
+                api_hash: Some("hash".to_owned()),
+            }),
+        };
+
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config);
+
+        assert_eq!(config.logging.level, "error");
+        assert_eq!(config.logging.max_log_files, 10);
+        assert_eq!(config.telegram.api_id, 999);
+        assert_eq!(config.telegram.api_hash, "hash");
+    }
+}

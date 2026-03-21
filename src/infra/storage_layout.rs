@@ -169,4 +169,56 @@ mod tests {
         };
         assert!(layout.tdlib_session_exists());
     }
+
+    #[test]
+    fn ensure_dirs_creates_missing_directories() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let layout = StorageLayout {
+            config_dir: tmp.path().join("config"),
+            cache_dir: tmp.path().join("config").join("cache"),
+        };
+
+        assert!(!layout.config_dir.exists());
+        assert!(!layout.cache_dir.exists());
+
+        layout.ensure_dirs().expect("must create dirs");
+
+        assert!(layout.config_dir.is_dir());
+        assert!(layout.cache_dir.is_dir());
+    }
+
+    #[test]
+    fn ensure_dirs_is_idempotent() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let layout = StorageLayout {
+            config_dir: tmp.path().join("config"),
+            cache_dir: tmp.path().join("config").join("cache"),
+        };
+
+        layout.ensure_dirs().expect("first call");
+        layout
+            .ensure_dirs()
+            .expect("second call should also succeed");
+
+        assert!(layout.config_dir.is_dir());
+        assert!(layout.cache_dir.is_dir());
+    }
+
+    #[test]
+    fn tdlib_files_dir_is_under_cache_dir() {
+        let layout = StorageLayout::resolve().expect("layout should resolve");
+        assert!(layout.tdlib_files_dir().starts_with(&layout.cache_dir));
+    }
+
+    #[test]
+    fn tdlib_log_file_has_correct_filename() {
+        let layout = StorageLayout {
+            config_dir: PathBuf::from("/tmp/test"),
+            cache_dir: PathBuf::from("/tmp/test/cache"),
+        };
+        assert_eq!(
+            layout.tdlib_log_file(),
+            PathBuf::from("/tmp/test/tdlib.log")
+        );
+    }
 }
