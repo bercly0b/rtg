@@ -178,6 +178,7 @@ mod tests {
             timestamp_ms: 1000,
             is_outgoing: false,
             media: crate::domain::message::MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
         }
     }
 

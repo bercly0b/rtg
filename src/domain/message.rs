@@ -38,6 +38,16 @@ impl MessageMedia {
     }
 }
 
+/// Delivery status of a message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MessageStatus {
+    /// Message has been delivered (normal state).
+    #[default]
+    Delivered,
+    /// Message is being sent (optimistic display).
+    Sending,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     pub id: i64,
@@ -46,6 +56,7 @@ pub struct Message {
     pub timestamp_ms: i64,
     pub is_outgoing: bool,
     pub media: MessageMedia,
+    pub status: MessageStatus,
 }
 
 impl Message {
@@ -71,6 +82,7 @@ mod tests {
             timestamp_ms: 1000,
             is_outgoing: false,
             media,
+            status: MessageStatus::Delivered,
         }
     }
 

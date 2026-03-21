@@ -251,6 +251,7 @@ pub fn map_tdlib_message_to_domain(msg: &TdMessage, sender_name: String) -> Mess
         timestamp_ms,
         is_outgoing: msg.is_outgoing,
         media,
+        status: crate::domain::message::MessageStatus::Delivered,
     }
 }
 

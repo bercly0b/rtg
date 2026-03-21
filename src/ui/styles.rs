@@ -124,6 +124,11 @@ pub fn date_separator_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
 
+/// Style for the "sending..." status indicator on pending messages.
+pub fn message_sending_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
 // =============================================================================
 // Panel styles
 //

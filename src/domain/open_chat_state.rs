@@ -1,4 +1,4 @@
-use super::message::Message;
+use super::message::{Message, MessageStatus};
 
 // ─── Scroll offset ──────────────────────────────────────────────────────────
 
@@ -165,6 +165,42 @@ impl OpenChatState {
         };
     }
 
+    /// Adds a pending (optimistically displayed) message at the end of the list.
+    ///
+    /// The message is shown immediately with `MessageStatus::Sending`.
+    /// It will be replaced by real messages when `set_ready()` is called
+    /// after the server confirms delivery.
+    pub fn add_pending_message(&mut self, text: String) {
+        let now_ms = chrono::Local::now().timestamp_millis();
+        let pending = Message {
+            id: 0, // Temporary ID — will be replaced by server messages
+            sender_name: String::new(),
+            text,
+            timestamp_ms: now_ms,
+            is_outgoing: true,
+            media: super::message::MessageMedia::None,
+            status: MessageStatus::Sending,
+        };
+        self.messages.push(pending);
+        self.selected_index = Some(self.messages.len() - 1);
+        self.scroll_offset = ScrollOffset::BOTTOM;
+    }
+
+    /// Removes all pending (sending) messages from the list.
+    ///
+    /// Used when a send fails to roll back the optimistic display.
+    pub fn remove_pending_messages(&mut self) {
+        self.messages.retain(|m| m.status != MessageStatus::Sending);
+        // Fix selection after removal
+        if self.messages.is_empty() {
+            self.selected_index = None;
+        } else if let Some(idx) = self.selected_index {
+            if idx >= self.messages.len() {
+                self.selected_index = Some(self.messages.len() - 1);
+            }
+        }
+    }
+
     pub fn set_error(&mut self) {
         self.ui_state = OpenChatUiState::Error;
     }
@@ -222,6 +258,7 @@ mod tests {
             timestamp_ms: 1000,
             is_outgoing: false,
             media: crate::domain::message::MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
         }
     }
 
@@ -510,5 +547,78 @@ mod tests {
         assert_eq!(state.selected_index(), Some(1));
         // Scroll offset preserved
         assert_eq!(state.scroll_offset(), saved_offset);
+    }
+
+    // ── pending message tests ──
+
+    #[test]
+    fn add_pending_message_appends_and_selects_it() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B")]);
+
+        state.add_pending_message("Hello".to_owned());
+
+        assert_eq!(state.messages().len(), 3);
+        let pending = &state.messages()[2];
+        assert_eq!(pending.text, "Hello");
+        assert!(pending.is_outgoing);
+        assert_eq!(
+            pending.status,
+            crate::domain::message::MessageStatus::Sending
+        );
+        assert_eq!(state.selected_index(), Some(2));
+        assert_eq!(state.scroll_offset(), ScrollOffset::BOTTOM);
+    }
+
+    #[test]
+    fn remove_pending_messages_keeps_delivered() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B")]);
+
+        state.add_pending_message("Pending".to_owned());
+        assert_eq!(state.messages().len(), 3);
+
+        state.remove_pending_messages();
+
+        assert_eq!(state.messages().len(), 2);
+        assert_eq!(state.messages()[0].text, "A");
+        assert_eq!(state.messages()[1].text, "B");
+    }
+
+    #[test]
+    fn remove_pending_messages_fixes_selection() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A")]);
+
+        state.add_pending_message("Pending".to_owned());
+        assert_eq!(state.selected_index(), Some(1)); // pending message selected
+
+        state.remove_pending_messages();
+
+        // Selection should clamp to last remaining message
+        assert_eq!(state.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn set_ready_replaces_pending_messages() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A")]);
+
+        state.add_pending_message("Pending".to_owned());
+        assert_eq!(state.messages().len(), 2);
+
+        // Server refresh replaces everything including pending
+        state.set_ready(vec![message(1, "A"), message(3, "Pending delivered")]);
+
+        assert_eq!(state.messages().len(), 2);
+        assert_eq!(state.messages()[1].text, "Pending delivered");
+        assert_eq!(
+            state.messages()[1].status,
+            crate::domain::message::MessageStatus::Delivered
+        );
     }
 }
