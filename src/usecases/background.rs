@@ -41,6 +41,10 @@ pub trait TaskDispatcher {
     /// Performs openChat → viewMessages(force_read) → closeChat sequence
     /// to mark the chat as read without loading its messages.
     fn dispatch_mark_chat_as_read(&self, chat_id: i64, last_message_id: i64);
+
+    /// Prefetches messages for a chat the user is hovering in the chat list.
+    /// Results go into `MessageCache` only (not `OpenChatState`).
+    fn dispatch_prefetch_messages(&self, chat_id: i64);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -283,6 +287,34 @@ where
             tracing::error!(error = %error, "failed to spawn mark-chat-as-read background thread");
         }
     }
+
+    fn dispatch_prefetch_messages(&self, chat_id: i64) {
+        let source = Arc::clone(&self.messages_source);
+        let tx = self.result_tx.clone();
+        let tx_fallback = self.result_tx.clone();
+
+        let spawn_result = std::thread::Builder::new()
+            .name("rtg-bg-prefetch".into())
+            .spawn(move || {
+                tracing::debug!(chat_id, "background: prefetching messages");
+                let result = load_messages(source.as_ref(), LoadMessagesQuery::new(chat_id))
+                    .map(|output| output.messages)
+                    .map_err(|error| {
+                        tracing::warn!(chat_id, error = ?error, "background: prefetch failed");
+                        BackgroundError::new(map_load_messages_error(&error))
+                    });
+
+                let _ = tx.send(BackgroundTaskResult::MessagesPrefetched { chat_id, result });
+            });
+
+        if let Err(error) = spawn_result {
+            tracing::error!(error = %error, "failed to spawn prefetch background thread");
+            let _ = tx_fallback.send(BackgroundTaskResult::MessagesPrefetched {
+                chat_id,
+                result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
+            });
+        }
+    }
 }
 
 fn map_list_chats_error(error: &super::list_chats::ListChatsError) -> &'static str {
@@ -360,6 +392,10 @@ pub mod tests {
 
         fn dispatch_mark_chat_as_read(&self, _chat_id: i64, _last_message_id: i64) {
             // Stub: fire-and-forget, no action needed in tests
+        }
+
+        fn dispatch_prefetch_messages(&self, _chat_id: i64) {
+            // Stub: does not dispatch; tests inject results manually
         }
     }
 

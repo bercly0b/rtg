@@ -38,6 +38,12 @@ pub enum BackgroundTaskResult {
         chat_id: i64,
         result: Result<Vec<super::message::Message>, BackgroundError>,
     },
+    /// Background prefetch of messages for a chat the user is hovering.
+    /// Results go only into `MessageCache`, not `OpenChatState`.
+    MessagesPrefetched {
+        chat_id: i64,
+        result: Result<Vec<super::message::Message>, BackgroundError>,
+    },
 }
 
 /// Lightweight error type for background task failures.
