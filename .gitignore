@@ -4,3 +4,4 @@ target/
 *.local
 AGENTS.md
 docs/internal/
+lcov.info
