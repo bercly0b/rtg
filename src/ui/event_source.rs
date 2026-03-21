@@ -296,9 +296,7 @@ fn map_key_event(key: KeyEvent) -> Option<AppEvent> {
         return None;
     }
 
-    if key.code == KeyCode::Char('q')
-        || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
-    {
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
         return Some(AppEvent::QuitRequested);
     }
 
@@ -553,7 +551,7 @@ mod tests {
             .expect("third event should be readable");
 
         assert_eq!(first, Some(AppEvent::InputKey(KeyInput::new("x", false))));
-        assert_eq!(second, Some(AppEvent::QuitRequested));
+        assert_eq!(second, Some(AppEvent::InputKey(KeyInput::new("q", false))));
         assert!(matches!(third, Some(AppEvent::ConnectivityChanged(_))));
     }
 
@@ -607,7 +605,7 @@ mod tests {
         assert_eq!(first, Some(AppEvent::InputKey(KeyInput::new("a", false))));
         assert_eq!(second, Some(AppEvent::InputKey(KeyInput::new("b", false))));
         assert_eq!(third, Some(AppEvent::InputKey(KeyInput::new("c", false))));
-        assert_eq!(fourth, Some(AppEvent::QuitRequested));
+        assert_eq!(fourth, Some(AppEvent::InputKey(KeyInput::new("q", false))));
     }
 
     #[test]
@@ -696,8 +694,8 @@ mod tests {
         assert_eq!(
             source
                 .next_event_with_terminal(&mut terminal)
-                .expect("quit event should be readable"),
-            Some(AppEvent::QuitRequested)
+                .expect("q key event should be readable"),
+            Some(AppEvent::InputKey(KeyInput::new("q", false)))
         );
 
         assert!(matches!(
