@@ -119,6 +119,8 @@ fn compose_shell_with_factory(
         bg_tx,
     );
 
+    let cache_cfg = &context.config.cache;
+
     // Try to preload chats from TDLib's local cache for instant display.
     // This is a synchronous call that reads from SQLite — no network involved.
     let initial_state = match context
@@ -127,18 +129,30 @@ fn compose_shell_with_factory(
     {
         Ok(chats) if !chats.is_empty() => {
             tracing::info!(count = chats.len(), "preloaded chat list from TDLib cache");
-            ShellState::with_initial_chat_list(chats)
+            ShellState::with_cache_limits(
+                chats,
+                cache_cfg.max_cached_chats,
+                cache_cfg.max_messages_per_chat,
+            )
         }
         Ok(_) => {
             tracing::debug!("TDLib cache is empty, starting with Loading state");
-            ShellState::default()
+            ShellState::with_cache_limits(
+                vec![],
+                cache_cfg.max_cached_chats,
+                cache_cfg.max_messages_per_chat,
+            )
         }
         Err(error) => {
             tracing::debug!(
                 ?error,
                 "failed to preload cached chats, starting with Loading state"
             );
-            ShellState::default()
+            ShellState::with_cache_limits(
+                vec![],
+                cache_cfg.max_cached_chats,
+                cache_cfg.max_messages_per_chat,
+            )
         }
     };
 

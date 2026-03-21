@@ -48,9 +48,23 @@ impl ShellState {
     ///
     /// If `chats` is non-empty, `ChatListState` starts as `Ready` immediately,
     /// allowing the TUI to display cached chats on the very first frame.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn with_initial_chat_list(chats: Vec<ChatSummary>) -> Self {
         Self {
             chat_list: ChatListState::with_initial_chats(chats),
+            ..Default::default()
+        }
+    }
+
+    /// Creates a state with cached chat list data and custom cache limits.
+    pub fn with_cache_limits(
+        chats: Vec<ChatSummary>,
+        max_cached_chats: usize,
+        max_messages_per_chat: usize,
+    ) -> Self {
+        Self {
+            chat_list: ChatListState::with_initial_chats(chats),
+            message_cache: MessageCache::new(max_cached_chats, max_messages_per_chat),
             ..Default::default()
         }
     }

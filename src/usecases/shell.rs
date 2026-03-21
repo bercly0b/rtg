@@ -159,7 +159,7 @@ where
         // Fall back to TDLib local cache if the app cache has no data.
         let showed_cache = if let Some(cached) = self
             .state
-            .message_cache()
+            .message_cache_mut()
             .get(chat_id)
             .filter(|m| !m.is_empty())
         {
@@ -495,7 +495,7 @@ where
                 if let Ok(ref messages) = result {
                     self.state
                         .message_cache_mut()
-                        .put(chat_id, messages.clone());
+                        .put(chat_id, messages.clone(), true);
                 }
 
                 if self.state.open_chat().chat_id() != Some(chat_id) {
@@ -560,7 +560,7 @@ where
                 if let Ok(ref messages) = result {
                     self.state
                         .message_cache_mut()
-                        .put(chat_id, messages.clone());
+                        .put(chat_id, messages.clone(), true);
                 }
 
                 if self.state.open_chat().chat_id() != Some(chat_id) {
@@ -603,7 +603,7 @@ where
                             count = messages.len(),
                             "background: prefetched messages cached"
                         );
-                        self.state.message_cache_mut().put(chat_id, messages);
+                        self.state.message_cache_mut().put(chat_id, messages, true);
                     }
                 }
 
@@ -614,7 +614,7 @@ where
                 {
                     if let Some(cached) = self
                         .state
-                        .message_cache()
+                        .message_cache_mut()
                         .get(chat_id)
                         .filter(|m| !m.is_empty())
                     {
@@ -2643,7 +2643,7 @@ mod tests {
         inject_messages(&mut o, 1, vec![message(1, "Hello"), message(2, "World")]);
 
         assert!(o.state().message_cache().has_messages(1));
-        assert_eq!(o.state().message_cache().get(1).unwrap().len(), 2);
+        assert_eq!(o.state.message_cache_mut().get(1).unwrap().len(), 2);
     }
 
     #[test]
@@ -2670,7 +2670,7 @@ mod tests {
         // Messages should still be in cache despite the stale discard
         assert!(o.state().message_cache().has_messages(1));
         assert_eq!(
-            o.state().message_cache().get(1).unwrap()[0].text,
+            o.state.message_cache_mut().get(1).unwrap()[0].text,
             "cached even though stale"
         );
     }
@@ -2755,7 +2755,7 @@ mod tests {
 
         // Cache should contain the updated messages
         assert!(o.state().message_cache().has_messages(1));
-        let cached = o.state().message_cache().get(1).unwrap();
+        let cached = o.state.message_cache_mut().get(1).unwrap();
         assert_eq!(cached.len(), 2);
         assert_eq!(cached[1].text, "My new message");
     }
@@ -2800,7 +2800,7 @@ mod tests {
         // Chat 2 should now have a cached message
         assert!(o.state().message_cache().has_messages(2));
         assert_eq!(
-            o.state().message_cache().get(2).unwrap()[0].text,
+            o.state.message_cache_mut().get(2).unwrap()[0].text,
             "Hey from Bob"
         );
     }
@@ -2823,7 +2823,7 @@ mod tests {
         })
         .unwrap();
 
-        let cached = o.state().message_cache().get(1).unwrap();
+        let cached = o.state.message_cache_mut().get(1).unwrap();
         assert_eq!(cached.len(), 2);
         assert_eq!(cached[0].text, "First");
         assert_eq!(cached[1].text, "Second");
@@ -2847,7 +2847,7 @@ mod tests {
         })
         .unwrap();
 
-        let cached = o.state().message_cache().get(1).unwrap();
+        let cached = o.state.message_cache_mut().get(1).unwrap();
         assert_eq!(cached.len(), 1);
         assert_eq!(cached[0].text, "Keep");
     }
@@ -2937,7 +2937,7 @@ mod tests {
         // Populate cache for chat 2
         o.state
             .message_cache_mut()
-            .put(2, vec![message(10, "cached")]);
+            .put(2, vec![message(10, "cached")], true);
 
         // Navigate down to chat 2
         o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
@@ -2998,7 +2998,7 @@ mod tests {
 
         // Cache should have the data
         assert!(o.state().message_cache().has_messages(2));
-        assert_eq!(o.state().message_cache().get(2).unwrap().len(), 2);
+        assert_eq!(o.state.message_cache_mut().get(2).unwrap().len(), 2);
 
         // OpenChatState should NOT be affected (no chat is open)
         assert!(!o.state().open_chat().is_open());
