@@ -100,3 +100,90 @@ impl ShellState {
         &mut self.message_input
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::chat::{ChatSummary, ChatType, OutgoingReadStatus};
+
+    fn chat(id: i64, title: &str) -> ChatSummary {
+        ChatSummary {
+            chat_id: id,
+            title: title.to_owned(),
+            unread_count: 0,
+            last_message_preview: None,
+            last_message_unix_ms: None,
+            is_pinned: false,
+            chat_type: ChatType::Private,
+            last_message_sender: None,
+            is_online: None,
+            is_bot: false,
+            outgoing_status: OutgoingReadStatus::default(),
+        }
+    }
+
+    #[test]
+    fn default_state_is_running() {
+        let state = ShellState::default();
+        assert!(state.is_running());
+    }
+
+    #[test]
+    fn default_connectivity_is_connecting() {
+        let state = ShellState::default();
+        assert_eq!(state.connectivity_status(), ConnectivityStatus::Connecting);
+    }
+
+    #[test]
+    fn default_active_pane_is_chat_list() {
+        let state = ShellState::default();
+        assert_eq!(state.active_pane(), ActivePane::ChatList);
+    }
+
+    #[test]
+    fn stop_sets_running_to_false() {
+        let mut state = ShellState::default();
+        state.stop();
+        assert!(!state.is_running());
+    }
+
+    #[test]
+    fn set_connectivity_status_updates_value() {
+        let mut state = ShellState::default();
+        state.set_connectivity_status(ConnectivityStatus::Connected);
+        assert_eq!(state.connectivity_status(), ConnectivityStatus::Connected);
+    }
+
+    #[test]
+    fn set_active_pane_switches_pane() {
+        let mut state = ShellState::default();
+        state.set_active_pane(ActivePane::Messages);
+        assert_eq!(state.active_pane(), ActivePane::Messages);
+
+        state.set_active_pane(ActivePane::MessageInput);
+        assert_eq!(state.active_pane(), ActivePane::MessageInput);
+    }
+
+    #[test]
+    fn with_initial_chat_list_empty_falls_back_to_default() {
+        let state = ShellState::with_initial_chat_list(vec![]);
+        assert!(state.is_running());
+        assert_eq!(state.connectivity_status(), ConnectivityStatus::Connecting);
+        assert_eq!(state.active_pane(), ActivePane::ChatList);
+    }
+
+    #[test]
+    fn with_initial_chat_list_non_empty_populates_chats() {
+        let chats = vec![chat(1, "Alice"), chat(2, "Bob")];
+        let state = ShellState::with_initial_chat_list(chats);
+        assert!(state.is_running());
+        assert_eq!(state.chat_list().chats().len(), 2);
+    }
+
+    #[test]
+    fn message_input_mut_allows_mutation() {
+        let mut state = ShellState::default();
+        state.message_input_mut().insert_char('a');
+        assert_eq!(state.message_input().text(), "a");
+    }
+}

@@ -46,3 +46,66 @@ impl Default for TelegramConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_log_config_is_info_with_three_files() {
+        let config = LogConfig::default();
+        assert_eq!(config.level, "info");
+        assert_eq!(config.max_log_files, 3);
+    }
+
+    #[test]
+    fn default_telegram_config_is_not_configured() {
+        let config = TelegramConfig::default();
+        assert!(!config.is_configured());
+    }
+
+    #[test]
+    fn telegram_config_is_configured_with_valid_values() {
+        let config = TelegramConfig {
+            api_id: 12345,
+            api_hash: "valid-hash".to_owned(),
+        };
+        assert!(config.is_configured());
+    }
+
+    #[test]
+    fn telegram_config_not_configured_with_zero_api_id() {
+        let config = TelegramConfig {
+            api_id: 0,
+            api_hash: "valid-hash".to_owned(),
+        };
+        assert!(!config.is_configured());
+    }
+
+    #[test]
+    fn telegram_config_not_configured_with_placeholder_hash() {
+        let config = TelegramConfig {
+            api_id: 123,
+            api_hash: "replace-me".to_owned(),
+        };
+        assert!(!config.is_configured());
+    }
+
+    #[test]
+    fn telegram_config_not_configured_with_empty_hash() {
+        let config = TelegramConfig {
+            api_id: 123,
+            api_hash: "".to_owned(),
+        };
+        assert!(!config.is_configured());
+    }
+
+    #[test]
+    fn telegram_config_not_configured_with_whitespace_hash() {
+        let config = TelegramConfig {
+            api_id: 123,
+            api_hash: "   ".to_owned(),
+        };
+        assert!(!config.is_configured());
+    }
+}

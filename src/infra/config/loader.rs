@@ -170,4 +170,72 @@ api_hash = "from-file"
         assert!(rendered.contains("telegram_api_id_invalid"));
         assert!(rendered.contains(TELEGRAM_API_ID_ENV));
     }
+
+    #[test]
+    fn fails_on_malformed_toml() {
+        let _guard = env_lock().lock().expect("env lock should not be poisoned");
+        clear_env();
+
+        let temp_dir = std::env::temp_dir();
+        let config_path = temp_dir.join("rtg-test-malformed.toml");
+        fs::write(&config_path, "this is not valid [toml = ").expect("must write");
+
+        let error = load_internal(Some(&config_path), false).expect_err("must fail");
+        fs::remove_file(&config_path).expect("must remove");
+
+        assert!(
+            error.to_string().contains("parse"),
+            "error should mention parsing: {}",
+            error
+        );
+    }
+
+    #[test]
+    fn partial_toml_preserves_unset_defaults() {
+        let _guard = env_lock().lock().expect("env lock should not be poisoned");
+        clear_env();
+
+        let temp_dir = std::env::temp_dir();
+        let config_path = temp_dir.join("rtg-test-partial.toml");
+        fs::write(
+            &config_path,
+            r#"[telegram]
+api_id = 42
+"#,
+        )
+        .expect("must write");
+
+        let config = load_internal(Some(&config_path), false).expect("config must load");
+        fs::remove_file(&config_path).expect("must remove");
+
+        assert_eq!(config.telegram.api_id, 42);
+        assert_eq!(config.telegram.api_hash, "replace-me"); // default preserved
+        assert_eq!(config.logging.level, "info"); // default preserved
+    }
+
+    #[test]
+    fn env_whitespace_only_is_ignored() {
+        let _guard = env_lock().lock().expect("env lock should not be poisoned");
+        clear_env();
+
+        std::env::set_var(TELEGRAM_API_HASH_ENV, "   ");
+
+        let config = load(Some(Path::new("./missing-config.toml"))).expect("config must load");
+        clear_env();
+
+        assert_eq!(config.telegram.api_hash, "replace-me"); // default
+    }
+
+    #[test]
+    fn env_empty_string_is_ignored() {
+        let _guard = env_lock().lock().expect("env lock should not be poisoned");
+        clear_env();
+
+        std::env::set_var(TELEGRAM_API_HASH_ENV, "");
+
+        let config = load(Some(Path::new("./missing-config.toml"))).expect("config must load");
+        clear_env();
+
+        assert_eq!(config.telegram.api_hash, "replace-me"); // default
+    }
 }

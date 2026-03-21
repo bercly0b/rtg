@@ -98,4 +98,94 @@ mod tests {
             "AUTH_TRANSIENT"
         );
     }
+
+    #[test]
+    fn redact_text_preserves_non_sensitive_words() {
+        assert_eq!(redact_text("hello world"), "hello world");
+    }
+
+    #[test]
+    fn redact_text_handles_empty_input() {
+        assert_eq!(redact_text(""), "");
+    }
+
+    #[test]
+    fn redact_text_scrubs_case_insensitive_markers() {
+        let output = redact_text("my PASSWORD is leaked");
+        assert!(!output.contains("PASSWORD"));
+        assert!(output.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn redact_text_scrubs_each_sensitive_marker() {
+        for marker in &SENSITIVE_MARKERS {
+            let input = format!("value is {}", marker);
+            let output = redact_text(&input);
+            assert!(
+                output.contains("[REDACTED]"),
+                "marker '{}' should be redacted",
+                marker
+            );
+        }
+    }
+
+    #[test]
+    fn redact_text_scrubs_long_numeric_strings() {
+        let output = redact_text("the value 123456 was sent");
+        assert!(!output.contains("123456"));
+    }
+
+    #[test]
+    fn redact_text_scrubs_mixed_alphanumeric_secrets() {
+        let output = redact_text("key is abc123def");
+        assert!(!output.contains("abc123def"));
+    }
+
+    #[test]
+    fn redact_text_preserves_short_numbers() {
+        let output = redact_text("step 42 done");
+        assert!(
+            output.contains("42"),
+            "short numbers should not be redacted"
+        );
+    }
+
+    #[test]
+    fn sanitize_error_code_accepts_valid_auth_codes() {
+        assert_eq!(sanitize_error_code("AUTH_OK"), "AUTH_OK");
+        assert_eq!(
+            sanitize_error_code("AUTH_2FA_REQUIRED"),
+            "AUTH_2FA_REQUIRED"
+        );
+        assert_eq!(sanitize_error_code("AUTH_RETRY-1"), "AUTH_RETRY-1");
+    }
+
+    #[test]
+    fn sanitize_error_code_rejects_non_auth_prefix() {
+        assert_eq!(sanitize_error_code("ERROR_TIMEOUT"), "AUTH_TRANSIENT");
+    }
+
+    #[test]
+    fn sanitize_error_code_rejects_empty_string() {
+        assert_eq!(sanitize_error_code(""), "AUTH_TRANSIENT");
+    }
+
+    #[test]
+    fn sanitize_error_code_rejects_lowercase() {
+        assert_eq!(sanitize_error_code("AUTH_timeout"), "AUTH_TRANSIENT");
+    }
+
+    #[test]
+    fn sanitize_error_code_rejects_too_long_code() {
+        let long_code = format!("AUTH_{}", "A".repeat(60));
+        assert_eq!(sanitize_error_code(&long_code), "AUTH_TRANSIENT");
+    }
+
+    #[test]
+    fn sanitize_error_code_accepts_boundary_length() {
+        // Exactly 64 chars should be valid
+        let code = format!("AUTH_{}", "A".repeat(59));
+        assert_eq!(code.len(), 64);
+        assert_eq!(sanitize_error_code(&code), code);
+    }
 }

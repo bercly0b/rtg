@@ -75,3 +75,71 @@ pub fn now_unix_ms() -> u128 {
         .unwrap_or_default()
         .as_millis()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auth_status_labels_are_prefixed_with_auth() {
+        let variants = [
+            (AuthStatus::NotStarted, "AUTH_NOT_STARTED"),
+            (AuthStatus::InProgress, "AUTH_IN_PROGRESS"),
+            (AuthStatus::Requires2fa, "AUTH_REQUIRES_2FA"),
+            (AuthStatus::Success, "AUTH_SUCCESS"),
+            (AuthStatus::TransientFailure, "AUTH_TRANSIENT_FAILURE"),
+            (AuthStatus::FatalFailure, "AUTH_FATAL_FAILURE"),
+        ];
+
+        for (status, expected) in variants {
+            assert_eq!(status.as_label(), expected);
+        }
+    }
+
+    #[test]
+    fn connectivity_health_labels_are_prefixed_with_connectivity() {
+        let variants = [
+            (ConnectivityHealth::Unknown, "CONNECTIVITY_UNKNOWN"),
+            (ConnectivityHealth::Ok, "CONNECTIVITY_OK"),
+            (ConnectivityHealth::Degraded, "CONNECTIVITY_DEGRADED"),
+            (ConnectivityHealth::Unavailable, "CONNECTIVITY_UNAVAILABLE"),
+        ];
+
+        for (health, expected) in variants {
+            assert_eq!(health.as_label(), expected);
+        }
+    }
+
+    #[test]
+    fn default_auth_connectivity_status_is_not_started_unknown() {
+        let status = AuthConnectivityStatus::default();
+        assert_eq!(status.auth, AuthStatus::NotStarted);
+        assert_eq!(status.connectivity, ConnectivityHealth::Unknown);
+        assert!(status.last_error.is_none());
+    }
+
+    #[test]
+    fn default_updated_at_is_recent() {
+        let before = now_unix_ms();
+        let status = AuthConnectivityStatus::default();
+        let after = now_unix_ms();
+
+        assert!(status.updated_at_unix_ms >= before);
+        assert!(status.updated_at_unix_ms <= after);
+    }
+
+    #[test]
+    fn now_unix_ms_returns_nonzero() {
+        assert!(now_unix_ms() > 0);
+    }
+
+    #[test]
+    fn status_error_holds_code_and_timestamp() {
+        let err = StatusError {
+            code: "TEST_ERROR".to_owned(),
+            at_unix_ms: 1234567890,
+        };
+        assert_eq!(err.code, "TEST_ERROR");
+        assert_eq!(err.at_unix_ms, 1234567890);
+    }
+}
