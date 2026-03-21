@@ -241,12 +241,14 @@ impl TdLibClient {
                         Update::NewMessage(u) => {
                             let _ = update_tx.send(TdLibUpdate::NewMessage {
                                 chat_id: u.message.chat_id,
+                                message: Box::new(u.message),
                             });
                         }
                         Update::MessageContent(u) => {
-                            let _ = update_tx.send(TdLibUpdate::MessageContent {
+                            let _ = update_tx.send(TdLibUpdate::MessageContentChanged {
                                 chat_id: u.chat_id,
                                 message_id: u.message_id,
+                                new_content: Box::new(u.new_content),
                             });
                         }
                         Update::DeleteMessages(u) => {

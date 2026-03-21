@@ -1,11 +1,16 @@
 //! Chat updates monitor for TDLib.
 //!
-//! Receives typed TDLib updates and converts them to simple refresh signals
-//! for the UI layer.
+//! Receives typed TDLib updates, maps message-carrying variants to domain
+//! types via `MessageMapper`, and forwards `ChatUpdate` events downstream
+//! for cache warming and UI refresh.
 
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+
+use crate::domain::events::ChatUpdate;
+use crate::domain::message::Message;
 
 use super::tdlib_updates::TdLibUpdate;
 
@@ -17,10 +22,19 @@ const CHAT_UPDATES_MONITOR_SIGNAL_SEND_FAILED: &str =
 /// Timeout for receiving updates from TDLib channel.
 const UPDATE_RECV_TIMEOUT: Duration = Duration::from_millis(100);
 
-/// Monitor that converts TDLib typed updates to simple refresh signals.
+/// Maps a raw TDLib message to a domain `Message`.
 ///
-/// Runs a background thread that reads `TdLibUpdate` from a channel
-/// and sends `()` signals to trigger UI refresh.
+/// Implemented in the telegram layer where TDLib client access is available
+/// for resolving sender names via `get_user`.
+pub trait MessageMapper: Send + Sync {
+    fn map_message(&self, raw: &tdlib_rs::types::Message) -> Message;
+}
+
+/// Monitor that converts TDLib typed updates to domain `ChatUpdate` events.
+///
+/// Runs a background thread that reads `TdLibUpdate` from a channel,
+/// maps message data to domain types, and sends `ChatUpdate` events
+/// for cache warming and UI refresh.
 #[derive(Debug)]
 pub struct TelegramChatUpdatesMonitor {
     /// Worker thread handle. Kept for debugging but not joined on drop.
@@ -33,10 +47,12 @@ impl TelegramChatUpdatesMonitor {
     ///
     /// # Arguments
     /// - `update_rx`: Receiver for typed TDLib updates from `TdLibClient::take_update_receiver()`
-    /// - `signal_tx`: Sender for simple refresh signals consumed by the UI layer
+    /// - `signal_tx`: Sender for domain `ChatUpdate` events consumed by the event source
+    /// - `mapper`: Maps raw TDLib messages to domain `Message` types
     pub fn start(
         update_rx: Receiver<TdLibUpdate>,
-        signal_tx: Sender<Option<i64>>,
+        signal_tx: Sender<ChatUpdate>,
+        mapper: Arc<dyn MessageMapper>,
     ) -> Result<Self, ChatUpdatesMonitorStartError> {
         // Test switch for failure injection
         if std::env::var("RTG_TELEGRAM_CHAT_UPDATES_MONITOR_FAIL")
@@ -50,7 +66,7 @@ impl TelegramChatUpdatesMonitor {
         let worker = thread::Builder::new()
             .name("rtg-chat-updates".into())
             .spawn(move || {
-                run_update_monitor(update_rx, signal_tx);
+                run_update_monitor(update_rx, signal_tx, &*mapper);
             })
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to spawn chat updates monitor thread");
@@ -76,16 +92,49 @@ impl TelegramChatUpdatesMonitor {
 
 impl Drop for TelegramChatUpdatesMonitor {
     fn drop(&mut self) {
-        // The worker will exit when update_rx is closed (sender dropped)
-        // We don't need explicit shutdown signal since TdLibClient closing
-        // will close the channel.
-        // We don't join here to avoid blocking - the thread will exit on its own.
         tracing::debug!("TelegramChatUpdatesMonitor dropped");
     }
 }
 
-/// Background loop that processes TDLib updates and sends refresh signals.
-fn run_update_monitor(update_rx: Receiver<TdLibUpdate>, signal_tx: Sender<Option<i64>>) {
+/// Converts a `TdLibUpdate` into a domain `ChatUpdate`.
+///
+/// Message-carrying updates are mapped via the `MessageMapper`.
+/// Non-message updates (chat metadata, read state, etc.) become
+/// `ChatMetadataChanged`. User status updates are skipped (no chat_id).
+fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpdate> {
+    match update {
+        TdLibUpdate::NewMessage { chat_id, message } => {
+            let domain_msg = mapper.map_message(&message);
+            Some(ChatUpdate::NewMessage {
+                chat_id,
+                message: domain_msg,
+            })
+        }
+        TdLibUpdate::DeleteMessages {
+            chat_id,
+            message_ids,
+        } => Some(ChatUpdate::MessagesDeleted {
+            chat_id,
+            message_ids,
+        }),
+        TdLibUpdate::MessageContentChanged { chat_id, .. }
+        | TdLibUpdate::ChatLastMessage { chat_id }
+        | TdLibUpdate::ChatPosition { chat_id }
+        | TdLibUpdate::ChatReadInbox { chat_id }
+        | TdLibUpdate::ChatReadOutbox { chat_id }
+        | TdLibUpdate::MessageSendSucceeded { chat_id, .. } => {
+            Some(ChatUpdate::ChatMetadataChanged { chat_id })
+        }
+        TdLibUpdate::UserStatus { .. } => None,
+    }
+}
+
+/// Background loop that processes TDLib updates and sends domain events.
+fn run_update_monitor(
+    update_rx: Receiver<TdLibUpdate>,
+    signal_tx: Sender<ChatUpdate>,
+    mapper: &dyn MessageMapper,
+) {
     loop {
         match update_rx.recv_timeout(UPDATE_RECV_TIMEOUT) {
             Ok(update) => {
@@ -95,24 +144,23 @@ fn run_update_monitor(update_rx: Receiver<TdLibUpdate>, signal_tx: Sender<Option
                     "telegram update observed by chat monitor"
                 );
 
-                if signal_tx.send(update.chat_id()).is_err() {
+                let Some(chat_update) = map_update(update, mapper) else {
+                    tracing::debug!(update_kind = kind, "update has no chat_id, skipping");
+                    continue;
+                };
+
+                if signal_tx.send(chat_update).is_err() {
                     tracing::warn!(
                         code = CHAT_UPDATES_MONITOR_SIGNAL_SEND_FAILED,
-                        "chat updates monitor failed to send refresh signal; stopping"
+                        "chat updates monitor failed to send signal; stopping"
                     );
                     break;
                 }
 
-                tracing::debug!(
-                    update_kind = kind,
-                    "chat updates monitor requested chat list refresh"
-                );
+                tracing::debug!(update_kind = kind, "chat updates monitor forwarded update");
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // No update available, continue polling
-            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                // Channel closed (TdLibClient shutdown)
                 tracing::info!(
                     code = CHAT_UPDATES_MONITOR_STOPPED,
                     "telegram chat updates monitor stopped (channel closed)"
@@ -140,44 +188,201 @@ impl std::fmt::Display for ChatUpdatesMonitorStartError {
 
 impl std::error::Error for ChatUpdatesMonitorStartError {}
 
+/// Stub mapper for tests that creates a minimal domain Message.
+#[cfg(test)]
+pub struct StubMessageMapper;
+
+#[cfg(test)]
+impl MessageMapper for StubMessageMapper {
+    fn map_message(&self, raw: &tdlib_rs::types::Message) -> Message {
+        use super::tdlib_mappers;
+        let text = tdlib_mappers::extract_message_text(&raw.content);
+        let media = tdlib_mappers::extract_message_media(&raw.content);
+        Message {
+            id: raw.id,
+            sender_name: "TestUser".to_owned(),
+            text,
+            timestamp_ms: i64::from(raw.date) * 1000,
+            is_outgoing: raw.is_outgoing,
+            media,
+            status: crate::domain::message::MessageStatus::Delivered,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::message::{MessageMedia, MessageStatus};
     use std::sync::mpsc;
 
+    fn make_test_td_message(id: i64, chat_id: i64, text: &str) -> tdlib_rs::types::Message {
+        use tdlib_rs::enums::{MessageContent, MessageSender};
+        tdlib_rs::types::Message {
+            id,
+            sender_id: MessageSender::User(tdlib_rs::types::MessageSenderUser { user_id: 1 }),
+            chat_id,
+            sending_state: None,
+            scheduling_state: None,
+            is_outgoing: false,
+            is_pinned: false,
+            is_from_offline: false,
+            can_be_saved: true,
+            has_timestamped_media: false,
+            is_channel_post: false,
+            is_paid_star_suggested_post: false,
+            is_paid_ton_suggested_post: false,
+            contains_unread_mention: false,
+            date: 1609459200,
+            edit_date: 0,
+            forward_info: None,
+            import_info: None,
+            interaction_info: None,
+            unread_reactions: vec![],
+            fact_check: None,
+            suggested_post_info: None,
+            reply_to: None,
+            topic_id: None,
+            self_destruct_type: None,
+            self_destruct_in: 0.0,
+            auto_delete_in: 0.0,
+            via_bot_user_id: 0,
+            sender_business_bot_user_id: 0,
+            sender_boost_count: 0,
+            paid_message_star_count: 0,
+            author_signature: String::new(),
+            media_album_id: 0,
+            effect_id: 0,
+            restriction_info: None,
+            summary_language_code: String::new(),
+            content: MessageContent::MessageText(tdlib_rs::types::MessageText {
+                text: tdlib_rs::types::FormattedText {
+                    text: text.to_owned(),
+                    entities: vec![],
+                },
+                link_preview: None,
+                link_preview_options: None,
+            }),
+            reply_markup: None,
+        }
+    }
+
     #[test]
-    fn monitor_sends_chat_id_on_update() {
+    fn monitor_maps_new_message_to_chat_update() {
         let (update_tx, update_rx) = mpsc::channel();
         let (signal_tx, signal_rx) = mpsc::channel();
+        let mapper = Arc::new(StubMessageMapper);
 
-        let monitor =
-            TelegramChatUpdatesMonitor::start(update_rx, signal_tx).expect("monitor should start");
+        let monitor = TelegramChatUpdatesMonitor::start(update_rx, signal_tx, mapper)
+            .expect("monitor should start");
 
+        let td_msg = make_test_td_message(42, 123, "Hello from push");
         update_tx
-            .send(TdLibUpdate::NewMessage { chat_id: 123 })
-            .expect("update should be sent");
+            .send(TdLibUpdate::NewMessage {
+                chat_id: 123,
+                message: Box::new(td_msg),
+            })
+            .expect("send should succeed");
 
         let result = signal_rx.recv_timeout(Duration::from_millis(500));
-        assert_eq!(result, Ok(Some(123)));
+        match result {
+            Ok(ChatUpdate::NewMessage { chat_id, message }) => {
+                assert_eq!(chat_id, 123);
+                assert_eq!(message.id, 42);
+                assert_eq!(message.text, "Hello from push");
+                assert_eq!(message.sender_name, "TestUser");
+                assert_eq!(message.media, MessageMedia::None);
+                assert_eq!(message.status, MessageStatus::Delivered);
+            }
+            other => panic!("expected NewMessage, got: {other:?}"),
+        }
 
         drop(update_tx);
         drop(monitor);
     }
 
     #[test]
-    fn monitor_sends_none_for_user_status_update() {
+    fn monitor_maps_delete_messages() {
         let (update_tx, update_rx) = mpsc::channel();
         let (signal_tx, signal_rx) = mpsc::channel();
+        let mapper = Arc::new(StubMessageMapper);
 
-        let monitor =
-            TelegramChatUpdatesMonitor::start(update_rx, signal_tx).expect("monitor should start");
+        let monitor = TelegramChatUpdatesMonitor::start(update_rx, signal_tx, mapper)
+            .expect("monitor should start");
+
+        update_tx
+            .send(TdLibUpdate::DeleteMessages {
+                chat_id: 100,
+                message_ids: vec![1, 2, 3],
+            })
+            .expect("send should succeed");
+
+        let result = signal_rx.recv_timeout(Duration::from_millis(500));
+        match result {
+            Ok(ChatUpdate::MessagesDeleted {
+                chat_id,
+                message_ids,
+            }) => {
+                assert_eq!(chat_id, 100);
+                assert_eq!(message_ids, vec![1, 2, 3]);
+            }
+            other => panic!("expected MessagesDeleted, got: {other:?}"),
+        }
+
+        drop(update_tx);
+        drop(monitor);
+    }
+
+    #[test]
+    fn monitor_maps_metadata_updates() {
+        let (update_tx, update_rx) = mpsc::channel();
+        let (signal_tx, signal_rx) = mpsc::channel();
+        let mapper = Arc::new(StubMessageMapper);
+
+        let monitor = TelegramChatUpdatesMonitor::start(update_rx, signal_tx, mapper)
+            .expect("monitor should start");
+
+        update_tx
+            .send(TdLibUpdate::ChatReadInbox { chat_id: 50 })
+            .expect("send should succeed");
+
+        let result = signal_rx.recv_timeout(Duration::from_millis(500));
+        match result {
+            Ok(ChatUpdate::ChatMetadataChanged { chat_id }) => {
+                assert_eq!(chat_id, 50);
+            }
+            other => panic!("expected ChatMetadataChanged, got: {other:?}"),
+        }
+
+        drop(update_tx);
+        drop(monitor);
+    }
+
+    #[test]
+    fn monitor_skips_user_status_updates() {
+        let (update_tx, update_rx) = mpsc::channel();
+        let (signal_tx, signal_rx) = mpsc::channel();
+        let mapper = Arc::new(StubMessageMapper);
+
+        let monitor = TelegramChatUpdatesMonitor::start(update_rx, signal_tx, mapper)
+            .expect("monitor should start");
 
         update_tx
             .send(TdLibUpdate::UserStatus { user_id: 456 })
-            .expect("update should be sent");
+            .expect("send should succeed");
+
+        // Send a second update so we can verify the first was skipped
+        update_tx
+            .send(TdLibUpdate::ChatLastMessage { chat_id: 99 })
+            .expect("send should succeed");
 
         let result = signal_rx.recv_timeout(Duration::from_millis(500));
-        assert_eq!(result, Ok(None));
+        match result {
+            Ok(ChatUpdate::ChatMetadataChanged { chat_id }) => {
+                assert_eq!(chat_id, 99);
+            }
+            other => panic!("expected ChatMetadataChanged (skip UserStatus), got: {other:?}"),
+        }
 
         drop(update_tx);
         drop(monitor);
@@ -187,14 +392,12 @@ mod tests {
     fn monitor_stops_when_channel_closed() {
         let (update_tx, update_rx) = mpsc::channel::<TdLibUpdate>();
         let (signal_tx, _signal_rx) = mpsc::channel();
+        let mapper = Arc::new(StubMessageMapper);
 
-        let monitor =
-            TelegramChatUpdatesMonitor::start(update_rx, signal_tx).expect("monitor should start");
+        let monitor = TelegramChatUpdatesMonitor::start(update_rx, signal_tx, mapper)
+            .expect("monitor should start");
 
-        // Close the channel by dropping sender
         drop(update_tx);
-
-        // Monitor should exit gracefully on drop
         drop(monitor);
     }
 

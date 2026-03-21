@@ -50,6 +50,34 @@ impl MessageCache {
             .get(&chat_id)
             .is_some_and(|cm| !cm.messages.is_empty())
     }
+
+    /// Appends a message to a chat's cached messages.
+    ///
+    /// Inserts in timestamp order (oldest first). If the chat has no cache
+    /// entry yet, creates one with just this message. Skips duplicates by ID.
+    pub fn add_message(&mut self, chat_id: i64, message: Message) {
+        let entry = self.chats.entry(chat_id).or_insert_with(|| ChatMessages {
+            messages: Vec::new(),
+        });
+
+        // Skip if already present (dedup by message ID)
+        if entry.messages.iter().any(|m| m.id == message.id) {
+            return;
+        }
+
+        // Insert in timestamp order (messages are sorted oldest-first)
+        let pos = entry
+            .messages
+            .partition_point(|m| m.timestamp_ms <= message.timestamp_ms);
+        entry.messages.insert(pos, message);
+    }
+
+    /// Removes messages by ID from a chat's cache.
+    pub fn remove_messages(&mut self, chat_id: i64, message_ids: &[i64]) {
+        if let Some(entry) = self.chats.get_mut(&chat_id) {
+            entry.messages.retain(|m| !message_ids.contains(&m.id));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -134,5 +162,109 @@ mod tests {
         let mut cache = MessageCache::new();
         cache.put(1, vec![msg(10, "hello")]);
         assert!(cache.get(999).is_none());
+    }
+
+    // ── add_message tests ──
+
+    fn msg_with_ts(id: i64, text: &str, timestamp_ms: i64) -> Message {
+        Message {
+            id,
+            sender_name: "User".to_owned(),
+            text: text.to_owned(),
+            timestamp_ms,
+            is_outgoing: false,
+            media: MessageMedia::None,
+            status: MessageStatus::Delivered,
+        }
+    }
+
+    #[test]
+    fn add_message_to_empty_cache_creates_entry() {
+        let mut cache = MessageCache::new();
+        cache.add_message(100, msg(1, "hello"));
+
+        assert!(cache.has_messages(100));
+        assert_eq!(cache.get(100).unwrap().len(), 1);
+        assert_eq!(cache.get(100).unwrap()[0].text, "hello");
+    }
+
+    #[test]
+    fn add_message_appends_to_existing_entry() {
+        let mut cache = MessageCache::new();
+        cache.put(100, vec![msg_with_ts(1, "first", 1000)]);
+        cache.add_message(100, msg_with_ts(2, "second", 2000));
+
+        let cached = cache.get(100).unwrap();
+        assert_eq!(cached.len(), 2);
+        assert_eq!(cached[0].text, "first");
+        assert_eq!(cached[1].text, "second");
+    }
+
+    #[test]
+    fn add_message_inserts_in_timestamp_order() {
+        let mut cache = MessageCache::new();
+        cache.put(
+            100,
+            vec![msg_with_ts(1, "early", 1000), msg_with_ts(3, "late", 3000)],
+        );
+        cache.add_message(100, msg_with_ts(2, "middle", 2000));
+
+        let cached = cache.get(100).unwrap();
+        assert_eq!(cached.len(), 3);
+        assert_eq!(cached[0].text, "early");
+        assert_eq!(cached[1].text, "middle");
+        assert_eq!(cached[2].text, "late");
+    }
+
+    #[test]
+    fn add_message_skips_duplicate_by_id() {
+        let mut cache = MessageCache::new();
+        cache.put(100, vec![msg(1, "original")]);
+        cache.add_message(100, msg(1, "duplicate"));
+
+        let cached = cache.get(100).unwrap();
+        assert_eq!(cached.len(), 1);
+        assert_eq!(cached[0].text, "original");
+    }
+
+    // ── remove_messages tests ──
+
+    #[test]
+    fn remove_messages_removes_by_id() {
+        let mut cache = MessageCache::new();
+        cache.put(100, vec![msg(1, "a"), msg(2, "b"), msg(3, "c")]);
+        cache.remove_messages(100, &[2]);
+
+        let cached = cache.get(100).unwrap();
+        assert_eq!(cached.len(), 2);
+        assert_eq!(cached[0].text, "a");
+        assert_eq!(cached[1].text, "c");
+    }
+
+    #[test]
+    fn remove_messages_handles_multiple_ids() {
+        let mut cache = MessageCache::new();
+        cache.put(100, vec![msg(1, "a"), msg(2, "b"), msg(3, "c")]);
+        cache.remove_messages(100, &[1, 3]);
+
+        let cached = cache.get(100).unwrap();
+        assert_eq!(cached.len(), 1);
+        assert_eq!(cached[0].text, "b");
+    }
+
+    #[test]
+    fn remove_messages_ignores_unknown_chat() {
+        let mut cache = MessageCache::new();
+        cache.remove_messages(999, &[1, 2]); // should not panic
+        assert!(cache.get(999).is_none());
+    }
+
+    #[test]
+    fn remove_messages_ignores_unknown_ids() {
+        let mut cache = MessageCache::new();
+        cache.put(100, vec![msg(1, "a")]);
+        cache.remove_messages(100, &[999]);
+
+        assert_eq!(cache.get(100).unwrap().len(), 1);
     }
 }

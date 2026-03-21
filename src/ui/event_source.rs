@@ -7,7 +7,7 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::{
-    domain::events::{AppEvent, BackgroundTaskResult, ConnectivityStatus, KeyInput},
+    domain::events::{AppEvent, BackgroundTaskResult, ChatUpdate, ConnectivityStatus, KeyInput},
     usecases::contracts::AppEventSource,
 };
 
@@ -22,7 +22,7 @@ pub trait ConnectivityStatusSource {
 }
 
 pub trait ChatUpdatesSignalSource {
-    fn pending_update_chat_ids(&mut self) -> Option<Vec<i64>>;
+    fn pending_updates(&mut self) -> Option<Vec<ChatUpdate>>;
 }
 
 #[derive(Default)]
@@ -38,7 +38,7 @@ impl ConnectivityStatusSource for StubConnectivityStatusSource {
 pub struct StubChatUpdatesSignalSource;
 
 impl ChatUpdatesSignalSource for StubChatUpdatesSignalSource {
-    fn pending_update_chat_ids(&mut self) -> Option<Vec<i64>> {
+    fn pending_updates(&mut self) -> Option<Vec<ChatUpdate>> {
         None
     }
 }
@@ -92,38 +92,34 @@ impl ConnectivityStatusSource for ChannelConnectivityStatusSource {
 }
 
 pub struct ChannelChatUpdatesSignalSource {
-    receiver: Receiver<Option<i64>>,
+    receiver: Receiver<ChatUpdate>,
 }
 
 impl ChannelChatUpdatesSignalSource {
-    pub fn new(receiver: Receiver<Option<i64>>) -> Self {
+    pub fn new(receiver: Receiver<ChatUpdate>) -> Self {
         Self { receiver }
     }
 
     #[cfg(test)]
-    pub fn from_chat_ids(ids: Vec<Option<i64>>) -> Self {
+    pub fn from_updates(updates: Vec<ChatUpdate>) -> Self {
         let (tx, rx) = mpsc::channel();
-        for id in ids {
-            tx.send(id).expect("update signal should be sent");
+        for update in updates {
+            tx.send(update).expect("update should be sent");
         }
         Self::new(rx)
     }
 }
 
 impl ChatUpdatesSignalSource for ChannelChatUpdatesSignalSource {
-    fn pending_update_chat_ids(&mut self) -> Option<Vec<i64>> {
-        let mut chat_ids = Vec::new();
-        while let Ok(maybe_id) = self.receiver.try_recv() {
-            if let Some(id) = maybe_id {
-                if !chat_ids.contains(&id) {
-                    chat_ids.push(id);
-                }
-            }
+    fn pending_updates(&mut self) -> Option<Vec<ChatUpdate>> {
+        let mut updates = Vec::new();
+        while let Ok(update) = self.receiver.try_recv() {
+            updates.push(update);
         }
-        if chat_ids.is_empty() {
+        if updates.is_empty() {
             None
         } else {
-            Some(chat_ids)
+            Some(updates)
         }
     }
 }
@@ -236,14 +232,14 @@ impl CrosstermEventSource {
         }
 
         if self.chat_update_streak < MAX_CHAT_UPDATE_STREAK {
-            if let Some(affected_chat_ids) = self.chat_updates_source.pending_update_chat_ids() {
+            if let Some(updates) = self.chat_updates_source.pending_updates() {
                 self.connectivity_streak = 0;
                 self.chat_update_streak += 1;
                 tracing::debug!(
-                    ?affected_chat_ids,
+                    update_count = updates.len(),
                     "event source emitted chat update received"
                 );
-                return Ok(Some(AppEvent::ChatUpdateReceived { affected_chat_ids }));
+                return Ok(Some(AppEvent::ChatUpdateReceived { updates }));
             }
         }
 
@@ -379,7 +375,7 @@ mod tests {
     }
 
     struct TestChatUpdatesSource {
-        results: VecDeque<Option<Vec<i64>>>,
+        results: VecDeque<Option<Vec<ChatUpdate>>>,
     }
 
     impl TestChatUpdatesSource {
@@ -387,14 +383,20 @@ mod tests {
             Self {
                 results: bools
                     .into_iter()
-                    .map(|b| if b { Some(vec![1]) } else { None })
+                    .map(|b| {
+                        if b {
+                            Some(vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }])
+                        } else {
+                            None
+                        }
+                    })
                     .collect(),
             }
         }
     }
 
     impl ChatUpdatesSignalSource for TestChatUpdatesSource {
-        fn pending_update_chat_ids(&mut self) -> Option<Vec<i64>> {
+        fn pending_updates(&mut self) -> Option<Vec<ChatUpdate>> {
             self.results.pop_front().flatten()
         }
     }
@@ -403,8 +405,8 @@ mod tests {
     struct BurstyChatUpdatesSource;
 
     impl ChatUpdatesSignalSource for BurstyChatUpdatesSource {
-        fn pending_update_chat_ids(&mut self) -> Option<Vec<i64>> {
-            Some(vec![1])
+        fn pending_updates(&mut self) -> Option<Vec<ChatUpdate>> {
+            Some(vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }])
         }
     }
 
@@ -707,18 +709,16 @@ mod tests {
     }
 
     #[test]
-    fn channel_chat_updates_source_drains_burst_into_single_refresh() {
-        let mut source = ChannelChatUpdatesSignalSource::from_chat_ids(vec![
-            Some(1),
-            Some(2),
-            Some(1),
-            None,
-            Some(3),
+    fn channel_chat_updates_source_drains_burst_into_single_batch() {
+        let mut source = ChannelChatUpdatesSignalSource::from_updates(vec![
+            ChatUpdate::ChatMetadataChanged { chat_id: 1 },
+            ChatUpdate::ChatMetadataChanged { chat_id: 2 },
+            ChatUpdate::ChatMetadataChanged { chat_id: 3 },
         ]);
 
-        let ids = source.pending_update_chat_ids();
-        assert_eq!(ids, Some(vec![1, 2, 3]));
-        assert_eq!(source.pending_update_chat_ids(), None);
+        let updates = source.pending_updates();
+        assert_eq!(updates.as_ref().map(|u| u.len()), Some(3));
+        assert_eq!(source.pending_updates(), None);
     }
 
     #[test]

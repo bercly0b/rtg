@@ -115,17 +115,20 @@ impl TelegramAdapter {
 
     pub fn start_chat_updates_monitor(
         &self,
-        updates_tx: Sender<Option<i64>>,
+        updates_tx: Sender<crate::domain::events::ChatUpdate>,
     ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
-        // Get the TDLib update receiver from the backend
-        let update_rx = self
+        let backend = self
             .tdlib_backend
             .as_ref()
-            .and_then(|backend| backend.take_update_receiver())
             .ok_or(ChatUpdatesMonitorStartError::StartupRejected)?;
 
-        // Start the monitor with TDLib updates
-        TelegramChatUpdatesMonitor::start(update_rx, updates_tx)
+        let update_rx = backend
+            .take_update_receiver()
+            .ok_or(ChatUpdatesMonitorStartError::StartupRejected)?;
+
+        let mapper = backend.create_message_mapper();
+
+        TelegramChatUpdatesMonitor::start(update_rx, updates_tx, mapper)
     }
 
     #[cfg_attr(not(test), allow(dead_code))]

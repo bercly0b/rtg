@@ -67,7 +67,8 @@ fn compose_shell_with_factory(
 
     let event_source: Box<dyn AppEventSource> = if context.config.telegram.is_configured() {
         let (status_tx, status_rx) = std::sync::mpsc::channel::<ConnectivityStatus>();
-        let (updates_tx, updates_rx) = std::sync::mpsc::channel::<Option<i64>>();
+        let (updates_tx, updates_rx) =
+            std::sync::mpsc::channel::<crate::domain::events::ChatUpdate>();
 
         match monitor_factory.start(&context.telegram, status_tx) {
             Ok(monitor) => {
@@ -251,7 +252,7 @@ trait ConnectivityMonitorFactory {
     fn start_chat_updates(
         &self,
         telegram: &TelegramAdapter,
-        updates_tx: Sender<Option<i64>>,
+        updates_tx: Sender<crate::domain::events::ChatUpdate>,
     ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError>;
 }
 
@@ -269,7 +270,7 @@ impl ConnectivityMonitorFactory for RealConnectivityMonitorFactory {
     fn start_chat_updates(
         &self,
         telegram: &TelegramAdapter,
-        updates_tx: Sender<Option<i64>>,
+        updates_tx: Sender<crate::domain::events::ChatUpdate>,
     ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
         telegram.start_chat_updates_monitor(updates_tx)
     }
@@ -335,14 +336,14 @@ mod tests {
         fn start_chat_updates(
             &self,
             _telegram: &TelegramAdapter,
-            updates_tx: Sender<Option<i64>>,
+            updates_tx: Sender<crate::domain::events::ChatUpdate>,
         ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
             if self.chat_updates_should_fail {
                 return Err(ChatUpdatesMonitorStartError::StartupRejected);
             }
 
             updates_tx
-                .send(Some(1))
+                .send(crate::domain::events::ChatUpdate::ChatMetadataChanged { chat_id: 1 })
                 .expect("chat update signal should be sent");
 
             Ok(TelegramChatUpdatesMonitor::inert())
