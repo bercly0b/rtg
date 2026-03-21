@@ -132,4 +132,86 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn all_action_names_are_snake_case() {
+        let all_entries = chat_list_hotkeys().iter().chain(messages_hotkeys().iter());
+        for entry in all_entries {
+            assert!(
+                entry
+                    .action_name
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c == '_'),
+                "action name '{}' is not snake_case",
+                entry.action_name
+            );
+        }
+    }
+
+    #[test]
+    fn all_key_labels_are_non_empty() {
+        let all_entries = chat_list_hotkeys().iter().chain(messages_hotkeys().iter());
+        for entry in all_entries {
+            assert!(
+                !entry.key_label.is_empty(),
+                "key label should not be empty for action '{}'",
+                entry.action_name
+            );
+        }
+    }
+
+    #[test]
+    fn all_action_names_are_non_empty() {
+        let all_entries = chat_list_hotkeys().iter().chain(messages_hotkeys().iter());
+        for entry in all_entries {
+            assert!(
+                !entry.action_name.is_empty(),
+                "action name should not be empty for key '{}'",
+                entry.key_label
+            );
+        }
+    }
+
+    #[test]
+    fn chat_list_contains_quit_hotkey() {
+        assert!(
+            chat_list_hotkeys().iter().any(|e| e.action_name == "quit"),
+            "chat list hotkeys should include quit"
+        );
+    }
+
+    #[test]
+    fn messages_contains_quit_hotkey() {
+        assert!(
+            messages_hotkeys().iter().any(|e| e.action_name == "quit"),
+            "messages hotkeys should include quit"
+        );
+    }
+
+    #[test]
+    fn chat_list_contains_show_help_hotkey() {
+        assert!(
+            chat_list_hotkeys()
+                .iter()
+                .any(|e| e.action_name == "show_help"),
+            "chat list hotkeys should include show_help"
+        );
+    }
+
+    #[test]
+    fn messages_contains_show_help_hotkey() {
+        assert!(
+            messages_hotkeys()
+                .iter()
+                .any(|e| e.action_name == "show_help"),
+            "messages hotkeys should include show_help"
+        );
+    }
+
+    #[test]
+    fn chat_list_and_messages_have_different_content() {
+        let cl: Vec<&str> = chat_list_hotkeys().iter().map(|e| e.action_name).collect();
+        let msg: Vec<&str> = messages_hotkeys().iter().map(|e| e.action_name).collect();
+        assert_ne!(cl, msg, "chat list and messages hotkeys should differ");
+    }
 }

@@ -141,4 +141,91 @@ mod tests {
         let first_key = &lines[0].spans[0];
         assert_eq!(first_key.content.len(), 9);
     }
+
+    #[test]
+    fn build_hotkey_lines_empty_input() {
+        let lines = build_hotkey_lines(&[]);
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn build_hotkey_lines_single_entry_no_padding_needed() {
+        let entries = &[HotkeyEntry {
+            key_label: "q",
+            action_name: "quit",
+        }];
+        let lines = build_hotkey_lines(entries);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].spans.len(), 3);
+        // key, separator, action
+        assert_eq!(lines[0].spans[0].content, "q");
+        assert_eq!(lines[0].spans[1].content, "  ");
+        assert_eq!(lines[0].spans[2].content, "quit");
+    }
+
+    #[test]
+    fn build_hotkey_lines_has_correct_span_count() {
+        let entries = &[
+            HotkeyEntry {
+                key_label: "j",
+                action_name: "next",
+            },
+            HotkeyEntry {
+                key_label: "k",
+                action_name: "prev",
+            },
+        ];
+        let lines = build_hotkey_lines(entries);
+        for line in &lines {
+            assert_eq!(line.spans.len(), 3, "each line should have 3 spans");
+        }
+    }
+
+    #[test]
+    fn build_hotkey_lines_uses_correct_styles() {
+        let entries = &[HotkeyEntry {
+            key_label: "j",
+            action_name: "next",
+        }];
+        let lines = build_hotkey_lines(entries);
+        assert_eq!(lines[0].spans[0].style, styles::help_popup_key_style());
+        assert_eq!(lines[0].spans[2].style, styles::help_popup_action_style());
+    }
+
+    #[test]
+    fn centered_rect_with_non_zero_origin() {
+        let area = Rect::new(10, 5, 100, 40);
+        let result = centered_rect(area, 50, 50);
+        assert!(result.x >= area.x);
+        assert!(result.y >= area.y);
+        assert!(result.right() <= area.right());
+        assert!(result.bottom() <= area.bottom());
+        // Should be centered within the area
+        let expected_x = 10 + (100 - 50) / 2;
+        let expected_y = 5 + (40 - 20) / 2;
+        assert_eq!(result.x, expected_x);
+        assert_eq!(result.y, expected_y);
+    }
+
+    #[test]
+    fn centered_rect_zero_percent_uses_minimum() {
+        let area = Rect::new(0, 0, 80, 24);
+        let result = centered_rect(area, 0, 0);
+        assert_eq!(result.width, 30);
+        assert_eq!(result.height, 10);
+    }
+
+    #[test]
+    fn build_hotkey_lines_with_real_chat_list_data() {
+        let entries = help_content::chat_list_hotkeys();
+        let lines = build_hotkey_lines(entries);
+        assert_eq!(lines.len(), entries.len());
+    }
+
+    #[test]
+    fn build_hotkey_lines_with_real_messages_data() {
+        let entries = help_content::messages_hotkeys();
+        let lines = build_hotkey_lines(entries);
+        assert_eq!(lines.len(), entries.len());
+    }
 }
