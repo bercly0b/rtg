@@ -323,8 +323,11 @@ where
 
         tracing::debug!(chat_id, "dispatching send message to background");
 
-        // Optimistically clear the input; text will be restored on failure
+        // Optimistically clear the input and show the message immediately
         self.state.message_input_mut().clear();
+        self.state
+            .open_chat_mut()
+            .add_pending_message(trimmed.to_owned());
         self.dispatcher.dispatch_send_message(chat_id, text.clone());
     }
 
@@ -401,7 +404,8 @@ where
                         code = error.code,
                         "background: send message failed"
                     );
-                    // Restore the original text for retry
+                    // Remove the optimistic pending message and restore input for retry
+                    self.state.open_chat_mut().remove_pending_messages();
                     self.state.message_input_mut().set_text(&original_text);
                 }
             },
@@ -554,6 +558,7 @@ mod tests {
             timestamp_ms: 1000,
             is_outgoing: false,
             media: crate::domain::message::MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
         }
     }
 

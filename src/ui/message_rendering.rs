@@ -12,7 +12,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::domain::message::Message;
+use crate::domain::message::{Message, MessageStatus};
 
 use super::styles;
 
@@ -28,6 +28,7 @@ pub enum MessageListElement {
         sender: Option<String>,
         is_outgoing: bool,
         content: String,
+        status: MessageStatus,
     },
 }
 
@@ -71,6 +72,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             sender,
             is_outgoing: message.is_outgoing,
             content: message.display_content(),
+            status: message.status,
         });
 
         prev_date = Some(msg_date);
@@ -122,9 +124,16 @@ pub fn element_to_text(element: &MessageListElement) -> ratatui::text::Text<'sta
             sender,
             is_outgoing,
             content,
+            status,
         } => {
-            let lines =
-                build_message_lines(time, *show_time, sender.as_deref(), *is_outgoing, content);
+            let lines = build_message_lines(
+                time,
+                *show_time,
+                sender.as_deref(),
+                *is_outgoing,
+                content,
+                *status,
+            );
             ratatui::text::Text::from(lines)
         }
     }
@@ -136,6 +145,7 @@ fn build_message_lines(
     sender: Option<&str>,
     is_outgoing: bool,
     content: &str,
+    status: MessageStatus,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let indent = "      "; // 6 spaces to align with time column
@@ -189,6 +199,14 @@ fn build_message_lines(
             ));
             lines.push(Line::from(spans));
         }
+    }
+
+    // Append sending status indicator
+    if status == MessageStatus::Sending {
+        lines.push(Line::from(vec![
+            Span::raw(indent.to_owned()),
+            Span::styled("sending...", styles::message_sending_style()),
+        ]));
     }
 
     lines
@@ -289,6 +307,7 @@ mod tests {
             timestamp_ms: ts_ms,
             is_outgoing: outgoing,
             media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
         }
     }
 
@@ -306,6 +325,7 @@ mod tests {
             timestamp_ms: ts_ms,
             is_outgoing: false,
             media,
+            status: crate::domain::message::MessageStatus::Delivered,
         }
     }
 
