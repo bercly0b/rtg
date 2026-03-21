@@ -64,7 +64,7 @@ impl Message {
     pub fn display_content(&self) -> String {
         match (self.media.display_label(), self.text.is_empty()) {
             (Some(label), true) => label.to_owned(),
-            (Some(label), false) => format!("{} {}", label, self.text),
+            (Some(label), false) => format!("{}\n{}", label, self.text),
             (None, _) => self.text.clone(),
         }
     }
@@ -132,7 +132,40 @@ mod tests {
     fn display_content_combines_media_label_and_text() {
         let message = msg("Check this out", MessageMedia::Photo);
 
-        assert_eq!(message.display_content(), "[Photo] Check this out");
+        assert_eq!(message.display_content(), "[Photo]\nCheck this out");
+    }
+
+    #[test]
+    fn display_content_media_with_text_uses_newline_separator() {
+        let message = msg("Caption text", MessageMedia::Video);
+        let content = message.display_content();
+
+        assert!(
+            content.contains('\n'),
+            "Media + text should be separated by newline"
+        );
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0], "[Video]");
+        assert_eq!(lines[1], "Caption text");
+    }
+
+    #[test]
+    fn display_content_media_only_has_no_newline() {
+        let message = msg("", MessageMedia::Photo);
+        let content = message.display_content();
+
+        assert!(!content.contains('\n'));
+        assert_eq!(content, "[Photo]");
+    }
+
+    #[test]
+    fn display_content_text_only_has_no_media_prefix() {
+        let message = msg("Just text", MessageMedia::None);
+        let content = message.display_content();
+
+        assert_eq!(content, "Just text");
+        assert!(!content.starts_with('['));
     }
 
     #[test]

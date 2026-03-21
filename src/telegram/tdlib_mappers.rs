@@ -25,7 +25,7 @@ pub fn map_chat_to_summary(
         .iter()
         .any(|pos| matches!(&pos.list, tdlib_rs::enums::ChatList::Main) && pos.is_pinned);
 
-    let (last_message_preview, last_message_unix_ms, outgoing_status) =
+    let (last_message_preview, last_message_unix_ms, outgoing_status, last_message_id) =
         extract_last_message_info(chat, sender_name.is_some());
 
     // For private chats, is_online comes from the user's status
@@ -50,6 +50,7 @@ pub fn map_chat_to_summary(
         is_online,
         is_bot,
         outgoing_status,
+        last_message_id,
     }
 }
 
@@ -74,9 +75,9 @@ pub fn map_chat_type(td_type: &TdChatType) -> ChatType {
 fn extract_last_message_info(
     chat: &TdChat,
     _is_group_chat: bool,
-) -> (Option<String>, Option<i64>, OutgoingReadStatus) {
+) -> (Option<String>, Option<i64>, OutgoingReadStatus, Option<i64>) {
     let Some(ref msg) = chat.last_message else {
-        return (None, None, OutgoingReadStatus::default());
+        return (None, None, OutgoingReadStatus::default(), None);
     };
 
     let preview = extract_message_preview(&msg.content);
@@ -98,6 +99,7 @@ fn extract_last_message_info(
             is_outgoing,
             is_read,
         },
+        Some(msg.id),
     )
 }
 

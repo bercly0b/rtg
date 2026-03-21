@@ -38,4 +38,6 @@ pub struct ChatSummary {
     pub is_bot: bool,
     /// Read status of the last outgoing message.
     pub outgoing_status: OutgoingReadStatus,
+    /// ID of the last message in the chat (used for mark-as-read).
+    pub last_message_id: Option<i64>,
 }
