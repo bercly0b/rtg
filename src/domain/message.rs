@@ -64,7 +64,7 @@ impl Message {
     pub fn display_content(&self) -> String {
         match (self.media.display_label(), self.text.is_empty()) {
             (Some(label), true) => label.to_owned(),
-            (Some(label), false) => format!("{} {}", label, self.text),
+            (Some(label), false) => format!("{}\n{}", label, self.text),
             (None, _) => self.text.clone(),
         }
     }
@@ -132,7 +132,7 @@ mod tests {
     fn display_content_combines_media_label_and_text() {
         let message = msg("Check this out", MessageMedia::Photo);
 
-        assert_eq!(message.display_content(), "[Photo] Check this out");
+        assert_eq!(message.display_content(), "[Photo]\nCheck this out");
     }
 
     #[test]

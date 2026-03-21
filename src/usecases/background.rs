@@ -35,6 +35,12 @@ pub trait TaskDispatcher {
 
     /// Marks messages as read in a chat (fire-and-forget).
     fn dispatch_mark_as_read(&self, chat_id: i64, message_ids: Vec<i64>);
+
+    /// Marks a chat as read from the chat list (fire-and-forget).
+    ///
+    /// Performs openChat → viewMessages(force_read) → closeChat sequence
+    /// to mark the chat as read without loading its messages.
+    fn dispatch_mark_chat_as_read(&self, chat_id: i64, last_message_id: i64);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -251,6 +257,32 @@ where
             tracing::error!(error = %error, "failed to spawn mark-as-read background thread");
         }
     }
+
+    fn dispatch_mark_chat_as_read(&self, chat_id: i64, last_message_id: i64) {
+        let lifecycle = Arc::clone(&self.lifecycle);
+
+        if let Err(error) = std::thread::Builder::new()
+            .name("rtg-bg-mark-chat-read".into())
+            .spawn(move || {
+                tracing::debug!(chat_id, last_message_id, "background: marking chat as read from chat list");
+                // Open chat so TDLib tracks it as viewed
+                if let Err(e) = lifecycle.open_chat(chat_id) {
+                    tracing::warn!(chat_id, error = ?e, "background: openChat failed during mark-chat-read");
+                    return;
+                }
+                // Mark the last message as read
+                if let Err(e) = lifecycle.mark_messages_read(chat_id, vec![last_message_id]) {
+                    tracing::warn!(chat_id, error = ?e, "background: viewMessages failed during mark-chat-read");
+                }
+                // Close the chat
+                if let Err(e) = lifecycle.close_chat(chat_id) {
+                    tracing::warn!(chat_id, error = ?e, "background: closeChat failed during mark-chat-read");
+                }
+            })
+        {
+            tracing::error!(error = %error, "failed to spawn mark-chat-as-read background thread");
+        }
+    }
 }
 
 fn map_list_chats_error(error: &super::list_chats::ListChatsError) -> &'static str {
@@ -323,6 +355,10 @@ pub mod tests {
         }
 
         fn dispatch_mark_as_read(&self, _chat_id: i64, _message_ids: Vec<i64>) {
+            // Stub: fire-and-forget, no action needed in tests
+        }
+
+        fn dispatch_mark_chat_as_read(&self, _chat_id: i64, _last_message_id: i64) {
             // Stub: fire-and-forget, no action needed in tests
         }
     }

@@ -3,7 +3,7 @@
 use ratatui::{
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, Padding, Paragraph},
+    widgets::{Block, Padding, Paragraph, Wrap},
     Frame,
 };
 
@@ -28,19 +28,31 @@ pub fn render_message_input(
 
     let line = build_input_line(input_state, is_focused);
 
-    let paragraph = Paragraph::new(line).block(Block::new().padding(Padding::horizontal(1)));
+    let paragraph = Paragraph::new(line)
+        .block(Block::new().padding(Padding::horizontal(1)))
+        .wrap(Wrap { trim: false });
 
     frame.render_widget(paragraph, area);
 
     // Set cursor position when focused
     if is_focused {
-        // +1 for horizontal padding, no border offset needed
-        let cursor_x = area
-            .x
-            .saturating_add(1)
-            .saturating_add(PROMPT_SYMBOL.len() as u16)
-            .saturating_add(input_state.cursor_position().min(u16::MAX as usize) as u16);
-        let cursor_y = area.y;
+        // Compute cursor position accounting for text wrapping.
+        // Available width = area width - padding (1 left + 1 right)
+        let effective_width = area.width.saturating_sub(2) as usize;
+        let prompt_len = PROMPT_SYMBOL.len();
+        let cursor_offset = prompt_len + input_state.cursor_position();
+
+        let (cursor_row, cursor_col) = if effective_width == 0 {
+            (0, cursor_offset)
+        } else {
+            (
+                cursor_offset / effective_width,
+                cursor_offset % effective_width,
+            )
+        };
+
+        let cursor_x = area.x.saturating_add(1).saturating_add(cursor_col as u16);
+        let cursor_y = area.y.saturating_add(cursor_row as u16);
         frame.set_cursor_position((cursor_x, cursor_y));
     }
 }

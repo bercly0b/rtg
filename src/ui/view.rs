@@ -41,13 +41,17 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
         ])
         .areas(content_area);
 
+    // Compute dynamic input height based on text length and available width.
+    let input_height =
+        compute_input_height(state.message_input().text(), messages_with_input_area.width);
+
     // Split right panel into messages area, horizontal separator, and input field
     let [messages_area, input_separator_area, input_area] = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(1),
             Constraint::Length(1),
-            Constraint::Length(1),
+            Constraint::Length(input_height),
         ])
         .areas(messages_with_input_area);
 
@@ -471,8 +475,14 @@ fn render_messages_panel(
 
                 let element_index = if is_active { element_index } else { None };
 
-                let texts: Vec<ratatui::text::Text<'static>> =
-                    elements.iter().map(element_to_text).collect();
+                // Compute available content width for text wrapping.
+                // Subtract block padding (1 left + 1 right = 2).
+                let content_width = area.width.saturating_sub(2) as usize;
+
+                let texts: Vec<ratatui::text::Text<'static>> = elements
+                    .iter()
+                    .map(|e| element_to_text(e, content_width))
+                    .collect();
 
                 let list = ChatMessageList::new(texts)
                     .block(block())
@@ -502,6 +512,21 @@ fn open_chat_title(open_chat: &crate::domain::open_chat_state::OpenChatState) ->
     }
 }
 
+/// Computes the dynamic height for the message input area (1 to 5 lines).
+fn compute_input_height(text: &str, available_width: u16) -> u16 {
+    use unicode_width::UnicodeWidthStr;
+
+    // Account for horizontal padding (1 left + 1 right) and prompt symbol "> "
+    let effective_width = available_width.saturating_sub(2 + 2) as usize; // padding + prompt
+    if effective_width == 0 || text.is_empty() {
+        return 1;
+    }
+
+    let text_width = text.width();
+    let lines = text_width.div_ceil(effective_width);
+    (lines as u16).clamp(1, 5)
+}
+
 fn status_line(state: &ShellState) -> String {
     let mode = if state.is_running() {
         "running"
@@ -510,8 +535,12 @@ fn status_line(state: &ShellState) -> String {
     };
     let connectivity = state.connectivity_status().as_label();
     let nav_hint = match state.active_pane() {
-        ActivePane::ChatList => "j/k: navigate | l/Enter: open chat | r: refresh | q: quit",
-        ActivePane::Messages => "j/k: navigate | i: compose | h/Esc: back to chats | q: quit",
+        ActivePane::ChatList => {
+            "j/k: navigate | l/Enter: open chat | r: mark read | R: refresh | q: quit"
+        }
+        ActivePane::Messages => {
+            "j/k: navigate | y: copy | i: compose | h/Esc: back to chats | q: quit"
+        }
         ActivePane::MessageInput => "Esc: cancel | type your message",
     };
     format!("mode: {mode} | connectivity: {connectivity} | {nav_hint}")
@@ -546,6 +575,7 @@ mod tests {
             is_online: None,
             is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
+            last_message_id: None,
         }
     }
 
@@ -779,6 +809,7 @@ mod tests {
             is_online: None,
             is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
+            last_message_id: None,
         }
     }
 
@@ -801,6 +832,7 @@ mod tests {
             is_online: Some(is_online),
             is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
+            last_message_id: None,
         }
     }
 
@@ -826,6 +858,7 @@ mod tests {
                 is_outgoing: true,
                 is_read,
             },
+            last_message_id: None,
         }
     }
 
@@ -877,6 +910,7 @@ mod tests {
                 is_outgoing: true,
                 is_read,
             },
+            last_message_id: None,
         }
     }
 
@@ -1059,6 +1093,7 @@ mod tests {
                 is_outgoing: true,
                 is_read,
             },
+            last_message_id: None,
         }
     }
 
@@ -1168,6 +1203,7 @@ mod tests {
             is_online: Some(true),
             is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
+            last_message_id: None,
         };
 
         let line = chat_list_item_line(&chat, 70);
@@ -1192,6 +1228,7 @@ mod tests {
             is_online: Some(true),
             is_bot: true,
             outgoing_status: OutgoingReadStatus::default(),
+            last_message_id: None,
         };
 
         let line = chat_list_item_line(&chat, 70);

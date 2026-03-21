@@ -107,7 +107,13 @@ pub fn message_index_to_element_index(
 }
 
 /// Converts a list element to `Text` for the custom `ChatMessageList` widget.
-pub fn element_to_text(element: &MessageListElement) -> ratatui::text::Text<'static> {
+///
+/// `max_width` is the available width in terminal columns for wrapping long lines.
+/// Pass `0` to disable wrapping.
+pub fn element_to_text(
+    element: &MessageListElement,
+    max_width: usize,
+) -> ratatui::text::Text<'static> {
     match element {
         MessageListElement::DateSeparator(date) => {
             let separator = format!("——— {} ———", date);
@@ -133,6 +139,7 @@ pub fn element_to_text(element: &MessageListElement) -> ratatui::text::Text<'sta
                 *is_outgoing,
                 content,
                 *status,
+                max_width,
             );
             ratatui::text::Text::from(lines)
         }
@@ -146,9 +153,11 @@ fn build_message_lines(
     is_outgoing: bool,
     content: &str,
     status: MessageStatus,
+    max_width: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let indent = "      "; // 6 spaces to align with time column
+    let content_width = max_width.saturating_sub(indent.len());
 
     if sender.is_some() {
         // First message in group: header line (time + sender), then content on separate lines
@@ -156,10 +165,12 @@ fn build_message_lines(
         lines.push(header_line);
 
         for text_line in content.lines() {
-            let content_spans = build_content_line_spans(text_line);
-            let mut line_spans = vec![Span::raw(indent.to_owned())];
-            line_spans.extend(content_spans);
-            lines.push(Line::from(line_spans));
+            for wrapped in wrap_line(text_line, content_width) {
+                let content_spans = build_content_line_spans(&wrapped);
+                let mut line_spans = vec![Span::raw(indent.to_owned())];
+                line_spans.extend(content_spans);
+                lines.push(Line::from(line_spans));
+            }
         }
 
         if content.is_empty() {
@@ -179,16 +190,30 @@ fn build_message_lines(
         let mut content_lines = content.lines();
 
         if let Some(first_line) = content_lines.next() {
-            let mut spans = vec![time_span];
-            spans.extend(build_content_line_spans(first_line));
-            lines.push(Line::from(spans));
+            let first_line_wrapped = wrap_line(first_line, content_width);
+            let mut first_iter = first_line_wrapped.iter();
+
+            if let Some(first_wrapped) = first_iter.next() {
+                let mut spans = vec![time_span];
+                spans.extend(build_content_line_spans(first_wrapped));
+                lines.push(Line::from(spans));
+
+                for wrapped in first_iter {
+                    let content_spans = build_content_line_spans(wrapped);
+                    let mut line_spans = vec![Span::raw(indent.to_owned())];
+                    line_spans.extend(content_spans);
+                    lines.push(Line::from(line_spans));
+                }
+            }
 
             // Remaining lines with indent
             for text_line in content_lines {
-                let content_spans = build_content_line_spans(text_line);
-                let mut line_spans = vec![Span::raw(indent.to_owned())];
-                line_spans.extend(content_spans);
-                lines.push(Line::from(line_spans));
+                for wrapped in wrap_line(text_line, content_width) {
+                    let content_spans = build_content_line_spans(&wrapped);
+                    let mut line_spans = vec![Span::raw(indent.to_owned())];
+                    line_spans.extend(content_spans);
+                    lines.push(Line::from(line_spans));
+                }
             }
         } else {
             // Empty content
@@ -201,12 +226,13 @@ fn build_message_lines(
         }
     }
 
-    // Append sending status indicator
+    // Append sending status indicator on the same line as the last content line
     if status == MessageStatus::Sending {
-        lines.push(Line::from(vec![
-            Span::raw(indent.to_owned()),
-            Span::styled("sending...", styles::message_sending_style()),
-        ]));
+        if let Some(last_line) = lines.last_mut() {
+            last_line
+                .spans
+                .push(Span::styled(" sending...", styles::message_sending_style()));
+        }
     }
 
     lines
@@ -234,6 +260,47 @@ fn build_message_header_line(
     }
 
     Line::from(spans)
+}
+
+/// Wraps a text line to fit within `max_width` terminal columns.
+///
+/// Uses character-level breaking with Unicode width awareness.
+/// Returns at least one element (possibly empty string for empty input).
+fn wrap_line(text: &str, max_width: usize) -> Vec<String> {
+    use unicode_width::UnicodeWidthChar;
+
+    if max_width == 0 || text.is_empty() {
+        return vec![text.to_owned()];
+    }
+
+    let text_width: usize = text
+        .chars()
+        .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
+        .sum();
+    if text_width <= max_width {
+        return vec![text.to_owned()];
+    }
+
+    let mut result = Vec::new();
+    let mut current = String::new();
+    let mut current_width = 0;
+
+    for ch in text.chars() {
+        let ch_w = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if current_width + ch_w > max_width && !current.is_empty() {
+            result.push(std::mem::take(&mut current));
+            current_width = 0;
+        }
+        current.push(ch);
+        current_width += ch_w;
+    }
+    if !current.is_empty() {
+        result.push(current);
+    }
+    if result.is_empty() {
+        result.push(String::new());
+    }
+    result
 }
 
 /// Builds styled spans for content line, highlighting media indicators in cyan.
@@ -504,7 +571,7 @@ mod tests {
         let elements = build_message_list_elements(&messages);
 
         if let MessageListElement::Message { content, .. } = &elements[1] {
-            assert_eq!(content, "[Photo] Check this out");
+            assert_eq!(content, "[Photo]\nCheck this out");
         }
     }
 

@@ -119,6 +119,7 @@ mod tests {
             is_online: None,
             is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
+            last_message_id: None,
         }
     }
 

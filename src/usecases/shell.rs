@@ -206,6 +206,32 @@ where
         self.dispatcher.dispatch_load_messages(open_id);
     }
 
+    /// Marks the selected chat in the chat list as read (from the chat list view).
+    fn mark_selected_chat_as_read(&self) {
+        let Some(chat) = self.state.chat_list().selected_chat() else {
+            return;
+        };
+
+        if chat.unread_count == 0 {
+            return;
+        }
+
+        let Some(last_message_id) = chat.last_message_id else {
+            return;
+        };
+
+        let chat_id = chat.chat_id;
+
+        // If this chat is already opened in TDLib, just mark messages as read directly
+        if self.tdlib_opened_chat_id == Some(chat_id) {
+            self.dispatcher
+                .dispatch_mark_as_read(chat_id, vec![last_message_id]);
+        } else {
+            self.dispatcher
+                .dispatch_mark_chat_as_read(chat_id, last_message_id);
+        }
+    }
+
     /// Dispatches a mark-as-read request for all messages currently loaded in the open chat.
     fn mark_open_chat_messages_as_read(&self) {
         let Some(chat_id) = self.state.open_chat().chat_id() else {
@@ -257,7 +283,8 @@ where
         match key {
             "j" => self.state.chat_list_mut().select_next(),
             "k" => self.state.chat_list_mut().select_previous(),
-            "r" => self.dispatch_chat_list_refresh(),
+            "R" => self.dispatch_chat_list_refresh(),
+            "r" => self.mark_selected_chat_as_read(),
             "enter" | "l" => {
                 if self.state.chat_list().selected_chat().is_some() {
                     self.open_selected_chat();
@@ -281,6 +308,14 @@ where
             "i" => {
                 if self.state.open_chat().is_open() {
                     self.state.set_active_pane(ActivePane::MessageInput);
+                }
+            }
+            "y" => {
+                if let Some(msg) = self.state.open_chat().selected_message() {
+                    let text = msg.display_content();
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        let _ = clipboard.set_text(text);
+                    }
                 }
             }
             _ => {}
@@ -547,6 +582,7 @@ mod tests {
             is_online: None,
             is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
+            last_message_id: None,
         }
     }
 
@@ -644,6 +680,10 @@ mod tests {
             self.dispatched_mark_as_read
                 .borrow_mut()
                 .push((chat_id, message_ids));
+        }
+
+        fn dispatch_mark_chat_as_read(&self, _chat_id: i64, _last_message_id: i64) {
+            // Recording stub — not tracked for now
         }
     }
 
@@ -1029,7 +1069,7 @@ mod tests {
     #[test]
     fn refresh_key_dispatches_chat_list() {
         let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
-        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+        o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
             .unwrap();
         assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
     }
@@ -1070,7 +1110,7 @@ mod tests {
         assert!(!o.chat_list_in_flight);
 
         // Now another dispatch should work
-        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+        o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
             .unwrap();
         assert_eq!(o.dispatcher.chat_list_dispatch_count(), 2);
     }
@@ -1081,8 +1121,8 @@ mod tests {
         o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
             .unwrap();
 
-        // Trigger refresh via "r" key
-        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+        // Trigger refresh via "R" key
+        o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
             .unwrap();
 
         // State must stay Ready with existing data — no blink
@@ -1121,7 +1161,7 @@ mod tests {
         assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Error);
 
         // Refresh from error — should show loader since no data to display
-        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+        o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
             .unwrap();
         assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Loading);
     }
@@ -1132,7 +1172,7 @@ mod tests {
         assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Empty);
 
         // Refresh from empty — should show loader since no data to display
-        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+        o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
             .unwrap();
         assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Loading);
     }

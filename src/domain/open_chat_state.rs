@@ -219,6 +219,11 @@ impl OpenChatState {
         self.chat_id.is_some()
     }
 
+    /// Returns the currently selected message, if any.
+    pub fn selected_message(&self) -> Option<&Message> {
+        self.selected_index.and_then(|idx| self.messages.get(idx))
+    }
+
     /// Selects the next message (moves down in the list).
     pub fn select_next(&mut self) {
         if self.messages.is_empty() {
