@@ -25,20 +25,17 @@ jobs:
       - name: Cargo cache (registry + target)
         uses: Swatinem/rust-cache@v2
 
-      - name: Install just
-        uses: extractions/setup-just@v2
-
       - name: Gate 1 — cargo fmt --check
-        run: just fmt
+        run: cargo fmt --check
 
       - name: Gate 2 — cargo clippy -- -D warnings
         run: cargo clippy -- -D warnings
 
       - name: Gate 3 — cargo test
-        run: just test
+        run: cargo test
 
       - name: Gate 4 — cargo check
-        run: just check
+        run: cargo check
 
   coverage:
     runs-on: ubuntu-latest
@@ -60,14 +57,11 @@ jobs:
       - name: Cargo cache (registry + target)
         uses: Swatinem/rust-cache@v2
 
-      - name: Install just
-        uses: extractions/setup-just@v2
-
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage report
-        run: just coverage-lcov
+        run: cargo llvm-cov --no-fail-fast --lcov --output-path lcov.info
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
