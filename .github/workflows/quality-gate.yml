@@ -61,10 +61,21 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage report
-        run: cargo llvm-cov --no-fail-fast --lcov --output-path lcov.info
+        id: coverage
+        run: |
+          cargo llvm-cov --no-fail-fast --lcov --output-path lcov.info
+          {
+            echo 'SUMMARY<<EOF'
+            cargo llvm-cov report --summary-only 2>&1
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+      - name: Post coverage comment on PR
+        uses: marocchino/sticky-pull-request-comment@v2
         with:
-          name: lcov-report
-          path: lcov.info
+          header: coverage-report
+          message: |
+            ## Test Coverage Report
+            ```
+            ${{ steps.coverage.outputs.SUMMARY }}
+            ```
