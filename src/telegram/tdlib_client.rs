@@ -560,6 +560,48 @@ impl TdLibClient {
         })
     }
 
+    /// Gets full information about a supergroup or channel.
+    pub fn get_supergroup_full_info(
+        &self,
+        supergroup_id: i64,
+    ) -> Result<tdlib_rs::types::SupergroupFullInfo, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let info = tdlib_rs::functions::get_supergroup_full_info(supergroup_id, client_id)
+                .await
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })?;
+
+            match info {
+                tdlib_rs::enums::SupergroupFullInfo::SupergroupFullInfo(i) => Ok(i),
+            }
+        })
+    }
+
+    /// Gets full information about a basic group.
+    pub fn get_basic_group_full_info(
+        &self,
+        basic_group_id: i64,
+    ) -> Result<tdlib_rs::types::BasicGroupFullInfo, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let info = tdlib_rs::functions::get_basic_group_full_info(basic_group_id, client_id)
+                .await
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })?;
+
+            match info {
+                tdlib_rs::enums::BasicGroupFullInfo::BasicGroupFullInfo(i) => Ok(i),
+            }
+        })
+    }
+
     /// Informs TDLib that the chat is opened by the user.
     ///
     /// Many useful activities depend on the chat being opened or closed

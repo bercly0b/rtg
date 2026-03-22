@@ -12,7 +12,8 @@ use std::time::Duration;
 
 use tdlib_rs::enums::AuthorizationState;
 
-use crate::domain::chat::ChatSummary;
+use crate::domain::chat::{ChatSummary, ChatType};
+use crate::domain::chat_subtitle::ChatSubtitle;
 use crate::domain::message::Message;
 use crate::domain::status::AuthConnectivityStatus;
 use crate::infra::config::TelegramConfig;
@@ -612,6 +613,68 @@ impl TdLibAuthBackend {
     /// Resolves the sender name for a message.
     fn resolve_message_sender_name(&self, msg: &tdlib_rs::types::Message) -> String {
         resolve_sender_name(&self.client, msg)
+    }
+
+    /// Resolves the chat subtitle (user status, member count, etc.).
+    pub fn resolve_subtitle(&self, chat_id: i64) -> ChatSubtitle {
+        let chat = match self.client.get_chat(chat_id) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::debug!(chat_id, error = ?e, "failed to get chat for subtitle");
+                return ChatSubtitle::None;
+            }
+        };
+
+        let chat_type = tdlib_mappers::map_chat_type(&chat.r#type);
+
+        match chat_type {
+            ChatType::Private => self.resolve_private_subtitle(&chat.r#type),
+            ChatType::Group => self.resolve_group_subtitle(&chat.r#type),
+            ChatType::Channel => self.resolve_channel_subtitle(&chat.r#type),
+        }
+    }
+
+    fn resolve_private_subtitle(&self, td_type: &tdlib_rs::enums::ChatType) -> ChatSubtitle {
+        let Some(user_id) = tdlib_mappers::get_private_chat_user_id(td_type) else {
+            return ChatSubtitle::None;
+        };
+        let user = match self.client.get_user(user_id) {
+            Ok(u) => u,
+            Err(_) => return ChatSubtitle::None,
+        };
+        if matches!(user.r#type, tdlib_rs::enums::UserType::Bot(_)) {
+            return ChatSubtitle::Bot;
+        }
+        tdlib_mappers::map_user_status_to_subtitle(&user.status)
+    }
+
+    fn resolve_group_subtitle(&self, td_type: &tdlib_rs::enums::ChatType) -> ChatSubtitle {
+        match td_type {
+            tdlib_rs::enums::ChatType::BasicGroup(bg) => {
+                match self.client.get_basic_group_full_info(bg.basic_group_id) {
+                    Ok(info) => ChatSubtitle::Members(info.members.len() as i32),
+                    Err(_) => ChatSubtitle::None,
+                }
+            }
+            tdlib_rs::enums::ChatType::Supergroup(sg) => {
+                match self.client.get_supergroup_full_info(sg.supergroup_id) {
+                    Ok(info) => ChatSubtitle::Members(info.member_count),
+                    Err(_) => ChatSubtitle::None,
+                }
+            }
+            _ => ChatSubtitle::None,
+        }
+    }
+
+    fn resolve_channel_subtitle(&self, td_type: &tdlib_rs::enums::ChatType) -> ChatSubtitle {
+        if let tdlib_rs::enums::ChatType::Supergroup(sg) = td_type {
+            match self.client.get_supergroup_full_info(sg.supergroup_id) {
+                Ok(info) => ChatSubtitle::Subscribers(info.member_count),
+                Err(_) => ChatSubtitle::None,
+            }
+        } else {
+            ChatSubtitle::None
+        }
     }
 
     /// Creates a `MessageMapper` that can be shared with the chat updates monitor.

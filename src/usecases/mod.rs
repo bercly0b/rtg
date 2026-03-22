@@ -3,6 +3,7 @@
 pub mod background;
 pub mod bootstrap;
 pub mod chat_lifecycle;
+pub mod chat_subtitle;
 pub mod context;
 pub mod contracts;
 pub mod guided_auth;

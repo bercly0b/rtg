@@ -9,6 +9,7 @@ use crate::domain::events::{BackgroundError, BackgroundTaskResult};
 
 use super::{
     chat_lifecycle::{ChatLifecycle, ChatReadMarker, MessageDeleter},
+    chat_subtitle::{ChatSubtitleQuery, ChatSubtitleSource},
     list_chats::{list_chats, ListChatsQuery, ListChatsSource},
     load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
     send_message::{send_message, MessageSender, SendMessageCommand},
@@ -51,6 +52,9 @@ pub trait TaskDispatcher {
     /// Tries `revoke=true` first (delete for everyone), falls back to
     /// `revoke=false` (delete for self only) if that fails.
     fn dispatch_delete_message(&self, chat_id: i64, message_id: i64);
+
+    /// Resolves the chat subtitle (user status, member count, etc.) in the background.
+    fn dispatch_chat_subtitle(&self, query: ChatSubtitleQuery);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -58,32 +62,36 @@ pub trait TaskDispatcher {
 /// Each dispatched operation spawns a short-lived thread that calls the
 /// synchronous source trait method (which internally does `rt.block_on()`),
 /// then sends the result through the shared channel.
-pub struct ThreadTaskDispatcher<C, M, MS, L>
+pub struct ThreadTaskDispatcher<C, M, MS, L, S>
 where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + Send + Sync + 'static,
+    S: ChatSubtitleSource + Send + Sync + 'static,
 {
     chats_source: Arc<C>,
     messages_source: Arc<M>,
     message_sender: Arc<MS>,
     lifecycle: Arc<L>,
+    subtitle_source: Arc<S>,
     result_tx: Sender<BackgroundTaskResult>,
 }
 
-impl<C, M, MS, L> ThreadTaskDispatcher<C, M, MS, L>
+impl<C, M, MS, L, S> ThreadTaskDispatcher<C, M, MS, L, S>
 where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + Send + Sync + 'static,
+    S: ChatSubtitleSource + Send + Sync + 'static,
 {
     pub fn new(
         chats_source: Arc<C>,
         messages_source: Arc<M>,
         message_sender: Arc<MS>,
         lifecycle: Arc<L>,
+        subtitle_source: Arc<S>,
         result_tx: Sender<BackgroundTaskResult>,
     ) -> Self {
         Self {
@@ -91,17 +99,19 @@ where
             messages_source,
             message_sender,
             lifecycle,
+            subtitle_source,
             result_tx,
         }
     }
 }
 
-impl<C, M, MS, L> TaskDispatcher for ThreadTaskDispatcher<C, M, MS, L>
+impl<C, M, MS, L, S> TaskDispatcher for ThreadTaskDispatcher<C, M, MS, L, S>
 where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + Send + Sync + 'static,
+    S: ChatSubtitleSource + Send + Sync + 'static,
 {
     fn dispatch_chat_list(&self) {
         let source = Arc::clone(&self.chats_source);
@@ -343,6 +353,26 @@ where
             tracing::error!(error = %error, "failed to spawn delete message background thread");
         }
     }
+
+    fn dispatch_chat_subtitle(&self, query: ChatSubtitleQuery) {
+        let source = Arc::clone(&self.subtitle_source);
+        let tx = self.result_tx.clone();
+        let chat_id = query.chat_id;
+
+        if let Err(error) = std::thread::Builder::new()
+            .name("rtg-bg-subtitle".into())
+            .spawn(move || {
+                tracing::debug!(chat_id, "background: resolving chat subtitle");
+                let result = source
+                    .resolve_chat_subtitle(&query)
+                    .map_err(|_| BackgroundError::new("SUBTITLE_UNAVAILABLE"));
+
+                let _ = tx.send(BackgroundTaskResult::ChatSubtitleLoaded { chat_id, result });
+            })
+        {
+            tracing::error!(error = %error, "failed to spawn subtitle background thread");
+        }
+    }
 }
 
 fn map_list_chats_error(error: &super::list_chats::ListChatsError) -> &'static str {
@@ -428,6 +458,10 @@ pub mod tests {
 
         fn dispatch_delete_message(&self, _chat_id: i64, _message_id: i64) {
             // Stub: fire-and-forget, no action needed in tests
+        }
+
+        fn dispatch_chat_subtitle(&self, _query: ChatSubtitleQuery) {
+            // Stub: does not dispatch; tests inject results manually
         }
     }
 

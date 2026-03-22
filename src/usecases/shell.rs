@@ -11,6 +11,7 @@ use crate::{
         shell_state::{ActivePane, ShellState},
     },
     infra::contracts::{ExternalOpener, StorageAdapter},
+    usecases::chat_subtitle::ChatSubtitleQuery,
 };
 
 use super::{
@@ -138,6 +139,7 @@ where
 
         let chat_id = selected.chat_id;
         let chat_title = selected.title.clone();
+        let chat_type = selected.chat_type;
 
         // Cancel any in-flight prefetch — the user explicitly opened a chat.
         self.prefetch_in_flight = None;
@@ -204,6 +206,10 @@ where
         // Dispatch a full background load (pagination).
         self.messages_refresh_in_flight = true;
         self.dispatcher.dispatch_load_messages(chat_id);
+
+        // Dispatch subtitle resolution (user status / member count).
+        self.dispatcher
+            .dispatch_chat_subtitle(ChatSubtitleQuery { chat_id, chat_type });
     }
 
     /// Prefetches messages for the currently highlighted chat in the chat list.
@@ -674,6 +680,19 @@ where
                     }
                 }
             }
+            BackgroundTaskResult::ChatSubtitleLoaded { chat_id, result } => {
+                if self.state.open_chat().chat_id() == Some(chat_id) {
+                    match result {
+                        Ok(subtitle) => {
+                            tracing::debug!(chat_id, ?subtitle, "chat subtitle resolved");
+                            self.state.open_chat_mut().set_chat_subtitle(subtitle);
+                        }
+                        Err(e) => {
+                            tracing::debug!(chat_id, error = ?e, "chat subtitle resolution failed");
+                        }
+                    }
+                }
+            }
             BackgroundTaskResult::MessagesPrefetched { chat_id, result } => {
                 if self.prefetch_in_flight == Some(chat_id) {
                     self.prefetch_in_flight = None;
@@ -1008,6 +1027,10 @@ mod tests {
             self.dispatched_deletes
                 .borrow_mut()
                 .push((chat_id, message_id));
+        }
+
+        fn dispatch_chat_subtitle(&self, _query: ChatSubtitleQuery) {
+            // Recording: no-op for now
         }
     }
 

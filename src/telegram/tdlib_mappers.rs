@@ -7,6 +7,7 @@ use tdlib_rs::enums::{ChatType as TdChatType, MessageContent, MessageSender, Use
 use tdlib_rs::types::{Chat as TdChat, Message as TdMessage, User as TdUser};
 
 use crate::domain::chat::{ChatSummary, ChatType, OutgoingReadStatus};
+use crate::domain::chat_subtitle::ChatSubtitle;
 use crate::domain::message::{Message, MessageMedia};
 
 /// Maps a TDLib Chat to a domain ChatSummary.
@@ -221,6 +222,18 @@ pub fn is_user_online(status: &UserStatus) -> bool {
     matches!(status, UserStatus::Online(_))
 }
 
+/// Maps a TDLib `UserStatus` to a domain `ChatSubtitle`.
+pub fn map_user_status_to_subtitle(status: &UserStatus) -> ChatSubtitle {
+    match status {
+        UserStatus::Online(_) => ChatSubtitle::Online,
+        UserStatus::Offline(o) => ChatSubtitle::LastSeen(o.was_online),
+        UserStatus::Recently(_) => ChatSubtitle::Recently,
+        UserStatus::LastWeek(_) => ChatSubtitle::WithinWeek,
+        UserStatus::LastMonth(_) => ChatSubtitle::WithinMonth,
+        UserStatus::Empty => ChatSubtitle::LongTimeAgo,
+    }
+}
+
 /// Gets the user ID from a MessageSender, if it's a user.
 pub fn get_sender_user_id(sender: &MessageSender) -> Option<i64> {
     match sender {
@@ -378,6 +391,57 @@ mod tests {
         assert!(!is_user_online(&UserStatus::Offline(Default::default())));
         assert!(!is_user_online(&UserStatus::Recently(Default::default())));
         assert!(!is_user_online(&UserStatus::Empty));
+    }
+
+    #[test]
+    fn map_user_status_to_subtitle_online() {
+        assert_eq!(
+            map_user_status_to_subtitle(&UserStatus::Online(Default::default())),
+            ChatSubtitle::Online
+        );
+    }
+
+    #[test]
+    fn map_user_status_to_subtitle_offline() {
+        let offline = tdlib_rs::types::UserStatusOffline {
+            was_online: 1234567,
+        };
+        assert_eq!(
+            map_user_status_to_subtitle(&UserStatus::Offline(offline)),
+            ChatSubtitle::LastSeen(1234567)
+        );
+    }
+
+    #[test]
+    fn map_user_status_to_subtitle_recently() {
+        assert_eq!(
+            map_user_status_to_subtitle(&UserStatus::Recently(Default::default())),
+            ChatSubtitle::Recently
+        );
+    }
+
+    #[test]
+    fn map_user_status_to_subtitle_last_week() {
+        assert_eq!(
+            map_user_status_to_subtitle(&UserStatus::LastWeek(Default::default())),
+            ChatSubtitle::WithinWeek
+        );
+    }
+
+    #[test]
+    fn map_user_status_to_subtitle_last_month() {
+        assert_eq!(
+            map_user_status_to_subtitle(&UserStatus::LastMonth(Default::default())),
+            ChatSubtitle::WithinMonth
+        );
+    }
+
+    #[test]
+    fn map_user_status_to_subtitle_empty() {
+        assert_eq!(
+            map_user_status_to_subtitle(&UserStatus::Empty),
+            ChatSubtitle::LongTimeAgo
+        );
     }
 
     #[test]

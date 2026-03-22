@@ -1,3 +1,4 @@
+use super::chat_subtitle::ChatSubtitle;
 use super::message::{Message, MessageStatus};
 
 // ─── Scroll offset ──────────────────────────────────────────────────────────
@@ -56,6 +57,7 @@ pub enum MessageSource {
 pub struct OpenChatState {
     chat_id: Option<i64>,
     chat_title: String,
+    chat_subtitle: ChatSubtitle,
     messages: Vec<Message>,
     ui_state: OpenChatUiState,
     selected_index: Option<usize>,
@@ -71,6 +73,7 @@ impl Default for OpenChatState {
         Self {
             chat_id: None,
             chat_title: String::new(),
+            chat_subtitle: ChatSubtitle::None,
             messages: Vec::new(),
             ui_state: OpenChatUiState::Empty,
             selected_index: None,
@@ -89,6 +92,14 @@ impl OpenChatState {
 
     pub fn chat_title(&self) -> &str {
         &self.chat_title
+    }
+
+    pub fn chat_subtitle(&self) -> &ChatSubtitle {
+        &self.chat_subtitle
+    }
+
+    pub fn set_chat_subtitle(&mut self, subtitle: ChatSubtitle) {
+        self.chat_subtitle = subtitle;
     }
 
     pub fn messages(&self) -> &[Message] {
@@ -136,6 +147,7 @@ impl OpenChatState {
     pub fn set_loading(&mut self, chat_id: i64, chat_title: String) {
         self.chat_id = Some(chat_id);
         self.chat_title = chat_title;
+        self.chat_subtitle = ChatSubtitle::None;
         self.messages.clear();
         self.ui_state = OpenChatUiState::Loading;
         self.selected_index = None;
@@ -271,6 +283,7 @@ impl OpenChatState {
     pub fn clear(&mut self) {
         self.chat_id = None;
         self.chat_title.clear();
+        self.chat_subtitle = ChatSubtitle::None;
         self.messages.clear();
         self.ui_state = OpenChatUiState::Empty;
         self.selected_index = None;
