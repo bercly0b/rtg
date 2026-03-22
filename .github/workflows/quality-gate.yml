@@ -62,13 +62,68 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Generate coverage report
+      - name: Generate PR branch coverage
+        run: cargo llvm-cov --no-fail-fast --json --summary-only --output-path pr-coverage.json
+
+      - name: Clean profiling data
+        run: cargo llvm-cov clean --workspace
+
+      - name: Generate main branch coverage
+        run: |
+          git fetch origin main
+          git checkout origin/main
+          cargo llvm-cov --no-fail-fast --json --summary-only --output-path main-coverage.json
+          git checkout -
+
+      - name: Build coverage report
         id: coverage
         run: |
-          cargo llvm-cov --no-fail-fast --lcov --output-path lcov.info
+          PR_LINES=$(jq '.data[0].totals.lines.percent' pr-coverage.json)
+          PR_FUNCS=$(jq '.data[0].totals.functions.percent' pr-coverage.json)
+          PR_REGIONS=$(jq '.data[0].totals.regions.percent' pr-coverage.json)
+          PR_LINES_COVERED=$(jq '.data[0].totals.lines.covered' pr-coverage.json)
+          PR_LINES_TOTAL=$(jq '.data[0].totals.lines.count' pr-coverage.json)
+
+          MAIN_LINES=$(jq '.data[0].totals.lines.percent' main-coverage.json)
+          MAIN_FUNCS=$(jq '.data[0].totals.functions.percent' main-coverage.json)
+          MAIN_REGIONS=$(jq '.data[0].totals.regions.percent' main-coverage.json)
+
+          fmt_delta() {
+            local delta
+            delta=$(awk "BEGIN {printf \"%.2f\", $1 - $2}")
+            if awk "BEGIN {exit !($1 > $2 + 0.005)}"; then
+              echo "+${delta}% ↑"
+            elif awk "BEGIN {exit !($2 > $1 + 0.005)}"; then
+              echo "${delta}% ↓"
+            else
+              echo "0.00%"
+            fi
+          }
+
+          DELTA_LINES=$(fmt_delta "$PR_LINES" "$MAIN_LINES")
+          DELTA_FUNCS=$(fmt_delta "$PR_FUNCS" "$MAIN_FUNCS")
+          DELTA_REGIONS=$(fmt_delta "$PR_REGIONS" "$MAIN_REGIONS")
+
+          FMT_PR_LINES=$(awk "BEGIN {printf \"%.2f\", $PR_LINES}")
+          FMT_PR_FUNCS=$(awk "BEGIN {printf \"%.2f\", $PR_FUNCS}")
+          FMT_PR_REGIONS=$(awk "BEGIN {printf \"%.2f\", $PR_REGIONS}")
+          FMT_MAIN_LINES=$(awk "BEGIN {printf \"%.2f\", $MAIN_LINES}")
+          FMT_MAIN_FUNCS=$(awk "BEGIN {printf \"%.2f\", $MAIN_FUNCS}")
+          FMT_MAIN_REGIONS=$(awk "BEGIN {printf \"%.2f\", $MAIN_REGIONS}")
+
           {
-            echo 'SUMMARY<<EOF'
-            cargo llvm-cov report --summary-only 2>&1
+            echo 'REPORT<<EOF'
+            echo "## Test Coverage Report"
+            echo ""
+            echo "| Metric | \`main\` | PR | Delta |"
+            echo "|--------|--------|-----|-------|"
+            echo "| Lines | ${FMT_MAIN_LINES}% | ${FMT_PR_LINES}% | ${DELTA_LINES} |"
+            echo "| Functions | ${FMT_MAIN_FUNCS}% | ${FMT_PR_FUNCS}% | ${DELTA_FUNCS} |"
+            echo "| Regions | ${FMT_MAIN_REGIONS}% | ${FMT_PR_REGIONS}% | ${DELTA_REGIONS} |"
+            echo ""
+            echo "**Lines covered:** ${PR_LINES_COVERED} / ${PR_LINES_TOTAL}"
+            echo ""
+            echo "> Compared against \`main\` branch"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
@@ -77,7 +132,4 @@ jobs:
         with:
           header: coverage-report
           message: |
-            ## Test Coverage Report
-            ```
-            ${{ steps.coverage.outputs.SUMMARY }}
-            ```
+            ${{ steps.coverage.outputs.REPORT }}
