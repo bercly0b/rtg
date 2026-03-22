@@ -1,9 +1,14 @@
 use serde::{Deserialize, Serialize};
 
+use crate::domain::message_cache::{
+    DEFAULT_MAX_CACHED_CHATS, DEFAULT_MAX_MESSAGES_PER_CHAT, DEFAULT_MIN_DISPLAY_MESSAGES,
+};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AppConfig {
     pub logging: LogConfig,
     pub telegram: TelegramConfig,
+    pub cache: CacheConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -43,6 +48,38 @@ impl Default for TelegramConfig {
         Self {
             api_id: 0,
             api_hash: "replace-me".to_owned(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CacheConfig {
+    #[serde(default = "default_max_cached_chats")]
+    pub max_cached_chats: usize,
+    #[serde(default = "default_max_messages_per_chat")]
+    pub max_messages_per_chat: usize,
+    #[serde(default = "default_min_display_messages")]
+    pub min_display_messages: usize,
+}
+
+fn default_max_cached_chats() -> usize {
+    DEFAULT_MAX_CACHED_CHATS
+}
+
+fn default_max_messages_per_chat() -> usize {
+    DEFAULT_MAX_MESSAGES_PER_CHAT
+}
+
+fn default_min_display_messages() -> usize {
+    DEFAULT_MIN_DISPLAY_MESSAGES
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            max_cached_chats: default_max_cached_chats(),
+            max_messages_per_chat: default_max_messages_per_chat(),
+            min_display_messages: default_min_display_messages(),
         }
     }
 }
@@ -107,5 +144,13 @@ mod tests {
             api_hash: "   ".to_owned(),
         };
         assert!(!config.is_configured());
+    }
+
+    #[test]
+    fn default_cache_config_has_expected_values() {
+        let config = CacheConfig::default();
+        assert_eq!(config.max_cached_chats, DEFAULT_MAX_CACHED_CHATS);
+        assert_eq!(config.max_messages_per_chat, DEFAULT_MAX_MESSAGES_PER_CHAT);
+        assert_eq!(config.min_display_messages, DEFAULT_MIN_DISPLAY_MESSAGES);
     }
 }

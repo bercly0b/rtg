@@ -41,6 +41,17 @@ pub enum OpenChatUiState {
 /// Used by the UI layer via `ChatMessageList::scroll_padding()`.
 pub const SCROLL_MARGIN: usize = 5;
 
+/// Source of the currently displayed messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageSource {
+    /// No data loaded yet (initial state).
+    None,
+    /// Messages were served from the in-memory app cache.
+    Cache,
+    /// Messages were fetched from the network (TDLib remote).
+    Live,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenChatState {
     chat_id: Option<i64>,
@@ -49,6 +60,10 @@ pub struct OpenChatState {
     ui_state: OpenChatUiState,
     selected_index: Option<usize>,
     scroll_offset: ScrollOffset,
+    /// Whether a background refresh is in-flight while cached messages are shown.
+    refreshing: bool,
+    /// How the currently displayed messages were obtained.
+    message_source: MessageSource,
 }
 
 impl Default for OpenChatState {
@@ -60,6 +75,8 @@ impl Default for OpenChatState {
             ui_state: OpenChatUiState::Empty,
             selected_index: None,
             scroll_offset: ScrollOffset::ZERO,
+            refreshing: false,
+            message_source: MessageSource::None,
         }
     }
 }
@@ -100,6 +117,22 @@ impl OpenChatState {
         self.scroll_offset = offset;
     }
 
+    pub fn is_refreshing(&self) -> bool {
+        self.refreshing
+    }
+
+    pub fn set_refreshing(&mut self, refreshing: bool) {
+        self.refreshing = refreshing;
+    }
+
+    pub fn message_source(&self) -> MessageSource {
+        self.message_source
+    }
+
+    pub fn set_message_source(&mut self, source: MessageSource) {
+        self.message_source = source;
+    }
+
     pub fn set_loading(&mut self, chat_id: i64, chat_title: String) {
         self.chat_id = Some(chat_id);
         self.chat_title = chat_title;
@@ -107,8 +140,15 @@ impl OpenChatState {
         self.ui_state = OpenChatUiState::Loading;
         self.selected_index = None;
         self.scroll_offset = ScrollOffset::ZERO;
+        self.refreshing = false;
+        self.message_source = MessageSource::None;
     }
 
+    /// Transitions to `Ready` with the given messages.
+    ///
+    /// Does NOT modify `refreshing` or `message_source` — callers must
+    /// set these explicitly after calling `set_ready()` to indicate
+    /// whether the data is cached/live and if a refresh is in-flight.
     pub fn set_ready(&mut self, messages: Vec<Message>) {
         self.selected_index = if messages.is_empty() {
             None
@@ -142,6 +182,8 @@ impl OpenChatState {
 
         self.messages = messages;
         self.ui_state = OpenChatUiState::Ready;
+        self.refreshing = false;
+        self.message_source = MessageSource::Live;
 
         // Try to preserve selection by message ID
         if let Some(prev_id) = previous_message_id {
@@ -203,6 +245,8 @@ impl OpenChatState {
 
     pub fn set_error(&mut self) {
         self.ui_state = OpenChatUiState::Error;
+        self.refreshing = false;
+        self.message_source = MessageSource::None;
     }
 
     #[allow(dead_code)]
@@ -213,6 +257,8 @@ impl OpenChatState {
         self.ui_state = OpenChatUiState::Empty;
         self.selected_index = None;
         self.scroll_offset = ScrollOffset::ZERO;
+        self.refreshing = false;
+        self.message_source = MessageSource::None;
     }
 
     pub fn is_open(&self) -> bool {
@@ -275,6 +321,8 @@ mod tests {
         assert!(!state.is_open());
         assert!(state.messages().is_empty());
         assert_eq!(state.selected_index(), None);
+        assert!(!state.is_refreshing());
+        assert_eq!(state.message_source(), MessageSource::None);
     }
 
     #[test]
@@ -287,6 +335,22 @@ mod tests {
         assert_eq!(state.chat_title(), "Test Chat");
         assert_eq!(state.ui_state(), OpenChatUiState::Loading);
         assert_eq!(state.selected_index(), None);
+        assert!(!state.is_refreshing());
+        assert_eq!(state.message_source(), MessageSource::None);
+    }
+
+    #[test]
+    fn set_loading_resets_refreshing_and_source() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A")]);
+        state.set_refreshing(true);
+        state.set_message_source(MessageSource::Cache);
+
+        state.set_loading(2, "Other Chat".to_owned());
+
+        assert!(!state.is_refreshing());
+        assert_eq!(state.message_source(), MessageSource::None);
     }
 
     #[test]
@@ -325,10 +389,26 @@ mod tests {
     }
 
     #[test]
+    fn set_error_resets_refreshing_and_source() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A")]);
+        state.set_refreshing(true);
+        state.set_message_source(MessageSource::Cache);
+
+        state.set_error();
+
+        assert!(!state.is_refreshing());
+        assert_eq!(state.message_source(), MessageSource::None);
+    }
+
+    #[test]
     fn clear_resets_to_empty() {
         let mut state = OpenChatState::default();
         state.set_loading(1, "Chat".to_owned());
         state.set_ready(vec![message(1, "Hi")]);
+        state.set_refreshing(true);
+        state.set_message_source(MessageSource::Cache);
 
         state.clear();
 
@@ -336,6 +416,8 @@ mod tests {
         assert!(!state.is_open());
         assert!(state.messages().is_empty());
         assert_eq!(state.selected_index(), None);
+        assert!(!state.is_refreshing());
+        assert_eq!(state.message_source(), MessageSource::None);
     }
 
     #[test]
@@ -469,6 +551,20 @@ mod tests {
     }
 
     // ── update_messages tests ──
+
+    #[test]
+    fn update_messages_clears_refreshing_and_sets_live_source() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A")]);
+        state.set_refreshing(true);
+        state.set_message_source(MessageSource::Cache);
+
+        state.update_messages(vec![message(1, "A"), message(2, "B")]);
+
+        assert!(!state.is_refreshing());
+        assert_eq!(state.message_source(), MessageSource::Live);
+    }
 
     #[test]
     fn update_messages_preserves_selection_by_message_id() {

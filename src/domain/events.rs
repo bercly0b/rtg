@@ -4,7 +4,7 @@ pub enum AppEvent {
     QuitRequested,
     InputKey(KeyInput),
     ConnectivityChanged(ConnectivityStatus),
-    ChatUpdateReceived { affected_chat_ids: Vec<i64> },
+    ChatUpdateReceived { updates: Vec<ChatUpdate> },
     BackgroundTaskCompleted(BackgroundTaskResult),
 }
 
@@ -38,6 +38,12 @@ pub enum BackgroundTaskResult {
         chat_id: i64,
         result: Result<Vec<super::message::Message>, BackgroundError>,
     },
+    /// Background prefetch of messages for a chat the user is hovering.
+    /// Results go only into `MessageCache`, not `OpenChatState`.
+    MessagesPrefetched {
+        chat_id: i64,
+        result: Result<Vec<super::message::Message>, BackgroundError>,
+    },
 }
 
 /// Lightweight error type for background task failures.
@@ -52,6 +58,35 @@ pub struct BackgroundError {
 impl BackgroundError {
     pub fn new(code: &'static str) -> Self {
         Self { code }
+    }
+}
+
+/// A granular update from Telegram about a specific chat.
+///
+/// Produced by the chat updates monitor from TDLib push updates.
+/// Carries enough data for the orchestrator to warm the message cache
+/// without dispatching additional TDLib calls.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChatUpdate {
+    /// A new message arrived in a chat.
+    NewMessage {
+        chat_id: i64,
+        message: super::message::Message,
+    },
+    /// Messages were deleted from a chat.
+    MessagesDeleted { chat_id: i64, message_ids: Vec<i64> },
+    /// Chat metadata changed (last message, position, read state, etc.).
+    /// The orchestrator should refresh the chat list.
+    ChatMetadataChanged { chat_id: i64 },
+}
+
+impl ChatUpdate {
+    pub fn chat_id(&self) -> i64 {
+        match self {
+            ChatUpdate::NewMessage { chat_id, .. }
+            | ChatUpdate::MessagesDeleted { chat_id, .. }
+            | ChatUpdate::ChatMetadataChanged { chat_id } => *chat_id,
+        }
     }
 }
 

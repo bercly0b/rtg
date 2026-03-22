@@ -67,7 +67,8 @@ fn compose_shell_with_factory(
 
     let event_source: Box<dyn AppEventSource> = if context.config.telegram.is_configured() {
         let (status_tx, status_rx) = std::sync::mpsc::channel::<ConnectivityStatus>();
-        let (updates_tx, updates_rx) = std::sync::mpsc::channel::<Option<i64>>();
+        let (updates_tx, updates_rx) =
+            std::sync::mpsc::channel::<crate::domain::events::ChatUpdate>();
 
         match monitor_factory.start(&context.telegram, status_tx) {
             Ok(monitor) => {
@@ -118,6 +119,8 @@ fn compose_shell_with_factory(
         bg_tx,
     );
 
+    let cache_cfg = &context.config.cache;
+
     // Try to preload chats from TDLib's local cache for instant display.
     // This is a synchronous call that reads from SQLite — no network involved.
     let initial_state = match context
@@ -126,18 +129,30 @@ fn compose_shell_with_factory(
     {
         Ok(chats) if !chats.is_empty() => {
             tracing::info!(count = chats.len(), "preloaded chat list from TDLib cache");
-            ShellState::with_initial_chat_list(chats)
+            ShellState::with_cache_limits(
+                chats,
+                cache_cfg.max_cached_chats,
+                cache_cfg.max_messages_per_chat,
+            )
         }
         Ok(_) => {
             tracing::debug!("TDLib cache is empty, starting with Loading state");
-            ShellState::default()
+            ShellState::with_cache_limits(
+                vec![],
+                cache_cfg.max_cached_chats,
+                cache_cfg.max_messages_per_chat,
+            )
         }
         Err(error) => {
             tracing::debug!(
                 ?error,
                 "failed to preload cached chats, starting with Loading state"
             );
-            ShellState::default()
+            ShellState::with_cache_limits(
+                vec![],
+                cache_cfg.max_cached_chats,
+                cache_cfg.max_messages_per_chat,
+            )
         }
     };
 
@@ -161,6 +176,7 @@ fn compose_shell_with_factory(
             dispatcher,
             initial_state,
             cache_source,
+            cache_cfg.min_display_messages,
         )),
         _connectivity_monitor: connectivity_monitor,
         _chat_updates_monitor: chat_updates_monitor,
@@ -251,7 +267,7 @@ trait ConnectivityMonitorFactory {
     fn start_chat_updates(
         &self,
         telegram: &TelegramAdapter,
-        updates_tx: Sender<Option<i64>>,
+        updates_tx: Sender<crate::domain::events::ChatUpdate>,
     ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError>;
 }
 
@@ -269,7 +285,7 @@ impl ConnectivityMonitorFactory for RealConnectivityMonitorFactory {
     fn start_chat_updates(
         &self,
         telegram: &TelegramAdapter,
-        updates_tx: Sender<Option<i64>>,
+        updates_tx: Sender<crate::domain::events::ChatUpdate>,
     ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
         telegram.start_chat_updates_monitor(updates_tx)
     }
@@ -335,14 +351,14 @@ mod tests {
         fn start_chat_updates(
             &self,
             _telegram: &TelegramAdapter,
-            updates_tx: Sender<Option<i64>>,
+            updates_tx: Sender<crate::domain::events::ChatUpdate>,
         ) -> Result<TelegramChatUpdatesMonitor, ChatUpdatesMonitorStartError> {
             if self.chat_updates_should_fail {
                 return Err(ChatUpdatesMonitorStartError::StartupRejected);
             }
 
             updates_tx
-                .send(Some(1))
+                .send(crate::domain::events::ChatUpdate::ChatMetadataChanged { chat_id: 1 })
                 .expect("chat update signal should be sent");
 
             Ok(TelegramChatUpdatesMonitor::inert())

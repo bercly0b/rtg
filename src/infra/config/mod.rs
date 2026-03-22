@@ -4,5 +4,5 @@ mod file_config;
 mod loader;
 
 pub use adapter::FileConfigAdapter;
-pub use app_config::{AppConfig, LogConfig, TelegramConfig};
+pub use app_config::{AppConfig, CacheConfig, LogConfig, TelegramConfig};
 pub(crate) use loader::load_internal;

@@ -5,8 +5,9 @@ use anyhow::Result;
 use crate::{
     domain::{
         chat_list_state::ChatListUiState,
-        events::{AppEvent, BackgroundTaskResult},
-        open_chat_state::OpenChatUiState,
+        events::{AppEvent, BackgroundTaskResult, ChatUpdate},
+        message_cache::DEFAULT_MIN_DISPLAY_MESSAGES,
+        open_chat_state::{MessageSource, OpenChatUiState},
         shell_state::{ActivePane, ShellState},
     },
     infra::contracts::{ExternalOpener, StorageAdapter},
@@ -41,6 +42,13 @@ where
     /// Tracks the chat_id that is currently "opened" in TDLib via `openChat`.
     /// Used to ensure proper `closeChat` pairing when navigating away.
     tdlib_opened_chat_id: Option<i64>,
+    /// Guards against dispatching duplicate prefetch requests.
+    /// Holds the `chat_id` of the currently in-flight prefetch, if any.
+    prefetch_in_flight: Option<i64>,
+    /// Minimum number of cached messages required to display them immediately.
+    /// If the cache holds fewer messages, the UI shows Loading instead of a
+    /// sparse preview (eliminates the "1 message flash" artifact).
+    min_display_messages: usize,
 }
 
 impl<S, O, D> DefaultShellOrchestrator<S, O, D>
@@ -61,6 +69,8 @@ where
             messages_refresh_in_flight: false,
             initial_refresh_needed: false,
             tdlib_opened_chat_id: None,
+            prefetch_in_flight: None,
+            min_display_messages: DEFAULT_MIN_DISPLAY_MESSAGES,
         }
     }
 
@@ -78,6 +88,7 @@ where
         dispatcher: D,
         initial_state: ShellState,
         cache_source: Option<Arc<dyn CachedMessagesSource>>,
+        min_display_messages: usize,
     ) -> Self {
         let initial_refresh_needed = initial_state.chat_list().ui_state() == ChatListUiState::Ready;
         Self {
@@ -90,6 +101,8 @@ where
             messages_refresh_in_flight: false,
             initial_refresh_needed,
             tdlib_opened_chat_id: None,
+            prefetch_in_flight: None,
+            min_display_messages: min_display_messages.max(1),
         }
     }
 
@@ -122,6 +135,9 @@ where
         let chat_id = selected.chat_id;
         let chat_title = selected.title.clone();
 
+        // Cancel any in-flight prefetch — the user explicitly opened a chat.
+        self.prefetch_in_flight = None;
+
         // If the same chat is already open and Ready, just switch focus — no reload.
         // But always ensure the TDLib lifecycle is maintained.
         if self.state.open_chat().chat_id() == Some(chat_id)
@@ -147,8 +163,35 @@ where
         self.dispatcher.dispatch_open_chat(chat_id);
         self.tdlib_opened_chat_id = Some(chat_id);
 
-        // Try to show cached messages immediately before the full fetch.
-        let showed_cache = self.try_show_cached_messages(chat_id, &chat_title);
+        // Try app-level message cache first (instant, no TDLib call).
+        // Fall back to TDLib local cache if the app cache has no data.
+        // Apply the smart threshold: if cache has fewer than min_display_messages,
+        // show Loading instead of a sparse preview (eliminates the "1 message flash").
+        let min_msgs = self.min_display_messages;
+        let showed_cache = if let Some(cached) = self
+            .state
+            .message_cache_mut()
+            .get(chat_id)
+            .filter(|m| m.len() >= min_msgs)
+        {
+            let messages = cached.to_vec();
+            tracing::debug!(
+                chat_id,
+                count = messages.len(),
+                "showing messages from app cache"
+            );
+            self.state
+                .open_chat_mut()
+                .set_loading(chat_id, chat_title.clone());
+            self.state.open_chat_mut().set_ready(messages);
+            self.state.open_chat_mut().set_refreshing(true);
+            self.state
+                .open_chat_mut()
+                .set_message_source(MessageSource::Cache);
+            true
+        } else {
+            self.try_show_cached_messages(chat_id, &chat_title)
+        };
 
         if !showed_cache {
             self.state.open_chat_mut().set_loading(chat_id, chat_title);
@@ -157,6 +200,31 @@ where
         // Dispatch a full background load (pagination).
         self.messages_refresh_in_flight = true;
         self.dispatcher.dispatch_load_messages(chat_id);
+    }
+
+    /// Prefetches messages for the currently highlighted chat in the chat list.
+    ///
+    /// Triggered by j/k navigation. Skips if:
+    /// - Another prefetch is already in-flight (debounce)
+    /// - The highlighted chat already has data in the message cache
+    fn maybe_prefetch_selected_chat(&mut self) {
+        if self.prefetch_in_flight.is_some() {
+            return;
+        }
+
+        let Some(selected) = self.state.chat_list().selected_chat() else {
+            return;
+        };
+
+        let chat_id = selected.chat_id;
+
+        if self.state.message_cache().has_messages(chat_id) {
+            return;
+        }
+
+        tracing::debug!(chat_id, "prefetching messages for highlighted chat");
+        self.prefetch_in_flight = Some(chat_id);
+        self.dispatcher.dispatch_prefetch_messages(chat_id);
     }
 
     /// Closes the currently TDLib-opened chat if it differs from `next_chat_id`.
@@ -232,6 +300,50 @@ where
         }
     }
 
+    /// Processes push updates from TDLib for cache warming and UI refresh.
+    ///
+    /// - `NewMessage`: inserts into `MessageCache` for any chat (warm cache passively)
+    /// - `MessagesDeleted`: removes from `MessageCache`
+    /// - `ChatMetadataChanged`: triggers chat list refresh
+    ///
+    /// For the currently open chat, also dispatches a message refresh.
+    fn handle_chat_updates(&mut self, updates: Vec<ChatUpdate>) {
+        let mut affected_chat_ids = Vec::new();
+
+        for update in updates {
+            let chat_id = update.chat_id();
+            if !affected_chat_ids.contains(&chat_id) {
+                affected_chat_ids.push(chat_id);
+            }
+
+            match update {
+                ChatUpdate::NewMessage { chat_id, message } => {
+                    tracing::debug!(chat_id, message_id = message.id, "caching pushed message");
+                    self.state.message_cache_mut().add_message(chat_id, message);
+                }
+                ChatUpdate::MessagesDeleted {
+                    chat_id,
+                    message_ids,
+                } => {
+                    tracing::debug!(
+                        chat_id,
+                        count = message_ids.len(),
+                        "removing deleted messages from cache"
+                    );
+                    self.state
+                        .message_cache_mut()
+                        .remove_messages(chat_id, &message_ids);
+                }
+                ChatUpdate::ChatMetadataChanged { .. } => {}
+            }
+        }
+
+        // Always refresh the chat list (any update may affect ordering/preview)
+        self.dispatch_chat_list_refresh();
+        // Refresh the currently displayed chat if it was affected
+        self.maybe_refresh_open_chat_messages(&affected_chat_ids);
+    }
+
     /// Dispatches a mark-as-read request for all messages currently loaded in the open chat.
     fn mark_open_chat_messages_as_read(&self) {
         let Some(chat_id) = self.state.open_chat().chat_id() else {
@@ -249,14 +361,16 @@ where
 
     /// Attempts to synchronously load cached messages for instant display.
     ///
-    /// Returns `true` if cached messages were found and the state was set to Ready.
+    /// Returns `true` if cached messages were found (above the smart threshold)
+    /// and the state was set to Ready. Sparse results below the threshold are
+    /// ignored to avoid the "1 message flash" artifact.
     fn try_show_cached_messages(&mut self, chat_id: i64, chat_title: &str) -> bool {
         let Some(cache) = &self.cache_source else {
             return false;
         };
 
         match cache.list_cached_messages(chat_id, DEFAULT_CACHED_MESSAGES_LIMIT) {
-            Ok(messages) if !messages.is_empty() => {
+            Ok(messages) if messages.len() >= self.min_display_messages => {
                 tracing::debug!(
                     chat_id,
                     count = messages.len(),
@@ -266,10 +380,17 @@ where
                     .open_chat_mut()
                     .set_loading(chat_id, chat_title.to_owned());
                 self.state.open_chat_mut().set_ready(messages);
+                self.state.open_chat_mut().set_refreshing(true);
+                self.state
+                    .open_chat_mut()
+                    .set_message_source(MessageSource::Cache);
                 true
             }
             Ok(_) => {
-                tracing::debug!(chat_id, "no cached messages available");
+                tracing::debug!(
+                    chat_id,
+                    "no/sparse cached messages, skipping instant display"
+                );
                 false
             }
             Err(e) => {
@@ -281,8 +402,14 @@ where
 
     fn handle_chat_list_key(&mut self, key: &str) -> Result<()> {
         match key {
-            "j" => self.state.chat_list_mut().select_next(),
-            "k" => self.state.chat_list_mut().select_previous(),
+            "j" => {
+                self.state.chat_list_mut().select_next();
+                self.maybe_prefetch_selected_chat();
+            }
+            "k" => {
+                self.state.chat_list_mut().select_previous();
+                self.maybe_prefetch_selected_chat();
+            }
             "R" => self.dispatch_chat_list_refresh(),
             "r" => self.mark_selected_chat_as_read(),
             "enter" | "l" => {
@@ -388,6 +515,13 @@ where
             BackgroundTaskResult::MessagesLoaded { chat_id, result } => {
                 self.messages_refresh_in_flight = false;
 
+                // Always cache successful results, even if the user navigated away.
+                if let Ok(ref messages) = result {
+                    self.state
+                        .message_cache_mut()
+                        .put(chat_id, messages.clone(), true);
+                }
+
                 if self.state.open_chat().chat_id() != Some(chat_id) {
                     tracing::debug!(
                         chat_id,
@@ -405,10 +539,14 @@ where
                         );
                         // If the chat is already Ready (e.g. from cached messages),
                         // use update_messages to preserve the user's scroll position.
+                        // update_messages also clears refreshing and sets source to Live.
                         if self.state.open_chat().ui_state() == OpenChatUiState::Ready {
                             self.state.open_chat_mut().update_messages(messages);
                         } else {
                             self.state.open_chat_mut().set_ready(messages);
+                            self.state
+                                .open_chat_mut()
+                                .set_message_source(MessageSource::Live);
                         }
                         // Mark all loaded messages as read via TDLib viewMessages.
                         // This triggers Update::ChatReadInbox → reactive unread_count update.
@@ -447,6 +585,12 @@ where
             BackgroundTaskResult::MessageSentRefreshCompleted { chat_id, result } => {
                 self.messages_refresh_in_flight = false;
 
+                if let Ok(ref messages) = result {
+                    self.state
+                        .message_cache_mut()
+                        .put(chat_id, messages.clone(), true);
+                }
+
                 if self.state.open_chat().chat_id() != Some(chat_id) {
                     return;
                 }
@@ -462,6 +606,10 @@ where
                         // scroll to the bottom after sending — the user expects
                         // to see their new message at the end of the list.
                         self.state.open_chat_mut().set_ready(messages);
+                        self.state.open_chat_mut().set_refreshing(false);
+                        self.state
+                            .open_chat_mut()
+                            .set_message_source(MessageSource::Live);
                         // Mark new messages as read (including the one just sent).
                         self.mark_open_chat_messages_as_read();
                     }
@@ -471,7 +619,48 @@ where
                             code = error.code,
                             "background: message refresh after send failed"
                         );
-                        // Don't change UI state — the message was already sent
+                        // Don't change UI state — the message was already sent.
+                        // But clear refreshing since the refresh attempt is done.
+                        self.state.open_chat_mut().set_refreshing(false);
+                    }
+                }
+            }
+            BackgroundTaskResult::MessagesPrefetched { chat_id, result } => {
+                if self.prefetch_in_flight == Some(chat_id) {
+                    self.prefetch_in_flight = None;
+                }
+
+                if let Ok(messages) = result {
+                    if !messages.is_empty() {
+                        tracing::debug!(
+                            chat_id,
+                            count = messages.len(),
+                            "background: prefetched messages cached"
+                        );
+                        self.state.message_cache_mut().put(chat_id, messages, true);
+                    }
+                }
+
+                // If the user opened this chat while the prefetch was in-flight
+                // and the chat is still in Loading state, populate it from cache
+                // (only if it meets the smart display threshold).
+                let min_msgs = self.min_display_messages;
+                if self.state.open_chat().chat_id() == Some(chat_id)
+                    && self.state.open_chat().ui_state() == OpenChatUiState::Loading
+                {
+                    if let Some(cached) = self
+                        .state
+                        .message_cache_mut()
+                        .get(chat_id)
+                        .filter(|m| m.len() >= min_msgs)
+                    {
+                        let msgs = cached.to_vec();
+                        self.state.open_chat_mut().set_ready(msgs);
+                        self.state.open_chat_mut().set_refreshing(true);
+                        self.state
+                            .open_chat_mut()
+                            .set_message_source(MessageSource::Cache);
+                        self.mark_open_chat_messages_as_read();
                     }
                 }
             }
@@ -564,10 +753,9 @@ where
             AppEvent::ConnectivityChanged(status) => {
                 self.state.set_connectivity_status(status);
             }
-            AppEvent::ChatUpdateReceived { affected_chat_ids } => {
-                tracing::debug!(?affected_chat_ids, "orchestrator received chat update");
-                self.dispatch_chat_list_refresh();
-                self.maybe_refresh_open_chat_messages(&affected_chat_ids);
+            AppEvent::ChatUpdateReceived { updates } => {
+                tracing::debug!(count = updates.len(), "orchestrator received chat updates");
+                self.handle_chat_updates(updates);
             }
             AppEvent::BackgroundTaskCompleted(result) => {
                 self.handle_background_result(result);
@@ -640,6 +828,7 @@ mod tests {
         dispatched_close_chats: RefCell<Vec<i64>>,
         dispatched_mark_as_read: RefCell<Vec<(i64, Vec<i64>)>>,
         dispatched_mark_chat_as_read: RefCell<Vec<(i64, i64)>>,
+        dispatched_prefetches: RefCell<Vec<i64>>,
     }
 
     impl RecordingDispatcher {
@@ -652,6 +841,7 @@ mod tests {
                 dispatched_close_chats: RefCell::new(Vec::new()),
                 dispatched_mark_as_read: RefCell::new(Vec::new()),
                 dispatched_mark_chat_as_read: RefCell::new(Vec::new()),
+                dispatched_prefetches: RefCell::new(Vec::new()),
             }
         }
 
@@ -694,6 +884,14 @@ mod tests {
         fn last_mark_chat_as_read(&self) -> Option<(i64, i64)> {
             self.dispatched_mark_chat_as_read.borrow().last().cloned()
         }
+
+        fn prefetch_dispatch_count(&self) -> usize {
+            self.dispatched_prefetches.borrow().len()
+        }
+
+        fn last_prefetch_chat_id(&self) -> Option<i64> {
+            self.dispatched_prefetches.borrow().last().copied()
+        }
     }
 
     impl TaskDispatcher for RecordingDispatcher {
@@ -728,6 +926,10 @@ mod tests {
                 .borrow_mut()
                 .push((chat_id, last_message_id));
         }
+
+        fn dispatch_prefetch_messages(&self, chat_id: i64) {
+            self.dispatched_prefetches.borrow_mut().push(chat_id);
+        }
     }
 
     // ── Test orchestrator factory ──
@@ -736,11 +938,15 @@ mod tests {
         DefaultShellOrchestrator<StubStorageAdapter, NoopOpener, RecordingDispatcher>;
 
     fn make_orchestrator() -> TestOrchestrator {
-        DefaultShellOrchestrator::new(
+        let mut o = DefaultShellOrchestrator::new(
             StubStorageAdapter::default(),
             NoopOpener::default(),
             RecordingDispatcher::new(),
-        )
+        );
+        // Use min threshold of 1 for existing tests — any cached message triggers display.
+        // Tests for the threshold itself use make_orchestrator_with_threshold().
+        o.min_display_messages = 1;
+        o
     }
 
     /// Helper: pre-populate the chat list as if a background load completed.
@@ -828,6 +1034,7 @@ mod tests {
             RecordingDispatcher::new(),
             state,
             None,
+            1, // No threshold in most tests — any cached message triggers instant display
         )
     }
 
@@ -842,6 +1049,38 @@ mod tests {
             RecordingDispatcher::new(),
             state,
             Some(Arc::new(cache)),
+            1, // No threshold in most tests — any cached message triggers instant display
+        )
+    }
+
+    fn make_orchestrator_with_threshold(
+        chats: Vec<ChatSummary>,
+        min_display_messages: usize,
+    ) -> TestOrchestrator {
+        let state = ShellState::with_initial_chat_list(chats);
+        DefaultShellOrchestrator::new_with_initial_state(
+            StubStorageAdapter::default(),
+            NoopOpener::default(),
+            RecordingDispatcher::new(),
+            state,
+            None,
+            min_display_messages,
+        )
+    }
+
+    fn make_orchestrator_with_cache_and_threshold(
+        chats: Vec<ChatSummary>,
+        cache: StubCacheSource,
+        min_display_messages: usize,
+    ) -> TestOrchestrator {
+        let state = ShellState::with_initial_chat_list(chats);
+        DefaultShellOrchestrator::new_with_initial_state(
+            StubStorageAdapter::default(),
+            NoopOpener::default(),
+            RecordingDispatcher::new(),
+            state,
+            Some(Arc::new(cache)),
+            min_display_messages,
         )
     }
 
@@ -958,10 +1197,8 @@ mod tests {
         assert_eq!(o.state().chat_list().selected_index(), Some(0));
 
         // Trigger a background refresh (e.g. from TDLib update)
-        o.handle_event(AppEvent::ChatUpdateReceived {
-            affected_chat_ids: vec![],
-        })
-        .unwrap();
+        o.handle_event(AppEvent::ChatUpdateReceived { updates: vec![] })
+            .unwrap();
         assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
 
         // User navigates down while refresh is in-flight
@@ -1120,10 +1357,8 @@ mod tests {
     #[test]
     fn chat_list_update_event_dispatches_refresh() {
         let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
-        o.handle_event(AppEvent::ChatUpdateReceived {
-            affected_chat_ids: vec![],
-        })
-        .unwrap();
+        o.handle_event(AppEvent::ChatUpdateReceived { updates: vec![] })
+            .unwrap();
         assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
     }
 
@@ -1180,94 +1415,13 @@ mod tests {
     fn chat_list_update_event_keeps_data_visible() {
         let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
 
-        o.handle_event(AppEvent::ChatUpdateReceived {
-            affected_chat_ids: vec![],
-        })
-        .unwrap();
+        o.handle_event(AppEvent::ChatUpdateReceived { updates: vec![] })
+            .unwrap();
 
         // Must not blink — state stays Ready while background fetch runs
         assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Ready);
         assert_eq!(o.state().chat_list().chats().len(), 1);
         assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
-    }
-
-    #[test]
-    fn refresh_from_error_shows_loader() {
-        let mut o = make_orchestrator();
-        // Simulate an error state
-        o.handle_event(AppEvent::BackgroundTaskCompleted(
-            BackgroundTaskResult::ChatListLoaded {
-                result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
-            },
-        ))
-        .unwrap();
-        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Error);
-
-        // Refresh from error — should show loader since no data to display
-        o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
-            .unwrap();
-        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Loading);
-    }
-
-    #[test]
-    fn refresh_from_empty_shows_loader() {
-        let mut o = orchestrator_with_chats(vec![]);
-        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Empty);
-
-        // Refresh from empty — should show loader since no data to display
-        o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
-            .unwrap();
-        assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Loading);
-    }
-
-    #[test]
-    fn l_key_opens_chat_and_switches_focus() {
-        let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
-        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
-            .unwrap();
-
-        assert_eq!(o.state().active_pane(), ActivePane::Messages);
-        assert_eq!(o.state().open_chat().chat_id(), Some(1));
-        assert_eq!(o.dispatcher.messages_dispatch_count(), 1);
-    }
-
-    #[test]
-    fn h_key_switches_focus_back_to_chat_list() {
-        let mut o =
-            orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
-
-        o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
-            .unwrap();
-        assert_eq!(o.state().active_pane(), ActivePane::ChatList);
-    }
-
-    #[test]
-    fn esc_key_switches_focus_back_to_chat_list() {
-        let mut o =
-            orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
-
-        o.handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
-            .unwrap();
-        assert_eq!(o.state().active_pane(), ActivePane::ChatList);
-    }
-
-    #[test]
-    fn jk_keys_navigate_messages_when_in_messages_pane() {
-        let mut o = orchestrator_with_open_chat(
-            vec![chat(1, "General")],
-            1,
-            vec![message(1, "A"), message(2, "B"), message(3, "C")],
-        );
-
-        assert_eq!(o.state().open_chat().selected_index(), Some(2));
-
-        o.handle_event(AppEvent::InputKey(KeyInput::new("k", false)))
-            .unwrap();
-        assert_eq!(o.state().open_chat().selected_index(), Some(1));
-
-        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
-            .unwrap();
-        assert_eq!(o.state().open_chat().selected_index(), Some(2));
     }
 
     #[test]
@@ -2154,7 +2308,7 @@ mod tests {
         let before = o.dispatcher.messages_dispatch_count();
 
         o.handle_event(AppEvent::ChatUpdateReceived {
-            affected_chat_ids: vec![1],
+            updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
         })
         .unwrap();
 
@@ -2168,7 +2322,7 @@ mod tests {
         let before = o.dispatcher.messages_dispatch_count();
 
         o.handle_event(AppEvent::ChatUpdateReceived {
-            affected_chat_ids: vec![999],
+            updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 999 }],
         })
         .unwrap();
 
@@ -2182,13 +2336,13 @@ mod tests {
         let before = o.dispatcher.messages_dispatch_count();
 
         o.handle_event(AppEvent::ChatUpdateReceived {
-            affected_chat_ids: vec![1],
+            updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
         })
         .unwrap();
         assert_eq!(o.dispatcher.messages_dispatch_count(), before + 1);
 
         o.handle_event(AppEvent::ChatUpdateReceived {
-            affected_chat_ids: vec![1],
+            updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
         })
         .unwrap();
         assert_eq!(
@@ -2205,7 +2359,7 @@ mod tests {
         let before = o.dispatcher.messages_dispatch_count();
 
         o.handle_event(AppEvent::ChatUpdateReceived {
-            affected_chat_ids: vec![1],
+            updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
         })
         .unwrap();
         assert_eq!(o.dispatcher.messages_dispatch_count(), before + 1);
@@ -2213,7 +2367,7 @@ mod tests {
         inject_messages(&mut o, 1, vec![message(1, "Hello"), message(2, "World")]);
 
         o.handle_event(AppEvent::ChatUpdateReceived {
-            affected_chat_ids: vec![1],
+            updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
         })
         .unwrap();
         assert_eq!(
@@ -2228,7 +2382,7 @@ mod tests {
         let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
 
         o.handle_event(AppEvent::ChatUpdateReceived {
-            affected_chat_ids: vec![1],
+            updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
         })
         .unwrap();
 
@@ -2548,5 +2702,818 @@ mod tests {
             ConnectivityStatus::Connected
         );
         assert!(o.state().help_visible());
+    }
+
+    // ── Message cache tests ──
+
+    #[test]
+    fn messages_stored_in_cache_after_background_load() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+        // Open chat 1
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        assert!(!o.state().message_cache().has_messages(1));
+
+        // Background load completes
+        inject_messages(&mut o, 1, vec![message(1, "Hello"), message(2, "World")]);
+
+        assert!(o.state().message_cache().has_messages(1));
+        assert_eq!(o.state.message_cache_mut().get(1).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn stale_messages_result_still_cached() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice"), chat(2, "Bob")]);
+
+        // Open chat 1
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // Navigate back to chat list before messages arrive
+        o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+            .unwrap();
+
+        // Messages arrive for chat 1 (now "stale" since user navigated away)
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesLoaded {
+                chat_id: 1,
+                result: Ok(vec![message(10, "cached even though stale")]),
+            },
+        ))
+        .unwrap();
+
+        // Messages should still be in cache despite the stale discard
+        assert!(o.state().message_cache().has_messages(1));
+        assert_eq!(
+            o.state.message_cache_mut().get(1).unwrap()[0].text,
+            "cached even though stale"
+        );
+    }
+
+    #[test]
+    fn cache_hit_on_reopen_shows_messages_instantly() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice"), chat(2, "Bob")]);
+
+        // Open chat 1 and load messages
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        inject_messages(&mut o, 1, vec![message(1, "Hello"), message(2, "World")]);
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
+
+        // Navigate back to chat list
+        o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+            .unwrap();
+
+        // Move to chat 2 and open it (to make the orchestrator forget chat 1's OpenChatState)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        inject_messages(&mut o, 2, vec![message(10, "Bob's message")]);
+
+        // Navigate back, move to chat 1
+        o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("k", false)))
+            .unwrap();
+
+        let msgs_dispatched_before = o.dispatcher.messages_dispatch_count();
+
+        // Re-open chat 1 — should show cached messages instantly
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // State should be Ready immediately (from cache), not Loading
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
+        assert_eq!(o.state().open_chat().messages().len(), 2);
+        assert_eq!(o.state().open_chat().messages()[0].text, "Hello");
+
+        // Background refresh should still be dispatched
+        assert_eq!(
+            o.dispatcher.messages_dispatch_count(),
+            msgs_dispatched_before + 1,
+            "background refresh should be dispatched even on cache hit"
+        );
+    }
+
+    #[test]
+    fn cache_miss_falls_through_to_tdlib_local_cache() {
+        let cache = StubCacheSource::with_messages(vec![(1, vec![message(1, "from tdlib local")])]);
+        let mut o = make_orchestrator_with_cache(vec![chat(1, "Alice")], cache);
+
+        // Trigger initial refresh since we use with_initial_chat_list
+        o.handle_event(AppEvent::Tick).unwrap();
+        inject_chat_list(&mut o, vec![chat(1, "Alice")]);
+
+        // Open chat 1 — app cache is empty, but TDLib local cache has data
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // Should be Ready from TDLib local cache (StubCacheSource)
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
+        assert_eq!(o.state().open_chat().messages()[0].text, "from tdlib local");
+    }
+
+    #[test]
+    fn cache_updated_on_message_sent_refresh() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "Alice")], 1, vec![message(1, "Hello")]);
+
+        // Simulate sending a message and getting refresh result
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessageSentRefreshCompleted {
+                chat_id: 1,
+                result: Ok(vec![message(1, "Hello"), message(2, "My new message")]),
+            },
+        ))
+        .unwrap();
+
+        // Cache should contain the updated messages
+        assert!(o.state().message_cache().has_messages(1));
+        let cached = o.state.message_cache_mut().get(1).unwrap();
+        assert_eq!(cached.len(), 2);
+        assert_eq!(cached[1].text, "My new message");
+    }
+
+    #[test]
+    fn cache_not_populated_on_load_error() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesLoaded {
+                chat_id: 1,
+                result: Err(BackgroundError::new("NETWORK_ERROR")),
+            },
+        ))
+        .unwrap();
+
+        assert!(!o.state().message_cache().has_messages(1));
+    }
+
+    // ── Push-based cache warming tests (Phase 2) ──
+
+    #[test]
+    fn push_new_message_warms_cache_for_non_open_chat() {
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Alice"), chat(2, "Bob")],
+            1,
+            vec![message(1, "Hello")],
+        );
+
+        // Push a new message for chat 2 (not currently open)
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![ChatUpdate::NewMessage {
+                chat_id: 2,
+                message: message(10, "Hey from Bob"),
+            }],
+        })
+        .unwrap();
+
+        // Chat 2 should now have a cached message
+        assert!(o.state().message_cache().has_messages(2));
+        assert_eq!(
+            o.state.message_cache_mut().get(2).unwrap()[0].text,
+            "Hey from Bob"
+        );
+    }
+
+    #[test]
+    fn push_new_message_appends_to_existing_cache() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+
+        // Open and load chat 1
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        inject_messages(&mut o, 1, vec![message(1, "First")]);
+
+        // Push a new message via update
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![ChatUpdate::NewMessage {
+                chat_id: 1,
+                message: message(2, "Second"),
+            }],
+        })
+        .unwrap();
+
+        let cached = o.state.message_cache_mut().get(1).unwrap();
+        assert_eq!(cached.len(), 2);
+        assert_eq!(cached[0].text, "First");
+        assert_eq!(cached[1].text, "Second");
+    }
+
+    #[test]
+    fn push_delete_messages_removes_from_cache() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+
+        // Open and load chat 1
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        inject_messages(&mut o, 1, vec![message(1, "Keep"), message(2, "Delete me")]);
+
+        // Push a delete update
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![ChatUpdate::MessagesDeleted {
+                chat_id: 1,
+                message_ids: vec![2],
+            }],
+        })
+        .unwrap();
+
+        let cached = o.state.message_cache_mut().get(1).unwrap();
+        assert_eq!(cached.len(), 1);
+        assert_eq!(cached[0].text, "Keep");
+    }
+
+    #[test]
+    fn push_new_message_for_open_chat_dispatches_refresh() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "Alice")], 1, vec![message(1, "Hello")]);
+        let before = o.dispatcher.messages_dispatch_count();
+
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![ChatUpdate::NewMessage {
+                chat_id: 1,
+                message: message(2, "New message"),
+            }],
+        })
+        .unwrap();
+
+        // Should dispatch a message refresh for the open chat
+        assert_eq!(o.dispatcher.messages_dispatch_count(), before + 1);
+    }
+
+    #[test]
+    fn push_metadata_update_does_not_warm_cache() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
+        })
+        .unwrap();
+
+        // Metadata updates should not create cache entries
+        assert!(!o.state().message_cache().has_messages(1));
+    }
+
+    #[test]
+    fn push_cache_warm_then_open_is_instant() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice"), chat(2, "Bob")]);
+
+        // Push messages for chat 2 (not open)
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![
+                ChatUpdate::NewMessage {
+                    chat_id: 2,
+                    message: message(10, "Bob msg 1"),
+                },
+                ChatUpdate::NewMessage {
+                    chat_id: 2,
+                    message: message(11, "Bob msg 2"),
+                },
+            ],
+        })
+        .unwrap();
+
+        // Navigate to chat 2 and open it
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // Should be Ready instantly from push-warmed cache
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
+        assert_eq!(o.state().open_chat().messages().len(), 2);
+        assert_eq!(o.state().open_chat().messages()[0].text, "Bob msg 1");
+    }
+
+    // ── Prefetch on j/k navigation tests (Phase 3) ──
+
+    #[test]
+    fn jk_navigation_dispatches_prefetch_for_uncached_chat() {
+        let mut o =
+            orchestrator_with_chats(vec![chat(1, "Alpha"), chat(2, "Beta"), chat(3, "Gamma")]);
+
+        // Navigate down to chat 2 (no cache)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+
+        assert_eq!(o.dispatcher.prefetch_dispatch_count(), 1);
+        assert_eq!(o.dispatcher.last_prefetch_chat_id(), Some(2));
+        assert_eq!(o.prefetch_in_flight, Some(2));
+    }
+
+    #[test]
+    fn jk_navigation_skips_prefetch_when_cache_hit() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alpha"), chat(2, "Beta")]);
+
+        // Populate cache for chat 2
+        o.state
+            .message_cache_mut()
+            .put(2, vec![message(10, "cached")], true);
+
+        // Navigate down to chat 2
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+
+        assert_eq!(
+            o.dispatcher.prefetch_dispatch_count(),
+            0,
+            "should not prefetch when cache already has data"
+        );
+    }
+
+    #[test]
+    fn jk_rapid_navigation_debounces_prefetch() {
+        let mut o = orchestrator_with_chats(vec![
+            chat(1, "Alpha"),
+            chat(2, "Beta"),
+            chat(3, "Gamma"),
+            chat(4, "Delta"),
+        ]);
+
+        // First j dispatches prefetch for chat 2
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        assert_eq!(o.dispatcher.prefetch_dispatch_count(), 1);
+        assert_eq!(o.dispatcher.last_prefetch_chat_id(), Some(2));
+
+        // Second j should NOT dispatch (prefetch for chat 2 still in-flight)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        assert_eq!(
+            o.dispatcher.prefetch_dispatch_count(),
+            1,
+            "second j should be debounced by in-flight guard"
+        );
+    }
+
+    #[test]
+    fn prefetch_result_populates_cache_only() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alpha"), chat(2, "Beta")]);
+
+        // Navigate down (triggers prefetch for chat 2)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        assert_eq!(o.prefetch_in_flight, Some(2));
+
+        // Prefetch result arrives
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesPrefetched {
+                chat_id: 2,
+                result: Ok(vec![
+                    message(10, "Prefetched A"),
+                    message(11, "Prefetched B"),
+                ]),
+            },
+        ))
+        .unwrap();
+
+        // Cache should have the data
+        assert!(o.state().message_cache().has_messages(2));
+        assert_eq!(o.state.message_cache_mut().get(2).unwrap().len(), 2);
+
+        // OpenChatState should NOT be affected (no chat is open)
+        assert!(!o.state().open_chat().is_open());
+
+        // In-flight guard should be cleared
+        assert_eq!(o.prefetch_in_flight, None);
+    }
+
+    #[test]
+    fn prefetch_result_updates_open_chat_if_loading() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alpha"), chat(2, "Beta")]);
+
+        // Navigate down (triggers prefetch for chat 2)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+
+        // User opens chat 2 while prefetch is in-flight
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        assert_eq!(o.state().open_chat().chat_id(), Some(2));
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
+
+        // Prefetch result arrives
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesPrefetched {
+                chat_id: 2,
+                result: Ok(vec![message(10, "Prefetched")]),
+            },
+        ))
+        .unwrap();
+
+        // OpenChatState should be updated from cache
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
+        assert_eq!(o.state().open_chat().messages().len(), 1);
+        assert_eq!(o.state().open_chat().messages()[0].text, "Prefetched");
+    }
+
+    #[test]
+    fn prefetch_error_clears_in_flight_without_cache() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alpha"), chat(2, "Beta")]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        assert_eq!(o.prefetch_in_flight, Some(2));
+
+        // Prefetch fails
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesPrefetched {
+                chat_id: 2,
+                result: Err(BackgroundError::new("MESSAGES_UNAVAILABLE")),
+            },
+        ))
+        .unwrap();
+
+        assert_eq!(o.prefetch_in_flight, None);
+        assert!(!o.state().message_cache().has_messages(2));
+    }
+
+    #[test]
+    fn open_selected_chat_clears_prefetch_in_flight() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alpha"), chat(2, "Beta")]);
+
+        // Trigger prefetch
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        assert_eq!(o.prefetch_in_flight, Some(2));
+
+        // Open the chat
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        assert_eq!(
+            o.prefetch_in_flight, None,
+            "opening a chat should clear prefetch guard"
+        );
+    }
+
+    #[test]
+    fn prefetch_then_open_is_instant_from_cache() {
+        let mut o =
+            orchestrator_with_chats(vec![chat(1, "Alpha"), chat(2, "Beta"), chat(3, "Gamma")]);
+
+        // Navigate to chat 2 (triggers prefetch)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+
+        // Prefetch completes
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesPrefetched {
+                chat_id: 2,
+                result: Ok(vec![message(10, "Prefetched msg")]),
+            },
+        ))
+        .unwrap();
+
+        // Open chat 2 — should be instant from cache
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        assert_eq!(o.state().open_chat().chat_id(), Some(2));
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
+        assert_eq!(o.state().open_chat().messages()[0].text, "Prefetched msg");
+
+        // Background refresh still dispatched
+        assert!(o.dispatcher.messages_dispatch_count() > 0);
+    }
+
+    #[test]
+    fn k_navigation_also_triggers_prefetch() {
+        let mut o =
+            orchestrator_with_chats(vec![chat(1, "Alpha"), chat(2, "Beta"), chat(3, "Gamma")]);
+
+        // Navigate to the bottom first
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+
+        // Clear the in-flight by injecting the result
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesPrefetched {
+                chat_id: 2,
+                result: Ok(vec![message(10, "Beta msg")]),
+            },
+        ))
+        .unwrap();
+
+        // Navigate up with k to chat 2 (already cached)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("k", false)))
+            .unwrap();
+        let prefetch_count_after_k_to_cached = o.dispatcher.prefetch_dispatch_count();
+
+        // Chat 2 is cached, so no new prefetch
+        assert_eq!(prefetch_count_after_k_to_cached, 1);
+
+        // Navigate further up to chat 1 (not cached)
+        // But prefetch for chat 3 might still be in-flight...
+        // Actually chat 3 prefetch was never dispatched because chat 2 prefetch was in-flight.
+        // So after receiving the result above, prefetch_in_flight is None.
+        o.handle_event(AppEvent::InputKey(KeyInput::new("k", false)))
+            .unwrap();
+        assert_eq!(o.dispatcher.prefetch_dispatch_count(), 2);
+        assert_eq!(o.dispatcher.last_prefetch_chat_id(), Some(1));
+    }
+
+    #[test]
+    fn prefetch_guard_allows_new_dispatch_after_result() {
+        let mut o =
+            orchestrator_with_chats(vec![chat(1, "Alpha"), chat(2, "Beta"), chat(3, "Gamma")]);
+
+        // Navigate to chat 2 (prefetch dispatched)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        assert_eq!(o.dispatcher.prefetch_dispatch_count(), 1);
+
+        // Prefetch completes
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesPrefetched {
+                chat_id: 2,
+                result: Ok(vec![message(10, "msg")]),
+            },
+        ))
+        .unwrap();
+
+        // Navigate to chat 3 (should dispatch new prefetch)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        assert_eq!(o.dispatcher.prefetch_dispatch_count(), 2);
+        assert_eq!(o.dispatcher.last_prefetch_chat_id(), Some(3));
+    }
+
+    #[test]
+    fn prefetch_result_for_different_chat_does_not_affect_open_chat() {
+        let mut o =
+            orchestrator_with_chats(vec![chat(1, "Alpha"), chat(2, "Beta"), chat(3, "Gamma")]);
+
+        // Prefetch dispatched for chat 2
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+
+        // User opens chat 3 instead
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        assert_eq!(o.state().open_chat().chat_id(), Some(3));
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
+
+        // Stale prefetch for chat 2 arrives
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesPrefetched {
+                chat_id: 2,
+                result: Ok(vec![message(10, "Prefetched for 2")]),
+            },
+        ))
+        .unwrap();
+
+        // Chat 3 should still be Loading
+        assert_eq!(o.state().open_chat().chat_id(), Some(3));
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
+        // Chat 2 should be in cache
+        assert!(o.state().message_cache().has_messages(2));
+    }
+
+    #[test]
+    fn prefetch_empty_result_does_not_populate_cache() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alpha"), chat(2, "Beta")]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesPrefetched {
+                chat_id: 2,
+                result: Ok(vec![]),
+            },
+        ))
+        .unwrap();
+
+        assert!(!o.state().message_cache().has_messages(2));
+    }
+
+    // ── Phase 5: UX polish tests ──
+
+    #[test]
+    fn cache_below_threshold_stays_in_loading() {
+        let mut o = make_orchestrator_with_threshold(vec![chat(1, "Alice")], 5);
+
+        // Pre-populate cache with fewer messages than threshold
+        o.state
+            .message_cache_mut()
+            .put(1, vec![message(1, "single msg")], true);
+
+        // Open the chat
+        inject_chat_list(&mut o, vec![chat(1, "Alice")]);
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // Should remain in Loading because cache has 1 < 5 messages
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
+    }
+
+    #[test]
+    fn cache_at_threshold_shows_ready() {
+        let mut o = make_orchestrator_with_threshold(vec![chat(1, "Alice")], 3);
+
+        // Pre-populate cache with exactly threshold messages
+        o.state.message_cache_mut().put(
+            1,
+            vec![message(1, "A"), message(2, "B"), message(3, "C")],
+            true,
+        );
+
+        inject_chat_list(&mut o, vec![chat(1, "Alice")]);
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
+        assert_eq!(o.state().open_chat().messages().len(), 3);
+    }
+
+    #[test]
+    fn cache_hit_sets_refreshing_and_cached_source() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+
+        // Pre-populate cache
+        o.state
+            .message_cache_mut()
+            .put(1, vec![message(1, "A"), message(2, "B")], true);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
+        assert!(o.state().open_chat().is_refreshing());
+        assert_eq!(o.state().open_chat().message_source(), MessageSource::Cache);
+    }
+
+    #[test]
+    fn background_load_clears_refreshing_and_sets_live_source() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+
+        // Pre-populate cache for instant display
+        o.state
+            .message_cache_mut()
+            .put(1, vec![message(1, "cached")], true);
+
+        // Open chat — sets Ready + refreshing + Cache source
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        assert!(o.state().open_chat().is_refreshing());
+
+        // Background load completes
+        inject_messages(
+            &mut o,
+            1,
+            vec![message(1, "fresh A"), message(2, "fresh B")],
+        );
+
+        assert!(!o.state().open_chat().is_refreshing());
+        assert_eq!(o.state().open_chat().message_source(), MessageSource::Live);
+        assert_eq!(o.state().open_chat().messages().len(), 2);
+    }
+
+    #[test]
+    fn loading_state_has_no_refreshing_or_source() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
+        assert!(!o.state().open_chat().is_refreshing());
+        assert_eq!(o.state().open_chat().message_source(), MessageSource::None);
+    }
+
+    #[test]
+    fn tdlib_local_cache_below_threshold_stays_in_loading() {
+        let cache = StubCacheSource::with_messages(vec![(1, vec![message(1, "sparse")])]);
+        let mut o = make_orchestrator_with_cache_and_threshold(vec![chat(1, "Alice")], cache, 5);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // TDLib local cache has 1 message < threshold 5 → Loading
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
+    }
+
+    #[test]
+    fn tdlib_local_cache_at_threshold_shows_ready_with_cache_source() {
+        let msgs: Vec<Message> = (1..=5).map(|i| message(i, &format!("msg {i}"))).collect();
+        let cache = StubCacheSource::with_messages(vec![(1, msgs)]);
+        let mut o = make_orchestrator_with_cache_and_threshold(vec![chat(1, "Alice")], cache, 5);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
+        assert_eq!(o.state().open_chat().messages().len(), 5);
+        assert!(o.state().open_chat().is_refreshing());
+        assert_eq!(o.state().open_chat().message_source(), MessageSource::Cache);
+    }
+
+    #[test]
+    fn message_sent_refresh_clears_refreshing_and_sets_live() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "Alice")], 1, vec![message(1, "Hello")]);
+
+        // Simulate: cache hit sets refreshing
+        o.state.open_chat_mut().set_refreshing(true);
+        o.state
+            .open_chat_mut()
+            .set_message_source(MessageSource::Cache);
+
+        // Message sent refresh arrives
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessageSentRefreshCompleted {
+                chat_id: 1,
+                result: Ok(vec![message(1, "Hello"), message(2, "New msg")]),
+            },
+        ))
+        .unwrap();
+
+        assert!(!o.state().open_chat().is_refreshing());
+        assert_eq!(o.state().open_chat().message_source(), MessageSource::Live);
+    }
+
+    #[test]
+    fn threshold_zero_is_clamped_to_one() {
+        let mut o = make_orchestrator_with_threshold(vec![chat(1, "Alice")], 0);
+
+        o.state
+            .message_cache_mut()
+            .put(1, vec![message(1, "single")], true);
+
+        inject_chat_list(&mut o, vec![chat(1, "Alice")]);
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        // With threshold clamped to 1, a single message is sufficient
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
+    }
+
+    #[test]
+    fn background_load_error_clears_refreshing() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+
+        // Pre-populate cache for instant display
+        o.state
+            .message_cache_mut()
+            .put(1, vec![message(1, "cached")], true);
+
+        // Open chat — sets Ready + refreshing
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        assert!(o.state().open_chat().is_refreshing());
+
+        // Background load fails
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesLoaded {
+                chat_id: 1,
+                result: Err(BackgroundError::new("MESSAGES_UNAVAILABLE")),
+            },
+        ))
+        .unwrap();
+
+        // Error state should have refreshing cleared
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Error);
+        assert!(!o.state().open_chat().is_refreshing());
+    }
+
+    #[test]
+    fn prefetch_below_threshold_does_not_populate_open_chat() {
+        let mut o = make_orchestrator_with_threshold(vec![chat(1, "Alpha"), chat(2, "Beta")], 5);
+
+        inject_chat_list(&mut o, vec![chat(1, "Alpha"), chat(2, "Beta")]);
+
+        // Navigate to chat 2 (triggers prefetch)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+
+        // Open chat 2
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
+
+        // Prefetch result with too few messages
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessagesPrefetched {
+                chat_id: 2,
+                result: Ok(vec![message(10, "sparse")]),
+            },
+        ))
+        .unwrap();
+
+        // Should still be Loading (1 < 5 threshold)
+        assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
+        // But cache should have data
+        assert!(o.state().message_cache().has_messages(2));
     }
 }

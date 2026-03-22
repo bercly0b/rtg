@@ -600,20 +600,63 @@ impl TdLibAuthBackend {
 
     /// Resolves the sender name for a message.
     fn resolve_message_sender_name(&self, msg: &tdlib_rs::types::Message) -> String {
-        match &msg.sender_id {
+        resolve_sender_name(&self.client, msg)
+    }
+
+    /// Creates a `MessageMapper` that can be shared with the chat updates monitor.
+    ///
+    /// The mapper holds clones of the async runtime and client_id, allowing it
+    /// to resolve sender names via `get_user`/`get_chat` on the monitor thread.
+    pub fn create_message_mapper(&self) -> std::sync::Arc<dyn super::chat_updates::MessageMapper> {
+        std::sync::Arc::new(TdLibMessageMapper {
+            rt: self.client.runtime().clone(),
+            client_id: self.client.client_id(),
+        })
+    }
+}
+
+/// Resolves the sender name for a TDLib message using the TDLib client.
+fn resolve_sender_name(client: &TdLibClient, msg: &tdlib_rs::types::Message) -> String {
+    match &msg.sender_id {
+        tdlib_rs::enums::MessageSender::User(u) => client
+            .get_user(u.user_id)
+            .map(|user| tdlib_mappers::format_user_name(&user))
+            .unwrap_or_else(|_| "Unknown".to_owned()),
+        tdlib_rs::enums::MessageSender::Chat(c) => client
+            .get_chat(c.chat_id)
+            .map(|chat| chat.title.clone())
+            .unwrap_or_else(|_| "Channel".to_owned()),
+    }
+}
+
+/// Maps raw TDLib messages to domain `Message` types.
+///
+/// Holds the TDLib async runtime and client ID so it can resolve sender names
+/// via `get_user`/`get_chat` on the monitor thread.
+struct TdLibMessageMapper {
+    rt: std::sync::Arc<tokio::runtime::Runtime>,
+    client_id: i32,
+}
+
+impl super::chat_updates::MessageMapper for TdLibMessageMapper {
+    fn map_message(&self, raw: &tdlib_rs::types::Message) -> Message {
+        let sender_name = match &raw.sender_id {
             tdlib_rs::enums::MessageSender::User(u) => self
-                .client
-                .get_user(u.user_id)
-                .map(|user| tdlib_mappers::format_user_name(&user))
+                .rt
+                .block_on(async { tdlib_rs::functions::get_user(u.user_id, self.client_id).await })
+                .map(|user| match user {
+                    tdlib_rs::enums::User::User(u) => tdlib_mappers::format_user_name(&u),
+                })
                 .unwrap_or_else(|_| "Unknown".to_owned()),
-            tdlib_rs::enums::MessageSender::Chat(c) => {
-                // For channel posts, use the chat title
-                self.client
-                    .get_chat(c.chat_id)
-                    .map(|chat| chat.title.clone())
-                    .unwrap_or_else(|_| "Channel".to_owned())
-            }
-        }
+            tdlib_rs::enums::MessageSender::Chat(c) => self
+                .rt
+                .block_on(async { tdlib_rs::functions::get_chat(c.chat_id, self.client_id).await })
+                .map(|chat| match chat {
+                    tdlib_rs::enums::Chat::Chat(c) => c.title,
+                })
+                .unwrap_or_else(|_| "Channel".to_owned()),
+        };
+        tdlib_mappers::map_tdlib_message_to_domain(raw, sender_name)
     }
 }
 
