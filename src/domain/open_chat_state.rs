@@ -243,6 +243,24 @@ impl OpenChatState {
         }
     }
 
+    /// Removes a message by ID from the current list (optimistic deletion).
+    ///
+    /// Adjusts `selected_index` so the cursor stays on a valid message.
+    pub fn remove_message(&mut self, message_id: i64) {
+        let Some(pos) = self.messages.iter().position(|m| m.id == message_id) else {
+            return;
+        };
+        self.messages.remove(pos);
+
+        if self.messages.is_empty() {
+            self.selected_index = None;
+        } else if let Some(idx) = self.selected_index {
+            if idx >= self.messages.len() {
+                self.selected_index = Some(self.messages.len() - 1);
+            }
+        }
+    }
+
     pub fn set_error(&mut self) {
         self.ui_state = OpenChatUiState::Error;
         self.refreshing = false;
@@ -760,5 +778,56 @@ mod tests {
         let msg = state.selected_message().unwrap();
         assert_eq!(msg.id, 1);
         assert_eq!(msg.text, "A");
+    }
+
+    // ── remove_message tests ──
+
+    #[test]
+    fn remove_message_removes_by_id() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B"), message(3, "C")]);
+
+        state.remove_message(2);
+
+        assert_eq!(state.messages().len(), 2);
+        assert_eq!(state.messages()[0].id, 1);
+        assert_eq!(state.messages()[1].id, 3);
+    }
+
+    #[test]
+    fn remove_message_adjusts_selection_when_last_removed() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B")]);
+        // Selection defaults to last (index 1, id=2)
+
+        state.remove_message(2);
+
+        // Selection should clamp to new last (index 0)
+        assert_eq!(state.selected_message().unwrap().id, 1);
+    }
+
+    #[test]
+    fn remove_message_clears_selection_when_empty() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A")]);
+
+        state.remove_message(1);
+
+        assert!(state.messages().is_empty());
+        assert!(state.selected_message().is_none());
+    }
+
+    #[test]
+    fn remove_message_ignores_unknown_id() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B")]);
+
+        state.remove_message(999);
+
+        assert_eq!(state.messages().len(), 2);
     }
 }

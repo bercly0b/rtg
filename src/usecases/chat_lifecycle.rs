@@ -26,6 +26,19 @@ pub trait ChatLifecycle: Send + Sync {
     fn close_chat(&self, chat_id: i64) -> Result<(), ChatLifecycleError>;
 }
 
+/// Deletes messages from a chat via TDLib.
+///
+/// When `revoke` is true, the messages are deleted for all participants
+/// (if allowed by Telegram). When false, only for the current user.
+pub trait MessageDeleter: Send + Sync {
+    fn delete_messages(
+        &self,
+        chat_id: i64,
+        message_ids: Vec<i64>,
+        revoke: bool,
+    ) -> Result<(), ChatLifecycleError>;
+}
+
 /// Marks messages as viewed/read in a chat.
 ///
 /// The chat should be opened via [`ChatLifecycle::open_chat`] before
@@ -67,6 +80,19 @@ mod tests {
         }
     }
 
+    struct StubDeleter;
+
+    impl MessageDeleter for StubDeleter {
+        fn delete_messages(
+            &self,
+            _chat_id: i64,
+            _message_ids: Vec<i64>,
+            _revoke: bool,
+        ) -> Result<(), ChatLifecycleError> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn stub_lifecycle_succeeds() {
         let lifecycle = StubLifecycle;
@@ -78,5 +104,12 @@ mod tests {
     fn stub_read_marker_succeeds() {
         let marker = StubReadMarker;
         assert!(marker.mark_messages_read(1, vec![1, 2, 3]).is_ok());
+    }
+
+    #[test]
+    fn stub_deleter_succeeds() {
+        let deleter = StubDeleter;
+        assert!(deleter.delete_messages(1, vec![1, 2], true).is_ok());
+        assert!(deleter.delete_messages(1, vec![1, 2], false).is_ok());
     }
 }

@@ -744,6 +744,28 @@ impl TdLibClient {
         })
     }
 
+    /// Deletes messages from a chat.
+    ///
+    /// When `revoke` is true, the messages are deleted for all participants
+    /// (if Telegram allows it). When false, only for the current user.
+    pub fn delete_messages(
+        &self,
+        chat_id: i64,
+        message_ids: Vec<i64>,
+        revoke: bool,
+    ) -> Result<(), TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            tdlib_rs::functions::delete_messages(chat_id, message_ids, revoke, client_id)
+                .await
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })
+        })
+    }
+
     /// Graceful shutdown: sends `close()` and marks client as closed.
     ///
     /// After calling this method, the client should not be used for any

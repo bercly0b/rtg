@@ -33,10 +33,6 @@ pub fn chat_list_hotkeys() -> &'static [HotkeyEntry] {
             action_name: "mark_chat_as_read",
         },
         HotkeyEntry {
-            key_label: "Ctrl+O",
-            action_name: "open_in_browser",
-        },
-        HotkeyEntry {
             key_label: "q",
             action_name: "quit",
         },
@@ -75,8 +71,12 @@ pub fn messages_hotkeys() -> &'static [HotkeyEntry] {
             action_name: "copy_message_to_clipboard",
         },
         HotkeyEntry {
-            key_label: "Ctrl+O",
-            action_name: "open_in_browser",
+            key_label: "dd",
+            action_name: "delete_message",
+        },
+        HotkeyEntry {
+            key_label: "o",
+            action_name: "open_link_in_browser",
         },
         HotkeyEntry {
             key_label: "q",

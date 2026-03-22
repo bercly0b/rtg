@@ -49,6 +49,8 @@ where
     /// If the cache holds fewer messages, the UI shows Loading instead of a
     /// sparse preview (eliminates the "1 message flash" artifact).
     min_display_messages: usize,
+    /// Vim-style `dd` pending state: `true` after the first `d` press.
+    pending_d: bool,
 }
 
 impl<S, O, D> DefaultShellOrchestrator<S, O, D>
@@ -71,6 +73,7 @@ where
             tdlib_opened_chat_id: None,
             prefetch_in_flight: None,
             min_display_messages: DEFAULT_MIN_DISPLAY_MESSAGES,
+            pending_d: false,
         }
     }
 
@@ -103,6 +106,7 @@ where
             tdlib_opened_chat_id: None,
             prefetch_in_flight: None,
             min_display_messages: min_display_messages.max(1),
+            pending_d: false,
         }
     }
 
@@ -425,6 +429,19 @@ where
     }
 
     fn handle_messages_key(&mut self, key: &str) -> Result<()> {
+        // Vim-style `dd`: first `d` sets pending, second `d` triggers delete.
+        if key == "d" {
+            if self.pending_d {
+                self.pending_d = false;
+                self.delete_selected_message();
+            } else {
+                self.pending_d = true;
+            }
+            return Ok(());
+        }
+        // Any non-`d` key cancels the pending state.
+        self.pending_d = false;
+
         match key {
             "j" => self.state.open_chat_mut().select_next(),
             "k" => self.state.open_chat_mut().select_previous(),
@@ -445,7 +462,39 @@ where
                     }
                 }
             }
+            "o" => self.open_message_url()?,
             _ => {}
+        }
+        Ok(())
+    }
+
+    fn delete_selected_message(&mut self) {
+        let Some(chat_id) = self.state.open_chat().chat_id() else {
+            return;
+        };
+        let Some(msg) = self.state.open_chat().selected_message() else {
+            return;
+        };
+        let message_id = msg.id;
+        if message_id == 0 {
+            return; // Pending messages have id=0, skip
+        }
+
+        // Optimistically remove from UI
+        self.state.open_chat_mut().remove_message(message_id);
+        // Dispatch background deletion (fire-and-forget)
+        self.dispatcher.dispatch_delete_message(chat_id, message_id);
+    }
+
+    fn open_message_url(&mut self) -> Result<()> {
+        use crate::domain::message::extract_first_url;
+
+        let Some(msg) = self.state.open_chat().selected_message() else {
+            return Ok(());
+        };
+        let text = msg.display_content();
+        if let Some(url) = extract_first_url(&text) {
+            self.opener.open(url)?;
         }
         Ok(())
     }
@@ -701,12 +750,6 @@ where
                 self.state.stop();
             }
             AppEvent::InputKey(key) => {
-                if key.ctrl && key.key == "o" {
-                    self.opener.open("about:blank")?;
-                    self.storage.save_last_action("open")?;
-                    return Ok(());
-                }
-
                 // When help popup is visible, only close-actions are accepted.
                 if self.state.help_visible() {
                     match key.key.as_str() {
@@ -782,8 +825,28 @@ mod tests {
             open_chat_state::OpenChatUiState,
             shell_state::ShellState,
         },
-        infra::stubs::{NoopOpener, StubStorageAdapter},
+        infra::{contracts::ExternalOpener, stubs::StubStorageAdapter},
     };
+
+    // ── Recording opener for tests ──
+
+    #[derive(Debug, Default)]
+    struct RecordingOpener {
+        opened: RefCell<Vec<String>>,
+    }
+
+    impl ExternalOpener for RecordingOpener {
+        fn open(&self, target: &str) -> anyhow::Result<()> {
+            self.opened.borrow_mut().push(target.to_owned());
+            Ok(())
+        }
+    }
+
+    impl RecordingOpener {
+        fn opened_urls(&self) -> Vec<String> {
+            self.opened.borrow().clone()
+        }
+    }
 
     // ── Domain helpers ──
 
@@ -829,6 +892,7 @@ mod tests {
         dispatched_mark_as_read: RefCell<Vec<(i64, Vec<i64>)>>,
         dispatched_mark_chat_as_read: RefCell<Vec<(i64, i64)>>,
         dispatched_prefetches: RefCell<Vec<i64>>,
+        dispatched_deletes: RefCell<Vec<(i64, i64)>>,
     }
 
     impl RecordingDispatcher {
@@ -842,6 +906,7 @@ mod tests {
                 dispatched_mark_as_read: RefCell::new(Vec::new()),
                 dispatched_mark_chat_as_read: RefCell::new(Vec::new()),
                 dispatched_prefetches: RefCell::new(Vec::new()),
+                dispatched_deletes: RefCell::new(Vec::new()),
             }
         }
 
@@ -892,6 +957,14 @@ mod tests {
         fn last_prefetch_chat_id(&self) -> Option<i64> {
             self.dispatched_prefetches.borrow().last().copied()
         }
+
+        fn delete_dispatch_count(&self) -> usize {
+            self.dispatched_deletes.borrow().len()
+        }
+
+        fn last_delete(&self) -> Option<(i64, i64)> {
+            self.dispatched_deletes.borrow().last().copied()
+        }
     }
 
     impl TaskDispatcher for RecordingDispatcher {
@@ -930,17 +1003,23 @@ mod tests {
         fn dispatch_prefetch_messages(&self, chat_id: i64) {
             self.dispatched_prefetches.borrow_mut().push(chat_id);
         }
+
+        fn dispatch_delete_message(&self, chat_id: i64, message_id: i64) {
+            self.dispatched_deletes
+                .borrow_mut()
+                .push((chat_id, message_id));
+        }
     }
 
     // ── Test orchestrator factory ──
 
     type TestOrchestrator =
-        DefaultShellOrchestrator<StubStorageAdapter, NoopOpener, RecordingDispatcher>;
+        DefaultShellOrchestrator<StubStorageAdapter, RecordingOpener, RecordingDispatcher>;
 
     fn make_orchestrator() -> TestOrchestrator {
         let mut o = DefaultShellOrchestrator::new(
             StubStorageAdapter::default(),
-            NoopOpener::default(),
+            RecordingOpener::default(),
             RecordingDispatcher::new(),
         );
         // Use min threshold of 1 for existing tests — any cached message triggers display.
@@ -1030,7 +1109,7 @@ mod tests {
         let state = ShellState::with_initial_chat_list(chats);
         DefaultShellOrchestrator::new_with_initial_state(
             StubStorageAdapter::default(),
-            NoopOpener::default(),
+            RecordingOpener::default(),
             RecordingDispatcher::new(),
             state,
             None,
@@ -1045,7 +1124,7 @@ mod tests {
         let state = ShellState::with_initial_chat_list(chats);
         DefaultShellOrchestrator::new_with_initial_state(
             StubStorageAdapter::default(),
-            NoopOpener::default(),
+            RecordingOpener::default(),
             RecordingDispatcher::new(),
             state,
             Some(Arc::new(cache)),
@@ -1060,7 +1139,7 @@ mod tests {
         let state = ShellState::with_initial_chat_list(chats);
         DefaultShellOrchestrator::new_with_initial_state(
             StubStorageAdapter::default(),
-            NoopOpener::default(),
+            RecordingOpener::default(),
             RecordingDispatcher::new(),
             state,
             None,
@@ -1076,7 +1155,7 @@ mod tests {
         let state = ShellState::with_initial_chat_list(chats);
         DefaultShellOrchestrator::new_with_initial_state(
             StubStorageAdapter::default(),
-            NoopOpener::default(),
+            RecordingOpener::default(),
             RecordingDispatcher::new(),
             state,
             Some(Arc::new(cache)),
@@ -3515,5 +3594,153 @@ mod tests {
         assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
         // But cache should have data
         assert!(o.state().message_cache().has_messages(2));
+    }
+
+    // ── dd (delete message) tests ──
+
+    #[test]
+    fn dd_deletes_selected_message() {
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![message(10, "hello"), message(20, "world")],
+        );
+
+        // Select last message (20) — default after open
+        assert_eq!(o.state().open_chat().selected_message().unwrap().id, 20);
+
+        // Press d, d
+        o.handle_event(AppEvent::InputKey(KeyInput::new("d", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("d", false)))
+            .unwrap();
+
+        // Message 20 should be removed from UI
+        assert_eq!(o.state().open_chat().messages().len(), 1);
+        assert_eq!(o.state().open_chat().messages()[0].id, 10);
+
+        // Dispatch should have been called
+        assert_eq!(o.dispatcher.delete_dispatch_count(), 1);
+        assert_eq!(o.dispatcher.last_delete(), Some((1, 20)));
+    }
+
+    #[test]
+    fn d_then_other_key_cancels_delete() {
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![message(10, "hello"), message(20, "world")],
+        );
+
+        // Press d, then j (navigate) — should cancel delete
+        o.handle_event(AppEvent::InputKey(KeyInput::new("d", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+
+        // No deletion should have happened
+        assert_eq!(o.state().open_chat().messages().len(), 2);
+        assert_eq!(o.dispatcher.delete_dispatch_count(), 0);
+    }
+
+    #[test]
+    fn dd_on_empty_chat_does_nothing() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("d", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("d", false)))
+            .unwrap();
+
+        assert_eq!(o.dispatcher.delete_dispatch_count(), 0);
+    }
+
+    #[test]
+    fn dd_does_not_delete_pending_messages() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hello")]);
+
+        // Switch to message input and send a message (creates pending msg with id=0)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .unwrap();
+        // Type "test" + enter
+        for ch in "test".chars() {
+            o.handle_event(AppEvent::InputKey(KeyInput::new(ch.to_string(), false)))
+                .unwrap();
+        }
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+        // Go back to messages pane
+        o.handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
+            .unwrap();
+
+        // Select the last message (pending, id=0)
+        let selected = o.state().open_chat().selected_message().unwrap();
+        assert_eq!(selected.id, 0); // pending
+
+        // dd should not dispatch delete for id=0
+        o.handle_event(AppEvent::InputKey(KeyInput::new("d", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("d", false)))
+            .unwrap();
+
+        assert_eq!(o.dispatcher.delete_dispatch_count(), 0);
+    }
+
+    // ── o (open link) tests ──
+
+    #[test]
+    fn o_opens_first_url_from_message() {
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![message(10, "Check https://example.com out")],
+        );
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("o", false)))
+            .unwrap();
+
+        assert_eq!(o.opener.opened_urls(), vec!["https://example.com"]);
+    }
+
+    #[test]
+    fn o_does_nothing_when_no_url() {
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![message(10, "No links here")],
+        );
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("o", false)))
+            .unwrap();
+
+        assert!(o.opener.opened_urls().is_empty());
+    }
+
+    #[test]
+    fn o_opens_first_url_when_multiple() {
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![message(
+                10,
+                "Visit https://first.com and https://second.com",
+            )],
+        );
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("o", false)))
+            .unwrap();
+
+        assert_eq!(o.opener.opened_urls(), vec!["https://first.com"]);
+    }
+
+    #[test]
+    fn o_on_empty_chat_does_nothing() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("o", false)))
+            .unwrap();
+
+        assert!(o.opener.opened_urls().is_empty());
     }
 }

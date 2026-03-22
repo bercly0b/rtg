@@ -70,6 +70,14 @@ impl Message {
     }
 }
 
+/// Extracts the first URL (`http://` or `https://`) from text.
+///
+/// Uses simple whitespace-delimited scanning — no regex dependency required.
+pub fn extract_first_url(text: &str) -> Option<&str> {
+    text.split_whitespace()
+        .find(|word| word.starts_with("https://") || word.starts_with("http://"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,5 +202,62 @@ mod tests {
                 media
             );
         }
+    }
+
+    // ── extract_first_url tests ──
+
+    #[test]
+    fn extract_first_url_returns_none_when_no_url() {
+        assert_eq!(extract_first_url("hello world"), None);
+    }
+
+    #[test]
+    fn extract_first_url_finds_https() {
+        assert_eq!(
+            extract_first_url("visit https://example.com please"),
+            Some("https://example.com")
+        );
+    }
+
+    #[test]
+    fn extract_first_url_finds_http() {
+        assert_eq!(
+            extract_first_url("go to http://example.com"),
+            Some("http://example.com")
+        );
+    }
+
+    #[test]
+    fn extract_first_url_returns_first_when_multiple() {
+        assert_eq!(
+            extract_first_url("see https://first.com and https://second.com"),
+            Some("https://first.com")
+        );
+    }
+
+    #[test]
+    fn extract_first_url_handles_url_at_start() {
+        assert_eq!(
+            extract_first_url("https://start.com is the link"),
+            Some("https://start.com")
+        );
+    }
+
+    #[test]
+    fn extract_first_url_handles_url_at_end() {
+        assert_eq!(
+            extract_first_url("link: https://end.com"),
+            Some("https://end.com")
+        );
+    }
+
+    #[test]
+    fn extract_first_url_returns_none_for_empty_string() {
+        assert_eq!(extract_first_url(""), None);
+    }
+
+    #[test]
+    fn extract_first_url_ignores_non_http_schemes() {
+        assert_eq!(extract_first_url("check ftp://files.com out"), None);
     }
 }
