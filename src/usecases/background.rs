@@ -8,7 +8,7 @@ use std::sync::{mpsc::Sender, Arc};
 use crate::domain::events::{BackgroundError, BackgroundTaskResult};
 
 use super::{
-    chat_lifecycle::{ChatLifecycle, ChatReadMarker},
+    chat_lifecycle::{ChatLifecycle, ChatReadMarker, MessageDeleter},
     list_chats::{list_chats, ListChatsQuery, ListChatsSource},
     load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
     send_message::{send_message, MessageSender, SendMessageCommand},
@@ -45,6 +45,12 @@ pub trait TaskDispatcher {
     /// Prefetches messages for a chat the user is hovering in the chat list.
     /// Results go into `MessageCache` only (not `OpenChatState`).
     fn dispatch_prefetch_messages(&self, chat_id: i64);
+
+    /// Deletes a message from a chat (fire-and-forget).
+    ///
+    /// Tries `revoke=true` first (delete for everyone), falls back to
+    /// `revoke=false` (delete for self only) if that fails.
+    fn dispatch_delete_message(&self, chat_id: i64, message_id: i64);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -57,7 +63,7 @@ where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + Send + Sync + 'static,
-    L: ChatLifecycle + ChatReadMarker + Send + Sync + 'static,
+    L: ChatLifecycle + ChatReadMarker + MessageDeleter + Send + Sync + 'static,
 {
     chats_source: Arc<C>,
     messages_source: Arc<M>,
@@ -71,7 +77,7 @@ where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + Send + Sync + 'static,
-    L: ChatLifecycle + ChatReadMarker + Send + Sync + 'static,
+    L: ChatLifecycle + ChatReadMarker + MessageDeleter + Send + Sync + 'static,
 {
     pub fn new(
         chats_source: Arc<C>,
@@ -95,7 +101,7 @@ where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + Send + Sync + 'static,
-    L: ChatLifecycle + ChatReadMarker + Send + Sync + 'static,
+    L: ChatLifecycle + ChatReadMarker + MessageDeleter + Send + Sync + 'static,
 {
     fn dispatch_chat_list(&self) {
         let source = Arc::clone(&self.chats_source);
@@ -315,6 +321,28 @@ where
             });
         }
     }
+
+    fn dispatch_delete_message(&self, chat_id: i64, message_id: i64) {
+        let lifecycle = Arc::clone(&self.lifecycle);
+
+        if let Err(error) = std::thread::Builder::new()
+            .name("rtg-bg-delete-msg".into())
+            .spawn(move || {
+                tracing::debug!(chat_id, message_id, "background: deleting message");
+                // Try revoke (delete for everyone) first
+                let ids = vec![message_id];
+                if let Err(e) = lifecycle.delete_messages(chat_id, ids.clone(), true) {
+                    tracing::debug!(chat_id, message_id, error = ?e, "revoke delete failed, trying self-only");
+                    // Fall back to delete for self only
+                    if let Err(e2) = lifecycle.delete_messages(chat_id, ids, false) {
+                        tracing::warn!(chat_id, message_id, error = ?e2, "self-only delete also failed");
+                    }
+                }
+            })
+        {
+            tracing::error!(error = %error, "failed to spawn delete message background thread");
+        }
+    }
 }
 
 fn map_list_chats_error(error: &super::list_chats::ListChatsError) -> &'static str {
@@ -396,6 +424,10 @@ pub mod tests {
 
         fn dispatch_prefetch_messages(&self, _chat_id: i64) {
             // Stub: does not dispatch; tests inject results manually
+        }
+
+        fn dispatch_delete_message(&self, _chat_id: i64, _message_id: i64) {
+            // Stub: fire-and-forget, no action needed in tests
         }
     }
 

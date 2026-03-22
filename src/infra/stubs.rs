@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::infra::contracts::{ExternalOpener, StorageAdapter};
+use crate::infra::contracts::StorageAdapter;
 
 #[cfg(test)]
 use crate::infra::{config::AppConfig, contracts::ConfigAdapter};
@@ -24,15 +24,6 @@ pub struct StubStorageAdapter {
 impl StorageAdapter for StubStorageAdapter {
     fn save_last_action(&mut self, action: &str) -> Result<()> {
         self.last_action = Some(action.to_owned());
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct NoopOpener;
-
-impl ExternalOpener for NoopOpener {
-    fn open(&self, _target: &str) -> Result<()> {
         Ok(())
     }
 }

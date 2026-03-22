@@ -10,8 +10,9 @@ use crate::{
         config::{FileConfigAdapter, TelegramConfig},
         contracts::ConfigAdapter,
         error::AppError,
+        opener::BrowserOpener,
         secrets::sanitize_error_code,
-        stubs::{NoopOpener, StubStorageAdapter},
+        stubs::StubStorageAdapter,
     },
     telegram::{
         ChatUpdatesMonitorStartError, ConnectivityMonitorStartError, TelegramAdapter,
@@ -172,7 +173,7 @@ fn compose_shell_with_factory(
         event_source,
         orchestrator: Box::new(DefaultShellOrchestrator::new_with_initial_state(
             StubStorageAdapter::default(),
-            NoopOpener,
+            BrowserOpener,
             dispatcher,
             initial_state,
             cache_source,

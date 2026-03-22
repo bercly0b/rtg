@@ -535,6 +535,17 @@ impl TdLibAuthBackend {
             .map_err(map_messages_error)
     }
 
+    pub fn delete_messages(
+        &self,
+        chat_id: i64,
+        message_ids: Vec<i64>,
+        revoke: bool,
+    ) -> Result<(), MessagesSourceError> {
+        self.client
+            .delete_messages(chat_id, message_ids, revoke)
+            .map_err(map_messages_error)
+    }
+
     /// Fetches up to `limit` messages using paginated `getChatHistory` calls.
     ///
     /// TDLib documentation states that the number of returned messages is

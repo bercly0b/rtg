@@ -27,7 +27,7 @@ use crate::{
     domain::{events::ConnectivityStatus, message::Message, status::AuthConnectivityStatus},
     infra::{config::TelegramConfig, storage_layout::StorageLayout},
     usecases::{
-        chat_lifecycle::{ChatLifecycle, ChatLifecycleError, ChatReadMarker},
+        chat_lifecycle::{ChatLifecycle, ChatLifecycleError, ChatReadMarker, MessageDeleter},
         guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome, TelegramAuthClient},
         list_chats::{CachedChatsSource, ListChatsSource, ListChatsSourceError},
         load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
@@ -330,6 +330,23 @@ impl ChatReadMarker for TelegramAdapter {
     }
 }
 
+impl MessageDeleter for TelegramAdapter {
+    fn delete_messages(
+        &self,
+        chat_id: i64,
+        message_ids: Vec<i64>,
+        revoke: bool,
+    ) -> Result<(), ChatLifecycleError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.delete_messages(chat_id, message_ids, revoke).map_err(|e| {
+                tracing::debug!(chat_id, error = ?e, "delete_messages mapped to lifecycle error");
+                ChatLifecycleError::Unavailable
+            }),
+            None => Err(ChatLifecycleError::Unavailable),
+        }
+    }
+}
+
 /// Returns the telegram module name for smoke checks.
 pub fn module_name() -> &'static str {
     "telegram"
@@ -457,6 +474,17 @@ mod tests {
 
         let error = adapter
             .mark_messages_read(1, vec![1, 2, 3])
+            .expect_err("stub adapter should fail");
+
+        assert_eq!(error, ChatLifecycleError::Unavailable);
+    }
+
+    #[test]
+    fn delete_messages_returns_unavailable_when_backend_is_not_configured() {
+        let adapter = TelegramAdapter::stub();
+
+        let error = adapter
+            .delete_messages(1, vec![1, 2], true)
             .expect_err("stub adapter should fail");
 
         assert_eq!(error, ChatLifecycleError::Unavailable);
