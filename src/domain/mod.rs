@@ -3,6 +3,7 @@
 pub mod chat;
 pub mod chat_list_state;
 pub mod events;
+pub mod help_content;
 pub mod message;
 pub mod message_input_state;
 pub mod open_chat_state;

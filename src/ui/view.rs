@@ -15,6 +15,7 @@ use crate::domain::{
 };
 
 use super::chat_message_list::{ChatMessageList, ChatMessageListState};
+use super::help_popup;
 use super::message_input::render_message_input;
 use super::message_rendering::{
     build_message_list_elements, element_to_text, message_index_to_element_index,
@@ -65,6 +66,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
     render_horizontal_separator(frame, status_separator_area);
     let status = Paragraph::new(status_line(state)).style(styles::status_bar_style());
     frame.render_widget(status, status_area);
+
+    if state.help_visible() {
+        help_popup::render_help_popup(frame, frame.area(), active_pane);
+    }
 }
 
 fn render_chat_list_panel(

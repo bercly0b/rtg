@@ -191,6 +191,32 @@ pub fn input_placeholder_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
 
+// =============================================================================
+// Help popup styles
+// =============================================================================
+
+/// Border style for the help popup overlay.
+pub fn help_popup_border_style() -> Style {
+    Style::default().fg(Color::White)
+}
+
+/// Style for hotkey labels in the help popup (e.g. "j", "Enter / l").
+pub fn help_popup_key_style() -> Style {
+    Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD)
+}
+
+/// Style for action names in the help popup (e.g. "select_next_chat").
+pub fn help_popup_action_style() -> Style {
+    Style::default().fg(Color::White)
+}
+
+/// Style for the footer hint in the help popup.
+pub fn help_popup_footer_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,5 +390,30 @@ mod tests {
     fn status_bar_style_uses_ansi_black_bg() {
         let style = status_bar_style();
         assert_eq!(style.bg, Some(Color::Black));
+    }
+
+    #[test]
+    fn help_popup_key_style_is_bold_yellow() {
+        let style = help_popup_key_style();
+        assert_eq!(style.fg, Some(Color::Yellow));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn help_popup_border_style_is_white() {
+        let style = help_popup_border_style();
+        assert_eq!(style.fg, Some(Color::White));
+    }
+
+    #[test]
+    fn help_popup_action_style_is_white() {
+        let style = help_popup_action_style();
+        assert_eq!(style.fg, Some(Color::White));
+    }
+
+    #[test]
+    fn help_popup_footer_style_is_dark_gray() {
+        let style = help_popup_footer_style();
+        assert_eq!(style.fg, Some(Color::DarkGray));
     }
 }

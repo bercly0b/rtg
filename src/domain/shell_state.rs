@@ -23,6 +23,7 @@ pub struct ShellState {
     open_chat: OpenChatState,
     message_input: MessageInputState,
     active_pane: ActivePane,
+    help_visible: bool,
 }
 
 impl Default for ShellState {
@@ -34,6 +35,7 @@ impl Default for ShellState {
             open_chat: OpenChatState::default(),
             message_input: MessageInputState::default(),
             active_pane: ActivePane::default(),
+            help_visible: false,
         }
     }
 }
@@ -90,6 +92,18 @@ impl ShellState {
 
     pub fn set_active_pane(&mut self, pane: ActivePane) {
         self.active_pane = pane;
+    }
+
+    pub fn help_visible(&self) -> bool {
+        self.help_visible
+    }
+
+    pub fn show_help(&mut self) {
+        self.help_visible = true;
+    }
+
+    pub fn hide_help(&mut self) {
+        self.help_visible = false;
     }
 
     pub fn message_input(&self) -> &MessageInputState {
@@ -186,5 +200,26 @@ mod tests {
         let mut state = ShellState::default();
         state.message_input_mut().insert_char('a');
         assert_eq!(state.message_input().text(), "a");
+    }
+
+    #[test]
+    fn help_not_visible_by_default() {
+        let state = ShellState::default();
+        assert!(!state.help_visible());
+    }
+
+    #[test]
+    fn show_help_makes_it_visible() {
+        let mut state = ShellState::default();
+        state.show_help();
+        assert!(state.help_visible());
+    }
+
+    #[test]
+    fn hide_help_makes_it_invisible() {
+        let mut state = ShellState::default();
+        state.show_help();
+        state.hide_help();
+        assert!(!state.help_visible());
     }
 }
