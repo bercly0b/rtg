@@ -36,10 +36,19 @@ mod tests {
     use super::*;
     use crate::{
         domain::events::AppEvent,
-        infra::stubs::{NoopOpener, StubStorageAdapter},
+        infra::{contracts::ExternalOpener, stubs::StubStorageAdapter},
         ui::event_source::MockEventSource,
         usecases::{background::tests::StubTaskDispatcher, shell::DefaultShellOrchestrator},
     };
+
+    #[derive(Debug, Default)]
+    struct NoopOpener;
+
+    impl ExternalOpener for NoopOpener {
+        fn open(&self, _target: &str) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn mock_source_produces_quit_event() {
