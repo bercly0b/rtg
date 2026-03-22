@@ -118,6 +118,14 @@ impl ChatListState {
 
         self.selected_index = Some(index.saturating_sub(1));
     }
+
+    pub fn clear_selected_chat_unread(&mut self) {
+        if let Some(index) = self.selected_index {
+            if let Some(chat) = self.chats.get_mut(index) {
+                chat.unread_count = 0;
+            }
+        }
+    }
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -285,5 +293,33 @@ mod tests {
 
         assert_eq!(state.selected_index(), Some(1));
         assert_eq!(state.selected_chat().map(|item| item.chat_id), Some(2));
+    }
+
+    fn chat_with_unread(chat_id: i64, title: &str, unread_count: u32) -> ChatSummary {
+        let mut c = chat(chat_id, title);
+        c.unread_count = unread_count;
+        c
+    }
+
+    #[test]
+    fn clear_selected_chat_unread_zeroes_counter() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![
+            chat_with_unread(1, "General", 3),
+            chat_with_unread(2, "Backend", 7),
+        ]);
+        state.select_next(); // select chat 2
+
+        state.clear_selected_chat_unread();
+
+        assert_eq!(state.selected_chat().unwrap().unread_count, 0);
+        // chat 1 remains unchanged
+        assert_eq!(state.chats()[0].unread_count, 3);
+    }
+
+    #[test]
+    fn clear_selected_chat_unread_noop_without_selection() {
+        let mut state = ChatListState::default();
+        state.clear_selected_chat_unread(); // should not panic
     }
 }
