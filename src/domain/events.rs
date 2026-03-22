@@ -44,6 +44,11 @@ pub enum BackgroundTaskResult {
         chat_id: i64,
         result: Result<Vec<super::message::Message>, BackgroundError>,
     },
+    /// Chat subtitle (user status / member count) resolved.
+    ChatSubtitleLoaded {
+        chat_id: i64,
+        result: Result<super::chat_subtitle::ChatSubtitle, BackgroundError>,
+    },
 }
 
 /// Lightweight error type for background task failures.

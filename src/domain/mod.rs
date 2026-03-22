@@ -2,6 +2,7 @@
 
 pub mod chat;
 pub mod chat_list_state;
+pub mod chat_subtitle;
 pub mod events;
 pub mod help_content;
 pub mod message;

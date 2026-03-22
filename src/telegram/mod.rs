@@ -28,6 +28,7 @@ use crate::{
     infra::{config::TelegramConfig, storage_layout::StorageLayout},
     usecases::{
         chat_lifecycle::{ChatLifecycle, ChatLifecycleError, ChatReadMarker, MessageDeleter},
+        chat_subtitle::{ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource},
         guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome, TelegramAuthClient},
         list_chats::{CachedChatsSource, ListChatsSource, ListChatsSourceError},
         load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
@@ -343,6 +344,18 @@ impl MessageDeleter for TelegramAdapter {
                 ChatLifecycleError::Unavailable
             }),
             None => Err(ChatLifecycleError::Unavailable),
+        }
+    }
+}
+
+impl ChatSubtitleSource for TelegramAdapter {
+    fn resolve_chat_subtitle(
+        &self,
+        query: &ChatSubtitleQuery,
+    ) -> Result<crate::domain::chat_subtitle::ChatSubtitle, ChatSubtitleError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => Ok(backend.resolve_subtitle(query.chat_id)),
+            None => Err(ChatSubtitleError::Unavailable),
         }
     }
 }

@@ -510,15 +510,24 @@ fn render_messages_panel(
 }
 
 fn open_chat_title(open_chat: &crate::domain::open_chat_state::OpenChatState) -> String {
-    if open_chat.is_open() {
-        let refreshing = if open_chat.is_refreshing() {
-            " ↻"
-        } else {
-            ""
-        };
-        format!("Messages — {}{refreshing}", open_chat.chat_title())
+    if !open_chat.is_open() {
+        return "Messages".to_owned();
+    }
+
+    let name = open_chat.chat_title();
+    let subtitle = open_chat.chat_subtitle();
+    let now = chrono::Local::now();
+
+    if open_chat.is_refreshing() {
+        // Show "updating..." while data is being fetched, like Telegram does.
+        return format!("{} · updating...", name);
+    }
+
+    let subtitle_text = subtitle.format(now);
+    if subtitle_text.is_empty() {
+        name.to_owned()
     } else {
-        "Messages".to_owned()
+        format!("{} · {}", name, subtitle_text)
     }
 }
 
@@ -689,11 +698,11 @@ mod tests {
 
         let title = open_chat_title(state.open_chat());
 
-        assert_eq!(title, "Messages — General");
+        assert_eq!(title, "General");
     }
 
     #[test]
-    fn open_chat_title_shows_refreshing_indicator_when_refreshing() {
+    fn open_chat_title_shows_updating_when_refreshing() {
         let mut state = ShellState::default();
         state.open_chat_mut().set_loading(1, "General".to_owned());
         state
@@ -712,14 +721,42 @@ mod tests {
         let title = open_chat_title(state.open_chat());
 
         assert!(
-            title.contains("↻"),
-            "expected refreshing indicator in title"
+            title.contains("updating..."),
+            "expected 'updating...' in title, got: {title}"
         );
         assert!(title.contains("General"));
     }
 
     #[test]
-    fn open_chat_title_no_refreshing_indicator_when_not_refreshing() {
+    fn open_chat_title_shows_subtitle_when_set() {
+        let mut state = ShellState::default();
+        state.open_chat_mut().set_loading(1, "Alice".to_owned());
+        state
+            .open_chat_mut()
+            .set_ready(vec![crate::domain::message::Message {
+                id: 1,
+                sender_name: "User".to_owned(),
+                text: "msg".to_owned(),
+                timestamp_ms: 1000,
+                is_outgoing: false,
+                media: crate::domain::message::MessageMedia::None,
+                status: crate::domain::message::MessageStatus::Delivered,
+            }]);
+        state
+            .open_chat_mut()
+            .set_chat_subtitle(crate::domain::chat_subtitle::ChatSubtitle::Online);
+
+        let title = open_chat_title(state.open_chat());
+
+        assert!(
+            title.contains("online"),
+            "expected 'online' in title, got: {title}"
+        );
+        assert!(title.contains("Alice"));
+    }
+
+    #[test]
+    fn open_chat_title_no_subtitle_when_not_set() {
         let mut state = ShellState::default();
         state.open_chat_mut().set_loading(1, "General".to_owned());
         state
@@ -736,7 +773,10 @@ mod tests {
 
         let title = open_chat_title(state.open_chat());
 
-        assert!(!title.contains("↻"), "no refreshing indicator expected");
+        assert!(
+            !title.contains("updating..."),
+            "no updating indicator expected, got: {title}"
+        );
     }
 
     #[test]
