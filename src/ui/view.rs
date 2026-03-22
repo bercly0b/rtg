@@ -531,7 +531,7 @@ fn open_chat_title(open_chat: &crate::domain::open_chat_state::OpenChatState) ->
     }
 }
 
-/// Computes the dynamic height for the message input area (1 to 5 lines).
+/// Computes the dynamic height for the message input area (1 to 20 lines).
 fn compute_input_height(text: &str, available_width: u16) -> u16 {
     use unicode_width::UnicodeWidthStr;
 
@@ -543,7 +543,7 @@ fn compute_input_height(text: &str, available_width: u16) -> u16 {
 
     let text_width = text.width();
     let lines = text_width.div_ceil(effective_width);
-    (lines as u16).clamp(1, 5)
+    (lines as u16).clamp(1, 20)
 }
 
 fn status_line(state: &ShellState) -> String {
@@ -1407,9 +1407,9 @@ mod tests {
     }
 
     #[test]
-    fn compute_input_height_capped_at_five() {
-        let text = "a".repeat(500);
-        assert_eq!(compute_input_height(&text, 20), 5);
+    fn compute_input_height_capped_at_twenty() {
+        let text = "a".repeat(5000);
+        assert_eq!(compute_input_height(&text, 20), 20);
     }
 
     #[test]

@@ -285,7 +285,10 @@ where
     }
 
     /// Marks the selected chat in the chat list as read (from the chat list view).
-    fn mark_selected_chat_as_read(&self) {
+    ///
+    /// Uses optimistic update: the unread counter is cleared immediately in local
+    /// state before dispatching the background request to TDLib.
+    fn mark_selected_chat_as_read(&mut self) {
         let Some(chat) = self.state.chat_list().selected_chat() else {
             return;
         };
@@ -299,6 +302,9 @@ where
         };
 
         let chat_id = chat.chat_id;
+
+        // Optimistic update: clear unread counter immediately in local state
+        self.state.chat_list_mut().clear_selected_chat_unread();
 
         // If this chat is already opened in TDLib, just mark messages as read directly
         if self.tdlib_opened_chat_id == Some(chat_id) {
@@ -2585,6 +2591,25 @@ mod tests {
             .unwrap();
 
         assert_eq!(o.dispatcher.mark_chat_as_read_dispatch_count(), 1);
+    }
+
+    #[test]
+    fn r_key_optimistically_clears_unread_counter() {
+        let mut o = orchestrator_with_chats(vec![
+            chat_with_unread(1, "General", 5, Some(100)),
+            chat_with_unread(2, "Backend", 3, Some(200)),
+        ]);
+
+        // Select second chat and press r
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .unwrap();
+
+        // Unread counter should be cleared immediately (optimistic)
+        let chats = o.state().chat_list().chats();
+        assert_eq!(chats[0].unread_count, 5); // first chat unchanged
+        assert_eq!(chats[1].unread_count, 0); // second chat cleared
     }
 
     // ── Help popup tests ──
