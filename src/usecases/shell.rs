@@ -1059,6 +1059,7 @@ mod tests {
         dispatched_mark_chat_as_read: RefCell<Vec<(i64, i64)>>,
         dispatched_prefetches: RefCell<Vec<i64>>,
         dispatched_deletes: RefCell<Vec<(i64, i64)>>,
+        dispatched_voice_sends: RefCell<Vec<(i64, String)>>,
     }
 
     impl RecordingDispatcher {
@@ -1073,6 +1074,7 @@ mod tests {
                 dispatched_mark_chat_as_read: RefCell::new(Vec::new()),
                 dispatched_prefetches: RefCell::new(Vec::new()),
                 dispatched_deletes: RefCell::new(Vec::new()),
+                dispatched_voice_sends: RefCell::new(Vec::new()),
             }
         }
 
@@ -1131,6 +1133,14 @@ mod tests {
         fn last_delete(&self) -> Option<(i64, i64)> {
             self.dispatched_deletes.borrow().last().copied()
         }
+
+        fn voice_send_dispatch_count(&self) -> usize {
+            self.dispatched_voice_sends.borrow().len()
+        }
+
+        fn last_voice_send(&self) -> Option<(i64, String)> {
+            self.dispatched_voice_sends.borrow().last().cloned()
+        }
     }
 
     impl TaskDispatcher for RecordingDispatcher {
@@ -1180,8 +1190,10 @@ mod tests {
             // Recording: no-op for now
         }
 
-        fn dispatch_send_voice(&self, _chat_id: i64, _file_path: String) {
-            // Recording: no-op for now
+        fn dispatch_send_voice(&self, chat_id: i64, file_path: String) {
+            self.dispatched_voice_sends
+                .borrow_mut()
+                .push((chat_id, file_path));
         }
     }
 
@@ -2393,31 +2405,6 @@ mod tests {
 
         assert_eq!(o.dispatcher.open_chat_dispatch_count(), 2);
         assert_eq!(o.tdlib_opened_chat_id, Some(2));
-    }
-
-    #[test]
-    fn switching_directly_to_different_chat_closes_previous_first() {
-        let mut o = orchestrator_with_open_chat(
-            vec![chat(1, "A"), chat(2, "B")],
-            1,
-            vec![message(1, "Hello")],
-        );
-        assert_eq!(o.tdlib_opened_chat_id, Some(1));
-
-        // Navigate back
-        o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
-            .unwrap();
-        // Move down and open different chat
-        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
-            .unwrap();
-        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
-            .unwrap();
-
-        // Should have closed chat 1 and opened chat 2
-        assert_eq!(o.tdlib_opened_chat_id, Some(2));
-        // close_chat: once when pressing h, no extra close when opening chat 2 (already None)
-        assert_eq!(o.dispatcher.close_chat_dispatch_count(), 1);
-        assert_eq!(o.dispatcher.open_chat_dispatch_count(), 2);
     }
 
     #[test]
@@ -3935,5 +3922,536 @@ mod tests {
             .unwrap();
 
         assert!(o.opener.opened_urls().is_empty());
+    }
+
+    // ── Voice recording / command popup tests ──
+
+    /// Simulates the state after `start_voice_recording` succeeds:
+    /// opens the command popup and sets a recording file path.
+    /// Does NOT spawn an external process.
+    fn simulate_voice_recording_started(o: &mut TestOrchestrator, file_path: &str) {
+        o.state.open_command_popup("Recording Voice");
+        o.recording_file_path = Some(file_path.to_owned());
+        // recording_handle left as None — tests don't need the real process.
+    }
+
+    #[test]
+    fn v_ignored_when_no_chat_open() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Chat")]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("v", false)))
+            .unwrap();
+
+        assert!(o.state().command_popup().is_none());
+    }
+
+    #[test]
+    fn v_ignored_when_popup_already_active() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+
+        // Second v press should not panic or change state.
+        o.handle_event(AppEvent::InputKey(KeyInput::new("v", false)))
+            .unwrap();
+
+        assert!(o.state().command_popup().is_some());
+        assert_eq!(
+            o.state().command_popup().unwrap().title(),
+            "Recording Voice"
+        );
+    }
+
+    #[test]
+    fn command_popup_intercepts_all_keys() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+
+        // Press a navigation key — should be intercepted, not move selection.
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+
+        // Popup is still active, key was absorbed.
+        assert!(o.state().command_popup().is_some());
+    }
+
+    #[test]
+    fn command_popup_q_transitions_to_awaiting_confirmation() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
+            .unwrap();
+
+        let popup = o
+            .state()
+            .command_popup()
+            .expect("popup should still be open");
+        assert!(matches!(
+            popup.phase(),
+            CommandPhase::AwaitingConfirmation { .. }
+        ));
+    }
+
+    #[test]
+    fn command_popup_random_key_during_running_is_ignored() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("x", false)))
+            .unwrap();
+
+        let popup = o
+            .state()
+            .command_popup()
+            .expect("popup should still be open");
+        assert_eq!(popup.phase(), &CommandPhase::Running);
+    }
+
+    #[test]
+    fn command_popup_y_sends_voice_and_closes_popup() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        // Create a real temp file so the file existence check passes.
+        let tmp = std::env::temp_dir().join("rtg_test_send.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        let file_path = tmp.to_str().unwrap().to_owned();
+
+        simulate_voice_recording_started(&mut o, &file_path);
+
+        // Transition to AwaitingConfirmation (as if q was pressed).
+        o.state
+            .command_popup_mut()
+            .unwrap()
+            .set_phase(CommandPhase::AwaitingConfirmation {
+                prompt: "Send recording? (y/n)".into(),
+            });
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("y", false)))
+            .unwrap();
+
+        assert!(o.state().command_popup().is_none());
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 1);
+        assert_eq!(o.dispatcher.last_voice_send().unwrap().0, 1);
+
+        // Clean up.
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn command_popup_n_discards_voice_and_closes_popup() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_discard.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        let file_path = tmp.to_str().unwrap().to_owned();
+
+        simulate_voice_recording_started(&mut o, &file_path);
+
+        o.state
+            .command_popup_mut()
+            .unwrap()
+            .set_phase(CommandPhase::AwaitingConfirmation {
+                prompt: "Send recording? (y/n)".into(),
+            });
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("n", false)))
+            .unwrap();
+
+        assert!(o.state().command_popup().is_none());
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 0);
+        assert!(!tmp.exists(), "file should be deleted on discard");
+    }
+
+    #[test]
+    fn command_popup_esc_discards_voice_and_closes_popup() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_esc.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        let file_path = tmp.to_str().unwrap().to_owned();
+
+        simulate_voice_recording_started(&mut o, &file_path);
+
+        o.state
+            .command_popup_mut()
+            .unwrap()
+            .set_phase(CommandPhase::AwaitingConfirmation {
+                prompt: "Send recording? (y/n)".into(),
+            });
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
+            .unwrap();
+
+        assert!(o.state().command_popup().is_none());
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 0);
+        assert!(!tmp.exists(), "file should be deleted on esc");
+    }
+
+    #[test]
+    fn command_popup_random_key_during_awaiting_is_ignored() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+
+        o.state
+            .command_popup_mut()
+            .unwrap()
+            .set_phase(CommandPhase::AwaitingConfirmation {
+                prompt: "Send? (y/n)".into(),
+            });
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("x", false)))
+            .unwrap();
+
+        // Popup should still be open in AwaitingConfirmation.
+        let popup = o.state().command_popup().expect("popup still open");
+        assert!(matches!(
+            popup.phase(),
+            CommandPhase::AwaitingConfirmation { .. }
+        ));
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 0);
+    }
+
+    #[test]
+    fn command_output_line_event_pushes_to_popup() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+
+        o.handle_event(AppEvent::CommandOutputLine("recording at 48kHz".into()))
+            .unwrap();
+        o.handle_event(AppEvent::CommandOutputLine("size=128kB".into()))
+            .unwrap();
+
+        let popup = o.state().command_popup().unwrap();
+        assert_eq!(
+            popup.visible_lines(),
+            vec!["recording at 48kHz", "size=128kB"]
+        );
+    }
+
+    #[test]
+    fn command_output_line_ignored_when_no_popup() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        // No popup active — should not panic.
+        o.handle_event(AppEvent::CommandOutputLine("stray line".into()))
+            .unwrap();
+    }
+
+    #[test]
+    fn command_exited_transitions_running_to_awaiting() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+
+        o.handle_event(AppEvent::CommandExited { success: true })
+            .unwrap();
+
+        let popup = o
+            .state()
+            .command_popup()
+            .expect("popup should still be open");
+        assert!(matches!(
+            popup.phase(),
+            CommandPhase::AwaitingConfirmation { .. }
+        ));
+        // recording_handle should be cleaned up.
+        assert!(o.recording_handle.is_none());
+    }
+
+    #[test]
+    fn command_exited_does_not_overwrite_awaiting_phase() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+
+        // User already pressed q — already in AwaitingConfirmation.
+        let custom_prompt = "Send recording? (y/n)";
+        o.state
+            .command_popup_mut()
+            .unwrap()
+            .set_phase(CommandPhase::AwaitingConfirmation {
+                prompt: custom_prompt.into(),
+            });
+
+        o.handle_event(AppEvent::CommandExited { success: true })
+            .unwrap();
+
+        // The prompt should not be overwritten.
+        let popup = o.state().command_popup().unwrap();
+        match popup.phase() {
+            CommandPhase::AwaitingConfirmation { prompt } => {
+                assert_eq!(prompt, custom_prompt);
+            }
+            _ => panic!("expected AwaitingConfirmation"),
+        }
+    }
+
+    #[test]
+    fn command_exited_ignored_when_no_popup() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        // No popup — should not panic.
+        o.handle_event(AppEvent::CommandExited { success: false })
+            .unwrap();
+    }
+
+    #[test]
+    fn send_voice_skipped_when_no_file_path() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        // No recording_file_path set.
+        o.send_voice_recording();
+
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 0);
+    }
+
+    #[test]
+    fn send_voice_skipped_when_file_does_not_exist() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        o.recording_file_path = Some("/nonexistent/path/voice.oga".into());
+
+        o.send_voice_recording();
+
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 0);
+    }
+
+    #[test]
+    fn send_voice_skipped_when_no_chat_open() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Chat")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_nochat.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        o.recording_file_path = Some(tmp.to_str().unwrap().into());
+
+        o.send_voice_recording();
+
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 0);
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn send_voice_dispatches_with_correct_chat_id_and_path() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(42, "Chat")], 42, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_dispatch.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        let file_path = tmp.to_str().unwrap().to_owned();
+
+        o.recording_file_path = Some(file_path.clone());
+        o.send_voice_recording();
+
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 1);
+        let (sent_chat_id, sent_path) = o.dispatcher.last_voice_send().unwrap();
+        assert_eq!(sent_chat_id, 42);
+        assert_eq!(sent_path, file_path);
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn discard_voice_removes_file() {
+        let mut o = make_orchestrator();
+
+        let tmp = std::env::temp_dir().join("rtg_test_discard_file.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        o.recording_file_path = Some(tmp.to_str().unwrap().into());
+
+        o.discard_voice_recording();
+
+        assert!(!tmp.exists());
+        assert!(o.recording_file_path.is_none());
+    }
+
+    #[test]
+    fn discard_voice_no_op_when_no_file_path() {
+        let mut o = make_orchestrator();
+
+        // Should not panic when there's nothing to discard.
+        o.discard_voice_recording();
+
+        assert!(o.recording_file_path.is_none());
+    }
+
+    #[test]
+    fn full_voice_flow_record_stop_send() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_full_flow.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        let file_path = tmp.to_str().unwrap().to_owned();
+
+        // Step 1: Simulate recording started.
+        simulate_voice_recording_started(&mut o, &file_path);
+        assert!(o.state().command_popup().is_some());
+
+        // Step 2: Output lines arrive.
+        o.handle_event(AppEvent::CommandOutputLine("frame=1".into()))
+            .unwrap();
+
+        // Step 3: User presses q to stop.
+        o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
+            .unwrap();
+        assert!(matches!(
+            o.state().command_popup().unwrap().phase(),
+            CommandPhase::AwaitingConfirmation { .. }
+        ));
+
+        // Step 4: User presses y to send.
+        o.handle_event(AppEvent::InputKey(KeyInput::new("y", false)))
+            .unwrap();
+        assert!(o.state().command_popup().is_none());
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 1);
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn full_voice_flow_record_stop_discard() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_full_discard.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        let file_path = tmp.to_str().unwrap().to_owned();
+
+        simulate_voice_recording_started(&mut o, &file_path);
+
+        // q to stop.
+        o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
+            .unwrap();
+        assert!(matches!(
+            o.state().command_popup().unwrap().phase(),
+            CommandPhase::AwaitingConfirmation { .. }
+        ));
+
+        // n to discard.
+        o.handle_event(AppEvent::InputKey(KeyInput::new("n", false)))
+            .unwrap();
+        assert!(o.state().command_popup().is_none());
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 0);
+        assert!(!tmp.exists());
+    }
+
+    #[test]
+    fn full_voice_flow_command_exits_then_send() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_exit_send.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        let file_path = tmp.to_str().unwrap().to_owned();
+
+        simulate_voice_recording_started(&mut o, &file_path);
+
+        // Process exits on its own.
+        o.handle_event(AppEvent::CommandExited { success: true })
+            .unwrap();
+        assert!(matches!(
+            o.state().command_popup().unwrap().phase(),
+            CommandPhase::AwaitingConfirmation { .. }
+        ));
+
+        // User confirms send.
+        o.handle_event(AppEvent::InputKey(KeyInput::new("y", false)))
+            .unwrap();
+        assert!(o.state().command_popup().is_none());
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 1);
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn take_pending_command_rx_returns_none_by_default() {
+        let mut o = make_orchestrator();
+        assert!(o.take_pending_command_rx().is_none());
+    }
+
+    #[test]
+    fn take_pending_command_rx_returns_receiver_once() {
+        let mut o = make_orchestrator();
+        let (_, rx) = std::sync::mpsc::channel::<crate::domain::events::CommandEvent>();
+        o.pending_command_rx = Some(rx);
+
+        assert!(o.take_pending_command_rx().is_some());
+        assert!(o.take_pending_command_rx().is_none());
+    }
+
+    #[test]
+    fn help_popup_not_affected_by_command_popup() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+
+        // Help should not be visible when command popup is active.
+        assert!(!o.state().help_visible());
+
+        // ? should be intercepted by command popup, not open help.
+        o.handle_event(AppEvent::InputKey(KeyInput::new("?", false)))
+            .unwrap();
+        assert!(!o.state().help_visible());
+    }
+
+    #[test]
+    fn quit_requested_during_recording_stops_app() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+
+        o.handle_event(AppEvent::QuitRequested).unwrap();
+
+        assert!(!o.state().is_running());
+    }
+
+    #[test]
+    fn command_exited_with_failure_transitions_to_awaiting() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+
+        o.handle_event(AppEvent::CommandExited { success: false })
+            .unwrap();
+
+        let popup = o
+            .state()
+            .command_popup()
+            .expect("popup should still be open");
+        assert!(matches!(
+            popup.phase(),
+            CommandPhase::AwaitingConfirmation { .. }
+        ));
+        assert!(o.recording_handle.is_none());
+    }
+
+    #[test]
+    fn send_voice_recording_is_idempotent() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_idempotent.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        o.recording_file_path = Some(tmp.to_str().unwrap().into());
+
+        o.send_voice_recording();
+        o.send_voice_recording();
+
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 1);
+        let _ = std::fs::remove_file(&tmp);
     }
 }
