@@ -1,7 +1,7 @@
 use super::{
-    chat::ChatSummary, chat_list_state::ChatListState, events::ConnectivityStatus,
-    message_cache::MessageCache, message_input_state::MessageInputState,
-    open_chat_state::OpenChatState,
+    chat::ChatSummary, chat_list_state::ChatListState, command_popup_state::CommandPopupState,
+    events::ConnectivityStatus, message_cache::MessageCache,
+    message_input_state::MessageInputState, open_chat_state::OpenChatState,
 };
 
 /// Represents which panel currently has focus for keyboard navigation.
@@ -26,6 +26,7 @@ pub struct ShellState {
     message_input: MessageInputState,
     active_pane: ActivePane,
     help_visible: bool,
+    command_popup: Option<CommandPopupState>,
 }
 
 impl Default for ShellState {
@@ -39,6 +40,7 @@ impl Default for ShellState {
             message_input: MessageInputState::default(),
             active_pane: ActivePane::default(),
             help_visible: false,
+            command_popup: None,
         }
     }
 }
@@ -129,6 +131,26 @@ impl ShellState {
 
     pub fn hide_help(&mut self) {
         self.help_visible = false;
+    }
+
+    pub fn command_popup(&self) -> Option<&CommandPopupState> {
+        self.command_popup.as_ref()
+    }
+
+    pub fn command_popup_mut(&mut self) -> Option<&mut CommandPopupState> {
+        self.command_popup.as_mut()
+    }
+
+    pub fn open_command_popup(
+        &mut self,
+        title: impl Into<String>,
+        kind: crate::domain::command_popup_state::CommandPopupKind,
+    ) {
+        self.command_popup = Some(CommandPopupState::new(title, kind));
+    }
+
+    pub fn close_command_popup(&mut self) {
+        self.command_popup = None;
     }
 
     pub fn message_input(&self) -> &MessageInputState {
@@ -246,5 +268,44 @@ mod tests {
         state.show_help();
         state.hide_help();
         assert!(!state.help_visible());
+    }
+
+    #[test]
+    fn command_popup_none_by_default() {
+        let state = ShellState::default();
+        assert!(state.command_popup().is_none());
+    }
+
+    #[test]
+    fn open_command_popup_creates_state() {
+        use crate::domain::command_popup_state::CommandPopupKind;
+        let mut state = ShellState::default();
+        state.open_command_popup("Recording", CommandPopupKind::Recording);
+        assert!(state.command_popup().is_some());
+        assert_eq!(state.command_popup().unwrap().title(), "Recording");
+    }
+
+    #[test]
+    fn close_command_popup_clears_state() {
+        use crate::domain::command_popup_state::CommandPopupKind;
+        let mut state = ShellState::default();
+        state.open_command_popup("Recording", CommandPopupKind::Recording);
+        state.close_command_popup();
+        assert!(state.command_popup().is_none());
+    }
+
+    #[test]
+    fn command_popup_mut_allows_mutation() {
+        use crate::domain::command_popup_state::CommandPopupKind;
+        let mut state = ShellState::default();
+        state.open_command_popup("Test", CommandPopupKind::Recording);
+        state
+            .command_popup_mut()
+            .unwrap()
+            .push_line("output".into());
+        assert_eq!(
+            state.command_popup().unwrap().visible_lines(20),
+            vec!["output"]
+        );
     }
 }

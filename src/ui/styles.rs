@@ -217,6 +217,30 @@ pub fn help_popup_footer_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
 
+// =============================================================================
+// Command popup styles
+// =============================================================================
+
+/// Border style for the command popup overlay.
+pub fn command_popup_border_style() -> Style {
+    Style::default().fg(Color::White)
+}
+
+/// Style for command output text lines.
+pub fn command_popup_output_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
+/// Style for the footer hint in the command popup.
+pub fn command_popup_footer_style() -> Style {
+    Style::default().fg(Color::Yellow)
+}
+
+/// Style for error messages in the command popup (failed commands).
+pub fn command_popup_error_style() -> Style {
+    Style::default().fg(Color::Red)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,5 +439,29 @@ mod tests {
     fn help_popup_footer_style_is_dark_gray() {
         let style = help_popup_footer_style();
         assert_eq!(style.fg, Some(Color::DarkGray));
+    }
+
+    #[test]
+    fn command_popup_border_style_is_white() {
+        let style = command_popup_border_style();
+        assert_eq!(style.fg, Some(Color::White));
+    }
+
+    #[test]
+    fn command_popup_output_style_is_dark_gray() {
+        let style = command_popup_output_style();
+        assert_eq!(style.fg, Some(Color::DarkGray));
+    }
+
+    #[test]
+    fn command_popup_footer_style_is_yellow() {
+        let style = command_popup_footer_style();
+        assert_eq!(style.fg, Some(Color::Yellow));
+    }
+
+    #[test]
+    fn command_popup_error_style_is_red() {
+        let style = command_popup_error_style();
+        assert_eq!(style.fg, Some(Color::Red));
     }
 }

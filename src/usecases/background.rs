@@ -13,6 +13,7 @@ use super::{
     list_chats::{list_chats, ListChatsQuery, ListChatsSource},
     load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
     send_message::{send_message, MessageSender, SendMessageCommand},
+    send_voice::VoiceNoteSender,
 };
 
 /// Contract for dispatching background work from the orchestrator.
@@ -55,6 +56,12 @@ pub trait TaskDispatcher {
 
     /// Resolves the chat subtitle (user status, member count, etc.) in the background.
     fn dispatch_chat_subtitle(&self, query: ChatSubtitleQuery);
+
+    /// Sends a recorded voice note to a chat (fire-and-forget for now).
+    ///
+    /// Extracts audio duration via ffprobe, generates a waveform stub,
+    /// and calls the Telegram API.
+    fn dispatch_send_voice(&self, chat_id: i64, file_path: String);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -66,7 +73,7 @@ pub struct ThreadTaskDispatcher<C, M, MS, L, S>
 where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
-    MS: MessageSender + Send + Sync + 'static,
+    MS: MessageSender + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + Send + Sync + 'static,
     S: ChatSubtitleSource + Send + Sync + 'static,
 {
@@ -82,7 +89,7 @@ impl<C, M, MS, L, S> ThreadTaskDispatcher<C, M, MS, L, S>
 where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
-    MS: MessageSender + Send + Sync + 'static,
+    MS: MessageSender + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + Send + Sync + 'static,
     S: ChatSubtitleSource + Send + Sync + 'static,
 {
@@ -109,7 +116,7 @@ impl<C, M, MS, L, S> TaskDispatcher for ThreadTaskDispatcher<C, M, MS, L, S>
 where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
-    MS: MessageSender + Send + Sync + 'static,
+    MS: MessageSender + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + Send + Sync + 'static,
     S: ChatSubtitleSource + Send + Sync + 'static,
 {
@@ -373,6 +380,63 @@ where
             tracing::error!(error = %error, "failed to spawn subtitle background thread");
         }
     }
+
+    fn dispatch_send_voice(&self, chat_id: i64, file_path: String) {
+        let sender = Arc::clone(&self.message_sender);
+        let messages_source = Arc::clone(&self.messages_source);
+        let tx = self.result_tx.clone();
+        let tx_fallback = self.result_tx.clone();
+
+        let spawn_result = std::thread::Builder::new()
+            .name("rtg-bg-send-voice".into())
+            .spawn(move || {
+                use super::voice_recording;
+
+                tracing::info!(chat_id, file_path, "background: sending voice note");
+
+                let duration = voice_recording::get_audio_duration(&file_path).unwrap_or(0);
+                let waveform = voice_recording::generate_waveform_stub();
+
+                let result = sender
+                    .send_voice_note(chat_id, &file_path, duration, &waveform)
+                    .map_err(|error| {
+                        tracing::warn!(
+                            chat_id,
+                            error = ?error,
+                            "background: send voice note failed"
+                        );
+                        BackgroundError::new("SEND_VOICE_FAILED")
+                    });
+
+                if result.is_err() {
+                    let _ = tx.send(BackgroundTaskResult::VoiceSendFailed { chat_id });
+                    return;
+                }
+
+                // Refresh messages after successful send
+                let refresh_result =
+                    load_messages(messages_source.as_ref(), LoadMessagesQuery::new(chat_id))
+                        .map(|output| output.messages)
+                        .map_err(|error| {
+                            tracing::warn!(
+                                chat_id,
+                                error = ?error,
+                                "background: messages refresh after voice send failed"
+                            );
+                            BackgroundError::new(map_load_messages_error(&error))
+                        });
+
+                let _ = tx.send(BackgroundTaskResult::MessageSentRefreshCompleted {
+                    chat_id,
+                    result: refresh_result,
+                });
+            });
+
+        if let Err(error) = spawn_result {
+            tracing::error!(error = %error, "failed to spawn send-voice background thread");
+            let _ = tx_fallback.send(BackgroundTaskResult::VoiceSendFailed { chat_id });
+        }
+    }
 }
 
 fn map_list_chats_error(error: &super::list_chats::ListChatsError) -> &'static str {
@@ -462,6 +526,10 @@ pub mod tests {
 
         fn dispatch_chat_subtitle(&self, _query: ChatSubtitleQuery) {
             // Stub: does not dispatch; tests inject results manually
+        }
+
+        fn dispatch_send_voice(&self, _chat_id: i64, _file_path: String) {
+            // Stub: fire-and-forget, no action needed in tests
         }
     }
 

@@ -375,6 +375,7 @@ mod tests {
             is_outgoing: outgoing,
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
         }
     }
 
@@ -393,6 +394,7 @@ mod tests {
             is_outgoing: false,
             media,
             status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
         }
     }
 
@@ -836,6 +838,7 @@ mod tests {
             is_outgoing: true,
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Sending,
+            file_info: None,
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -876,6 +879,7 @@ mod tests {
             is_outgoing: true,
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
         }];
 
         let elements = build_message_list_elements(&messages);

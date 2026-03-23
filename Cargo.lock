@@ -2074,11 +2074,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arboard",
+ "base64",
  "chrono",
  "clap",
  "crossterm 0.29.0",
  "dotenvy",
  "fs2",
+ "libc",
  "open",
  "ratatui",
  "rpassword",

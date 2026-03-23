@@ -24,11 +24,8 @@ use crate::{
         StubConnectivityStatusSource,
     },
     usecases::{
-        background::ThreadTaskDispatcher,
-        context::AppContext,
-        contracts::{AppEventSource, ShellOrchestrator},
-        guided_auth::AuthBackendError,
-        list_chats::CachedChatsSource,
+        background::ThreadTaskDispatcher, context::AppContext, contracts::ShellOrchestrator,
+        guided_auth::AuthBackendError, list_chats::CachedChatsSource,
         shell::DefaultShellOrchestrator,
     },
 };
@@ -40,7 +37,7 @@ const CHAT_UPDATES_MONITOR_START_FAILED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_S
 const DEFAULT_CACHED_CHAT_LIMIT: usize = 50;
 
 pub struct ShellComposition {
-    pub event_source: Box<dyn AppEventSource>,
+    pub event_source: Box<CrosstermEventSource>,
     pub orchestrator: Box<dyn ShellOrchestrator>,
     _connectivity_monitor: Option<TelegramConnectivityMonitor>,
     _chat_updates_monitor: Option<TelegramChatUpdatesMonitor>,
@@ -66,7 +63,7 @@ fn compose_shell_with_factory(
 
     let (bg_tx, bg_rx) = std::sync::mpsc::channel::<BackgroundTaskResult>();
 
-    let event_source: Box<dyn AppEventSource> = if context.config.telegram.is_configured() {
+    let event_source: Box<CrosstermEventSource> = if context.config.telegram.is_configured() {
         let (status_tx, status_rx) = std::sync::mpsc::channel::<ConnectivityStatus>();
         let (updates_tx, updates_rx) =
             std::sync::mpsc::channel::<crate::domain::events::ChatUpdate>();
@@ -179,6 +176,8 @@ fn compose_shell_with_factory(
             initial_state,
             cache_source,
             cache_cfg.min_display_messages,
+            context.config.voice.record_cmd.clone(),
+            context.config.open.handlers.clone(),
         )),
         _connectivity_monitor: connectivity_monitor,
         _chat_updates_monitor: chat_updates_monitor,
@@ -299,7 +298,7 @@ mod tests {
     use crate::{
         domain::events::AppEvent,
         infra::{config::AppConfig, contracts::ConfigAdapter, stubs::StubConfigAdapter},
-        usecases::guided_auth::AuthBackendError,
+        usecases::{contracts::AppEventSource, guided_auth::AuthBackendError},
     };
 
     struct FixedConfigAdapter {

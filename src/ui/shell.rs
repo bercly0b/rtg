@@ -5,11 +5,15 @@ use crate::usecases::{
     contracts::{AppEventSource, ShellOrchestrator},
 };
 
-use super::{terminal::TerminalSession, view};
+use super::{
+    event_source::{ChannelCommandOutputSource, CrosstermEventSource},
+    terminal::TerminalSession,
+    view,
+};
 
 pub fn start(
     context: &AppContext,
-    event_source: &mut dyn AppEventSource,
+    event_source: &mut CrosstermEventSource,
     orchestrator: &mut dyn ShellOrchestrator,
 ) -> Result<()> {
     tracing::info!(
@@ -20,11 +24,25 @@ pub fn start(
 
     let mut terminal = TerminalSession::new()?;
 
+    let mut had_command_popup = false;
+
     while orchestrator.state().is_running() {
         terminal.draw(|frame| view::render(frame, orchestrator.state_mut()))?;
 
         if let Some(event) = event_source.next_event()? {
             orchestrator.handle_event(event)?;
+        }
+
+        // Wire up command output channels when a new command starts.
+        if let Some(rx) = orchestrator.take_pending_command_rx() {
+            event_source.set_command_output_source(Box::new(ChannelCommandOutputSource::new(rx)));
+            had_command_popup = true;
+        }
+
+        // Clear the command output source once when the popup closes.
+        if had_command_popup && orchestrator.state().command_popup().is_none() {
+            event_source.clear_command_output_source();
+            had_command_popup = false;
         }
     }
 

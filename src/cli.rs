@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(name = "rtg", about = "Rust Telegram client (CLI + TUI)")]
 pub struct Cli {
-    /// Path to config file (default: ./config.toml)
+    /// Path to config file (default: ~/.config/rtg/config.toml)
     #[arg(short, long, global = true)]
     pub config: Option<PathBuf>,
 

@@ -38,6 +38,20 @@ impl MessageMedia {
     }
 }
 
+/// File metadata for messages with downloadable media.
+///
+/// Provides the information needed to open/play a file: its local path
+/// (if already downloaded) and MIME type (for handler lookup).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileInfo {
+    /// TDLib file identifier, used for download requests.
+    pub file_id: i32,
+    /// Local filesystem path; `None` if the file has not been downloaded yet.
+    pub local_path: Option<String>,
+    /// MIME type reported by TDLib (e.g. `"audio/ogg"`, `"video/mp4"`).
+    pub mime_type: String,
+}
+
 /// Delivery status of a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MessageStatus {
@@ -57,6 +71,9 @@ pub struct Message {
     pub is_outgoing: bool,
     pub media: MessageMedia,
     pub status: MessageStatus,
+    /// File metadata for messages that carry downloadable media.
+    /// `None` for text-only, poll, contact, location, and other non-file types.
+    pub file_info: Option<FileInfo>,
 }
 
 impl Message {
@@ -91,6 +108,7 @@ mod tests {
             is_outgoing: false,
             media,
             status: MessageStatus::Delivered,
+            file_info: None,
         }
     }
 

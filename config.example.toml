@@ -1,5 +1,5 @@
 # RTG example configuration
-# Copy this file to `config.toml` and adjust values.
+# Copy this file to `~/.config/rtg/config.toml` and adjust values.
 # Do not commit real secrets.
 
 [logging]
@@ -14,4 +14,21 @@ max_log_files = 3
 # Keep placeholder values in tracked config files.
 api_id = 0
 api_hash = "replace-me"
+
+[voice]
+# Override voice recording command. Use {file_path} as placeholder for the output path.
+# The output must be Opus-encoded in an OGG container (mono audio channel).
+# Default (macOS): ffmpeg -f avfoundation -i ':0' -c:a libopus -b:a 32k {file_path}
+# Default (Linux):  ffmpeg -f alsa -i hw:0 -c:a libopus -b:a 32k {file_path}
+# record_cmd = "ffmpeg -f avfoundation -i ':0' -c:a libopus -b:a 32k {file_path}"
+
+[open]
+# MIME-type handlers for opening message files (mailcap-style).
+# Use {file_path} as placeholder for the file path.
+# Supports exact types ("audio/ogg") and wildcards ("audio/*").
+# When no handler matches, the system default opener is used
+# (macOS: `open`, Linux: `xdg-open`).
+# "audio/ogg" = "mpv --speed=1.5 {file_path}"
+# "audio/mpeg" = "mpv --no-video {file_path}"
+# "audio/*" = "mpv {file_path}"
 

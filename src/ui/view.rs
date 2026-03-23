@@ -15,6 +15,7 @@ use crate::domain::{
 };
 
 use super::chat_message_list::{ChatMessageList, ChatMessageListState};
+use super::command_popup;
 use super::help_popup;
 use super::message_input::render_message_input;
 use super::message_rendering::{
@@ -66,6 +67,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
     render_horizontal_separator(frame, status_separator_area);
     let status = Paragraph::new(status_line(state)).style(styles::status_bar_style());
     frame.render_widget(status, status_area);
+
+    if let Some(popup_state) = state.command_popup() {
+        command_popup::render_command_popup(frame, frame.area(), popup_state);
+    }
 
     if state.help_visible() {
         help_popup::render_help_popup(frame, frame.area(), active_pane);
@@ -715,6 +720,7 @@ mod tests {
                 is_outgoing: false,
                 media: crate::domain::message::MessageMedia::None,
                 status: crate::domain::message::MessageStatus::Delivered,
+                file_info: None,
             }]);
         state.open_chat_mut().set_refreshing(true);
 
@@ -741,6 +747,7 @@ mod tests {
                 is_outgoing: false,
                 media: crate::domain::message::MessageMedia::None,
                 status: crate::domain::message::MessageStatus::Delivered,
+                file_info: None,
             }]);
         state
             .open_chat_mut()
@@ -769,6 +776,7 @@ mod tests {
                 is_outgoing: false,
                 media: crate::domain::message::MessageMedia::None,
                 status: crate::domain::message::MessageStatus::Delivered,
+                file_info: None,
             }]);
 
         let title = open_chat_title(state.open_chat());

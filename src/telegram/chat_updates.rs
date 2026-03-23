@@ -198,6 +198,7 @@ impl MessageMapper for StubMessageMapper {
         use super::tdlib_mappers;
         let text = tdlib_mappers::extract_message_text(&raw.content);
         let media = tdlib_mappers::extract_message_media(&raw.content);
+        let file_info = tdlib_mappers::extract_file_info(&raw.content);
         Message {
             id: raw.id,
             sender_name: "TestUser".to_owned(),
@@ -206,6 +207,7 @@ impl MessageMapper for StubMessageMapper {
             is_outgoing: raw.is_outgoing,
             media,
             status: crate::domain::message::MessageStatus::Delivered,
+            file_info,
         }
     }
 }

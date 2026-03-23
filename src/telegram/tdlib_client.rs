@@ -786,6 +786,55 @@ impl TdLibClient {
         })
     }
 
+    /// Sends a voice note to a chat.
+    ///
+    /// The voice note file must be Opus-encoded in an OGG container.
+    pub fn send_voice_note(
+        &self,
+        chat_id: i64,
+        file_path: &str,
+        duration: i32,
+        waveform: &str,
+    ) -> Result<tdlib_rs::types::Message, TdLibError> {
+        let client_id = self.client_id;
+        let file_path = file_path.to_owned();
+        let waveform = waveform.to_owned();
+
+        self.rt.block_on(async {
+            let voice_note = tdlib_rs::enums::InputFile::Local(tdlib_rs::types::InputFileLocal {
+                path: file_path,
+            });
+
+            let input_content = tdlib_rs::enums::InputMessageContent::InputMessageVoiceNote(
+                tdlib_rs::types::InputMessageVoiceNote {
+                    voice_note,
+                    duration,
+                    waveform,
+                    caption: None,
+                    self_destruct_type: None,
+                },
+            );
+
+            let message = tdlib_rs::functions::send_message(
+                chat_id,
+                None, // topic_id
+                None, // reply_to
+                None, // options
+                input_content,
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })?;
+
+            match message {
+                tdlib_rs::enums::Message::Message(m) => Ok(m),
+            }
+        })
+    }
+
     /// Deletes messages from a chat.
     ///
     /// When `revoke` is true, the messages are deleted for all participants

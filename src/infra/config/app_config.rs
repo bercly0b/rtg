@@ -9,6 +9,8 @@ pub struct AppConfig {
     pub logging: LogConfig,
     pub telegram: TelegramConfig,
     pub cache: CacheConfig,
+    pub voice: VoiceConfig,
+    pub open: OpenConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -84,6 +86,37 @@ impl Default for CacheConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VoiceConfig {
+    #[serde(default = "default_voice_record_cmd")]
+    pub record_cmd: String,
+}
+
+fn default_voice_record_cmd() -> String {
+    crate::domain::voice_defaults::DEFAULT_RECORD_CMD.to_owned()
+}
+
+impl Default for VoiceConfig {
+    fn default() -> Self {
+        Self {
+            record_cmd: default_voice_record_cmd(),
+        }
+    }
+}
+
+/// Configuration for opening message files (mailcap-style MIME → command mappings).
+///
+/// Keys are MIME types or wildcard patterns (e.g. `"audio/ogg"`, `"audio/*"`).
+/// Values are command templates with a `{file_path}` placeholder.
+///
+/// When no matching handler is found, the platform default opener is used
+/// (`open` on macOS, `xdg-open` on Linux).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct OpenConfig {
+    #[serde(flatten)]
+    pub handlers: std::collections::HashMap<String, String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,5 +185,20 @@ mod tests {
         assert_eq!(config.max_cached_chats, DEFAULT_MAX_CACHED_CHATS);
         assert_eq!(config.max_messages_per_chat, DEFAULT_MAX_MESSAGES_PER_CHAT);
         assert_eq!(config.min_display_messages, DEFAULT_MIN_DISPLAY_MESSAGES);
+    }
+
+    #[test]
+    fn default_voice_config_uses_platform_default_cmd() {
+        let config = VoiceConfig::default();
+        assert_eq!(
+            config.record_cmd,
+            crate::domain::voice_defaults::DEFAULT_RECORD_CMD
+        );
+    }
+
+    #[test]
+    fn voice_config_record_cmd_contains_file_path_placeholder() {
+        let config = VoiceConfig::default();
+        assert!(config.record_cmd.contains("{file_path}"));
     }
 }
