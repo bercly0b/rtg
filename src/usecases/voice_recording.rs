@@ -14,6 +14,9 @@ use std::{
     thread,
 };
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
 use crate::domain::events::CommandEvent;
 
 pub use crate::domain::voice_defaults::DEFAULT_RECORD_CMD;
@@ -58,16 +61,25 @@ impl RecordingHandle {
         }
     }
 
-    /// Sends SIGTERM to the recording process and waits for exit.
+    /// Sends SIGTERM to the recording process group and waits for exit.
     ///
-    /// Falls back to SIGKILL if the process does not respond within 3 seconds.
+    /// The child is spawned in its own process group (via `setsid`), so we kill
+    /// the entire group with `kill(-pgid, SIGTERM)`. This ensures shell scripts
+    /// that spawn background children (e.g. `rec`, `ffmpeg`) are fully terminated.
+    ///
+    /// Falls back to SIGKILL if the group does not respond within 3 seconds.
     pub fn stop(&mut self) {
         #[cfg(unix)]
         {
-            // SAFETY: child.id() returns a valid PID for a process we own.
-            // The cast to pid_t is safe because PIDs fit in i32 on all supported platforms.
+            let pid = self.child.id();
+            if pid == 0 {
+                return;
+            }
+            let pgid = pid as libc::pid_t;
+            // SAFETY: pgid is valid because spawn() fails if setsid() returned -1.
+            // Negative PID signals the entire process group.
             unsafe {
-                libc::kill(self.child.id() as libc::pid_t, libc::SIGTERM);
+                libc::kill(-pgid, libc::SIGTERM);
             }
             for _ in 0..30 {
                 match self.child.try_wait() {
@@ -75,7 +87,10 @@ impl RecordingHandle {
                     _ => thread::sleep(std::time::Duration::from_millis(100)),
                 }
             }
-            let _ = self.child.kill();
+            // Force-kill the entire group, then reap the leader.
+            unsafe {
+                libc::kill(-pgid, libc::SIGKILL);
+            }
             let _ = self.child.wait();
         }
 
@@ -106,12 +121,26 @@ pub fn start_recording(
         anyhow::bail!("empty recording command");
     }
 
-    let mut child = Command::new(parts[0])
-        .args(&parts[1..])
+    let mut cmd = Command::new(parts[0]);
+    cmd.args(&parts[1..])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+        .stderr(Stdio::piped());
+
+    // Spawn in a new session so `stop()` can kill the entire process group,
+    // including any children the command may fork (e.g. shell scripts
+    // that run `rec` or `ffmpeg` in the background).
+    #[cfg(unix)]
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+
+    let mut child = cmd.spawn()?;
 
     let (tx, rx) = mpsc::channel::<CommandEvent>();
 
@@ -333,5 +362,29 @@ mod tests {
         let mut handle = RecordingHandle::from_child(child);
         std::thread::sleep(std::time::Duration::from_millis(50));
         assert_eq!(handle.try_exit_success(), Some(false));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stop_terminates_process_group_via_start_recording() {
+        let (mut handle, rx) = start_recording("sleep 60", "/dev/null").unwrap();
+
+        // Process should be running.
+        assert_eq!(handle.try_exit_success(), None);
+
+        handle.stop();
+
+        // After stop, the process should be reaped.
+        assert!(handle.try_exit_success().is_some());
+
+        // Pipe readers should have finished, producing an Exited event.
+        let events: Vec<_> = rx.try_iter().collect();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, CommandEvent::Exited { .. })),
+            "expected Exited event after stop(), got: {:?}",
+            events
+        );
     }
 }
