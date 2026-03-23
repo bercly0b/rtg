@@ -131,4 +131,29 @@ mod tests {
         });
         assert_eq!(line.spans[0].style, styles::command_popup_error_style());
     }
+
+    #[test]
+    fn max_output_lines_formula_subtracts_chrome_and_footer() {
+        // Popup height = 20 → 20 - 4 (chrome) - 2 (footer) = 14 lines for output
+        let popup_height: u16 = 20;
+        let max = popup_height.saturating_sub(CHROME_LINES + FOOTER_LINES) as usize;
+        assert_eq!(max, 14);
+    }
+
+    #[test]
+    fn max_output_lines_saturates_at_zero_for_tiny_popup() {
+        // Popup height = 5 → 5 - 6 = 0 (saturating)
+        let popup_height: u16 = 5;
+        let max = popup_height.saturating_sub(CHROME_LINES + FOOTER_LINES) as usize;
+        assert_eq!(max, 0);
+    }
+
+    #[test]
+    fn chrome_and_footer_constants_are_correct() {
+        // Borders::ALL = 2 lines (top + bottom)
+        // Padding vertical = 2 lines (top + bottom)
+        assert_eq!(CHROME_LINES, 4);
+        // Empty separator line + footer text line
+        assert_eq!(FOOTER_LINES, 2);
+    }
 }

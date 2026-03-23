@@ -52,6 +52,8 @@ pub enum BackgroundTaskResult {
         chat_id: i64,
         result: Result<Vec<super::message::Message>, BackgroundError>,
     },
+    /// Voice note send failed; the optimistic pending message should be removed.
+    VoiceSendFailed { chat_id: i64 },
     /// Chat subtitle (user status / member count) resolved.
     ChatSubtitleLoaded {
         chat_id: i64,

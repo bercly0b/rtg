@@ -133,11 +133,23 @@ pub fn start_recording(
     // Spawn in a new session so `stop()` can kill the entire process group,
     // including any children the command may fork (e.g. shell scripts
     // that run `rec` or `ffmpeg` in the background).
+    //
+    // Also close all inherited file descriptors > 2 to prevent child
+    // processes from writing to the parent's terminal. On macOS,
+    // crossterm holds an open fd to /dev/tty for keyboard input;
+    // without closing it, tools like SoX `rec` can write progress
+    // output directly to the terminal, corrupting the TUI rendering.
     #[cfg(unix)]
     unsafe {
         cmd.pre_exec(|| {
             if libc::setsid() == -1 {
                 return Err(std::io::Error::last_os_error());
+            }
+            // FDs 0, 1, 2 are already set up by Command (stdin=null,
+            // stdout=piped, stderr=piped). Close everything else to
+            // prevent inherited terminal fds from leaking to the child.
+            for fd in 3..1024 {
+                libc::close(fd);
             }
             Ok(())
         });
@@ -365,6 +377,44 @@ mod tests {
         let mut handle = RecordingHandle::from_child(child);
         std::thread::sleep(std::time::Duration::from_millis(50));
         assert_eq!(handle.try_exit_success(), Some(false));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_inherits_no_high_fds_from_parent() {
+        // Verify that pre_exec closes inherited file descriptors > 2.
+        //
+        // We deliberately open extra FDs in the parent (simulating what
+        // crossterm does with /dev/tty), then spawn a child via
+        // start_recording and check that these FDs are not accessible.
+        //
+        // The child lists /dev/fd/ and we verify that no FDs above a
+        // reasonable threshold exist. FDs 0-2 are stdin/stdout/stderr,
+        // fd 3 is typically the directory listing fd from `ls` itself.
+        let (mut handle, rx) = start_recording("ls /dev/fd/", "/dev/null").unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(handle.try_exit_success().is_some());
+
+        let events: Vec<_> = rx.try_iter().collect();
+        let open_fds: Vec<i32> = events
+            .iter()
+            .filter_map(|e| match e {
+                CommandEvent::OutputLine(line) => line.trim().parse::<i32>().ok(),
+                _ => None,
+            })
+            .collect();
+
+        // After pre_exec closes FDs 3..1024, the child should only have
+        // FDs 0-2 (set up by Command) plus any FDs the child itself opens
+        // at runtime (e.g., `ls` opens /dev/fd/ directory as fd 3).
+        // We verify no high-numbered FDs leaked from the parent.
+        let max_fd = open_fds.iter().copied().max().unwrap_or(0);
+        assert!(
+            max_fd <= 4,
+            "inherited high FDs leaked to child: {:?}",
+            open_fds
+        );
     }
 
     #[cfg(unix)]

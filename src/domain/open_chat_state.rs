@@ -224,7 +224,7 @@ impl OpenChatState {
     /// The message is shown immediately with `MessageStatus::Sending`.
     /// It will be replaced by real messages when `set_ready()` is called
     /// after the server confirms delivery.
-    pub fn add_pending_message(&mut self, text: String) {
+    pub fn add_pending_message(&mut self, text: String, media: super::message::MessageMedia) {
         let now_ms = chrono::Local::now().timestamp_millis();
         let pending = Message {
             id: 0, // Temporary ID — will be replaced by server messages
@@ -232,7 +232,7 @@ impl OpenChatState {
             text,
             timestamp_ms: now_ms,
             is_outgoing: true,
-            media: super::message::MessageMedia::None,
+            media,
             status: MessageStatus::Sending,
         };
         self.messages.push(pending);
@@ -689,7 +689,10 @@ mod tests {
         state.set_loading(1, "Chat".to_owned());
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
 
-        state.add_pending_message("Hello".to_owned());
+        state.add_pending_message(
+            "Hello".to_owned(),
+            crate::domain::message::MessageMedia::None,
+        );
 
         assert_eq!(state.messages().len(), 3);
         let pending = &state.messages()[2];
@@ -699,6 +702,7 @@ mod tests {
             pending.status,
             crate::domain::message::MessageStatus::Sending
         );
+        assert_eq!(pending.media, crate::domain::message::MessageMedia::None);
         assert_eq!(state.selected_index(), Some(2));
         assert_eq!(state.scroll_offset(), ScrollOffset::BOTTOM);
     }
@@ -709,7 +713,10 @@ mod tests {
         state.set_loading(1, "Chat".to_owned());
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
 
-        state.add_pending_message("Pending".to_owned());
+        state.add_pending_message(
+            "Pending".to_owned(),
+            crate::domain::message::MessageMedia::None,
+        );
         assert_eq!(state.messages().len(), 3);
 
         state.remove_pending_messages();
@@ -725,7 +732,10 @@ mod tests {
         state.set_loading(1, "Chat".to_owned());
         state.set_ready(vec![message(1, "A")]);
 
-        state.add_pending_message("Pending".to_owned());
+        state.add_pending_message(
+            "Pending".to_owned(),
+            crate::domain::message::MessageMedia::None,
+        );
         assert_eq!(state.selected_index(), Some(1)); // pending message selected
 
         state.remove_pending_messages();
@@ -740,7 +750,10 @@ mod tests {
         state.set_loading(1, "Chat".to_owned());
         state.set_ready(vec![message(1, "A")]);
 
-        state.add_pending_message("Pending".to_owned());
+        state.add_pending_message(
+            "Pending".to_owned(),
+            crate::domain::message::MessageMedia::None,
+        );
         assert_eq!(state.messages().len(), 2);
 
         // Server refresh replaces everything including pending
@@ -752,6 +765,28 @@ mod tests {
             state.messages()[1].status,
             crate::domain::message::MessageStatus::Delivered
         );
+    }
+
+    #[test]
+    fn add_pending_message_with_voice_media() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A")]);
+
+        state.add_pending_message(String::new(), crate::domain::message::MessageMedia::Voice);
+
+        assert_eq!(state.messages().len(), 2);
+        let pending = &state.messages()[1];
+        assert_eq!(pending.text, "");
+        assert_eq!(pending.media, crate::domain::message::MessageMedia::Voice);
+        assert_eq!(
+            pending.status,
+            crate::domain::message::MessageStatus::Sending
+        );
+        assert!(pending.is_outgoing);
+        assert_eq!(pending.id, 0);
+        assert_eq!(state.selected_index(), Some(1));
+        assert_eq!(state.scroll_offset(), ScrollOffset::BOTTOM);
     }
 
     // ── selected_message tests ──

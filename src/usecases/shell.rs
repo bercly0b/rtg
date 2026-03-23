@@ -655,6 +655,10 @@ where
             return;
         }
 
+        // Optimistically show the voice message immediately
+        self.state
+            .open_chat_mut()
+            .add_pending_message(String::new(), crate::domain::message::MessageMedia::Voice);
         self.dispatcher.dispatch_send_voice(chat_id, file_path);
     }
 
@@ -733,9 +737,10 @@ where
 
         // Optimistically clear the input and show the message immediately
         self.state.message_input_mut().clear();
-        self.state
-            .open_chat_mut()
-            .add_pending_message(trimmed.to_owned());
+        self.state.open_chat_mut().add_pending_message(
+            trimmed.to_owned(),
+            crate::domain::message::MessageMedia::None,
+        );
         self.dispatcher.dispatch_send_message(chat_id, text.clone());
     }
 
@@ -869,6 +874,12 @@ where
                         // But clear refreshing since the refresh attempt is done.
                         self.state.open_chat_mut().set_refreshing(false);
                     }
+                }
+            }
+            BackgroundTaskResult::VoiceSendFailed { chat_id } => {
+                tracing::warn!(chat_id, "background: voice send failed, rolling back");
+                if self.state.open_chat().chat_id() == Some(chat_id) {
+                    self.state.open_chat_mut().remove_pending_messages();
                 }
             }
             BackgroundTaskResult::ChatSubtitleLoaded { chat_id, result } => {
@@ -4458,6 +4469,15 @@ mod tests {
         assert_eq!(sent_chat_id, 42);
         assert_eq!(sent_path, file_path);
 
+        // Optimistic pending voice message should be visible
+        let messages = o.state().open_chat().messages();
+        let pending = messages.last().unwrap();
+        assert_eq!(pending.media, crate::domain::message::MessageMedia::Voice);
+        assert_eq!(
+            pending.status,
+            crate::domain::message::MessageStatus::Sending
+        );
+
         let _ = std::fs::remove_file(&tmp);
     }
 
@@ -4711,6 +4731,179 @@ mod tests {
         o.send_voice_recording();
 
         assert_eq!(o.dispatcher.voice_send_dispatch_count(), 1);
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    // ── Optimistic voice message tests ──
+
+    #[test]
+    fn voice_send_creates_pending_message_with_voice_media() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_voice_pending.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        o.recording_file_path = Some(tmp.to_str().unwrap().into());
+
+        o.send_voice_recording();
+
+        let messages = o.state().open_chat().messages();
+        assert_eq!(messages.len(), 2);
+        let pending = &messages[1];
+        assert_eq!(pending.text, "");
+        assert_eq!(pending.media, crate::domain::message::MessageMedia::Voice);
+        assert_eq!(
+            pending.status,
+            crate::domain::message::MessageStatus::Sending
+        );
+        assert!(pending.is_outgoing);
+        assert_eq!(pending.id, 0);
+        assert_eq!(
+            o.state().open_chat().scroll_offset(),
+            crate::domain::open_chat_state::ScrollOffset::BOTTOM
+        );
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn voice_send_failed_removes_pending_message() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_voice_fail.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        o.recording_file_path = Some(tmp.to_str().unwrap().into());
+
+        o.send_voice_recording();
+        assert_eq!(o.state().open_chat().messages().len(), 2);
+
+        // Simulate voice send failure
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::VoiceSendFailed { chat_id: 1 },
+        ))
+        .unwrap();
+
+        // Pending message should be rolled back
+        assert_eq!(o.state().open_chat().messages().len(), 1);
+        assert_eq!(o.state().open_chat().messages()[0].text, "hi");
+    }
+
+    #[test]
+    fn voice_send_failed_ignored_for_different_chat() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_voice_fail_other.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        o.recording_file_path = Some(tmp.to_str().unwrap().into());
+
+        o.send_voice_recording();
+        assert_eq!(o.state().open_chat().messages().len(), 2);
+
+        // Failure for a different chat should not affect current chat
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::VoiceSendFailed { chat_id: 999 },
+        ))
+        .unwrap();
+
+        // Pending message should remain
+        assert_eq!(o.state().open_chat().messages().len(), 2);
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn voice_send_success_replaces_pending_with_real_message() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_voice_replace.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        o.recording_file_path = Some(tmp.to_str().unwrap().into());
+
+        o.send_voice_recording();
+        assert_eq!(o.state().open_chat().messages().len(), 2);
+
+        // Simulate MessageSentRefreshCompleted with real message from server
+        let mut voice_msg = message(99, "");
+        voice_msg.media = crate::domain::message::MessageMedia::Voice;
+        voice_msg.is_outgoing = true;
+
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::MessageSentRefreshCompleted {
+                chat_id: 1,
+                result: Ok(vec![message(10, "hi"), voice_msg]),
+            },
+        ))
+        .unwrap();
+
+        let messages = o.state().open_chat().messages();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1].id, 99);
+        assert_eq!(
+            messages[1].status,
+            crate::domain::message::MessageStatus::Delivered
+        );
+        assert_eq!(
+            messages[1].media,
+            crate::domain::message::MessageMedia::Voice
+        );
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn voice_send_no_pending_when_file_missing() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        o.recording_file_path = Some("/nonexistent/rtg_test_voice.oga".into());
+
+        o.send_voice_recording();
+
+        // File doesn't exist so no dispatch and no pending message
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 0);
+        assert_eq!(o.state().open_chat().messages().len(), 1);
+    }
+
+    #[test]
+    fn full_voice_flow_creates_optimistic_message_on_confirm() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_full_optimistic.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        let file_path = tmp.to_str().unwrap().to_owned();
+
+        simulate_voice_recording_started(&mut o, &file_path);
+
+        // q → Stopping
+        o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
+            .unwrap();
+        assert_eq!(
+            o.state().command_popup().unwrap().phase(),
+            &CommandPhase::Stopping
+        );
+
+        // Process exits → AwaitingConfirmation
+        o.handle_event(AppEvent::CommandExited { success: true })
+            .unwrap();
+
+        // No pending message yet
+        assert_eq!(o.state().open_chat().messages().len(), 1);
+
+        // y → send with optimistic message
+        o.handle_event(AppEvent::InputKey(KeyInput::new("y", false)))
+            .unwrap();
+        assert!(o.state().command_popup().is_none());
+        assert_eq!(o.dispatcher.voice_send_dispatch_count(), 1);
+
+        // Pending voice message should be visible
+        let messages = o.state().open_chat().messages();
+        assert_eq!(messages.len(), 2);
+        let pending = &messages[1];
+        assert_eq!(pending.media, crate::domain::message::MessageMedia::Voice);
+        assert_eq!(
+            pending.status,
+            crate::domain::message::MessageStatus::Sending
+        );
+
         let _ = std::fs::remove_file(&tmp);
     }
 }

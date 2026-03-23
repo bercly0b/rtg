@@ -385,8 +385,9 @@ where
         let sender = Arc::clone(&self.message_sender);
         let messages_source = Arc::clone(&self.messages_source);
         let tx = self.result_tx.clone();
+        let tx_fallback = self.result_tx.clone();
 
-        if let Err(error) = std::thread::Builder::new()
+        let spawn_result = std::thread::Builder::new()
             .name("rtg-bg-send-voice".into())
             .spawn(move || {
                 use super::voice_recording;
@@ -407,28 +408,33 @@ where
                         BackgroundError::new("SEND_VOICE_FAILED")
                     });
 
-                if result.is_ok() {
-                    // Refresh messages after successful send
-                    let refresh_result =
-                        load_messages(messages_source.as_ref(), LoadMessagesQuery::new(chat_id))
-                            .map(|output| output.messages)
-                            .map_err(|error| {
-                                tracing::warn!(
-                                    chat_id,
-                                    error = ?error,
-                                    "background: messages refresh after voice send failed"
-                                );
-                                BackgroundError::new(map_load_messages_error(&error))
-                            });
-
-                    let _ = tx.send(BackgroundTaskResult::MessageSentRefreshCompleted {
-                        chat_id,
-                        result: refresh_result,
-                    });
+                if result.is_err() {
+                    let _ = tx.send(BackgroundTaskResult::VoiceSendFailed { chat_id });
+                    return;
                 }
-            })
-        {
+
+                // Refresh messages after successful send
+                let refresh_result =
+                    load_messages(messages_source.as_ref(), LoadMessagesQuery::new(chat_id))
+                        .map(|output| output.messages)
+                        .map_err(|error| {
+                            tracing::warn!(
+                                chat_id,
+                                error = ?error,
+                                "background: messages refresh after voice send failed"
+                            );
+                            BackgroundError::new(map_load_messages_error(&error))
+                        });
+
+                let _ = tx.send(BackgroundTaskResult::MessageSentRefreshCompleted {
+                    chat_id,
+                    result: refresh_result,
+                });
+            });
+
+        if let Err(error) = spawn_result {
             tracing::error!(error = %error, "failed to spawn send-voice background thread");
+            let _ = tx_fallback.send(BackgroundTaskResult::VoiceSendFailed { chat_id });
         }
     }
 }
