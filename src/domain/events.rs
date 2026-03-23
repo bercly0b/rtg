@@ -93,14 +93,26 @@ pub enum ChatUpdate {
     /// Chat metadata changed (last message, position, read state, etc.).
     /// The orchestrator should refresh the chat list.
     ChatMetadataChanged { chat_id: i64 },
+    /// File download progress or completion update from TDLib.
+    FileUpdated {
+        file_id: i32,
+        size: u64,
+        local_path: String,
+        is_downloading_active: bool,
+        is_downloading_completed: bool,
+        downloaded_size: u64,
+    },
 }
 
 impl ChatUpdate {
-    pub fn chat_id(&self) -> i64 {
+    /// Returns the chat_id for chat-scoped updates, or `None` for file updates
+    /// (which are cross-chat and resolved via the downloads tracker).
+    pub fn chat_id(&self) -> Option<i64> {
         match self {
             ChatUpdate::NewMessage { chat_id, .. }
             | ChatUpdate::MessagesDeleted { chat_id, .. }
-            | ChatUpdate::ChatMetadataChanged { chat_id } => *chat_id,
+            | ChatUpdate::ChatMetadataChanged { chat_id } => Some(*chat_id),
+            ChatUpdate::FileUpdated { .. } => None,
         }
     }
 }

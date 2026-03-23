@@ -8,7 +8,7 @@ use std::sync::{mpsc::Sender, Arc};
 use crate::domain::events::{BackgroundError, BackgroundTaskResult};
 
 use super::{
-    chat_lifecycle::{ChatLifecycle, ChatReadMarker, MessageDeleter},
+    chat_lifecycle::{ChatLifecycle, ChatReadMarker, FileDownloader, MessageDeleter},
     chat_subtitle::{ChatSubtitleQuery, ChatSubtitleSource},
     list_chats::{list_chats, ListChatsQuery, ListChatsSource},
     load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
@@ -62,6 +62,11 @@ pub trait TaskDispatcher {
     /// Extracts audio duration via ffprobe, generates a waveform stub,
     /// and calls the Telegram API.
     fn dispatch_send_voice(&self, chat_id: i64, file_path: String);
+
+    /// Triggers a file download in TDLib (fire-and-forget).
+    ///
+    /// Progress is delivered asynchronously via `updateFile` events.
+    fn dispatch_download_file(&self, file_id: i32);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -74,7 +79,7 @@ where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + VoiceNoteSender + Send + Sync + 'static,
-    L: ChatLifecycle + ChatReadMarker + MessageDeleter + Send + Sync + 'static,
+    L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
     S: ChatSubtitleSource + Send + Sync + 'static,
 {
     chats_source: Arc<C>,
@@ -90,7 +95,7 @@ where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + VoiceNoteSender + Send + Sync + 'static,
-    L: ChatLifecycle + ChatReadMarker + MessageDeleter + Send + Sync + 'static,
+    L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
     S: ChatSubtitleSource + Send + Sync + 'static,
 {
     pub fn new(
@@ -117,7 +122,7 @@ where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + VoiceNoteSender + Send + Sync + 'static,
-    L: ChatLifecycle + ChatReadMarker + MessageDeleter + Send + Sync + 'static,
+    L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
     S: ChatSubtitleSource + Send + Sync + 'static,
 {
     fn dispatch_chat_list(&self) {
@@ -437,6 +442,22 @@ where
             let _ = tx_fallback.send(BackgroundTaskResult::VoiceSendFailed { chat_id });
         }
     }
+
+    fn dispatch_download_file(&self, file_id: i32) {
+        let lifecycle = Arc::clone(&self.lifecycle);
+
+        if let Err(error) = std::thread::Builder::new()
+            .name("rtg-bg-download".into())
+            .spawn(move || {
+                tracing::debug!(file_id, "background: starting file download");
+                if let Err(e) = lifecycle.download_file(file_id) {
+                    tracing::warn!(file_id, error = ?e, "background: downloadFile failed");
+                }
+            })
+        {
+            tracing::error!(error = %error, "failed to spawn download file background thread");
+        }
+    }
 }
 
 fn map_list_chats_error(error: &super::list_chats::ListChatsError) -> &'static str {
@@ -529,6 +550,10 @@ pub mod tests {
         }
 
         fn dispatch_send_voice(&self, _chat_id: i64, _file_path: String) {
+            // Stub: fire-and-forget, no action needed in tests
+        }
+
+        fn dispatch_download_file(&self, _file_id: i32) {
             // Stub: fire-and-forget, no action needed in tests
         }
     }

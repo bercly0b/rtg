@@ -289,6 +289,19 @@ impl TdLibClient {
                             let _ = update_tx.send(TdLibUpdate::UserStatus { user_id: u.user_id });
                         }
 
+                        // File download progress updates
+                        Update::File(u) => {
+                            let _ = update_tx.send(TdLibUpdate::FileUpdated {
+                                file_id: u.file.id,
+                                size: u.file.size,
+                                expected_size: u.file.expected_size,
+                                local_path: u.file.local.path,
+                                is_downloading_active: u.file.local.is_downloading_active,
+                                is_downloading_completed: u.file.local.is_downloading_completed,
+                                downloaded_size: u.file.local.downloaded_size,
+                            });
+                        }
+
                         // Ignore other update types
                         _ => {
                             tracing::trace!("Unhandled TDLib update type");
@@ -640,6 +653,30 @@ impl TdLibClient {
                 client_id,
             )
             .await
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })
+        })
+    }
+
+    /// Triggers an asynchronous file download in TDLib.
+    ///
+    /// Progress updates are delivered via `Update::File` events.
+    /// The file will be stored in the TDLib files directory.
+    pub fn download_file(&self, file_id: i32) -> Result<(), TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            tdlib_rs::functions::download_file(
+                file_id, 16,    // priority (1-32, 16 = medium-high)
+                0,     // offset (from start)
+                0,     // limit (0 = entire file)
+                false, // synchronous = false (async, progress via updateFile)
+                client_id,
+            )
+            .await
+            .map(|_| ())
             .map_err(|e| TdLibError::Request {
                 code: e.code,
                 message: e.message,

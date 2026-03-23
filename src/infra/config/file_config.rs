@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use crate::infra::config::{
-    AppConfig, CacheConfig, LogConfig, OpenConfig, TelegramConfig, VoiceConfig,
+    AppConfig, CacheConfig, DownloadConfig, LogConfig, OpenConfig, TelegramConfig, VoiceConfig,
 };
 
 #[derive(Debug, Deserialize, Default)]
@@ -11,6 +11,7 @@ pub struct FileConfig {
     pub cache: Option<FileCacheConfig>,
     pub voice: Option<FileVoiceConfig>,
     pub open: Option<FileOpenConfig>,
+    pub download: Option<FileDownloadConfig>,
 }
 
 impl FileConfig {
@@ -33,6 +34,10 @@ impl FileConfig {
 
         if let Some(open) = self.open {
             open.merge_into(&mut config.open);
+        }
+
+        if let Some(download) = self.download {
+            download.merge_into(&mut config.download);
         }
     }
 }
@@ -121,6 +126,19 @@ impl FileOpenConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct FileDownloadConfig {
+    pub max_auto_download_size: Option<String>,
+}
+
+impl FileDownloadConfig {
+    fn merge_into(self, config: &mut DownloadConfig) {
+        if let Some(max_size) = self.max_auto_download_size {
+            config.max_auto_download_size = max_size;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,6 +215,7 @@ level = "warn"
             }),
             voice: None,
             open: None,
+            download: None,
         };
 
         let mut config = AppConfig::default();
@@ -236,6 +255,7 @@ level = "warn"
                 record_cmd: Some("custom-cmd {file_path}".to_owned()),
             }),
             open: None,
+            download: None,
         };
 
         let mut config = AppConfig::default();
@@ -259,6 +279,7 @@ level = "warn"
             cache: None,
             voice: None,
             open: None,
+            download: None,
         };
 
         let mut config = AppConfig::default();
@@ -327,9 +348,48 @@ record_cmd = "sox -d {file_path}"
             cache: None,
             voice: None,
             open: None,
+            download: None,
         };
         let mut config = AppConfig::default();
         file.merge_into(&mut config);
         assert!(config.open.handlers.is_empty());
+    }
+
+    #[test]
+    fn deserialize_download_section() {
+        let toml = r#"
+[download]
+max_auto_download_size = "5MB"
+"#;
+        let config: FileConfig = toml::from_str(toml).unwrap();
+        let download = config.download.unwrap();
+        assert_eq!(download.max_auto_download_size.unwrap(), "5MB");
+    }
+
+    #[test]
+    fn download_config_merges_into_app_config() {
+        let toml = r#"
+[download]
+max_auto_download_size = "500KB"
+"#;
+        let file: FileConfig = toml::from_str(toml).unwrap();
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config);
+        assert_eq!(config.download.max_auto_download_size, "500KB");
+    }
+
+    #[test]
+    fn download_config_none_preserves_default() {
+        let file = FileConfig {
+            logging: None,
+            telegram: None,
+            cache: None,
+            voice: None,
+            open: None,
+            download: None,
+        };
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config);
+        assert_eq!(config.download.max_auto_download_size, "10MB");
     }
 }

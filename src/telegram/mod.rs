@@ -27,7 +27,9 @@ use crate::{
     domain::{events::ConnectivityStatus, message::Message, status::AuthConnectivityStatus},
     infra::{config::TelegramConfig, storage_layout::StorageLayout},
     usecases::{
-        chat_lifecycle::{ChatLifecycle, ChatLifecycleError, ChatReadMarker, MessageDeleter},
+        chat_lifecycle::{
+            ChatLifecycle, ChatLifecycleError, ChatReadMarker, FileDownloader, MessageDeleter,
+        },
         chat_subtitle::{ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource},
         guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome, TelegramAuthClient},
         list_chats::{CachedChatsSource, ListChatsSource, ListChatsSourceError},
@@ -324,6 +326,18 @@ impl ChatLifecycle for TelegramAdapter {
         match self.tdlib_backend.as_ref() {
             Some(backend) => backend.close_chat(chat_id).map_err(|e| {
                 tracing::debug!(chat_id, error = ?e, "close_chat mapped to lifecycle error");
+                ChatLifecycleError::Unavailable
+            }),
+            None => Err(ChatLifecycleError::Unavailable),
+        }
+    }
+}
+
+impl FileDownloader for TelegramAdapter {
+    fn download_file(&self, file_id: i32) -> Result<(), ChatLifecycleError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.download_file(file_id).map_err(|e| {
+                tracing::debug!(file_id, error = ?e, "download_file mapped to lifecycle error");
                 ChatLifecycleError::Unavailable
             }),
             None => Err(ChatLifecycleError::Unavailable),

@@ -125,6 +125,29 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
         | TdLibUpdate::MessageSendSucceeded { chat_id, .. } => {
             Some(ChatUpdate::ChatMetadataChanged { chat_id })
         }
+        TdLibUpdate::FileUpdated {
+            file_id,
+            size,
+            expected_size,
+            local_path,
+            is_downloading_active,
+            is_downloading_completed,
+            downloaded_size,
+        } => {
+            let effective_size = if size > 0 {
+                size.max(0) as u64
+            } else {
+                expected_size.max(0) as u64
+            };
+            Some(ChatUpdate::FileUpdated {
+                file_id,
+                size: effective_size,
+                local_path,
+                is_downloading_active,
+                is_downloading_completed,
+                downloaded_size: downloaded_size.max(0) as u64,
+            })
+        }
         TdLibUpdate::UserStatus { .. } => None,
     }
 }

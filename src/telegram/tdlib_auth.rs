@@ -521,6 +521,13 @@ impl TdLibAuthBackend {
         self.client.close_chat(chat_id).map_err(map_messages_error)
     }
 
+    /// Triggers an asynchronous file download.
+    pub fn download_file(&self, file_id: i32) -> Result<(), MessagesSourceError> {
+        self.client
+            .download_file(file_id)
+            .map_err(map_messages_error)
+    }
+
     /// Marks the given messages as viewed/read in a chat.
     ///
     /// The chat must be opened via [`open_chat`](Self::open_chat) first.

@@ -63,6 +63,11 @@ where
     voice_record_cmd: String,
     /// MIME-type → command mappings for opening message files (from config).
     open_handlers: std::collections::HashMap<String, String>,
+    /// Tracks active downloads: file_id → (chat_id, message_id).
+    /// Used to route `updateFile` events to the correct message in the cache.
+    active_downloads: std::collections::HashMap<i32, (i64, i64)>,
+    /// Maximum file size (in bytes) for auto-download.
+    max_auto_download_bytes: u64,
 }
 
 impl<S, O, D> DefaultShellOrchestrator<S, O, D>
@@ -91,6 +96,8 @@ where
             pending_command_rx: None,
             voice_record_cmd: super::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
             open_handlers: std::collections::HashMap::new(),
+            active_downloads: std::collections::HashMap::new(),
+            max_auto_download_bytes: 10_000_000,
         }
     }
 
@@ -112,6 +119,7 @@ where
         min_display_messages: usize,
         voice_record_cmd: String,
         open_handlers: std::collections::HashMap<String, String>,
+        max_auto_download_bytes: u64,
     ) -> Self {
         let initial_refresh_needed = initial_state.chat_list().ui_state() == ChatListUiState::Ready;
         Self {
@@ -132,6 +140,8 @@ where
             pending_command_rx: None,
             voice_record_cmd,
             open_handlers,
+            active_downloads: std::collections::HashMap::new(),
+            max_auto_download_bytes,
         }
     }
 
@@ -351,14 +361,16 @@ where
         let mut affected_chat_ids = Vec::new();
 
         for update in updates {
-            let chat_id = update.chat_id();
-            if !affected_chat_ids.contains(&chat_id) {
-                affected_chat_ids.push(chat_id);
+            if let Some(chat_id) = update.chat_id() {
+                if !affected_chat_ids.contains(&chat_id) {
+                    affected_chat_ids.push(chat_id);
+                }
             }
 
             match update {
                 ChatUpdate::NewMessage { chat_id, message } => {
                     tracing::debug!(chat_id, message_id = message.id, "caching pushed message");
+                    self.maybe_auto_download(chat_id, &message);
                     self.state.message_cache_mut().add_message(chat_id, message);
                 }
                 ChatUpdate::MessagesDeleted {
@@ -375,13 +387,146 @@ where
                         .remove_messages(chat_id, &message_ids);
                 }
                 ChatUpdate::ChatMetadataChanged { .. } => {}
+                ChatUpdate::FileUpdated {
+                    file_id,
+                    size,
+                    local_path,
+                    is_downloading_active,
+                    is_downloading_completed,
+                    downloaded_size,
+                } => {
+                    self.handle_file_update(
+                        file_id,
+                        size,
+                        local_path,
+                        is_downloading_active,
+                        is_downloading_completed,
+                        downloaded_size,
+                    );
+                }
             }
         }
 
         // Always refresh the chat list (any update may affect ordering/preview)
         self.dispatch_chat_list_refresh();
         // Refresh the currently displayed chat if it was affected
-        self.maybe_refresh_open_chat_messages(&affected_chat_ids);
+        if !affected_chat_ids.is_empty() {
+            self.maybe_refresh_open_chat_messages(&affected_chat_ids);
+        }
+    }
+
+    /// Handles a file download progress/completion update from TDLib.
+    ///
+    /// Updates the `FileInfo` on the relevant message in both the open chat
+    /// and the message cache.
+    fn handle_file_update(
+        &mut self,
+        file_id: i32,
+        size: u64,
+        local_path: String,
+        is_downloading_active: bool,
+        is_downloading_completed: bool,
+        downloaded_size: u64,
+    ) {
+        use crate::domain::message::DownloadStatus;
+
+        let Some(&(chat_id, message_id)) = self.active_downloads.get(&file_id) else {
+            return;
+        };
+
+        let new_status = if is_downloading_completed && !local_path.is_empty() {
+            DownloadStatus::Completed
+        } else if is_downloading_active {
+            let percent = if size > 0 {
+                (downloaded_size * 100 / size).min(99) as u8
+            } else {
+                0
+            };
+            DownloadStatus::Downloading {
+                progress_percent: percent,
+            }
+        } else {
+            DownloadStatus::NotStarted
+        };
+
+        let new_local_path = if is_downloading_completed && !local_path.is_empty() {
+            Some(local_path)
+        } else {
+            None
+        };
+
+        // Update the message in the open chat view
+        if self.state.open_chat().chat_id() == Some(chat_id) {
+            self.state
+                .open_chat_mut()
+                .update_message_file_info(message_id, |fi| {
+                    fi.download_status = new_status;
+                    if let Some(ref path) = new_local_path {
+                        fi.local_path = Some(path.clone());
+                    }
+                    if size > 0 {
+                        fi.size = Some(size);
+                    }
+                });
+        }
+
+        // Update the message in the cache
+        self.state
+            .message_cache_mut()
+            .update_file_info(chat_id, message_id, |fi| {
+                fi.download_status = new_status;
+                if let Some(ref path) = new_local_path {
+                    fi.local_path = Some(path.clone());
+                }
+                if size > 0 {
+                    fi.size = Some(size);
+                }
+            });
+
+        // Clean up completed or failed/cancelled downloads
+        if is_downloading_completed {
+            self.active_downloads.remove(&file_id);
+            tracing::info!(file_id, chat_id, message_id, "file download completed");
+        } else if !is_downloading_active {
+            self.active_downloads.remove(&file_id);
+            tracing::warn!(
+                file_id,
+                chat_id,
+                message_id,
+                "file download failed or cancelled"
+            );
+        }
+    }
+
+    /// Checks whether a new message should be auto-downloaded and triggers the download.
+    fn maybe_auto_download(&mut self, chat_id: i64, message: &crate::domain::message::Message) {
+        let Some(ref fi) = message.file_info else {
+            return;
+        };
+
+        if fi.download_status != crate::domain::message::DownloadStatus::NotStarted {
+            return;
+        }
+
+        let size = fi.size.unwrap_or(0);
+        if size == 0 || size > self.max_auto_download_bytes {
+            return;
+        }
+
+        // Avoid duplicate downloads
+        if self.active_downloads.contains_key(&fi.file_id) {
+            return;
+        }
+
+        tracing::debug!(
+            file_id = fi.file_id,
+            size,
+            message_id = message.id,
+            "auto-downloading file"
+        );
+        self.active_downloads
+            .insert(fi.file_id, (chat_id, message.id));
+        self.dispatcher.dispatch_download_file(fi.file_id);
     }
 
     /// Dispatches a mark-as-read request for all messages currently loaded in the open chat.
@@ -509,9 +654,49 @@ where
                     self.start_voice_recording();
                 }
             }
+            "D" => {
+                self.download_selected_message_file();
+            }
             _ => {}
         }
         Ok(())
+    }
+
+    /// Triggers a manual download of the selected message's file.
+    fn download_selected_message_file(&mut self) {
+        use crate::domain::message::DownloadStatus;
+
+        let Some(chat_id) = self.state.open_chat().chat_id() else {
+            return;
+        };
+
+        let Some(msg) = self.state.open_chat().selected_message() else {
+            return;
+        };
+
+        let Some(ref fi) = msg.file_info else {
+            return;
+        };
+
+        if fi.download_status != DownloadStatus::NotStarted {
+            return;
+        }
+
+        if self.active_downloads.contains_key(&fi.file_id) {
+            return;
+        }
+
+        let file_id = fi.file_id;
+        let message_id = msg.id;
+
+        tracing::info!(
+            file_id,
+            chat_id,
+            message_id,
+            "manual file download triggered"
+        );
+        self.active_downloads.insert(file_id, (chat_id, message_id));
+        self.dispatcher.dispatch_download_file(file_id);
     }
 
     fn start_voice_recording(&mut self) {
@@ -1372,6 +1557,10 @@ mod tests {
                 .borrow_mut()
                 .push((chat_id, file_path));
         }
+
+        fn dispatch_download_file(&self, _file_id: i32) {
+            // Recording: no-op for now
+        }
     }
 
     // ── Test orchestrator factory ──
@@ -1479,6 +1668,7 @@ mod tests {
             1, // No threshold in most tests — any cached message triggers instant display
             crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
             std::collections::HashMap::new(),
+            10_000_000,
         )
     }
 
@@ -1496,6 +1686,7 @@ mod tests {
             1, // No threshold in most tests — any cached message triggers instant display
             crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
             std::collections::HashMap::new(),
+            10_000_000,
         )
     }
 
@@ -1513,6 +1704,7 @@ mod tests {
             min_display_messages,
             crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
             std::collections::HashMap::new(),
+            10_000_000,
         )
     }
 
@@ -1531,6 +1723,7 @@ mod tests {
             min_display_messages,
             crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
             std::collections::HashMap::new(),
+            10_000_000,
         )
     }
 
@@ -5033,6 +5226,11 @@ mod tests {
                 file_id: id as i32,
                 local_path: Some(path.to_owned()),
                 mime_type: "audio/ogg".to_owned(),
+                size: Some(1000),
+                duration: Some(3),
+                file_name: None,
+                is_listened: false,
+                download_status: crate::domain::message::DownloadStatus::Completed,
             }),
         }
     }
@@ -5050,6 +5248,11 @@ mod tests {
                 file_id: id as i32,
                 local_path: None,
                 mime_type: "audio/ogg".to_owned(),
+                size: Some(1000),
+                duration: Some(3),
+                file_name: None,
+                is_listened: false,
+                download_status: crate::domain::message::DownloadStatus::NotStarted,
             }),
         }
     }
@@ -5067,6 +5270,11 @@ mod tests {
                 file_id: id as i32,
                 local_path: Some(path.to_owned()),
                 mime_type: "audio/mpeg".to_owned(),
+                size: Some(5000),
+                duration: Some(180),
+                file_name: None,
+                is_listened: false,
+                download_status: crate::domain::message::DownloadStatus::Completed,
             }),
         }
     }
@@ -5246,6 +5454,11 @@ mod tests {
                     file_id: 10,
                     local_path: Some("/tmp/video.mp4".to_owned()),
                     mime_type: "video/mp4".to_owned(),
+                    size: Some(10_000),
+                    duration: Some(30),
+                    file_name: None,
+                    is_listened: false,
+                    download_status: crate::domain::message::DownloadStatus::Completed,
                 }),
             }],
         );

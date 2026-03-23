@@ -50,6 +50,17 @@ pub enum TdLibUpdate {
 
     /// Message send succeeded (for sent message confirmation).
     MessageSendSucceeded { chat_id: i64, old_message_id: i64 },
+
+    /// File download progress or completion update.
+    FileUpdated {
+        file_id: i32,
+        size: i64,
+        expected_size: i64,
+        local_path: String,
+        is_downloading_active: bool,
+        is_downloading_completed: bool,
+        downloaded_size: i64,
+    },
 }
 
 impl TdLibUpdate {
@@ -65,7 +76,7 @@ impl TdLibUpdate {
             | TdLibUpdate::ChatReadInbox { chat_id }
             | TdLibUpdate::ChatReadOutbox { chat_id }
             | TdLibUpdate::MessageSendSucceeded { chat_id, .. } => Some(*chat_id),
-            TdLibUpdate::UserStatus { .. } => None,
+            TdLibUpdate::UserStatus { .. } | TdLibUpdate::FileUpdated { .. } => None,
         }
     }
 
@@ -81,6 +92,7 @@ impl TdLibUpdate {
             TdLibUpdate::ChatReadOutbox { .. } => "chat_read_outbox",
             TdLibUpdate::UserStatus { .. } => "user_status",
             TdLibUpdate::MessageSendSucceeded { .. } => "message_send_succeeded",
+            TdLibUpdate::FileUpdated { .. } => "file_updated",
         }
     }
 }

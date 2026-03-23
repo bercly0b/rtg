@@ -29,6 +29,8 @@ pub enum MessageListElement {
         is_outgoing: bool,
         content: String,
         status: MessageStatus,
+        /// File metadata line (e.g. "download=yes, size=15.5KB, duration=0:03").
+        file_meta: Option<String>,
     },
 }
 
@@ -66,6 +68,11 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
         // or when HH:MM changes within the group.
         let show_time = show_sender || prev_time.as_deref() != Some(&time);
 
+        let file_meta = message
+            .file_info
+            .as_ref()
+            .map(|fi| crate::domain::message::build_file_metadata_display(message.media, fi));
+
         elements.push(MessageListElement::Message {
             time: time.clone(),
             show_time,
@@ -73,6 +80,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             is_outgoing: message.is_outgoing,
             content: message.display_content(),
             status: message.status,
+            file_meta,
         });
 
         prev_date = Some(msg_date);
@@ -131,6 +139,7 @@ pub fn element_to_text(
             is_outgoing,
             content,
             status,
+            file_meta,
         } => {
             let lines = build_message_lines(
                 time,
@@ -139,6 +148,7 @@ pub fn element_to_text(
                 *is_outgoing,
                 content,
                 *status,
+                file_meta.as_deref(),
                 max_width,
             );
             ratatui::text::Text::from(lines)
@@ -146,6 +156,7 @@ pub fn element_to_text(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_message_lines(
     time: &str,
     show_time: bool,
@@ -153,6 +164,7 @@ fn build_message_lines(
     is_outgoing: bool,
     content: &str,
     status: MessageStatus,
+    file_meta: Option<&str>,
     max_width: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
@@ -226,6 +238,11 @@ fn build_message_lines(
         }
     }
 
+    // Append file metadata on the same line as the media label
+    if let Some(meta) = file_meta {
+        append_file_meta_to_media_line(&mut lines, meta);
+    }
+
     // Append sending status indicator on the same line as the last content line
     if status == MessageStatus::Sending {
         if let Some(last_line) = lines.last_mut() {
@@ -236,6 +253,26 @@ fn build_message_lines(
     }
 
     lines
+}
+
+/// Appends file metadata to the line containing the `[Media]` indicator.
+///
+/// Finds the first content line that starts with a media bracket (after indent),
+/// and appends the metadata as a DarkGray span on that same line.
+fn append_file_meta_to_media_line(lines: &mut [Line<'static>], meta: &str) {
+    for line in lines.iter_mut() {
+        let has_media_bracket = line.spans.iter().any(|span| {
+            let text = span.content.trim();
+            text.starts_with('[') && text.contains(']')
+        });
+        if has_media_bracket {
+            line.spans.push(Span::styled(
+                format!(" {}", meta),
+                styles::message_sending_style(),
+            ));
+            return;
+        }
+    }
 }
 
 fn build_message_header_line(
@@ -975,5 +1012,72 @@ mod tests {
             "Long text should wrap into multiple lines, got {} lines",
             msg_text.lines.len()
         );
+    }
+
+    // ── file metadata display tests ──
+
+    #[test]
+    fn voice_message_shows_file_metadata() {
+        use crate::domain::message::{DownloadStatus, FileInfo};
+
+        let messages = vec![Message {
+            id: 1,
+            sender_name: "Alice".to_owned(),
+            text: String::new(),
+            timestamp_ms: FEB_14_2026_10AM,
+            is_outgoing: false,
+            media: MessageMedia::Voice,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: Some(FileInfo {
+                file_id: 1,
+                local_path: Some("/tmp/v.ogg".to_owned()),
+                mime_type: "audio/ogg".to_owned(),
+                size: Some(15_500),
+                duration: Some(3),
+                file_name: None,
+                is_listened: true,
+                download_status: DownloadStatus::Completed,
+            }),
+        }];
+
+        let elements = build_message_list_elements(&messages);
+
+        // Check that the element has file_meta
+        if let MessageListElement::Message { file_meta, .. } = &elements[1] {
+            let meta = file_meta
+                .as_ref()
+                .expect("voice message should have file_meta");
+            assert!(meta.contains("download=yes"), "should contain download=yes");
+            assert!(meta.contains("size=15.5KB"), "should contain size");
+            assert!(meta.contains("duration=0:03"), "should contain duration");
+            assert!(meta.contains("listened=yes"), "should contain listened=yes");
+        } else {
+            panic!("Expected Message element");
+        }
+
+        // Check that metadata is rendered inline with the media label
+        let msg_text = element_to_text(&elements[1], 120);
+        let all_text: String = msg_text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert!(
+            all_text.contains("[Voice]") && all_text.contains("download=yes"),
+            "Rendered text should contain both media label and metadata"
+        );
+    }
+
+    #[test]
+    fn text_message_has_no_file_metadata() {
+        let messages = vec![msg(1, "Alice", "Hello", FEB_14_2026_10AM, false)];
+
+        let elements = build_message_list_elements(&messages);
+
+        if let MessageListElement::Message { file_meta, .. } = &elements[1] {
+            assert!(file_meta.is_none(), "text message should have no file_meta");
+        } else {
+            panic!("Expected Message element");
+        }
     }
 }

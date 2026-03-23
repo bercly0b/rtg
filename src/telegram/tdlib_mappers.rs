@@ -8,7 +8,7 @@ use tdlib_rs::types::{Chat as TdChat, Message as TdMessage, User as TdUser};
 
 use crate::domain::chat::{ChatSummary, ChatType, OutgoingReadStatus};
 use crate::domain::chat_subtitle::ChatSubtitle;
-use crate::domain::message::{FileInfo, Message, MessageMedia};
+use crate::domain::message::{DownloadStatus, FileInfo, Message, MessageMedia};
 
 /// Maps a TDLib Chat to a domain ChatSummary.
 ///
@@ -294,36 +294,158 @@ pub fn extract_message_media(content: &MessageContent) -> MessageMedia {
     }
 }
 
+/// Extra metadata extracted alongside the TDLib `File` reference.
+struct FileMetadata {
+    mime: String,
+    duration: Option<i32>,
+    file_name: Option<String>,
+    is_listened: bool,
+}
+
 /// Extracts file metadata from a TDLib MessageContent, if it carries a downloadable file.
 ///
-/// Returns `Some(FileInfo)` for media types that have a file (voice, audio, video, document, etc.)
-/// and `None` for text, polls, contacts, locations, and service messages.
+/// Returns `Some(FileInfo)` for media types that have a file (voice, audio, video, document,
+/// photo, etc.) and `None` for text, polls, contacts, locations, and service messages.
 pub fn extract_file_info(content: &MessageContent) -> Option<FileInfo> {
-    let (file, mime) = match content {
-        MessageContent::MessageVoiceNote(v) => {
-            (&v.voice_note.voice, v.voice_note.mime_type.clone())
-        }
-        MessageContent::MessageAudio(a) => (&a.audio.audio, a.audio.mime_type.clone()),
-        MessageContent::MessageDocument(d) => (&d.document.document, d.document.mime_type.clone()),
-        MessageContent::MessageVideo(v) => (&v.video.video, v.video.mime_type.clone()),
-        MessageContent::MessageVideoNote(v) => (&v.video_note.video, "video/mp4".to_owned()),
-        MessageContent::MessageAnimation(a) => {
-            (&a.animation.animation, a.animation.mime_type.clone())
-        }
+    match content {
+        MessageContent::MessagePhoto(p) => extract_photo_file_info(p),
+        _ => extract_single_file_info(content),
+    }
+}
+
+/// Extracts file info for media types that carry a single `File`.
+fn extract_single_file_info(content: &MessageContent) -> Option<FileInfo> {
+    let (file, meta) = match content {
+        MessageContent::MessageVoiceNote(v) => (
+            &v.voice_note.voice,
+            FileMetadata {
+                mime: v.voice_note.mime_type.clone(),
+                duration: Some(v.voice_note.duration),
+                file_name: None,
+                is_listened: v.is_listened,
+            },
+        ),
+        MessageContent::MessageAudio(a) => (
+            &a.audio.audio,
+            FileMetadata {
+                mime: a.audio.mime_type.clone(),
+                duration: Some(a.audio.duration),
+                file_name: Some(a.audio.file_name.clone()).filter(|s| !s.is_empty()),
+                is_listened: false,
+            },
+        ),
+        MessageContent::MessageDocument(d) => (
+            &d.document.document,
+            FileMetadata {
+                mime: d.document.mime_type.clone(),
+                duration: None,
+                file_name: Some(d.document.file_name.clone()).filter(|s| !s.is_empty()),
+                is_listened: false,
+            },
+        ),
+        MessageContent::MessageVideo(v) => (
+            &v.video.video,
+            FileMetadata {
+                mime: v.video.mime_type.clone(),
+                duration: Some(v.video.duration),
+                file_name: None,
+                is_listened: false,
+            },
+        ),
+        MessageContent::MessageVideoNote(v) => (
+            &v.video_note.video,
+            FileMetadata {
+                mime: "video/mp4".to_owned(),
+                duration: Some(v.video_note.duration),
+                file_name: None,
+                is_listened: v.is_viewed,
+            },
+        ),
+        MessageContent::MessageAnimation(a) => (
+            &a.animation.animation,
+            FileMetadata {
+                mime: a.animation.mime_type.clone(),
+                duration: Some(a.animation.duration),
+                file_name: None,
+                is_listened: false,
+            },
+        ),
         _ => return None,
     };
 
-    let local_path = if file.local.is_downloading_completed && !file.local.path.is_empty() {
+    Some(build_file_info(file, meta))
+}
+
+/// Extracts file info from a photo message by selecting the largest PhotoSize.
+fn extract_photo_file_info(p: &tdlib_rs::types::MessagePhoto) -> Option<FileInfo> {
+    let largest = p.photo.sizes.iter().max_by_key(|s| s.width * s.height)?;
+    let file = &largest.photo;
+    let meta = FileMetadata {
+        // TDLib PhotoSize doesn't expose MIME type; JPEG is the most common format.
+        mime: "image/jpeg".to_owned(),
+        duration: None,
+        file_name: None,
+        is_listened: false,
+    };
+    Some(build_file_info(file, meta))
+}
+
+/// Builds a `FileInfo` from a TDLib `File` and extracted metadata.
+fn build_file_info(file: &tdlib_rs::types::File, meta: FileMetadata) -> FileInfo {
+    let is_completed = file.local.is_downloading_completed && !file.local.path.is_empty();
+    let local_path = if is_completed {
         Some(file.local.path.clone())
     } else {
         None
     };
 
-    Some(FileInfo {
+    let download_status = if is_completed {
+        DownloadStatus::Completed
+    } else if file.local.is_downloading_active {
+        let total = effective_file_size(file);
+        let percent = if total > 0 {
+            ((file.local.downloaded_size as u64) * 100 / total).min(99) as u8
+        } else {
+            0
+        };
+        DownloadStatus::Downloading {
+            progress_percent: percent,
+        }
+    } else {
+        DownloadStatus::NotStarted
+    };
+
+    let size = {
+        let s = effective_file_size(file);
+        if s > 0 {
+            Some(s)
+        } else {
+            None
+        }
+    };
+
+    FileInfo {
         file_id: file.id,
         local_path,
-        mime_type: mime,
-    })
+        mime_type: meta.mime,
+        size,
+        duration: meta.duration,
+        file_name: meta.file_name,
+        is_listened: meta.is_listened,
+        download_status,
+    }
+}
+
+/// Returns the best known file size from TDLib's `File` struct.
+///
+/// Guards against negative sentinel values from TDLib by clamping to 0.
+fn effective_file_size(file: &tdlib_rs::types::File) -> u64 {
+    let size = file.size.max(0) as u64;
+    if size > 0 {
+        size
+    } else {
+        file.expected_size.max(0) as u64
+    }
 }
 
 /// Extracts the text content from a TDLib MessageContent.
@@ -780,6 +902,91 @@ mod tests {
             is_secret: false,
         });
         assert!(extract_file_info(&content).is_none());
+    }
+
+    #[test]
+    fn extract_file_info_for_photo_with_sizes() {
+        let content = MessageContent::MessagePhoto(tdlib_rs::types::MessagePhoto {
+            photo: tdlib_rs::types::Photo {
+                minithumbnail: None,
+                sizes: vec![
+                    tdlib_rs::types::PhotoSize {
+                        r#type: "s".to_owned(),
+                        photo: make_test_file(10, "", false),
+                        width: 100,
+                        height: 100,
+                        progressive_sizes: vec![],
+                    },
+                    tdlib_rs::types::PhotoSize {
+                        r#type: "m".to_owned(),
+                        photo: make_test_file(20, "/tmp/photo.jpg", true),
+                        width: 800,
+                        height: 600,
+                        progressive_sizes: vec![],
+                    },
+                ],
+                has_stickers: false,
+            },
+            caption: tdlib_rs::types::FormattedText {
+                text: String::new(),
+                entities: vec![],
+            },
+            show_caption_above_media: false,
+            has_spoiler: false,
+            is_secret: false,
+        });
+
+        let fi = extract_file_info(&content).expect("photo with sizes should have file_info");
+        assert_eq!(fi.file_id, 20, "should select the largest photo size");
+        assert_eq!(fi.local_path, Some("/tmp/photo.jpg".to_owned()));
+        assert_eq!(fi.mime_type, "image/jpeg");
+        assert_eq!(fi.download_status, DownloadStatus::Completed);
+    }
+
+    #[test]
+    fn extract_file_info_includes_duration_for_voice() {
+        let content = MessageContent::MessageVoiceNote(tdlib_rs::types::MessageVoiceNote {
+            voice_note: tdlib_rs::types::VoiceNote {
+                duration: 42,
+                waveform: String::new(),
+                mime_type: "audio/ogg".to_owned(),
+                speech_recognition_result: None,
+                voice: make_test_file(1, "/tmp/v.ogg", true),
+            },
+            caption: tdlib_rs::types::FormattedText {
+                text: String::new(),
+                entities: vec![],
+            },
+            is_listened: true,
+        });
+
+        let fi = extract_file_info(&content).expect("should have file info");
+        assert_eq!(fi.duration, Some(42));
+        assert!(fi.is_listened);
+        assert_eq!(fi.size, Some(1000));
+        assert_eq!(fi.download_status, DownloadStatus::Completed);
+    }
+
+    #[test]
+    fn extract_file_info_includes_file_name_for_document() {
+        let content = MessageContent::MessageDocument(tdlib_rs::types::MessageDocument {
+            document: tdlib_rs::types::Document {
+                file_name: "report.pdf".to_owned(),
+                mime_type: "application/pdf".to_owned(),
+                minithumbnail: None,
+                thumbnail: None,
+                document: make_test_file(5, "", false),
+            },
+            caption: tdlib_rs::types::FormattedText {
+                text: String::new(),
+                entities: vec![],
+            },
+        });
+
+        let fi = extract_file_info(&content).expect("should have file info");
+        assert_eq!(fi.file_name, Some("report.pdf".to_owned()));
+        assert_eq!(fi.duration, None);
+        assert_eq!(fi.download_status, DownloadStatus::NotStarted);
     }
 
     #[test]

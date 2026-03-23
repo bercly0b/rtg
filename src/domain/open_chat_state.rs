@@ -106,6 +106,22 @@ impl OpenChatState {
         &self.messages
     }
 
+    /// Updates the `FileInfo` of a specific message by ID.
+    ///
+    /// If the message is found and has `file_info`, the closure is called
+    /// to mutate it in-place (e.g., to update download status/progress).
+    pub fn update_message_file_info(
+        &mut self,
+        message_id: i64,
+        updater: impl FnOnce(&mut super::message::FileInfo),
+    ) {
+        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == message_id) {
+            if let Some(ref mut fi) = msg.file_info {
+                updater(fi);
+            }
+        }
+    }
+
     pub fn ui_state(&self) -> OpenChatUiState {
         self.ui_state.clone()
     }
