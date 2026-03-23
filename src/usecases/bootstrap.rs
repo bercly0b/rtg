@@ -369,9 +369,8 @@ mod tests {
 
     #[test]
     fn builds_context_with_default_config_when_file_is_missing() {
-        let config_adapter = crate::infra::config::FileConfigAdapter::without_env(Some(Path::new(
-            "./missing-config.toml",
-        )));
+        let config_adapter =
+            crate::infra::config::FileConfigAdapter::new(Some(Path::new("./missing-config.toml")));
         let context =
             build_context_with(&config_adapter).expect("context should build from defaults");
 
