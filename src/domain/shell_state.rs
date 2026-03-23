@@ -1,9 +1,10 @@
 use std::time::{Duration, Instant};
 
 use super::{
-    chat::ChatSummary, chat_list_state::ChatListState, command_popup_state::CommandPopupState,
-    events::ConnectivityStatus, message_cache::MessageCache,
-    message_input_state::MessageInputState, open_chat_state::OpenChatState,
+    chat::ChatSummary, chat_info_state::ChatInfoPopupState, chat_list_state::ChatListState,
+    command_popup_state::CommandPopupState, events::ConnectivityStatus,
+    message_cache::MessageCache, message_input_state::MessageInputState,
+    open_chat_state::OpenChatState,
 };
 
 const NOTIFICATION_TTL: Duration = Duration::from_secs(3);
@@ -32,6 +33,7 @@ pub struct ShellState {
     help_visible: bool,
     command_popup: Option<CommandPopupState>,
     notification: Option<(String, Instant)>,
+    chat_info_popup: Option<ChatInfoPopupState>,
 }
 
 impl Default for ShellState {
@@ -47,6 +49,7 @@ impl Default for ShellState {
             help_visible: false,
             command_popup: None,
             notification: None,
+            chat_info_popup: None,
         }
     }
 }
@@ -157,6 +160,25 @@ impl ShellState {
 
     pub fn close_command_popup(&mut self) {
         self.command_popup = None;
+    }
+
+    pub fn chat_info_popup(&self) -> Option<&ChatInfoPopupState> {
+        self.chat_info_popup.as_ref()
+    }
+
+    pub fn show_chat_info_loading(&mut self, chat_id: i64, title: impl Into<String>) {
+        self.chat_info_popup = Some(ChatInfoPopupState::Loading {
+            chat_id,
+            title: title.into(),
+        });
+    }
+
+    pub fn set_chat_info_loaded(&mut self, state: ChatInfoPopupState) {
+        self.chat_info_popup = Some(state);
+    }
+
+    pub fn close_chat_info_popup(&mut self) {
+        self.chat_info_popup = None;
     }
 
     pub fn message_input(&self) -> &MessageInputState {
@@ -294,6 +316,48 @@ mod tests {
         state.show_help();
         state.hide_help();
         assert!(!state.help_visible());
+    }
+
+    #[test]
+    fn chat_info_popup_none_by_default() {
+        let state = ShellState::default();
+        assert!(state.chat_info_popup().is_none());
+    }
+
+    #[test]
+    fn show_chat_info_loading_creates_popup() {
+        let mut state = ShellState::default();
+        state.show_chat_info_loading(1, "Alice");
+        assert!(state.chat_info_popup().is_some());
+        assert_eq!(state.chat_info_popup().unwrap().title(), "Alice");
+    }
+
+    #[test]
+    fn close_chat_info_popup_clears_state() {
+        let mut state = ShellState::default();
+        state.show_chat_info_loading(1, "Alice");
+        state.close_chat_info_popup();
+        assert!(state.chat_info_popup().is_none());
+    }
+
+    #[test]
+    fn set_chat_info_loaded_updates_popup() {
+        use crate::domain::chat_info_state::{ChatInfo, ChatInfoPopupState};
+        let mut state = ShellState::default();
+        state.show_chat_info_loading(1, "Alice");
+        state.set_chat_info_loaded(ChatInfoPopupState::Loaded(ChatInfo {
+            title: "Alice".into(),
+            chat_type: ChatType::Private,
+            status_line: "online".into(),
+            description: Some("Hello world".into()),
+        }));
+        match state.chat_info_popup().unwrap() {
+            ChatInfoPopupState::Loaded(info) => {
+                assert_eq!(info.status_line, "online");
+                assert_eq!(info.description.as_deref(), Some("Hello world"));
+            }
+            _ => panic!("expected Loaded state"),
+        }
     }
 
     #[test]

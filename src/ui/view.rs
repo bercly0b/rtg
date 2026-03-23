@@ -14,6 +14,7 @@ use crate::domain::{
     shell_state::{ActivePane, ShellState},
 };
 
+use super::chat_info_popup;
 use super::chat_message_list::{ChatMessageList, ChatMessageListState};
 use super::command_popup;
 use super::help_popup;
@@ -75,6 +76,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
 
     if state.help_visible() {
         help_popup::render_help_popup(frame, frame.area(), active_pane);
+    }
+
+    if let Some(info_state) = state.chat_info_popup() {
+        chat_info_popup::render_chat_info_popup(frame, frame.area(), info_state);
     }
 }
 

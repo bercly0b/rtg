@@ -65,6 +65,11 @@ pub enum BackgroundTaskResult {
         chat_id: i64,
         result: Result<super::chat_subtitle::ChatSubtitle, BackgroundError>,
     },
+    /// Chat info (title, status, description) resolved for the info popup.
+    ChatInfoLoaded {
+        chat_id: i64,
+        result: Result<super::chat_info_state::ChatInfo, BackgroundError>,
+    },
 }
 
 /// Lightweight error type for background task failures.

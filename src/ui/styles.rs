@@ -274,6 +274,27 @@ pub fn command_popup_error_style() -> Style {
     Style::default().fg(Color::Red)
 }
 
+// =============================================================================
+// Chat info popup styles
+// =============================================================================
+
+/// Border style for the chat info popup overlay.
+pub fn chat_info_popup_border_style() -> Style {
+    Style::default().fg(Color::White)
+}
+
+/// Style for field labels in the chat info popup (e.g. "Status:", "Description").
+pub fn chat_info_popup_label_style() -> Style {
+    Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD)
+}
+
+/// Style for field values in the chat info popup.
+pub fn chat_info_popup_value_style() -> Style {
+    Style::default().fg(Color::White)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -496,5 +517,24 @@ mod tests {
     fn command_popup_error_style_is_red() {
         let style = command_popup_error_style();
         assert_eq!(style.fg, Some(Color::Red));
+    }
+
+    #[test]
+    fn chat_info_popup_border_style_is_white() {
+        let style = chat_info_popup_border_style();
+        assert_eq!(style.fg, Some(Color::White));
+    }
+
+    #[test]
+    fn chat_info_popup_label_style_is_bold_yellow() {
+        let style = chat_info_popup_label_style();
+        assert_eq!(style.fg, Some(Color::Yellow));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn chat_info_popup_value_style_is_white() {
+        let style = chat_info_popup_value_style();
+        assert_eq!(style.fg, Some(Color::White));
     }
 }

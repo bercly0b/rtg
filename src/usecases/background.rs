@@ -9,7 +9,7 @@ use crate::domain::events::{BackgroundError, BackgroundTaskResult};
 
 use super::{
     chat_lifecycle::{ChatLifecycle, ChatReadMarker, FileDownloader, MessageDeleter},
-    chat_subtitle::{ChatSubtitleQuery, ChatSubtitleSource},
+    chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
     list_chats::{list_chats, ListChatsQuery, ListChatsSource},
     load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
     send_message::{send_message, MessageSender, SendMessageCommand},
@@ -67,6 +67,9 @@ pub trait TaskDispatcher {
     ///
     /// Progress is delivered asynchronously via `updateFile` events.
     fn dispatch_download_file(&self, file_id: i32);
+
+    /// Resolves full chat info (title, status, description) in the background.
+    fn dispatch_chat_info(&self, query: ChatInfoQuery);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -458,6 +461,32 @@ where
             tracing::error!(error = %error, "failed to spawn download file background thread");
         }
     }
+
+    fn dispatch_chat_info(&self, query: ChatInfoQuery) {
+        let source = Arc::clone(&self.subtitle_source);
+        let tx = self.result_tx.clone();
+        let tx_fallback = self.result_tx.clone();
+        let chat_id = query.chat_id;
+
+        let spawn_result = std::thread::Builder::new()
+            .name("rtg-bg-chat-info".into())
+            .spawn(move || {
+                tracing::debug!(chat_id, "background: resolving chat info");
+                let result = source
+                    .resolve_chat_info(&query)
+                    .map_err(|_| BackgroundError::new("CHAT_INFO_UNAVAILABLE"));
+
+                let _ = tx.send(BackgroundTaskResult::ChatInfoLoaded { chat_id, result });
+            });
+
+        if let Err(error) = spawn_result {
+            tracing::error!(error = %error, "failed to spawn chat info background thread");
+            let _ = tx_fallback.send(BackgroundTaskResult::ChatInfoLoaded {
+                chat_id,
+                result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
+            });
+        }
+    }
 }
 
 fn map_list_chats_error(error: &super::list_chats::ListChatsError) -> &'static str {
@@ -555,6 +584,10 @@ pub mod tests {
 
         fn dispatch_download_file(&self, _file_id: i32) {
             // Stub: fire-and-forget, no action needed in tests
+        }
+
+        fn dispatch_chat_info(&self, _query: ChatInfoQuery) {
+            // Stub: does not dispatch; tests inject results manually
         }
     }
 

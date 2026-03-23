@@ -33,6 +33,10 @@ pub fn chat_list_hotkeys() -> &'static [HotkeyEntry] {
             action_name: "mark_chat_as_read",
         },
         HotkeyEntry {
+            key_label: "I",
+            action_name: "show_chat_info",
+        },
+        HotkeyEntry {
             key_label: "q",
             action_name: "quit",
         },

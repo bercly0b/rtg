@@ -1,6 +1,7 @@
 //! Domain layer: core entities and business rules.
 
 pub mod chat;
+pub mod chat_info_state;
 pub mod chat_list_state;
 pub mod chat_subtitle;
 pub mod command_popup_state;
