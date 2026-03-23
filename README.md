@@ -44,10 +44,11 @@ git clone https://github.com/bercly0b/rtg.git
 cd rtg
 ```
 
-Optional local configuration:
+Copy the example config to the default location:
 
 ```bash
-cp config.example.toml config.toml
+mkdir -p ~/.config/rtg
+cp config.example.toml ~/.config/rtg/config.toml
 ```
 
 ## Build
@@ -84,33 +85,23 @@ Example config is provided in `config.example.toml`:
 
 If `config.toml` is missing, the app falls back to built-in defaults.
 
-### Telegram API credentials setup (recommended: `.env`)
+### Telegram API credentials setup
 
 1. Open <https://my.telegram.org> and sign in with your Telegram account.
 2. Go to **API development tools** and create (or view) your application.
 3. Copy your `api_id` and `api_hash`.
-4. Create a local `.env` file in the project root:
+4. Add them to `~/.config/rtg/config.toml`:
 
-```bash
-cat > .env << 'EOF'
-RTG_TELEGRAM_API_ID=123456
-RTG_TELEGRAM_API_HASH=your_api_hash_here
-EOF
+```toml
+[telegram]
+api_id = 123456
+api_hash = "your_api_hash_here"
 ```
 
 5. Run RTG as usual (`cargo run`).
 
-Environment variable names:
-- `RTG_TELEGRAM_API_ID`
-- `RTG_TELEGRAM_API_HASH`
-
-Precedence rule (explicit):
-- defaults < `config.toml` < environment variables.
-- if both file and env are set, env values win.
-
 Security note:
 - Never commit real credentials (`api_id`, `api_hash`) to git.
-- `.env` is ignored by default via `.gitignore`.
 - Keep `config.example.toml` as placeholders only.
 
 ### Telegram session storage lifecycle
