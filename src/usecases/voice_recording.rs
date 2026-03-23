@@ -16,19 +16,7 @@ use std::{
 
 use crate::domain::events::CommandEvent;
 
-/// Default recording command for macOS (AVFoundation).
-#[cfg(target_os = "macos")]
-pub const DEFAULT_RECORD_CMD: &str =
-    "ffmpeg -f avfoundation -i ':0' -c:a libopus -b:a 32k {file_path}";
-
-/// Default recording command for Linux (ALSA).
-#[cfg(target_os = "linux")]
-pub const DEFAULT_RECORD_CMD: &str = "ffmpeg -f alsa -i hw:0 -c:a libopus -b:a 32k {file_path}";
-
-/// Fallback for other platforms.
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub const DEFAULT_RECORD_CMD: &str =
-    "ffmpeg -f avfoundation -i ':0' -c:a libopus -b:a 32k {file_path}";
+pub use crate::domain::voice_defaults::DEFAULT_RECORD_CMD;
 
 /// Generates a unique file path for a voice recording in the temp directory.
 pub fn generate_voice_file_path() -> String {
@@ -52,6 +40,24 @@ impl Drop for RecordingHandle {
 }
 
 impl RecordingHandle {
+    /// Creates a handle from a child process (for testing).
+    #[cfg(test)]
+    pub(crate) fn from_child(child: Child) -> Self {
+        Self { child }
+    }
+
+    /// Checks if the process has exited and returns whether it was successful.
+    ///
+    /// Returns `Some(true)` if the process exited with code 0,
+    /// `Some(false)` if it exited with a non-zero code,
+    /// and `None` if it is still running.
+    pub fn try_exit_success(&mut self) -> Option<bool> {
+        match self.child.try_wait() {
+            Ok(Some(status)) => Some(status.success()),
+            _ => None,
+        }
+    }
+
     /// Sends SIGTERM to the recording process and waits for exit.
     ///
     /// Falls back to SIGKILL if the process does not respond within 3 seconds.
@@ -311,5 +317,21 @@ mod tests {
 
         let events: Vec<_> = rx.iter().collect();
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn try_exit_success_returns_true_for_zero_exit_code() {
+        let child = std::process::Command::new("true").spawn().unwrap();
+        let mut handle = RecordingHandle::from_child(child);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert_eq!(handle.try_exit_success(), Some(true));
+    }
+
+    #[test]
+    fn try_exit_success_returns_false_for_nonzero_exit_code() {
+        let child = std::process::Command::new("false").spawn().unwrap();
+        let mut handle = RecordingHandle::from_child(child);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert_eq!(handle.try_exit_success(), Some(false));
     }
 }

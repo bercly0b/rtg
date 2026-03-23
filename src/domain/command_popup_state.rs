@@ -20,6 +20,8 @@ pub enum CommandPhase {
     Running,
     /// The command has finished; the user must confirm an action (e.g. send or discard).
     AwaitingConfirmation { prompt: String },
+    /// The command failed; displays an error message and closes on any key.
+    Failed { message: String },
 }
 
 /// State for the command popup overlay.
@@ -161,5 +163,19 @@ mod tests {
         let mut state = CommandPopupState::new("Test");
         state.push_line(String::new());
         assert_eq!(state.visible_lines(), vec![""]);
+    }
+
+    #[test]
+    fn set_phase_to_failed() {
+        let mut state = CommandPopupState::new("Test");
+        state.set_phase(CommandPhase::Failed {
+            message: "Recording failed".into(),
+        });
+        assert_eq!(
+            state.phase(),
+            &CommandPhase::Failed {
+                message: "Recording failed".into(),
+            }
+        );
     }
 }

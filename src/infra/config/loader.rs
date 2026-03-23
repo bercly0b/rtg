@@ -6,9 +6,10 @@ use std::{
 use crate::infra::{
     config::{file_config::FileConfig, AppConfig},
     error::AppError,
+    storage_layout::StorageLayout,
 };
 
-const DEFAULT_CONFIG_PATH: &str = "config.toml";
+const CONFIG_FILE_NAME: &str = "config.toml";
 const TELEGRAM_API_ID_ENV: &str = "RTG_TELEGRAM_API_ID";
 const TELEGRAM_API_HASH_ENV: &str = "RTG_TELEGRAM_API_HASH";
 
@@ -18,9 +19,10 @@ pub fn load(path: Option<&Path>) -> Result<AppConfig, AppError> {
 }
 
 pub(crate) fn load_internal(path: Option<&Path>, load_env: bool) -> Result<AppConfig, AppError> {
-    let config_path = path
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_PATH));
+    let config_path = match path {
+        Some(p) => p.to_path_buf(),
+        None => resolve_default_config_path()?,
+    };
 
     let mut config = AppConfig::default();
 
@@ -71,6 +73,12 @@ fn read_env_non_empty(name: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
+}
+
+/// Resolves the default config file path: `~/.config/rtg/config.toml`.
+fn resolve_default_config_path() -> Result<PathBuf, AppError> {
+    let layout = StorageLayout::resolve()?;
+    Ok(layout.config_dir.join(CONFIG_FILE_NAME))
 }
 
 #[cfg(test)]
@@ -237,5 +245,47 @@ api_id = 42
         clear_env();
 
         assert_eq!(config.telegram.api_hash, "replace-me"); // default
+    }
+
+    #[test]
+    fn default_config_path_resolves_to_config_dir() {
+        let path = resolve_default_config_path().expect("should resolve");
+        assert!(path.ends_with("rtg/config.toml"));
+    }
+
+    #[test]
+    fn voice_config_overridden_from_toml() {
+        let _guard = env_lock().lock().expect("env lock should not be poisoned");
+        clear_env();
+
+        let temp_dir = std::env::temp_dir();
+        let config_path = temp_dir.join("rtg-test-voice-config.toml");
+
+        fs::write(
+            &config_path,
+            r#"[voice]
+record_cmd = "my-recorder --output {file_path}"
+"#,
+        )
+        .expect("must write test config");
+
+        let config = load_internal(Some(&config_path), false).expect("config must load");
+        fs::remove_file(config_path).expect("must remove test config");
+
+        assert_eq!(config.voice.record_cmd, "my-recorder --output {file_path}");
+    }
+
+    #[test]
+    fn voice_config_uses_default_when_not_specified() {
+        let _guard = env_lock().lock().expect("env lock should not be poisoned");
+        clear_env();
+
+        let config = load_internal(Some(Path::new("./missing-config.toml")), false)
+            .expect("config must load");
+
+        assert_eq!(
+            config.voice.record_cmd,
+            crate::domain::voice_defaults::DEFAULT_RECORD_CMD
+        );
     }
 }

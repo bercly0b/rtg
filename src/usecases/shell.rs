@@ -59,6 +59,8 @@ where
     /// Pending command event receiver to be wired into the event source.
     /// Set when a command starts, taken by the shell loop.
     pending_command_rx: Option<std::sync::mpsc::Receiver<crate::domain::events::CommandEvent>>,
+    /// Voice recording command template (from config).
+    voice_record_cmd: String,
 }
 
 impl<S, O, D> DefaultShellOrchestrator<S, O, D>
@@ -85,6 +87,7 @@ where
             recording_handle: None,
             recording_file_path: None,
             pending_command_rx: None,
+            voice_record_cmd: super::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
         }
     }
 
@@ -103,6 +106,7 @@ where
         initial_state: ShellState,
         cache_source: Option<Arc<dyn CachedMessagesSource>>,
         min_display_messages: usize,
+        voice_record_cmd: String,
     ) -> Self {
         let initial_refresh_needed = initial_state.chat_list().ui_state() == ChatListUiState::Ready;
         Self {
@@ -121,6 +125,7 @@ where
             recording_handle: None,
             recording_file_path: None,
             pending_command_rx: None,
+            voice_record_cmd,
         }
     }
 
@@ -507,7 +512,7 @@ where
 
         let file_path = voice_recording::generate_voice_file_path();
 
-        match voice_recording::start_recording(voice_recording::DEFAULT_RECORD_CMD, &file_path) {
+        match voice_recording::start_recording(&self.voice_record_cmd, &file_path) {
             Ok((handle, rx)) => {
                 self.recording_handle = Some(handle);
                 self.recording_file_path = Some(file_path);
@@ -557,22 +562,37 @@ where
                 }
                 _ => {}
             },
+            CommandPhase::Failed { .. } => {
+                self.state.close_command_popup();
+            }
         }
     }
 
-    fn handle_command_exited(&mut self, _success: bool) {
+    fn handle_command_exited(&mut self, _event_success: bool) {
         use crate::domain::command_popup_state::CommandPhase;
 
-        // If the process exited on its own (not killed by user), transition
-        // to AwaitingConfirmation so the user can decide what to do.
+        let process_succeeded = self
+            .recording_handle
+            .as_mut()
+            .and_then(|h| h.try_exit_success())
+            .unwrap_or(false);
+
         if let Some(popup) = self.state.command_popup_mut() {
             if matches!(popup.phase(), CommandPhase::Running) {
-                popup.set_phase(CommandPhase::AwaitingConfirmation {
-                    prompt: "Command finished. Send recording? (y/n)".into(),
-                });
+                if process_succeeded {
+                    popup.set_phase(CommandPhase::AwaitingConfirmation {
+                        prompt: "Command finished. Send recording? (y/n)".into(),
+                    });
+                } else {
+                    popup.set_phase(CommandPhase::Failed {
+                        message:
+                            "Recording failed. Override recording command via [voice] record_cmd in ~/.config/rtg/config.toml (press any key)"
+                                .into(),
+                    });
+                    self.discard_voice_recording();
+                }
             }
         }
-        // Clean up the handle (process already exited).
         self.recording_handle = None;
     }
 
@@ -1300,6 +1320,7 @@ mod tests {
             state,
             None,
             1, // No threshold in most tests — any cached message triggers instant display
+            crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
         )
     }
 
@@ -1315,6 +1336,7 @@ mod tests {
             state,
             Some(Arc::new(cache)),
             1, // No threshold in most tests — any cached message triggers instant display
+            crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
         )
     }
 
@@ -1330,6 +1352,7 @@ mod tests {
             state,
             None,
             min_display_messages,
+            crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
         )
     }
 
@@ -1346,6 +1369,7 @@ mod tests {
             state,
             Some(Arc::new(cache)),
             min_display_messages,
+            crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
         )
     }
 
@@ -3928,11 +3952,36 @@ mod tests {
 
     /// Simulates the state after `start_voice_recording` succeeds:
     /// opens the command popup and sets a recording file path.
-    /// Does NOT spawn an external process.
+    /// Does NOT spawn an external process (recording_handle is None).
+    ///
+    /// Use `simulate_voice_recording_with_process` when testing exit code paths.
     fn simulate_voice_recording_started(o: &mut TestOrchestrator, file_path: &str) {
         o.state.open_command_popup("Recording Voice");
         o.recording_file_path = Some(file_path.to_owned());
-        // recording_handle left as None — tests don't need the real process.
+    }
+
+    /// Simulates voice recording with a real process for exit-code tests.
+    /// `success`: if true, spawns `true` (exit 0); if false, spawns `false` (exit 1).
+    fn simulate_voice_recording_with_process(
+        o: &mut TestOrchestrator,
+        file_path: &str,
+        success: bool,
+    ) {
+        use std::process::Command;
+
+        let cmd = if success { "true" } else { "false" };
+        let child = Command::new(cmd)
+            .spawn()
+            .expect("failed to spawn test process");
+        // Wait briefly for the short-lived process to exit.
+        let mut handle = crate::usecases::voice_recording::RecordingHandle::from_child(child);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        // Ensure it actually exited so try_exit_success returns Some.
+        let _ = handle.try_exit_success();
+
+        o.state.open_command_popup("Recording Voice");
+        o.recording_file_path = Some(file_path.to_owned());
+        o.recording_handle = Some(handle);
     }
 
     #[test]
@@ -4150,11 +4199,11 @@ mod tests {
     }
 
     #[test]
-    fn command_exited_transitions_running_to_awaiting() {
+    fn command_exited_transitions_running_to_awaiting_on_success() {
         use crate::domain::command_popup_state::CommandPhase;
 
         let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+        simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", true);
 
         o.handle_event(AppEvent::CommandExited { success: true })
             .unwrap();
@@ -4163,11 +4212,11 @@ mod tests {
             .state()
             .command_popup()
             .expect("popup should still be open");
-        assert!(matches!(
-            popup.phase(),
-            CommandPhase::AwaitingConfirmation { .. }
-        ));
-        // recording_handle should be cleaned up.
+        assert!(
+            matches!(popup.phase(), CommandPhase::AwaitingConfirmation { .. }),
+            "expected AwaitingConfirmation but got {:?}",
+            popup.phase()
+        );
         assert!(o.recording_handle.is_none());
     }
 
@@ -4360,9 +4409,9 @@ mod tests {
         std::fs::write(&tmp, b"fake audio").unwrap();
         let file_path = tmp.to_str().unwrap().to_owned();
 
-        simulate_voice_recording_started(&mut o, &file_path);
+        simulate_voice_recording_with_process(&mut o, &file_path, true);
 
-        // Process exits on its own.
+        // Process exits on its own (success).
         o.handle_event(AppEvent::CommandExited { success: true })
             .unwrap();
         assert!(matches!(
@@ -4420,11 +4469,11 @@ mod tests {
     }
 
     #[test]
-    fn command_exited_with_failure_transitions_to_awaiting() {
+    fn command_exited_with_failure_transitions_to_failed() {
         use crate::domain::command_popup_state::CommandPhase;
 
         let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+        simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
 
         o.handle_event(AppEvent::CommandExited { success: false })
             .unwrap();
@@ -4433,11 +4482,56 @@ mod tests {
             .state()
             .command_popup()
             .expect("popup should still be open");
-        assert!(matches!(
-            popup.phase(),
-            CommandPhase::AwaitingConfirmation { .. }
-        ));
+        assert!(
+            matches!(popup.phase(), CommandPhase::Failed { .. }),
+            "expected Failed phase but got {:?}",
+            popup.phase()
+        );
         assert!(o.recording_handle.is_none());
+        assert!(
+            o.recording_file_path.is_none(),
+            "failed recording should discard file path"
+        );
+    }
+
+    #[test]
+    fn failed_phase_any_key_closes_popup() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
+
+        o.handle_event(AppEvent::CommandExited { success: false })
+            .unwrap();
+
+        // Any key should close the Failed popup.
+        o.handle_event(AppEvent::InputKey(KeyInput::new("x", false)))
+            .unwrap();
+        assert!(o.state().command_popup().is_none());
+    }
+
+    #[test]
+    fn failed_phase_message_mentions_config() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
+
+        o.handle_event(AppEvent::CommandExited { success: false })
+            .unwrap();
+
+        let popup = o.state().command_popup().unwrap();
+        match popup.phase() {
+            CommandPhase::Failed { message } => {
+                assert!(
+                    message.contains("config.toml"),
+                    "message should mention config.toml: {message}"
+                );
+                assert!(
+                    message.contains("[voice]"),
+                    "message should mention [voice] section: {message}"
+                );
+            }
+            other => panic!("expected Failed but got {other:?}"),
+        }
     }
 
     #[test]

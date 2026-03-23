@@ -45,19 +45,20 @@ pub fn render_command_popup(frame: &mut Frame<'_>, area: Rect, state: &CommandPo
 }
 
 fn footer_line(phase: &CommandPhase) -> Line<'static> {
-    let text = match phase {
-        CommandPhase::Running => "Press q to stop",
-        CommandPhase::AwaitingConfirmation { prompt } => {
-            return Line::from(Span::styled(
-                prompt.clone(),
-                styles::command_popup_footer_style(),
-            ));
-        }
-    };
-    Line::from(Span::styled(
-        text.to_owned(),
-        styles::command_popup_footer_style(),
-    ))
+    match phase {
+        CommandPhase::Running => Line::from(Span::styled(
+            "Press q to stop".to_owned(),
+            styles::command_popup_footer_style(),
+        )),
+        CommandPhase::AwaitingConfirmation { prompt } => Line::from(Span::styled(
+            prompt.clone(),
+            styles::command_popup_footer_style(),
+        )),
+        CommandPhase::Failed { message } => Line::from(Span::styled(
+            message.clone(),
+            styles::command_popup_error_style(),
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -84,5 +85,22 @@ mod tests {
     fn footer_line_uses_footer_style() {
         let line = footer_line(&CommandPhase::Running);
         assert_eq!(line.spans[0].style, styles::command_popup_footer_style());
+    }
+
+    #[test]
+    fn footer_line_failed_shows_error_message() {
+        let line = footer_line(&CommandPhase::Failed {
+            message: "Recording failed".into(),
+        });
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "Recording failed");
+    }
+
+    #[test]
+    fn footer_line_failed_uses_error_style() {
+        let line = footer_line(&CommandPhase::Failed {
+            message: "err".into(),
+        });
+        assert_eq!(line.spans[0].style, styles::command_popup_error_style());
     }
 }

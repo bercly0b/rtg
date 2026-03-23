@@ -236,6 +236,11 @@ pub fn command_popup_footer_style() -> Style {
     Style::default().fg(Color::Yellow)
 }
 
+/// Style for error messages in the command popup (failed commands).
+pub fn command_popup_error_style() -> Style {
+    Style::default().fg(Color::Red)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -452,5 +457,11 @@ mod tests {
     fn command_popup_footer_style_is_yellow() {
         let style = command_popup_footer_style();
         assert_eq!(style.fg, Some(Color::Yellow));
+    }
+
+    #[test]
+    fn command_popup_error_style_is_red() {
+        let style = command_popup_error_style();
+        assert_eq!(style.fg, Some(Color::Red));
     }
 }
