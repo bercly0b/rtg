@@ -10,7 +10,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::domain::{
     chat::ChatSummary,
     chat_list_state::ChatListUiState,
-    open_chat_state::{MessageSource, OpenChatUiState, SCROLL_MARGIN},
+    open_chat_state::{OpenChatUiState, SCROLL_MARGIN},
     shell_state::{ActivePane, ShellState},
 };
 
@@ -65,7 +65,8 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
     render_message_input(frame, input_area, state.message_input(), active_pane);
 
     render_horizontal_separator(frame, status_separator_area);
-    let status = Paragraph::new(status_line(state)).style(styles::status_bar_style());
+    let status = Paragraph::new(status_line(state, status_area.width as usize))
+        .style(styles::status_bar_style());
     frame.render_widget(status, status_area);
 
     if let Some(popup_state) = state.command_popup() {
@@ -551,34 +552,46 @@ fn compute_input_height(text: &str, available_width: u16) -> u16 {
     (lines as u16).clamp(1, 20)
 }
 
-fn status_line(state: &ShellState) -> String {
-    let mode = if state.is_running() {
-        "running"
-    } else {
-        "stopping"
-    };
-    let connectivity = state.connectivity_status().as_label();
-    let nav_hint = match state.active_pane() {
-        ActivePane::ChatList => {
-            "j/k: navigate | l/Enter: open chat | r: mark read | R: refresh | q: quit"
+fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
+    use crate::domain::events::ConnectivityStatus;
+
+    let (dot_style, label) = match state.connectivity_status() {
+        ConnectivityStatus::Connected => (styles::connectivity_dot_connected(), "Connected"),
+        ConnectivityStatus::Connecting => (styles::connectivity_dot_connecting(), "Connecting"),
+        ConnectivityStatus::Disconnected => {
+            (styles::connectivity_dot_disconnected(), "Disconnected")
         }
-        ActivePane::Messages => {
-            "j/k: navigate | y: copy | i: compose | h/Esc: back to chats | q: quit"
-        }
-        ActivePane::MessageInput => "Esc: cancel | type your message",
     };
 
-    let source_hint = if state.open_chat().is_open() {
-        match state.open_chat().message_source() {
-            MessageSource::Cache => " | [cached]",
-            MessageSource::Live => " | [live]",
-            MessageSource::None => "",
-        }
-    } else {
-        ""
-    };
+    let dot_text = " \u{25CF} ";
+    let separator = "  ";
+    let right_text = "? for help ";
+    let fixed_width = dot_text.width() + label.width() + right_text.width();
 
-    format!("mode: {mode} | connectivity: {connectivity} | {nav_hint}{source_hint}")
+    let mut spans: Vec<Span<'a>> = vec![
+        Span::styled(dot_text, dot_style),
+        Span::styled(label, styles::connectivity_label_style()),
+    ];
+
+    if let Some(notification) = state.active_notification() {
+        let budget = width.saturating_sub(fixed_width + separator.width());
+        if budget > 0 {
+            let (truncated, _) = truncate_to_display_width(notification, budget);
+            spans.push(Span::styled(separator, styles::status_bar_style()));
+            spans.push(Span::styled(truncated, styles::notification_style()));
+        }
+    }
+
+    let left_width: usize = spans.iter().map(|s| s.content.width()).sum();
+    let padding = width.saturating_sub(left_width + right_text.width());
+
+    spans.push(Span::styled(
+        " ".repeat(padding),
+        styles::status_bar_style(),
+    ));
+    spans.push(Span::styled(right_text, styles::help_hint_style()));
+
+    Line::from(spans)
 }
 
 #[cfg(test)]
@@ -619,14 +632,18 @@ mod tests {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
     }
 
+    const STATUS_WIDTH: usize = 80;
+
     #[test]
     fn status_line_renders_connected_label() {
         let mut state = ShellState::default();
         state.set_connectivity_status(ConnectivityStatus::Connected);
 
-        let line = status_line(&state);
+        let line = status_line(&state, STATUS_WIDTH);
+        let text = line_to_string(&line);
 
-        assert!(line.contains("connectivity: connected"));
+        assert!(text.contains("Connected"));
+        assert!(text.contains("\u{25CF}"));
     }
 
     #[test]
@@ -634,9 +651,66 @@ mod tests {
         let mut state = ShellState::default();
         state.set_connectivity_status(ConnectivityStatus::Disconnected);
 
-        let line = status_line(&state);
+        let line = status_line(&state, STATUS_WIDTH);
+        let text = line_to_string(&line);
 
-        assert!(line.contains("connectivity: disconnected"));
+        assert!(text.contains("Disconnected"));
+    }
+
+    #[test]
+    fn status_line_contains_help_hint() {
+        let state = ShellState::default();
+
+        let line = status_line(&state, STATUS_WIDTH);
+        let text = line_to_string(&line);
+
+        assert!(text.contains("? for help"));
+    }
+
+    #[test]
+    fn status_line_shows_notification_when_set() {
+        let mut state = ShellState::default();
+        state.set_notification("Copied to clipboard");
+
+        let line = status_line(&state, STATUS_WIDTH);
+        let text = line_to_string(&line);
+
+        assert!(text.contains("Copied to clipboard"));
+    }
+
+    #[test]
+    fn status_line_without_notification_has_no_extra_text() {
+        let state = ShellState::default();
+
+        let line = status_line(&state, STATUS_WIDTH);
+        let text = line_to_string(&line);
+
+        assert!(!text.contains("Copied"));
+        assert!(!text.contains("deleted"));
+    }
+
+    #[test]
+    fn status_line_hides_expired_notification() {
+        let mut state = ShellState::default();
+        let expired = std::time::Instant::now() - std::time::Duration::from_secs(5);
+        state.set_notification_at("Old message", expired);
+
+        let line = status_line(&state, STATUS_WIDTH);
+        let text = line_to_string(&line);
+
+        assert!(!text.contains("Old message"));
+    }
+
+    #[test]
+    fn status_line_truncates_long_notification() {
+        let mut state = ShellState::default();
+        state.set_notification("A".repeat(200));
+
+        let line = status_line(&state, 40);
+        let text = line_to_string(&line);
+
+        assert!(text.contains("? for help"));
+        assert!(text.width() <= 40);
     }
 
     // Use a typical width for chat list tests
@@ -785,44 +859,6 @@ mod tests {
             !title.contains("updating..."),
             "no updating indicator expected, got: {title}"
         );
-    }
-
-    #[test]
-    fn status_line_shows_cached_source() {
-        let mut state = ShellState::default();
-        state.open_chat_mut().set_loading(1, "Chat".to_owned());
-        state
-            .open_chat_mut()
-            .set_message_source(MessageSource::Cache);
-
-        let line = status_line(&state);
-
-        assert!(line.contains("[cached]"));
-        assert!(!line.contains("[live]"));
-    }
-
-    #[test]
-    fn status_line_shows_live_source() {
-        let mut state = ShellState::default();
-        state.open_chat_mut().set_loading(1, "Chat".to_owned());
-        state
-            .open_chat_mut()
-            .set_message_source(MessageSource::Live);
-
-        let line = status_line(&state);
-
-        assert!(line.contains("[live]"));
-        assert!(!line.contains("[cached]"));
-    }
-
-    #[test]
-    fn status_line_no_source_indicator_when_no_chat() {
-        let state = ShellState::default();
-
-        let line = status_line(&state);
-
-        assert!(!line.contains("[cached]"));
-        assert!(!line.contains("[live]"));
     }
 
     #[test]

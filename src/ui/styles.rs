@@ -172,6 +172,39 @@ pub fn status_bar_style() -> Style {
     Style::default().bg(Color::Black)
 }
 
+/// Green dot for "Connected" status.
+pub fn connectivity_dot_connected() -> Style {
+    Style::default().fg(Color::Green).bg(Color::Black)
+}
+
+/// Yellow dot for "Connecting" status.
+pub fn connectivity_dot_connecting() -> Style {
+    Style::default().fg(Color::Yellow).bg(Color::Black)
+}
+
+/// Red dot for "Disconnected" status.
+pub fn connectivity_dot_disconnected() -> Style {
+    Style::default().fg(Color::Red).bg(Color::Black)
+}
+
+/// Connectivity label text in the status bar.
+pub fn connectivity_label_style() -> Style {
+    Style::default().fg(Color::White).bg(Color::Black)
+}
+
+/// Transient notification text in the status bar.
+pub fn notification_style() -> Style {
+    Style::default()
+        .fg(Color::Yellow)
+        .bg(Color::Black)
+        .add_modifier(Modifier::ITALIC)
+}
+
+/// Subtle help hint ("? for help") in the status bar.
+pub fn help_hint_style() -> Style {
+    Style::default().fg(Color::DarkGray).bg(Color::Black)
+}
+
 // =============================================================================
 // Message input styles
 // =============================================================================
