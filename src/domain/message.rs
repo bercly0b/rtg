@@ -38,10 +38,23 @@ impl MessageMedia {
     }
 }
 
+/// Download state of a media file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DownloadStatus {
+    /// File has not been downloaded and no download is in progress.
+    #[default]
+    NotStarted,
+    /// File is currently being downloaded.
+    Downloading { progress_percent: u8 },
+    /// File has been fully downloaded.
+    Completed,
+}
+
 /// File metadata for messages with downloadable media.
 ///
 /// Provides the information needed to open/play a file: its local path
-/// (if already downloaded) and MIME type (for handler lookup).
+/// (if already downloaded) and MIME type (for handler lookup), plus
+/// additional metadata for display (size, duration, etc.).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileInfo {
     /// TDLib file identifier, used for download requests.
@@ -50,6 +63,16 @@ pub struct FileInfo {
     pub local_path: Option<String>,
     /// MIME type reported by TDLib (e.g. `"audio/ogg"`, `"video/mp4"`).
     pub mime_type: String,
+    /// File size in bytes (from TDLib `File.size` or `File.expected_size`).
+    pub size: Option<u64>,
+    /// Duration in seconds (for voice, audio, video, video note, animation).
+    pub duration: Option<i32>,
+    /// Original file name (for documents and audio).
+    pub file_name: Option<String>,
+    /// Whether a voice/video note has been listened/viewed.
+    pub is_listened: bool,
+    /// Current download state.
+    pub download_status: DownloadStatus,
 }
 
 /// Delivery status of a message.
@@ -85,6 +108,82 @@ impl Message {
             (None, _) => self.text.clone(),
         }
     }
+}
+
+/// Formats a file size in bytes into a human-readable string.
+///
+/// Uses base-10 units (KB = 1000, MB = 1000000) to match the TG client convention.
+pub fn format_file_size(bytes: u64) -> String {
+    const KB: u64 = 1_000;
+    const MB: u64 = 1_000_000;
+    const GB: u64 = 1_000_000_000;
+
+    if bytes >= GB {
+        format!("{:.1}GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1}MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1}KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{}B", bytes)
+    }
+}
+
+/// Formats a duration in seconds into `M:SS` or `H:MM:SS`.
+pub fn format_duration(seconds: i32) -> String {
+    let seconds = seconds.max(0);
+    let h = seconds / 3600;
+    let m = (seconds % 3600) / 60;
+    let s = seconds % 60;
+
+    if h > 0 {
+        format!("{}:{:02}:{:02}", h, m, s)
+    } else {
+        format!("{}:{:02}", m, s)
+    }
+}
+
+/// Builds a metadata display string for a file-bearing message.
+///
+/// Returns a formatted string like `"download=yes, size=15.5KB, duration=0:03, listened=yes"`
+/// for rendering alongside the `[Media]` label.
+pub fn build_file_metadata_display(media: MessageMedia, info: &FileInfo) -> String {
+    let mut parts = Vec::new();
+
+    // Download status
+    match info.download_status {
+        DownloadStatus::Completed => parts.push("download=yes".to_owned()),
+        DownloadStatus::Downloading { progress_percent } => {
+            parts.push(format!("downloading={}%", progress_percent));
+        }
+        DownloadStatus::NotStarted => parts.push("download=no".to_owned()),
+    }
+
+    // Size
+    if let Some(size) = info.size {
+        parts.push(format!("size={}", format_file_size(size)));
+    }
+
+    // Duration (only for time-based media)
+    if let Some(dur) = info.duration {
+        match media {
+            MessageMedia::Voice
+            | MessageMedia::Audio
+            | MessageMedia::Video
+            | MessageMedia::VideoNote
+            | MessageMedia::Animation => {
+                parts.push(format!("duration={}", format_duration(dur)));
+            }
+            _ => {}
+        }
+    }
+
+    // Listened/viewed (only for voice and video notes)
+    if matches!(media, MessageMedia::Voice | MessageMedia::VideoNote) && info.is_listened {
+        parts.push("listened=yes".to_owned());
+    }
+
+    parts.join(", ")
 }
 
 /// Extracts the first URL (`http://` or `https://`) from text.
@@ -277,5 +376,139 @@ mod tests {
     #[test]
     fn extract_first_url_ignores_non_http_schemes() {
         assert_eq!(extract_first_url("check ftp://files.com out"), None);
+    }
+
+    // ── format_file_size tests ──
+
+    #[test]
+    fn format_file_size_bytes() {
+        assert_eq!(format_file_size(0), "0B");
+        assert_eq!(format_file_size(999), "999B");
+    }
+
+    #[test]
+    fn format_file_size_kilobytes() {
+        assert_eq!(format_file_size(1_000), "1.0KB");
+        assert_eq!(format_file_size(15_500), "15.5KB");
+    }
+
+    #[test]
+    fn format_file_size_megabytes() {
+        assert_eq!(format_file_size(1_000_000), "1.0MB");
+        assert_eq!(format_file_size(1_400_000), "1.4MB");
+        assert_eq!(format_file_size(20_600_000), "20.6MB");
+    }
+
+    #[test]
+    fn format_file_size_gigabytes() {
+        assert_eq!(format_file_size(1_000_000_000), "1.0GB");
+        assert_eq!(format_file_size(2_500_000_000), "2.5GB");
+    }
+
+    // ── format_duration tests ──
+
+    #[test]
+    fn format_duration_seconds_only() {
+        assert_eq!(format_duration(3), "0:03");
+        assert_eq!(format_duration(59), "0:59");
+    }
+
+    #[test]
+    fn format_duration_minutes_and_seconds() {
+        assert_eq!(format_duration(60), "1:00");
+        assert_eq!(format_duration(85), "1:25");
+    }
+
+    #[test]
+    fn format_duration_hours() {
+        assert_eq!(format_duration(3600), "1:00:00");
+        assert_eq!(format_duration(3723), "1:02:03");
+    }
+
+    #[test]
+    fn format_duration_zero() {
+        assert_eq!(format_duration(0), "0:00");
+    }
+
+    #[test]
+    fn format_duration_negative_clamps_to_zero() {
+        assert_eq!(format_duration(-5), "0:00");
+    }
+
+    // ── build_file_metadata_display tests ──
+
+    #[test]
+    fn metadata_display_voice_completed() {
+        let fi = FileInfo {
+            file_id: 1,
+            local_path: Some("/tmp/v.ogg".to_owned()),
+            mime_type: "audio/ogg".to_owned(),
+            size: Some(15_500),
+            duration: Some(3),
+            file_name: None,
+            is_listened: true,
+            download_status: DownloadStatus::Completed,
+        };
+        assert_eq!(
+            build_file_metadata_display(MessageMedia::Voice, &fi),
+            "download=yes, size=15.5KB, duration=0:03, listened=yes"
+        );
+    }
+
+    #[test]
+    fn metadata_display_photo_not_downloaded() {
+        let fi = FileInfo {
+            file_id: 2,
+            local_path: None,
+            mime_type: "image/jpeg".to_owned(),
+            size: Some(1_400_000),
+            duration: None,
+            file_name: None,
+            is_listened: false,
+            download_status: DownloadStatus::NotStarted,
+        };
+        assert_eq!(
+            build_file_metadata_display(MessageMedia::Photo, &fi),
+            "download=no, size=1.4MB"
+        );
+    }
+
+    #[test]
+    fn metadata_display_downloading_progress() {
+        let fi = FileInfo {
+            file_id: 3,
+            local_path: None,
+            mime_type: "video/mp4".to_owned(),
+            size: Some(10_000_000),
+            duration: Some(120),
+            file_name: None,
+            is_listened: false,
+            download_status: DownloadStatus::Downloading {
+                progress_percent: 42,
+            },
+        };
+        assert_eq!(
+            build_file_metadata_display(MessageMedia::Video, &fi),
+            "downloading=42%, size=10.0MB, duration=2:00"
+        );
+    }
+
+    #[test]
+    fn metadata_display_voice_not_listened() {
+        let fi = FileInfo {
+            file_id: 4,
+            local_path: Some("/tmp/v.ogg".to_owned()),
+            mime_type: "audio/ogg".to_owned(),
+            size: Some(20_600),
+            duration: Some(7),
+            file_name: None,
+            is_listened: false,
+            download_status: DownloadStatus::Completed,
+        };
+        let display = build_file_metadata_display(MessageMedia::Voice, &fi);
+        assert!(
+            !display.contains("listened"),
+            "should not show listened=yes when not listened"
+        );
     }
 }

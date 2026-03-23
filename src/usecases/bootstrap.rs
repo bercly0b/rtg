@@ -178,6 +178,7 @@ fn compose_shell_with_factory(
             cache_cfg.min_display_messages,
             context.config.voice.record_cmd.clone(),
             context.config.open.handlers.clone(),
+            context.config.download.max_auto_download_bytes(),
         )),
         _connectivity_monitor: connectivity_monitor,
         _chat_updates_monitor: chat_updates_monitor,

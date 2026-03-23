@@ -22,6 +22,11 @@ api_hash = "replace-me"
 # Default (Linux):  ffmpeg -f alsa -i hw:0 -c:a libopus -b:a 32k {file_path}
 # record_cmd = "ffmpeg -f avfoundation -i ':0' -c:a libopus -b:a 32k {file_path}"
 
+[download]
+# Maximum file size for auto-download. Files larger than this require
+# manual download via Shift+D. Supports units: B, KB, MB, GB.
+# max_auto_download_size = "10MB"
+
 [open]
 # MIME-type handlers for opening message files (mailcap-style).
 # Use {file_path} as placeholder for the file path.

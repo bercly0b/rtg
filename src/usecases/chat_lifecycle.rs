@@ -39,6 +39,14 @@ pub trait MessageDeleter: Send + Sync {
     ) -> Result<(), ChatLifecycleError>;
 }
 
+/// Triggers an asynchronous file download in TDLib.
+///
+/// Progress is delivered via `updateFile` events. This is a fire-and-forget
+/// operation — the caller does not wait for the download to complete.
+pub trait FileDownloader: Send + Sync {
+    fn download_file(&self, file_id: i32) -> Result<(), ChatLifecycleError>;
+}
+
 /// Marks messages as viewed/read in a chat.
 ///
 /// The chat should be opened via [`ChatLifecycle::open_chat`] before
