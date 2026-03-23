@@ -152,6 +152,7 @@ impl OpenChatState {
         self.refreshing = refreshing;
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn message_source(&self) -> MessageSource {
         self.message_source
     }

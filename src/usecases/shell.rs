@@ -639,7 +639,9 @@ where
                 if let Some(msg) = self.state.open_chat().selected_message() {
                     let text = msg.display_content();
                     if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        let _ = clipboard.set_text(text);
+                        if clipboard.set_text(text).is_ok() {
+                            self.state.set_notification("Copied to clipboard");
+                        }
                     }
                 }
             }
@@ -968,6 +970,7 @@ where
 
         // Optimistically remove from UI
         self.state.open_chat_mut().remove_message(message_id);
+        self.state.set_notification("Message deleted");
         // Dispatch background deletion (fire-and-forget)
         self.dispatcher.dispatch_delete_message(chat_id, message_id);
     }
@@ -4184,6 +4187,9 @@ mod tests {
         // Dispatch should have been called
         assert_eq!(o.dispatcher.delete_dispatch_count(), 1);
         assert_eq!(o.dispatcher.last_delete(), Some((1, 20)));
+
+        // Notification should be set
+        assert_eq!(o.state().active_notification(), Some("Message deleted"));
     }
 
     #[test]

@@ -1,8 +1,12 @@
+use std::time::{Duration, Instant};
+
 use super::{
     chat::ChatSummary, chat_list_state::ChatListState, command_popup_state::CommandPopupState,
     events::ConnectivityStatus, message_cache::MessageCache,
     message_input_state::MessageInputState, open_chat_state::OpenChatState,
 };
+
+const NOTIFICATION_TTL: Duration = Duration::from_secs(3);
 
 /// Represents which panel currently has focus for keyboard navigation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -16,7 +20,7 @@ pub enum ActivePane {
     MessageInput,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ShellState {
     running: bool,
     connectivity_status: ConnectivityStatus,
@@ -27,6 +31,7 @@ pub struct ShellState {
     active_pane: ActivePane,
     help_visible: bool,
     command_popup: Option<CommandPopupState>,
+    notification: Option<(String, Instant)>,
 }
 
 impl Default for ShellState {
@@ -41,6 +46,7 @@ impl Default for ShellState {
             active_pane: ActivePane::default(),
             help_visible: false,
             command_popup: None,
+            notification: None,
         }
     }
 }
@@ -159,6 +165,26 @@ impl ShellState {
 
     pub fn message_input_mut(&mut self) -> &mut MessageInputState {
         &mut self.message_input
+    }
+
+    pub fn set_notification(&mut self, text: impl Into<String>) {
+        self.notification = Some((text.into(), Instant::now()));
+    }
+
+    /// Returns the notification text if it hasn't expired yet.
+    pub fn active_notification(&self) -> Option<&str> {
+        self.notification.as_ref().and_then(|(text, created_at)| {
+            if created_at.elapsed() < NOTIFICATION_TTL {
+                Some(text.as_str())
+            } else {
+                None
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn set_notification_at(&mut self, text: impl Into<String>, at: Instant) {
+        self.notification = Some((text.into(), at));
     }
 }
 
@@ -307,5 +333,34 @@ mod tests {
             state.command_popup().unwrap().visible_lines(20),
             vec!["output"]
         );
+    }
+
+    #[test]
+    fn notification_none_by_default() {
+        let state = ShellState::default();
+        assert!(state.active_notification().is_none());
+    }
+
+    #[test]
+    fn set_notification_makes_it_active() {
+        let mut state = ShellState::default();
+        state.set_notification("Copied to clipboard");
+        assert_eq!(state.active_notification(), Some("Copied to clipboard"));
+    }
+
+    #[test]
+    fn notification_expires_after_ttl() {
+        let mut state = ShellState::default();
+        let expired = Instant::now() - Duration::from_secs(5);
+        state.set_notification_at("Old message", expired);
+        assert!(state.active_notification().is_none());
+    }
+
+    #[test]
+    fn fresh_notification_replaces_previous() {
+        let mut state = ShellState::default();
+        state.set_notification("First");
+        state.set_notification("Second");
+        assert_eq!(state.active_notification(), Some("Second"));
     }
 }
