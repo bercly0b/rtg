@@ -33,6 +33,7 @@ use crate::{
         list_chats::{CachedChatsSource, ListChatsSource, ListChatsSourceError},
         load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
         send_message::{MessageSender, SendMessageSourceError},
+        send_voice::VoiceNoteSender,
     },
 };
 
@@ -288,6 +289,21 @@ impl MessageSender for TelegramAdapter {
     fn send_message(&self, chat_id: i64, text: &str) -> Result<(), SendMessageSourceError> {
         match self.tdlib_backend.as_ref() {
             Some(backend) => backend.send_message(chat_id, text),
+            None => Err(SendMessageSourceError::Unauthorized),
+        }
+    }
+}
+
+impl VoiceNoteSender for TelegramAdapter {
+    fn send_voice_note(
+        &self,
+        chat_id: i64,
+        file_path: &str,
+        duration: i32,
+        waveform: &str,
+    ) -> Result<(), SendMessageSourceError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.send_voice_note(chat_id, file_path, duration, waveform),
             None => Err(SendMessageSourceError::Unauthorized),
         }
     }

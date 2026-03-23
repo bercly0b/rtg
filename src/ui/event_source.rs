@@ -56,6 +56,37 @@ impl BackgroundResultSource for StubBackgroundResultSource {
     }
 }
 
+pub use crate::domain::events::CommandEvent;
+
+pub trait CommandOutputSource {
+    fn next_command_event(&mut self) -> Option<CommandEvent>;
+}
+
+#[derive(Default)]
+pub struct StubCommandOutputSource;
+
+impl CommandOutputSource for StubCommandOutputSource {
+    fn next_command_event(&mut self) -> Option<CommandEvent> {
+        None
+    }
+}
+
+pub struct ChannelCommandOutputSource {
+    receiver: Receiver<CommandEvent>,
+}
+
+impl ChannelCommandOutputSource {
+    pub fn new(receiver: Receiver<CommandEvent>) -> Self {
+        Self { receiver }
+    }
+}
+
+impl CommandOutputSource for ChannelCommandOutputSource {
+    fn next_command_event(&mut self) -> Option<CommandEvent> {
+        self.receiver.try_recv().ok()
+    }
+}
+
 pub struct ChannelConnectivityStatusSource {
     receiver: Receiver<ConnectivityStatus>,
     latest: Option<ConnectivityStatus>,
@@ -161,6 +192,7 @@ pub struct CrosstermEventSource {
     connectivity_source: Box<dyn ConnectivityStatusSource>,
     chat_updates_source: Box<dyn ChatUpdatesSignalSource>,
     background_result_source: Box<dyn BackgroundResultSource>,
+    command_output_source: Box<dyn CommandOutputSource>,
     pending_connectivity: Option<ConnectivityStatus>,
     last_emitted_connectivity: Option<ConnectivityStatus>,
     connectivity_streak: u8,
@@ -173,6 +205,7 @@ impl Default for CrosstermEventSource {
             connectivity_source: Box::new(StubConnectivityStatusSource),
             chat_updates_source: Box::new(StubChatUpdatesSignalSource),
             background_result_source: Box::new(StubBackgroundResultSource),
+            command_output_source: Box::new(StubCommandOutputSource),
             pending_connectivity: None,
             last_emitted_connectivity: None,
             connectivity_streak: 0,
@@ -200,11 +233,22 @@ impl CrosstermEventSource {
             connectivity_source,
             chat_updates_source,
             background_result_source,
+            command_output_source: Box::new(StubCommandOutputSource),
             pending_connectivity: None,
             last_emitted_connectivity: None,
             connectivity_streak: 0,
             chat_update_streak: 0,
         }
+    }
+
+    /// Replaces the command output source (called when an external command starts).
+    pub fn set_command_output_source(&mut self, source: Box<dyn CommandOutputSource>) {
+        self.command_output_source = source;
+    }
+
+    /// Clears the command output source (called when the command popup closes).
+    pub fn clear_command_output_source(&mut self) {
+        self.command_output_source = Box::new(StubCommandOutputSource);
     }
 
     fn next_event_with_terminal<T: TerminalEventSource>(
@@ -221,6 +265,17 @@ impl CrosstermEventSource {
                 return Ok(map_key_event(key));
             }
             return Ok(None);
+        }
+
+        // Command output has the highest non-input priority so the popup
+        // updates in real time while the external process is running.
+        if let Some(cmd_event) = self.command_output_source.next_command_event() {
+            self.connectivity_streak = 0;
+            self.chat_update_streak = 0;
+            return Ok(Some(match cmd_event {
+                CommandEvent::OutputLine(line) => AppEvent::CommandOutputLine(line),
+                CommandEvent::Exited { success } => AppEvent::CommandExited { success },
+            }));
         }
 
         // Background task results have high priority — deliver them before

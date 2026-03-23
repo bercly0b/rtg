@@ -11,8 +11,10 @@ pub mod list_chats;
 pub mod load_messages;
 pub mod logout;
 pub mod send_message;
+pub mod send_voice;
 pub mod shell;
 pub mod startup;
+pub mod voice_recording;
 
 /// Returns the usecases module name for smoke checks.
 pub fn module_name() -> &'static str {

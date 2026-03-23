@@ -52,6 +52,13 @@ where
     min_display_messages: usize,
     /// Vim-style `dd` pending state: `true` after the first `d` press.
     pending_d: bool,
+    /// Handle to a running recording process (voice recording, etc.).
+    recording_handle: Option<super::voice_recording::RecordingHandle>,
+    /// Path to the currently recorded voice file.
+    recording_file_path: Option<String>,
+    /// Pending command event receiver to be wired into the event source.
+    /// Set when a command starts, taken by the shell loop.
+    pending_command_rx: Option<std::sync::mpsc::Receiver<crate::domain::events::CommandEvent>>,
 }
 
 impl<S, O, D> DefaultShellOrchestrator<S, O, D>
@@ -75,6 +82,9 @@ where
             prefetch_in_flight: None,
             min_display_messages: DEFAULT_MIN_DISPLAY_MESSAGES,
             pending_d: false,
+            recording_handle: None,
+            recording_file_path: None,
+            pending_command_rx: None,
         }
     }
 
@@ -108,6 +118,9 @@ where
             prefetch_in_flight: None,
             min_display_messages: min_display_messages.max(1),
             pending_d: false,
+            recording_handle: None,
+            recording_file_path: None,
+            pending_command_rx: None,
         }
     }
 
@@ -475,9 +488,116 @@ where
                 }
             }
             "o" => self.open_message_url()?,
+            "v" => {
+                if self.state.open_chat().is_open() {
+                    self.start_voice_recording();
+                }
+            }
             _ => {}
         }
         Ok(())
+    }
+
+    fn start_voice_recording(&mut self) {
+        use super::voice_recording;
+
+        if self.state.command_popup().is_some() {
+            return; // already recording or popup active
+        }
+
+        let file_path = voice_recording::generate_voice_file_path();
+
+        match voice_recording::start_recording(voice_recording::DEFAULT_RECORD_CMD, &file_path) {
+            Ok((handle, rx)) => {
+                self.recording_handle = Some(handle);
+                self.recording_file_path = Some(file_path);
+                self.pending_command_rx = Some(rx);
+                self.state.open_command_popup("Recording Voice");
+                tracing::info!("voice recording started");
+            }
+            Err(err) => {
+                tracing::error!(%err, "failed to start voice recording");
+            }
+        }
+    }
+
+    fn stop_voice_recording(&mut self) {
+        if let Some(mut handle) = self.recording_handle.take() {
+            handle.stop();
+        }
+    }
+
+    fn handle_command_popup_key(&mut self, key: &str) {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let phase = match self.state.command_popup() {
+            Some(popup) => popup.phase().clone(),
+            None => return,
+        };
+
+        match phase {
+            CommandPhase::Running => {
+                if key == "q" {
+                    self.stop_voice_recording();
+                    if let Some(popup) = self.state.command_popup_mut() {
+                        popup.set_phase(CommandPhase::AwaitingConfirmation {
+                            prompt: "Send recording? (y/n)".into(),
+                        });
+                    }
+                }
+            }
+            CommandPhase::AwaitingConfirmation { .. } => match key {
+                "y" => {
+                    self.send_voice_recording();
+                    self.state.close_command_popup();
+                }
+                "n" | "esc" => {
+                    self.discard_voice_recording();
+                    self.state.close_command_popup();
+                }
+                _ => {}
+            },
+        }
+    }
+
+    fn handle_command_exited(&mut self, _success: bool) {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        // If the process exited on its own (not killed by user), transition
+        // to AwaitingConfirmation so the user can decide what to do.
+        if let Some(popup) = self.state.command_popup_mut() {
+            if matches!(popup.phase(), CommandPhase::Running) {
+                popup.set_phase(CommandPhase::AwaitingConfirmation {
+                    prompt: "Command finished. Send recording? (y/n)".into(),
+                });
+            }
+        }
+        // Clean up the handle (process already exited).
+        self.recording_handle = None;
+    }
+
+    fn send_voice_recording(&mut self) {
+        let Some(file_path) = self.recording_file_path.take() else {
+            return;
+        };
+        let Some(chat_id) = self.state.open_chat().chat_id() else {
+            tracing::warn!("no chat open to send voice recording");
+            return;
+        };
+
+        if !std::path::Path::new(&file_path).exists() {
+            tracing::warn!(file_path, "recorded file does not exist");
+            return;
+        }
+
+        self.dispatcher.dispatch_send_voice(chat_id, file_path);
+    }
+
+    fn discard_voice_recording(&mut self) {
+        if let Some(file_path) = self.recording_file_path.take() {
+            let _ = std::fs::remove_file(&file_path);
+            tracing::info!(file_path, "voice recording discarded");
+        }
     }
 
     fn delete_selected_message(&mut self) {
@@ -774,7 +894,22 @@ where
                 self.close_tdlib_chat();
                 self.state.stop();
             }
+            AppEvent::CommandOutputLine(line) => {
+                if let Some(popup) = self.state.command_popup_mut() {
+                    popup.push_line(line);
+                }
+            }
+            AppEvent::CommandExited { success } => {
+                tracing::info!(success, "external command exited");
+                self.handle_command_exited(success);
+            }
             AppEvent::InputKey(key) => {
+                // When command popup is active, intercept keys for popup control.
+                if self.state.command_popup().is_some() {
+                    self.handle_command_popup_key(&key.key);
+                    return Ok(());
+                }
+
                 // When help popup is visible, only close-actions are accepted.
                 if self.state.help_visible() {
                     match key.key.as_str() {
@@ -831,6 +966,12 @@ where
         }
 
         Ok(())
+    }
+
+    fn take_pending_command_rx(
+        &mut self,
+    ) -> Option<std::sync::mpsc::Receiver<crate::domain::events::CommandEvent>> {
+        self.pending_command_rx.take()
     }
 }
 
@@ -1036,6 +1177,10 @@ mod tests {
         }
 
         fn dispatch_chat_subtitle(&self, _query: ChatSubtitleQuery) {
+            // Recording: no-op for now
+        }
+
+        fn dispatch_send_voice(&self, _chat_id: i64, _file_path: String) {
             // Recording: no-op for now
         }
     }

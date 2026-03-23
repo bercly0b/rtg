@@ -25,7 +25,7 @@ Project structure and module layout guide: [docs/project-structure.md](docs/proj
 
 4. Handling findings:
    - `critical`: fix immediately in the same task/PR;
-   - `medium` and `minor`: report to the user in text with rationale and follow-up proposal, and track them in `docs/internal/RTG_REVIEW_BACKLOG.md`.
+   - `medium` and `minor`: report to the user in text with rationale and follow-up proposal, and track them in `docs/features/RTG_REVIEW_BACKLOG.md`.
 
 5. Test and quality gate is mandatory:
    - every code change must be covered with tests;

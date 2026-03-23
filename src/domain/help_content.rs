@@ -79,6 +79,10 @@ pub fn messages_hotkeys() -> &'static [HotkeyEntry] {
             action_name: "open_link_in_browser",
         },
         HotkeyEntry {
+            key_label: "v",
+            action_name: "record_voice_message",
+        },
+        HotkeyEntry {
             key_label: "q",
             action_name: "quit",
         },

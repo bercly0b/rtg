@@ -610,6 +610,22 @@ impl TdLibAuthBackend {
         Ok(())
     }
 
+    /// Sends a voice note to a chat.
+    pub fn send_voice_note(
+        &self,
+        chat_id: i64,
+        file_path: &str,
+        duration: i32,
+        waveform: &str,
+    ) -> Result<(), SendMessageSourceError> {
+        self.client
+            .send_voice_note(chat_id, file_path, duration, waveform)
+            .map_err(map_send_message_error)?;
+
+        tracing::debug!(chat_id, file_path, duration, "Voice note sent via TDLib");
+        Ok(())
+    }
+
     /// Resolves the sender name for a message.
     fn resolve_message_sender_name(&self, msg: &tdlib_rs::types::Message) -> String {
         resolve_sender_name(&self.client, msg)

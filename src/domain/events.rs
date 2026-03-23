@@ -4,8 +4,16 @@ pub enum AppEvent {
     QuitRequested,
     InputKey(KeyInput),
     ConnectivityChanged(ConnectivityStatus),
-    ChatUpdateReceived { updates: Vec<ChatUpdate> },
+    ChatUpdateReceived {
+        updates: Vec<ChatUpdate>,
+    },
     BackgroundTaskCompleted(BackgroundTaskResult),
+    /// A line of output from a running external command (e.g. ffmpeg).
+    CommandOutputLine(String),
+    /// The external command process has exited.
+    CommandExited {
+        success: bool,
+    },
 }
 
 /// Result of an asynchronous background operation dispatched from the UI thread.
@@ -125,4 +133,16 @@ impl KeyInput {
             ctrl,
         }
     }
+}
+
+/// Events produced by a running external command (e.g. ffmpeg).
+///
+/// Defined in the domain layer so both usecases and ui can reference it
+/// without creating circular dependencies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandEvent {
+    /// A line of combined stdout/stderr output.
+    OutputLine(String),
+    /// The process has exited.
+    Exited { success: bool },
 }
