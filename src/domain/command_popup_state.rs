@@ -2,7 +2,7 @@
 //!
 //! The popup displays real-time output from an external command (e.g. ffmpeg
 //! recording, media player) and handles a lifecycle of phases:
-//! Running → AwaitingConfirmation → closed.
+//! Running → Stopping → AwaitingConfirmation → closed.
 
 use std::collections::VecDeque;
 
@@ -10,14 +10,16 @@ use std::collections::VecDeque;
 /// Older lines are discarded when this limit is exceeded.
 const MAX_OUTPUT_LINES: usize = 200;
 
-/// Default number of lines visible in the popup viewport.
-const DEFAULT_VISIBLE_LINES: usize = 20;
+/// Fallback limit for visible lines when no height hint is provided.
+const FALLBACK_VISIBLE_LINES: usize = 20;
 
 /// Phase of the command execution lifecycle.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandPhase {
     /// The external command is currently running.
     Running,
+    /// The process is being terminated (non-blocking); waiting for exit.
+    Stopping,
     /// The command has finished; the user must confirm an action (e.g. send or discard).
     AwaitingConfirmation { prompt: String },
     /// The command failed; displays an error message and closes on any key.
@@ -32,7 +34,6 @@ pub enum CommandPhase {
 pub struct CommandPopupState {
     title: String,
     output_lines: VecDeque<String>,
-    max_visible_lines: usize,
     phase: CommandPhase,
 }
 
@@ -42,7 +43,6 @@ impl CommandPopupState {
         Self {
             title: title.into(),
             output_lines: VecDeque::new(),
-            max_visible_lines: DEFAULT_VISIBLE_LINES,
             phase: CommandPhase::Running,
         }
     }
@@ -68,9 +68,17 @@ impl CommandPopupState {
     }
 
     /// Returns the last N lines that should be visible in the popup viewport.
-    pub fn visible_lines(&self) -> Vec<&str> {
+    ///
+    /// `max_lines` limits how many output lines to show. The caller should
+    /// compute this from the available popup height minus the footer.
+    pub fn visible_lines(&self, max_lines: usize) -> Vec<&str> {
+        let limit = if max_lines == 0 {
+            FALLBACK_VISIBLE_LINES
+        } else {
+            max_lines
+        };
         let total = self.output_lines.len();
-        let skip = total.saturating_sub(self.max_visible_lines);
+        let skip = total.saturating_sub(limit);
         self.output_lines
             .iter()
             .skip(skip)
@@ -94,7 +102,7 @@ mod tests {
         let state = CommandPopupState::new("Recording");
         assert_eq!(state.phase(), &CommandPhase::Running);
         assert_eq!(state.title(), "Recording");
-        assert!(state.visible_lines().is_empty());
+        assert!(state.visible_lines(20).is_empty());
     }
 
     #[test]
@@ -102,7 +110,7 @@ mod tests {
         let mut state = CommandPopupState::new("Test");
         state.push_line("line 1".into());
         state.push_line("line 2".into());
-        assert_eq!(state.visible_lines(), vec!["line 1", "line 2"]);
+        assert_eq!(state.visible_lines(20), vec!["line 1", "line 2"]);
     }
 
     #[test]
@@ -111,10 +119,32 @@ mod tests {
         for i in 0..30 {
             state.push_line(format!("line {i}"));
         }
-        let visible = state.visible_lines();
-        assert_eq!(visible.len(), DEFAULT_VISIBLE_LINES);
+        let visible = state.visible_lines(20);
+        assert_eq!(visible.len(), 20);
         assert_eq!(visible[0], "line 10");
-        assert_eq!(visible[DEFAULT_VISIBLE_LINES - 1], "line 29");
+        assert_eq!(visible[19], "line 29");
+    }
+
+    #[test]
+    fn visible_lines_respects_dynamic_limit() {
+        let mut state = CommandPopupState::new("Test");
+        for i in 0..30 {
+            state.push_line(format!("line {i}"));
+        }
+        let visible = state.visible_lines(10);
+        assert_eq!(visible.len(), 10);
+        assert_eq!(visible[0], "line 20");
+        assert_eq!(visible[9], "line 29");
+    }
+
+    #[test]
+    fn visible_lines_zero_uses_fallback() {
+        let mut state = CommandPopupState::new("Test");
+        for i in 0..30 {
+            state.push_line(format!("line {i}"));
+        }
+        let visible = state.visible_lines(0);
+        assert_eq!(visible.len(), FALLBACK_VISIBLE_LINES);
     }
 
     #[test]
@@ -123,7 +153,7 @@ mod tests {
         for i in 0..5 {
             state.push_line(format!("line {i}"));
         }
-        assert_eq!(state.visible_lines().len(), 5);
+        assert_eq!(state.visible_lines(20).len(), 5);
     }
 
     #[test]
@@ -162,7 +192,7 @@ mod tests {
     fn push_empty_line_is_tracked() {
         let mut state = CommandPopupState::new("Test");
         state.push_line(String::new());
-        assert_eq!(state.visible_lines(), vec![""]);
+        assert_eq!(state.visible_lines(20), vec![""]);
     }
 
     #[test]
@@ -177,5 +207,12 @@ mod tests {
                 message: "Recording failed".into(),
             }
         );
+    }
+
+    #[test]
+    fn set_phase_to_stopping() {
+        let mut state = CommandPopupState::new("Test");
+        state.set_phase(CommandPhase::Stopping);
+        assert_eq!(state.phase(), &CommandPhase::Stopping);
     }
 }

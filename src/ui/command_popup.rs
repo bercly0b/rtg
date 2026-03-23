@@ -14,6 +14,12 @@ use crate::domain::command_popup_state::{CommandPhase, CommandPopupState};
 
 use super::{popup_utils, styles};
 
+/// Lines reserved for the footer section (empty separator + footer text).
+const FOOTER_LINES: u16 = 2;
+/// Lines consumed by borders (top + bottom) and padding (top + bottom).
+/// Derived from: Borders::ALL (2) + Padding::new(1, 1, 1, 1) vertical (2).
+const CHROME_LINES: u16 = 4;
+
 /// Renders the command popup as an overlay on top of existing content.
 pub fn render_command_popup(frame: &mut Frame<'_>, area: Rect, state: &CommandPopupState) {
     let popup_area = popup_utils::centered_rect(area, 60, 60);
@@ -26,8 +32,13 @@ pub fn render_command_popup(frame: &mut Frame<'_>, area: Rect, state: &CommandPo
         .border_style(styles::command_popup_border_style())
         .padding(Padding::new(1, 1, 1, 1));
 
+    // Compute how many output lines fit without clipping the footer.
+    let max_output_lines = popup_area
+        .height
+        .saturating_sub(CHROME_LINES + FOOTER_LINES) as usize;
+
     let mut lines: Vec<Line<'_>> = state
-        .visible_lines()
+        .visible_lines(max_output_lines)
         .into_iter()
         .map(|line| {
             Line::from(Span::styled(
@@ -48,6 +59,10 @@ fn footer_line(phase: &CommandPhase) -> Line<'static> {
     match phase {
         CommandPhase::Running => Line::from(Span::styled(
             "Press q to stop".to_owned(),
+            styles::command_popup_footer_style(),
+        )),
+        CommandPhase::Stopping => Line::from(Span::styled(
+            "Stopping...".to_owned(),
             styles::command_popup_footer_style(),
         )),
         CommandPhase::AwaitingConfirmation { prompt } => Line::from(Span::styled(
@@ -84,6 +99,19 @@ mod tests {
     #[test]
     fn footer_line_uses_footer_style() {
         let line = footer_line(&CommandPhase::Running);
+        assert_eq!(line.spans[0].style, styles::command_popup_footer_style());
+    }
+
+    #[test]
+    fn footer_line_stopping_shows_wait_hint() {
+        let line = footer_line(&CommandPhase::Stopping);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "Stopping...");
+    }
+
+    #[test]
+    fn footer_line_stopping_uses_footer_style() {
+        let line = footer_line(&CommandPhase::Stopping);
         assert_eq!(line.spans[0].style, styles::command_popup_footer_style());
     }
 

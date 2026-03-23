@@ -297,7 +297,7 @@ mod tests {
             .unwrap()
             .push_line("output".into());
         assert_eq!(
-            state.command_popup().unwrap().visible_lines(),
+            state.command_popup().unwrap().visible_lines(20),
             vec!["output"]
         );
     }

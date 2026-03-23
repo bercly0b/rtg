@@ -526,9 +526,22 @@ where
         }
     }
 
+    /// Stops the recording process in a background thread to avoid blocking the UI.
+    ///
+    /// The handle is moved to the thread, which calls `stop()` and then drops it.
+    /// The pipe readers will naturally send `CommandExited` when the process dies.
+    /// If the thread fails to spawn, `Drop` on the handle still terminates the process.
     fn stop_voice_recording(&mut self) {
         if let Some(mut handle) = self.recording_handle.take() {
-            handle.stop();
+            if std::thread::Builder::new()
+                .name("rtg-rec-stop".into())
+                .spawn(move || handle.stop())
+                .is_err()
+            {
+                tracing::warn!(
+                    "failed to spawn stop thread; handle dropped (Drop will stop process)"
+                );
+            }
         }
     }
 
@@ -545,11 +558,12 @@ where
                 if key == "q" {
                     self.stop_voice_recording();
                     if let Some(popup) = self.state.command_popup_mut() {
-                        popup.set_phase(CommandPhase::AwaitingConfirmation {
-                            prompt: "Send recording? (y/n)".into(),
-                        });
+                        popup.set_phase(CommandPhase::Stopping);
                     }
                 }
+            }
+            CommandPhase::Stopping => {
+                // Ignore all keys while the process is being terminated.
             }
             CommandPhase::AwaitingConfirmation { .. } => match key {
                 "y" => {
@@ -571,29 +585,60 @@ where
     fn handle_command_exited(&mut self, _event_success: bool) {
         use crate::domain::command_popup_state::CommandPhase;
 
-        let process_succeeded = self
-            .recording_handle
-            .as_mut()
-            .and_then(|h| h.try_exit_success())
-            .unwrap_or(false);
-
         if let Some(popup) = self.state.command_popup_mut() {
-            if matches!(popup.phase(), CommandPhase::Running) {
-                if process_succeeded {
-                    popup.set_phase(CommandPhase::AwaitingConfirmation {
-                        prompt: "Command finished. Send recording? (y/n)".into(),
-                    });
-                } else {
-                    popup.set_phase(CommandPhase::Failed {
-                        message:
-                            "Recording failed. Override recording command via [voice] record_cmd in ~/.config/rtg/config.toml (press any key)"
-                                .into(),
-                    });
-                    self.discard_voice_recording();
+            match popup.phase() {
+                CommandPhase::Running => {
+                    // Process exited on its own (not user-initiated stop).
+                    // Check the actual exit code via the handle.
+                    let process_succeeded = self
+                        .recording_handle
+                        .as_mut()
+                        .and_then(|h| h.try_exit_success())
+                        .unwrap_or(false);
+                    self.recording_handle = None;
+
+                    if process_succeeded {
+                        popup.set_phase(CommandPhase::AwaitingConfirmation {
+                            prompt: "Command finished. Send recording? (y/n)".into(),
+                        });
+                    } else {
+                        popup.set_phase(CommandPhase::Failed {
+                            message:
+                                "Recording failed. Override recording command via [voice] record_cmd in ~/.config/rtg/config.toml (press any key)"
+                                    .into(),
+                        });
+                        self.discard_voice_recording();
+                    }
+                }
+                CommandPhase::Stopping => {
+                    // Process finished after user pressed q. The handle was moved
+                    // to the stop thread, so we check file existence instead.
+                    // By the time CommandExited fires (pipe readers detect EOF),
+                    // the process has exited and the file should be fully written.
+                    let file_ok = self
+                        .recording_file_path
+                        .as_ref()
+                        .map(|p| std::fs::metadata(p).map(|m| m.len() > 0).unwrap_or(false))
+                        .unwrap_or(false);
+
+                    if file_ok {
+                        popup.set_phase(CommandPhase::AwaitingConfirmation {
+                            prompt: "Send recording? (y/n)".into(),
+                        });
+                    } else {
+                        popup.set_phase(CommandPhase::Failed {
+                            message:
+                                "Recording failed. Override recording command via [voice] record_cmd in ~/.config/rtg/config.toml (press any key)"
+                                    .into(),
+                        });
+                        self.discard_voice_recording();
+                    }
+                }
+                _ => {
+                    // AwaitingConfirmation / Failed — do not override.
                 }
             }
         }
-        self.recording_handle = None;
     }
 
     fn send_voice_recording(&mut self) {
@@ -4024,7 +4069,7 @@ mod tests {
     }
 
     #[test]
-    fn command_popup_q_transitions_to_awaiting_confirmation() {
+    fn command_popup_q_transitions_to_stopping() {
         use crate::domain::command_popup_state::CommandPhase;
 
         let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
@@ -4037,10 +4082,7 @@ mod tests {
             .state()
             .command_popup()
             .expect("popup should still be open");
-        assert!(matches!(
-            popup.phase(),
-            CommandPhase::AwaitingConfirmation { .. }
-        ));
+        assert_eq!(popup.phase(), &CommandPhase::Stopping);
     }
 
     #[test]
@@ -4184,7 +4226,7 @@ mod tests {
 
         let popup = o.state().command_popup().unwrap();
         assert_eq!(
-            popup.visible_lines(),
+            popup.visible_lines(20),
             vec!["recording at 48kHz", "size=128kB"]
         );
     }
@@ -4256,6 +4298,113 @@ mod tests {
         // No popup — should not panic.
         o.handle_event(AppEvent::CommandExited { success: false })
             .unwrap();
+    }
+
+    #[test]
+    fn stopping_phase_transitions_to_awaiting_when_file_exists() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_stopping_ok.oga");
+        std::fs::write(&tmp, b"fake audio").unwrap();
+        let file_path = tmp.to_str().unwrap().to_owned();
+
+        simulate_voice_recording_started(&mut o, &file_path);
+
+        // Simulate q → Stopping (handle already None since simulate_voice_recording_started
+        // doesn't set one, same as after the stop thread takes it).
+        o.state
+            .command_popup_mut()
+            .unwrap()
+            .set_phase(CommandPhase::Stopping);
+
+        o.handle_event(AppEvent::CommandExited { success: true })
+            .unwrap();
+
+        assert!(matches!(
+            o.state().command_popup().unwrap().phase(),
+            CommandPhase::AwaitingConfirmation { .. }
+        ));
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn stopping_phase_transitions_to_failed_when_file_missing() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/nonexistent/rtg_test.oga");
+
+        o.state
+            .command_popup_mut()
+            .unwrap()
+            .set_phase(CommandPhase::Stopping);
+
+        o.handle_event(AppEvent::CommandExited { success: true })
+            .unwrap();
+
+        assert!(matches!(
+            o.state().command_popup().unwrap().phase(),
+            CommandPhase::Failed { .. }
+        ));
+        assert!(
+            o.recording_file_path.is_none(),
+            "failed recording should discard file path"
+        );
+    }
+
+    #[test]
+    fn stopping_phase_transitions_to_failed_when_file_empty() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+
+        let tmp = std::env::temp_dir().join("rtg_test_stopping_empty.oga");
+        std::fs::write(&tmp, b"").unwrap();
+        let file_path = tmp.to_str().unwrap().to_owned();
+
+        simulate_voice_recording_started(&mut o, &file_path);
+
+        o.state
+            .command_popup_mut()
+            .unwrap()
+            .set_phase(CommandPhase::Stopping);
+
+        o.handle_event(AppEvent::CommandExited { success: true })
+            .unwrap();
+
+        assert!(matches!(
+            o.state().command_popup().unwrap().phase(),
+            CommandPhase::Failed { .. }
+        ));
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn stopping_phase_ignores_keys() {
+        use crate::domain::command_popup_state::CommandPhase;
+
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+
+        o.state
+            .command_popup_mut()
+            .unwrap()
+            .set_phase(CommandPhase::Stopping);
+
+        // All keys should be ignored during Stopping.
+        for key in ["q", "y", "n", "x", "esc"] {
+            o.handle_event(AppEvent::InputKey(KeyInput::new(key, false)))
+                .unwrap();
+            assert_eq!(
+                o.state().command_popup().unwrap().phase(),
+                &CommandPhase::Stopping,
+                "key '{key}' should not change Stopping phase"
+            );
+        }
     }
 
     #[test]
@@ -4354,15 +4503,23 @@ mod tests {
         o.handle_event(AppEvent::CommandOutputLine("frame=1".into()))
             .unwrap();
 
-        // Step 3: User presses q to stop.
+        // Step 3: User presses q to stop → transitions to Stopping.
         o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
+            .unwrap();
+        assert_eq!(
+            o.state().command_popup().unwrap().phase(),
+            &CommandPhase::Stopping
+        );
+
+        // Step 4: Process exits → transitions to AwaitingConfirmation.
+        o.handle_event(AppEvent::CommandExited { success: true })
             .unwrap();
         assert!(matches!(
             o.state().command_popup().unwrap().phase(),
             CommandPhase::AwaitingConfirmation { .. }
         ));
 
-        // Step 4: User presses y to send.
+        // Step 5: User presses y to send.
         o.handle_event(AppEvent::InputKey(KeyInput::new("y", false)))
             .unwrap();
         assert!(o.state().command_popup().is_none());
@@ -4383,8 +4540,16 @@ mod tests {
 
         simulate_voice_recording_started(&mut o, &file_path);
 
-        // q to stop.
+        // q to stop → Stopping.
         o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
+            .unwrap();
+        assert_eq!(
+            o.state().command_popup().unwrap().phase(),
+            &CommandPhase::Stopping
+        );
+
+        // Process exits → AwaitingConfirmation.
+        o.handle_event(AppEvent::CommandExited { success: true })
             .unwrap();
         assert!(matches!(
             o.state().command_popup().unwrap().phase(),
