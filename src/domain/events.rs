@@ -9,7 +9,13 @@ pub enum AppEvent {
     },
     BackgroundTaskCompleted(BackgroundTaskResult),
     /// A line of output from a running external command (e.g. ffmpeg).
-    CommandOutputLine(String),
+    ///
+    /// `replace_last=true` means the line came from a carriage-return update
+    /// and should replace the previously displayed line (progress-style output).
+    CommandOutputLine {
+        text: String,
+        replace_last: bool,
+    },
     /// The external command process has exited.
     CommandExited {
         success: bool,
@@ -156,7 +162,10 @@ impl KeyInput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandEvent {
     /// A line of combined stdout/stderr output.
-    OutputLine(String),
+    ///
+    /// `replace_last=true` means the line terminated with `\r` and should
+    /// replace the previously displayed line.
+    OutputLine { text: String, replace_last: bool },
     /// The process has exited.
     Exited { success: bool },
 }

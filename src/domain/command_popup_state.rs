@@ -83,6 +83,16 @@ impl CommandPopupState {
         self.output_lines.push_back(line);
     }
 
+    /// Replaces the last visible output line, or appends when buffer is empty.
+    pub fn replace_last_line(&mut self, line: String) {
+        if let Some(last) = self.output_lines.back_mut() {
+            *last = line;
+            return;
+        }
+
+        self.push_line(line);
+    }
+
     /// Returns the last N lines that should be visible in the popup viewport.
     ///
     /// `max_lines` limits how many output lines to show. The caller should
@@ -131,6 +141,22 @@ mod tests {
         state.push_line("line 1".into());
         state.push_line("line 2".into());
         assert_eq!(state.visible_lines(20), vec!["line 1", "line 2"]);
+    }
+
+    #[test]
+    fn replace_last_line_updates_tail() {
+        let mut state = test_popup("Test");
+        state.push_line("line 1".into());
+        state.push_line("line 2".into());
+        state.replace_last_line("line 2 updated".into());
+        assert_eq!(state.visible_lines(20), vec!["line 1", "line 2 updated"]);
+    }
+
+    #[test]
+    fn replace_last_line_appends_when_empty() {
+        let mut state = test_popup("Test");
+        state.replace_last_line("line 1".into());
+        assert_eq!(state.visible_lines(20), vec!["line 1"]);
     }
 
     #[test]
