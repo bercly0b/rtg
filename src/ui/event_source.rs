@@ -273,7 +273,9 @@ impl CrosstermEventSource {
             self.connectivity_streak = 0;
             self.chat_update_streak = 0;
             return Ok(Some(match cmd_event {
-                CommandEvent::OutputLine(line) => AppEvent::CommandOutputLine(line),
+                CommandEvent::OutputLine { text, replace_last } => {
+                    AppEvent::CommandOutputLine { text, replace_last }
+                }
                 CommandEvent::Exited { success } => AppEvent::CommandExited { success },
             }));
         }

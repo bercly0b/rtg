@@ -1255,9 +1255,13 @@ where
                 self.close_tdlib_chat();
                 self.state.stop();
             }
-            AppEvent::CommandOutputLine(line) => {
+            AppEvent::CommandOutputLine { text, replace_last } => {
                 if let Some(popup) = self.state.command_popup_mut() {
-                    popup.push_line(line);
+                    if replace_last {
+                        popup.replace_last_line(text);
+                    } else {
+                        popup.push_line(text);
+                    }
                 }
             }
             AppEvent::CommandExited { success } => {
@@ -4534,10 +4538,16 @@ mod tests {
         let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
         simulate_voice_recording_started(&mut o, "/tmp/test.oga");
 
-        o.handle_event(AppEvent::CommandOutputLine("recording at 48kHz".into()))
-            .unwrap();
-        o.handle_event(AppEvent::CommandOutputLine("size=128kB".into()))
-            .unwrap();
+        o.handle_event(AppEvent::CommandOutputLine {
+            text: "recording at 48kHz".into(),
+            replace_last: false,
+        })
+        .unwrap();
+        o.handle_event(AppEvent::CommandOutputLine {
+            text: "size=128kB".into(),
+            replace_last: false,
+        })
+        .unwrap();
 
         let popup = o.state().command_popup().unwrap();
         assert_eq!(
@@ -4547,12 +4557,35 @@ mod tests {
     }
 
     #[test]
+    fn command_output_line_event_replaces_last_line_when_requested() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+        simulate_voice_recording_started(&mut o, "/tmp/test.oga");
+
+        o.handle_event(AppEvent::CommandOutputLine {
+            text: "A: 00:00:01 / 00:00:03".into(),
+            replace_last: true,
+        })
+        .unwrap();
+        o.handle_event(AppEvent::CommandOutputLine {
+            text: "A: 00:00:02 / 00:00:03".into(),
+            replace_last: true,
+        })
+        .unwrap();
+
+        let popup = o.state().command_popup().unwrap();
+        assert_eq!(popup.visible_lines(20), vec!["A: 00:00:02 / 00:00:03"]);
+    }
+
+    #[test]
     fn command_output_line_ignored_when_no_popup() {
         let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
 
         // No popup active — should not panic.
-        o.handle_event(AppEvent::CommandOutputLine("stray line".into()))
-            .unwrap();
+        o.handle_event(AppEvent::CommandOutputLine {
+            text: "stray line".into(),
+            replace_last: false,
+        })
+        .unwrap();
     }
 
     #[test]
@@ -4824,8 +4857,11 @@ mod tests {
         assert!(o.state().command_popup().is_some());
 
         // Step 2: Output lines arrive.
-        o.handle_event(AppEvent::CommandOutputLine("frame=1".into()))
-            .unwrap();
+        o.handle_event(AppEvent::CommandOutputLine {
+            text: "frame=1".into(),
+            replace_last: false,
+        })
+        .unwrap();
 
         // Step 3: User presses q to stop → transitions to Stopping.
         o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))

@@ -1,14 +1,14 @@
 //! Voice recording management: spawning ffmpeg, streaming output, and process control.
 //!
-//! The recording process runs in a background thread. Its stdout/stderr output
-//! is streamed line-by-line through an mpsc channel that the UI event source
-//! polls to update the command popup in real time.
+//! The recording process runs in a background thread. Its output is streamed
+//! through an mpsc channel that the UI event source polls to update the command
+//! popup in real time.
 
 use std::{
-    io::{BufRead, BufReader},
+    io::{BufReader, Read},
     process::{Child, Command, Stdio},
     sync::{
-        atomic::{AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         mpsc, Arc,
     },
     thread,
@@ -132,10 +132,15 @@ pub fn start_command(
         .collect();
 
     let mut cmd = Command::new(&resolved[0]);
-    cmd.args(&resolved[1..])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    cmd.args(&resolved[1..]).stdin(Stdio::null());
+
+    #[cfg(unix)]
+    let output_reader = super::pty::attach_output_pty(&mut cmd)?;
+
+    #[cfg(not(unix))]
+    {
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    }
 
     // Spawn in a new session so `stop()` can kill the entire process group,
     // including any children the command may fork (e.g. shell scripts
@@ -152,8 +157,7 @@ pub fn start_command(
             if libc::setsid() == -1 {
                 return Err(std::io::Error::last_os_error());
             }
-            // FDs 0, 1, 2 are already set up by Command (stdin=null,
-            // stdout=piped, stderr=piped). Close everything else to
+            // FDs 0, 1, 2 are already set up by Command. Close everything else to
             // prevent inherited terminal fds from leaking to the child.
             for fd in 3..1024 {
                 libc::close(fd);
@@ -171,13 +175,14 @@ pub fn start_command(
     let mut spawned_readers: u8 = 0;
     let reader_gate = Arc::new(ReaderGate::new());
 
-    if let Some(stderr) = child.stderr.take() {
+    #[cfg(unix)]
+    {
         let tx_clone = tx.clone();
         let gate = Arc::clone(&reader_gate);
         match thread::Builder::new()
-            .name("rtg-cmd-stderr".into())
+            .name("rtg-cmd-pty".into())
             .spawn(move || {
-                stream_lines(stderr, &tx_clone);
+                stream_output(output_reader, &tx_clone);
                 gate.on_reader_finished(&tx_clone);
             }) {
             Ok(_) => spawned_readers += 1,
@@ -189,37 +194,104 @@ pub fn start_command(
         }
     }
 
-    if let Some(stdout) = child.stdout.take() {
-        let tx_clone = tx.clone();
-        let gate = Arc::clone(&reader_gate);
-        match thread::Builder::new()
-            .name("rtg-cmd-stdout".into())
-            .spawn(move || {
-                stream_lines(stdout, &tx_clone);
-                gate.on_reader_finished(&tx_clone);
-            }) {
-            Ok(_) => spawned_readers += 1,
-            Err(e) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(e.into());
+    #[cfg(not(unix))]
+    {
+        if let Some(stderr) = child.stderr.take() {
+            let tx_clone = tx.clone();
+            let gate = Arc::clone(&reader_gate);
+            match thread::Builder::new()
+                .name("rtg-cmd-stderr".into())
+                .spawn(move || {
+                    stream_output(stderr, &tx_clone);
+                    gate.on_reader_finished(&tx_clone);
+                }) {
+                Ok(_) => spawned_readers += 1,
+                Err(e) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(e.into());
+                }
+            }
+        }
+
+        if let Some(stdout) = child.stdout.take() {
+            let tx_clone = tx.clone();
+            let gate = Arc::clone(&reader_gate);
+            match thread::Builder::new()
+                .name("rtg-cmd-stdout".into())
+                .spawn(move || {
+                    stream_output(stdout, &tx_clone);
+                    gate.on_reader_finished(&tx_clone);
+                }) {
+                Ok(_) => spawned_readers += 1,
+                Err(e) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(e.into());
+                }
             }
         }
     }
 
-    reader_gate.set_expected(spawned_readers);
+    reader_gate.set_expected(spawned_readers, &tx);
 
     Ok((RecordingHandle { child }, rx))
 }
 
-/// Reads lines from a reader and sends them as `CommandEvent::OutputLine`.
-fn stream_lines<R: std::io::Read>(reader: R, tx: &mpsc::Sender<CommandEvent>) {
-    let buf = BufReader::new(reader);
-    for line in buf.lines() {
-        match line {
-            Ok(text) => {
-                if tx.send(CommandEvent::OutputLine(text)).is_err() {
-                    break;
+/// Streams command output and preserves carriage-return replacement semantics.
+fn stream_output<R: Read>(reader: R, tx: &mpsc::Sender<CommandEvent>) {
+    let mut reader = BufReader::new(reader);
+    let mut chunk = Vec::<u8>::new();
+    let mut byte = [0_u8; 1];
+    let mut pending_cr = false;
+    let mut current_line_replaces_prev = false;
+
+    loop {
+        match reader.read(&mut byte) {
+            Ok(0) => {
+                if pending_cr {
+                    let _ = send_output_chunk(tx, &chunk, true);
+                } else if !chunk.is_empty() {
+                    let _ = send_output_chunk(tx, &chunk, current_line_replaces_prev);
+                }
+                break;
+            }
+            Ok(_) => {
+                let b = byte[0];
+
+                if pending_cr {
+                    if b == b'\n' {
+                        if send_output_chunk(tx, &chunk, false).is_err() {
+                            break;
+                        }
+                        chunk.clear();
+                        current_line_replaces_prev = false;
+                        pending_cr = false;
+                        continue;
+                    }
+
+                    if send_output_chunk(tx, &chunk, true).is_err() {
+                        break;
+                    }
+                    chunk.clear();
+                    current_line_replaces_prev = true;
+                    pending_cr = false;
+                }
+
+                match b {
+                    b'\r' => {
+                        pending_cr = true;
+                    }
+                    b'\n' => {
+                        if send_output_chunk(tx, &chunk, current_line_replaces_prev).is_err() {
+                            break;
+                        }
+                        chunk.clear();
+                        current_line_replaces_prev = false;
+                    }
+                    _ => {
+                        chunk.push(b);
+                    }
                 }
             }
             Err(_) => break,
@@ -227,11 +299,71 @@ fn stream_lines<R: std::io::Read>(reader: R, tx: &mpsc::Sender<CommandEvent>) {
     }
 }
 
+fn send_output_chunk(
+    tx: &mpsc::Sender<CommandEvent>,
+    chunk: &[u8],
+    replace_last: bool,
+) -> Result<(), mpsc::SendError<CommandEvent>> {
+    let text = sanitize_output(chunk);
+    if text.is_empty() {
+        return Ok(());
+    }
+
+    tx.send(CommandEvent::OutputLine { text, replace_last })
+}
+
+fn sanitize_output(chunk: &[u8]) -> String {
+    let input = String::from_utf8_lossy(chunk);
+    strip_ansi_csi(input.as_ref())
+        .chars()
+        .filter(|c| !c.is_ascii_control() || *c == '\t')
+        .collect()
+}
+
+fn strip_ansi_csi(input: &str) -> String {
+    #[derive(Clone, Copy)]
+    enum State {
+        Normal,
+        Esc,
+        Csi,
+    }
+
+    let mut out = String::with_capacity(input.len());
+    let mut state = State::Normal;
+
+    for ch in input.chars() {
+        match state {
+            State::Normal => {
+                if ch == '\u{1b}' {
+                    state = State::Esc;
+                } else {
+                    out.push(ch);
+                }
+            }
+            State::Esc => {
+                if ch == '[' {
+                    state = State::Csi;
+                } else {
+                    state = State::Normal;
+                }
+            }
+            State::Csi => {
+                if ('@'..='~').contains(&ch) {
+                    state = State::Normal;
+                }
+            }
+        }
+    }
+
+    out
+}
+
 /// Coordinates pipe reader threads. When all expected readers finish,
 /// sends `CommandEvent::Exited` through the channel.
 struct ReaderGate {
     finished: AtomicU8,
     expected: AtomicU8,
+    exited_sent: AtomicBool,
 }
 
 impl ReaderGate {
@@ -239,21 +371,33 @@ impl ReaderGate {
         Self {
             finished: AtomicU8::new(0),
             expected: AtomicU8::new(0),
+            exited_sent: AtomicBool::new(false),
         }
     }
 
     /// Sets the expected number of readers (called after all threads are spawned).
-    fn set_expected(&self, count: u8) {
+    fn set_expected(&self, count: u8, tx: &mpsc::Sender<CommandEvent>) {
         self.expected.store(count, Ordering::Release);
+        self.try_send_exited(tx);
     }
 
     /// Called when a pipe reader thread finishes.
     fn on_reader_finished(&self, tx: &mpsc::Sender<CommandEvent>) {
-        let done = self.finished.fetch_add(1, Ordering::AcqRel) + 1;
+        self.finished.fetch_add(1, Ordering::AcqRel);
+        self.try_send_exited(tx);
+    }
+
+    fn try_send_exited(&self, tx: &mpsc::Sender<CommandEvent>) {
         let expected = self.expected.load(Ordering::Acquire);
-        if expected > 0 && done >= expected {
-            let _ = tx.send(CommandEvent::Exited { success: true });
+        let done = self.finished.load(Ordering::Acquire);
+        if expected == 0 || done < expected {
+            return;
         }
+        if self.exited_sent.swap(true, Ordering::AcqRel) {
+            return;
+        }
+
+        let _ = tx.send(CommandEvent::Exited { success: true });
     }
 }
 
@@ -319,8 +463,8 @@ mod tests {
     #[test]
     fn reader_gate_sends_exited_when_all_done() {
         let gate = Arc::new(ReaderGate::new());
-        gate.set_expected(2);
         let (tx, rx) = mpsc::channel();
+        gate.set_expected(2, &tx);
 
         // First reader finishes — should not send Exited yet.
         gate.on_reader_finished(&tx);
@@ -335,8 +479,8 @@ mod tests {
     #[test]
     fn reader_gate_single_reader() {
         let gate = Arc::new(ReaderGate::new());
-        gate.set_expected(1);
         let (tx, rx) = mpsc::channel();
+        gate.set_expected(1, &tx);
 
         gate.on_reader_finished(&tx);
         let event = rx.try_recv().unwrap();
@@ -344,30 +488,158 @@ mod tests {
     }
 
     #[test]
-    fn stream_lines_sends_output_lines() {
+    fn reader_gate_emits_exited_when_expected_is_set_after_finish() {
+        let gate = Arc::new(ReaderGate::new());
+        let (tx, rx) = mpsc::channel();
+
+        gate.on_reader_finished(&tx);
+        assert!(rx.try_recv().is_err());
+
+        gate.set_expected(1, &tx);
+        let event = rx.try_recv().unwrap();
+        assert_eq!(event, CommandEvent::Exited { success: true });
+    }
+
+    #[test]
+    fn stream_output_sends_output_lines() {
         let input = b"line 1\nline 2\nline 3\n";
         let (tx, rx) = mpsc::channel();
 
-        stream_lines(&input[..], &tx);
+        stream_output(&input[..], &tx);
         drop(tx);
 
         let events: Vec<_> = rx.iter().collect();
         assert_eq!(events.len(), 3);
-        assert_eq!(events[0], CommandEvent::OutputLine("line 1".into()));
-        assert_eq!(events[1], CommandEvent::OutputLine("line 2".into()));
-        assert_eq!(events[2], CommandEvent::OutputLine("line 3".into()));
+        assert_eq!(
+            events[0],
+            CommandEvent::OutputLine {
+                text: "line 1".into(),
+                replace_last: false,
+            }
+        );
+        assert_eq!(
+            events[1],
+            CommandEvent::OutputLine {
+                text: "line 2".into(),
+                replace_last: false,
+            }
+        );
+        assert_eq!(
+            events[2],
+            CommandEvent::OutputLine {
+                text: "line 3".into(),
+                replace_last: false,
+            }
+        );
     }
 
     #[test]
-    fn stream_lines_handles_empty_input() {
+    fn stream_output_handles_empty_input() {
         let input = b"";
         let (tx, rx) = mpsc::channel();
 
-        stream_lines(&input[..], &tx);
+        stream_output(&input[..], &tx);
         drop(tx);
 
         let events: Vec<_> = rx.iter().collect();
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn stream_output_marks_carriage_return_as_replace() {
+        let input = b"A: 00:00:01 / 00:00:03\rA: 00:00:02 / 00:00:03\r";
+        let (tx, rx) = mpsc::channel();
+
+        stream_output(&input[..], &tx);
+        drop(tx);
+
+        let events: Vec<_> = rx.iter().collect();
+        assert_eq!(events.len(), 2);
+        assert_eq!(
+            events[0],
+            CommandEvent::OutputLine {
+                text: "A: 00:00:01 / 00:00:03".into(),
+                replace_last: true,
+            }
+        );
+        assert_eq!(
+            events[1],
+            CommandEvent::OutputLine {
+                text: "A: 00:00:02 / 00:00:03".into(),
+                replace_last: true,
+            }
+        );
+    }
+
+    #[test]
+    fn stream_output_treats_crlf_as_normal_newline() {
+        let input = b"line 1\r\nline 2\r\n";
+        let (tx, rx) = mpsc::channel();
+
+        stream_output(&input[..], &tx);
+        drop(tx);
+
+        let events: Vec<_> = rx.iter().collect();
+        assert_eq!(events.len(), 2);
+        assert_eq!(
+            events[0],
+            CommandEvent::OutputLine {
+                text: "line 1".into(),
+                replace_last: false,
+            }
+        );
+        assert_eq!(
+            events[1],
+            CommandEvent::OutputLine {
+                text: "line 2".into(),
+                replace_last: false,
+            }
+        );
+    }
+
+    #[test]
+    fn stream_output_keeps_replace_semantics_for_cr_then_lf() {
+        let input = b"foo\rbar\n";
+        let (tx, rx) = mpsc::channel();
+
+        stream_output(&input[..], &tx);
+        drop(tx);
+
+        let events: Vec<_> = rx.iter().collect();
+        assert_eq!(events.len(), 2);
+        assert_eq!(
+            events[0],
+            CommandEvent::OutputLine {
+                text: "foo".into(),
+                replace_last: true,
+            }
+        );
+        assert_eq!(
+            events[1],
+            CommandEvent::OutputLine {
+                text: "bar".into(),
+                replace_last: true,
+            }
+        );
+    }
+
+    #[test]
+    fn stream_output_strips_ansi_sequences() {
+        let input = b"\x1b[33mwarn\x1b[0m\n";
+        let (tx, rx) = mpsc::channel();
+
+        stream_output(&input[..], &tx);
+        drop(tx);
+
+        let events: Vec<_> = rx.iter().collect();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0],
+            CommandEvent::OutputLine {
+                text: "warn".into(),
+                replace_last: false,
+            }
+        );
     }
 
     #[test]
@@ -407,7 +679,7 @@ mod tests {
         let open_fds: Vec<i32> = events
             .iter()
             .filter_map(|e| match e {
-                CommandEvent::OutputLine(line) => line.trim().parse::<i32>().ok(),
+                CommandEvent::OutputLine { text, .. } => text.trim().parse::<i32>().ok(),
                 _ => None,
             })
             .collect();
