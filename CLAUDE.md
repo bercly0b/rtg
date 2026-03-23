@@ -6,6 +6,8 @@ RTG is a terminal-first Telegram client in Rust (CLI + TUI).
 
 Primary engineering direction: build in a Rust-way / Rust-like style.
 
+Project structure and module layout guide: [docs/project-structure.md](docs/project-structure.md).
+
 ## Workflow rules
 
 1. Before starting any development task:
@@ -35,6 +37,7 @@ Primary engineering direction: build in a Rust-way / Rust-like style.
 
 6. Telegram API implementation rule:
    - before implementing features that interact with Telegram API, review `tdlib-rs` and TDLib documentation;
+   - follow the TDLib approach — do not invent custom abstractions or workflows; use TDLib models, update handling, and interaction patterns as intended by the library;
    - choose and document the most suitable TDLib integration approach for the task scope.
 
 7. Commit after development task completion:
@@ -48,6 +51,12 @@ Primary engineering direction: build in a Rust-way / Rust-like style.
    - rule of thumb: if the knowledge would not influence a decision in a future task, it does not belong in hindsight;
    - be specific and include outcomes (what worked and what didn't).
 
+## Documentation rules
+
+1. `docs/` is for project-wide, high-level documentation (module organization, hotkey conventions, architectural decisions, etc.).
+2. `docs/features/` is for feature-specific documentation (design docs, implementation plans, behavior specs).
+3. Keep docs concise and up-to-date; remove or update stale documentation when the underlying code changes.
+
 ## Code organization rules
 
 1. Do not put the whole CRUD/feature into one large file.
@@ -57,15 +66,14 @@ Primary engineering direction: build in a Rust-way / Rust-like style.
 5. Soft limit: around 200 LOC per module.
 6. Prefer logical modular decomposition over file growth.
 
-## Internal documentation rule
-
-Important things that help navigate the project must be documented in `docs/internal/`.
-
-Project is open-source: do not add agent-specific mentions to shared repository files (code, docs, contributing guides, PR templates). Agent workflow files stay local and ignored (`docs/internal/`).
-
 ## Rust engineering style
 
 1. Prefer strong typing and explicit domain modeling.
 2. Keep error handling explicit and idiomatic.
 3. Keep layer boundaries clear (`ui`, `domain`, `usecases`, `infra`, `telegram`).
 4. Avoid mixing business logic with infrastructure details in one module.
+
+## UI principles
+
+1. Optimistic UI: display the result of a user action immediately without waiting for the server response; resolve the actual request in the background (e.g., show a sent message instantly, confirm delivery asynchronously).
+2. Performance and speed are a priority: prefer fast paths in architecture and implementation decisions; minimize latency visible to the user.
