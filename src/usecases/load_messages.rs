@@ -179,6 +179,7 @@ mod tests {
             is_outgoing: false,
             media: crate::domain::message::MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
         }
     }
 

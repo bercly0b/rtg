@@ -234,6 +234,7 @@ impl OpenChatState {
             is_outgoing: true,
             media,
             status: MessageStatus::Sending,
+            file_info: None,
         };
         self.messages.push(pending);
         self.selected_index = Some(self.messages.len() - 1);
@@ -341,6 +342,7 @@ mod tests {
             is_outgoing: false,
             media: crate::domain::message::MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
         }
     }
 

@@ -8,7 +8,7 @@ use tdlib_rs::types::{Chat as TdChat, Message as TdMessage, User as TdUser};
 
 use crate::domain::chat::{ChatSummary, ChatType, OutgoingReadStatus};
 use crate::domain::chat_subtitle::ChatSubtitle;
-use crate::domain::message::{Message, MessageMedia};
+use crate::domain::message::{FileInfo, Message, MessageMedia};
 
 /// Maps a TDLib Chat to a domain ChatSummary.
 ///
@@ -257,6 +257,7 @@ pub fn get_private_chat_user_id(chat_type: &TdChatType) -> Option<i64> {
 pub fn map_tdlib_message_to_domain(msg: &TdMessage, sender_name: String) -> Message {
     let text = extract_message_text(&msg.content);
     let media = extract_message_media(&msg.content);
+    let file_info = extract_file_info(&msg.content);
     let timestamp_ms = i64::from(msg.date) * 1000;
 
     Message {
@@ -267,6 +268,7 @@ pub fn map_tdlib_message_to_domain(msg: &TdMessage, sender_name: String) -> Mess
         is_outgoing: msg.is_outgoing,
         media,
         status: crate::domain::message::MessageStatus::Delivered,
+        file_info,
     }
 }
 
@@ -290,6 +292,38 @@ pub fn extract_message_media(content: &MessageContent) -> MessageMedia {
         // Service messages and other types
         _ => MessageMedia::Other,
     }
+}
+
+/// Extracts file metadata from a TDLib MessageContent, if it carries a downloadable file.
+///
+/// Returns `Some(FileInfo)` for media types that have a file (voice, audio, video, document, etc.)
+/// and `None` for text, polls, contacts, locations, and service messages.
+pub fn extract_file_info(content: &MessageContent) -> Option<FileInfo> {
+    let (file, mime) = match content {
+        MessageContent::MessageVoiceNote(v) => {
+            (&v.voice_note.voice, v.voice_note.mime_type.clone())
+        }
+        MessageContent::MessageAudio(a) => (&a.audio.audio, a.audio.mime_type.clone()),
+        MessageContent::MessageDocument(d) => (&d.document.document, d.document.mime_type.clone()),
+        MessageContent::MessageVideo(v) => (&v.video.video, v.video.mime_type.clone()),
+        MessageContent::MessageVideoNote(v) => (&v.video_note.video, "video/mp4".to_owned()),
+        MessageContent::MessageAnimation(a) => {
+            (&a.animation.animation, a.animation.mime_type.clone())
+        }
+        _ => return None,
+    };
+
+    let local_path = if file.local.is_downloading_completed && !file.local.path.is_empty() {
+        Some(file.local.path.clone())
+    } else {
+        None
+    };
+
+    Some(FileInfo {
+        file_id: file.id,
+        local_path,
+        mime_type: mime,
+    })
 }
 
 /// Extracts the text content from a TDLib MessageContent.
@@ -617,5 +651,159 @@ mod tests {
             }),
             reply_markup: None,
         }
+    }
+
+    fn make_test_file(id: i32, path: &str, downloaded: bool) -> tdlib_rs::types::File {
+        tdlib_rs::types::File {
+            id,
+            size: 1000,
+            expected_size: 1000,
+            local: tdlib_rs::types::LocalFile {
+                path: path.to_owned(),
+                can_be_downloaded: true,
+                can_be_deleted: false,
+                is_downloading_active: false,
+                is_downloading_completed: downloaded,
+                download_offset: 0,
+                downloaded_prefix_size: 0,
+                downloaded_size: if downloaded { 1000 } else { 0 },
+            },
+            remote: tdlib_rs::types::RemoteFile {
+                id: String::new(),
+                unique_id: String::new(),
+                is_uploading_active: false,
+                is_uploading_completed: false,
+                uploaded_size: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn extract_file_info_returns_none_for_text_message() {
+        let content = MessageContent::MessageText(tdlib_rs::types::MessageText {
+            text: tdlib_rs::types::FormattedText {
+                text: "hello".to_owned(),
+                entities: vec![],
+            },
+            link_preview: None,
+            link_preview_options: None,
+        });
+        assert!(extract_file_info(&content).is_none());
+    }
+
+    #[test]
+    fn extract_file_info_for_downloaded_voice_note() {
+        let content = MessageContent::MessageVoiceNote(tdlib_rs::types::MessageVoiceNote {
+            voice_note: tdlib_rs::types::VoiceNote {
+                duration: 5,
+                waveform: String::new(),
+                mime_type: "audio/ogg".to_owned(),
+                speech_recognition_result: None,
+                voice: make_test_file(42, "/tmp/voice.ogg", true),
+            },
+            caption: tdlib_rs::types::FormattedText {
+                text: String::new(),
+                entities: vec![],
+            },
+            is_listened: false,
+        });
+
+        let fi = extract_file_info(&content).expect("should have file info");
+        assert_eq!(fi.file_id, 42);
+        assert_eq!(fi.local_path, Some("/tmp/voice.ogg".to_owned()));
+        assert_eq!(fi.mime_type, "audio/ogg");
+    }
+
+    #[test]
+    fn extract_file_info_for_not_downloaded_voice_note() {
+        let content = MessageContent::MessageVoiceNote(tdlib_rs::types::MessageVoiceNote {
+            voice_note: tdlib_rs::types::VoiceNote {
+                duration: 5,
+                waveform: String::new(),
+                mime_type: "audio/ogg".to_owned(),
+                speech_recognition_result: None,
+                voice: make_test_file(42, "", false),
+            },
+            caption: tdlib_rs::types::FormattedText {
+                text: String::new(),
+                entities: vec![],
+            },
+            is_listened: false,
+        });
+
+        let fi = extract_file_info(&content).expect("should have file info");
+        assert_eq!(fi.file_id, 42);
+        assert!(fi.local_path.is_none());
+        assert_eq!(fi.mime_type, "audio/ogg");
+    }
+
+    #[test]
+    fn extract_file_info_for_downloaded_audio() {
+        let content = MessageContent::MessageAudio(tdlib_rs::types::MessageAudio {
+            audio: tdlib_rs::types::Audio {
+                duration: 180,
+                title: "Song".to_owned(),
+                performer: "Artist".to_owned(),
+                file_name: "song.mp3".to_owned(),
+                mime_type: "audio/mpeg".to_owned(),
+                album_cover_minithumbnail: None,
+                album_cover_thumbnail: None,
+                external_album_covers: vec![],
+                audio: make_test_file(99, "/tmp/song.mp3", true),
+            },
+            caption: tdlib_rs::types::FormattedText {
+                text: String::new(),
+                entities: vec![],
+            },
+        });
+
+        let fi = extract_file_info(&content).expect("should have file info");
+        assert_eq!(fi.file_id, 99);
+        assert_eq!(fi.local_path, Some("/tmp/song.mp3".to_owned()));
+        assert_eq!(fi.mime_type, "audio/mpeg");
+    }
+
+    #[test]
+    fn extract_file_info_returns_none_for_photo() {
+        let content = MessageContent::MessagePhoto(tdlib_rs::types::MessagePhoto {
+            photo: tdlib_rs::types::Photo {
+                minithumbnail: None,
+                sizes: vec![],
+                has_stickers: false,
+            },
+            caption: tdlib_rs::types::FormattedText {
+                text: String::new(),
+                entities: vec![],
+            },
+            show_caption_above_media: false,
+            has_spoiler: false,
+            is_secret: false,
+        });
+        assert!(extract_file_info(&content).is_none());
+    }
+
+    #[test]
+    fn map_tdlib_message_includes_file_info() {
+        let mut td_msg = make_test_message(1, "", false);
+        td_msg.content = MessageContent::MessageVoiceNote(tdlib_rs::types::MessageVoiceNote {
+            voice_note: tdlib_rs::types::VoiceNote {
+                duration: 3,
+                waveform: String::new(),
+                mime_type: "audio/ogg".to_owned(),
+                speech_recognition_result: None,
+                voice: make_test_file(7, "/tmp/v.ogg", true),
+            },
+            caption: tdlib_rs::types::FormattedText {
+                text: String::new(),
+                entities: vec![],
+            },
+            is_listened: false,
+        });
+
+        let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned());
+        assert_eq!(msg.media, MessageMedia::Voice);
+        let fi = msg.file_info.expect("voice message should have file_info");
+        assert_eq!(fi.file_id, 7);
+        assert_eq!(fi.local_path, Some("/tmp/v.ogg".to_owned()));
     }
 }

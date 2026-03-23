@@ -199,6 +199,7 @@ mod tests {
             is_outgoing: false,
             media: MessageMedia::None,
             status: MessageStatus::Delivered,
+            file_info: None,
         }
     }
 
@@ -211,6 +212,7 @@ mod tests {
             is_outgoing: false,
             media: MessageMedia::None,
             status: MessageStatus::Delivered,
+            file_info: None,
         }
     }
 

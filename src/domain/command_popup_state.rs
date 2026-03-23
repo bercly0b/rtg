@@ -13,6 +13,16 @@ const MAX_OUTPUT_LINES: usize = 200;
 /// Fallback limit for visible lines when no height hint is provided.
 const FALLBACK_VISIBLE_LINES: usize = 20;
 
+/// Distinguishes the purpose of the command popup so the orchestrator
+/// can apply the correct lifecycle (e.g. recording asks "send?", playback auto-closes).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandPopupKind {
+    /// Voice recording — on exit asks "Send recording? (y/n)".
+    Recording,
+    /// Media playback — auto-closes on process exit, `q` stops early.
+    Playback,
+}
+
 /// Phase of the command execution lifecycle.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandPhase {
@@ -35,16 +45,22 @@ pub struct CommandPopupState {
     title: String,
     output_lines: VecDeque<String>,
     phase: CommandPhase,
+    kind: CommandPopupKind,
 }
 
 impl CommandPopupState {
     /// Creates a new popup state in the `Running` phase.
-    pub fn new(title: impl Into<String>) -> Self {
+    pub fn new(title: impl Into<String>, kind: CommandPopupKind) -> Self {
         Self {
             title: title.into(),
             output_lines: VecDeque::new(),
             phase: CommandPhase::Running,
+            kind,
         }
+    }
+
+    pub fn kind(&self) -> CommandPopupKind {
+        self.kind
     }
 
     pub fn title(&self) -> &str {
@@ -97,9 +113,13 @@ impl CommandPopupState {
 mod tests {
     use super::*;
 
+    fn test_popup(title: &str) -> CommandPopupState {
+        CommandPopupState::new(title, CommandPopupKind::Recording)
+    }
+
     #[test]
     fn new_popup_starts_in_running_phase() {
-        let state = CommandPopupState::new("Recording");
+        let state = test_popup("Recording");
         assert_eq!(state.phase(), &CommandPhase::Running);
         assert_eq!(state.title(), "Recording");
         assert!(state.visible_lines(20).is_empty());
@@ -107,7 +127,7 @@ mod tests {
 
     #[test]
     fn push_line_adds_output() {
-        let mut state = CommandPopupState::new("Test");
+        let mut state = test_popup("Test");
         state.push_line("line 1".into());
         state.push_line("line 2".into());
         assert_eq!(state.visible_lines(20), vec!["line 1", "line 2"]);
@@ -115,7 +135,7 @@ mod tests {
 
     #[test]
     fn visible_lines_returns_last_n_when_exceeding_max() {
-        let mut state = CommandPopupState::new("Test");
+        let mut state = test_popup("Test");
         for i in 0..30 {
             state.push_line(format!("line {i}"));
         }
@@ -127,7 +147,7 @@ mod tests {
 
     #[test]
     fn visible_lines_respects_dynamic_limit() {
-        let mut state = CommandPopupState::new("Test");
+        let mut state = test_popup("Test");
         for i in 0..30 {
             state.push_line(format!("line {i}"));
         }
@@ -139,7 +159,7 @@ mod tests {
 
     #[test]
     fn visible_lines_zero_uses_fallback() {
-        let mut state = CommandPopupState::new("Test");
+        let mut state = test_popup("Test");
         for i in 0..30 {
             state.push_line(format!("line {i}"));
         }
@@ -149,7 +169,7 @@ mod tests {
 
     #[test]
     fn visible_lines_returns_all_when_under_max() {
-        let mut state = CommandPopupState::new("Test");
+        let mut state = test_popup("Test");
         for i in 0..5 {
             state.push_line(format!("line {i}"));
         }
@@ -158,7 +178,7 @@ mod tests {
 
     #[test]
     fn push_line_evicts_oldest_when_buffer_full() {
-        let mut state = CommandPopupState::new("Test");
+        let mut state = test_popup("Test");
         for i in 0..MAX_OUTPUT_LINES + 10 {
             state.push_line(format!("line {i}"));
         }
@@ -168,7 +188,7 @@ mod tests {
 
     #[test]
     fn set_phase_transitions_state() {
-        let mut state = CommandPopupState::new("Test");
+        let mut state = test_popup("Test");
         assert_eq!(state.phase(), &CommandPhase::Running);
 
         state.set_phase(CommandPhase::AwaitingConfirmation {
@@ -184,20 +204,20 @@ mod tests {
 
     #[test]
     fn empty_title_is_allowed() {
-        let state = CommandPopupState::new("");
+        let state = CommandPopupState::new("", CommandPopupKind::Playback);
         assert_eq!(state.title(), "");
     }
 
     #[test]
     fn push_empty_line_is_tracked() {
-        let mut state = CommandPopupState::new("Test");
+        let mut state = test_popup("Test");
         state.push_line(String::new());
         assert_eq!(state.visible_lines(20), vec![""]);
     }
 
     #[test]
     fn set_phase_to_failed() {
-        let mut state = CommandPopupState::new("Test");
+        let mut state = test_popup("Test");
         state.set_phase(CommandPhase::Failed {
             message: "Recording failed".into(),
         });
@@ -211,8 +231,17 @@ mod tests {
 
     #[test]
     fn set_phase_to_stopping() {
-        let mut state = CommandPopupState::new("Test");
+        let mut state = test_popup("Test");
         state.set_phase(CommandPhase::Stopping);
         assert_eq!(state.phase(), &CommandPhase::Stopping);
+    }
+
+    #[test]
+    fn new_popup_stores_kind() {
+        let rec = CommandPopupState::new("Rec", CommandPopupKind::Recording);
+        assert_eq!(rec.kind(), CommandPopupKind::Recording);
+
+        let play = CommandPopupState::new("Play", CommandPopupKind::Playback);
+        assert_eq!(play.kind(), CommandPopupKind::Playback);
     }
 }

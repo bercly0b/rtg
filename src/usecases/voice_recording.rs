@@ -105,27 +105,34 @@ impl RecordingHandle {
     }
 }
 
-/// Starts the recording process and returns a handle and the event channel receiver.
+/// Starts an external command and returns a handle and the event channel receiver.
 ///
-/// The recording command is split by whitespace and `{file_path}` is replaced
+/// The command template is split by whitespace and `{file_path}` is replaced
 /// with the actual path. stdout and stderr are merged and streamed line-by-line
 /// through the returned channel.
 ///
 /// When both pipe readers finish (process exited or was killed), a
 /// `CommandEvent::Exited` is automatically sent through the channel.
-pub fn start_recording(
+///
+/// Used for both voice recording and media playback.
+pub fn start_command(
     cmd_template: &str,
     file_path: &str,
 ) -> anyhow::Result<(RecordingHandle, mpsc::Receiver<CommandEvent>)> {
-    let cmd_str = cmd_template.replace("{file_path}", file_path);
-    let parts: Vec<&str> = cmd_str.split_whitespace().collect();
-
-    if parts.is_empty() {
-        anyhow::bail!("empty recording command");
+    let template_parts: Vec<&str> = cmd_template.split_whitespace().collect();
+    if template_parts.is_empty() {
+        anyhow::bail!("empty command");
     }
 
-    let mut cmd = Command::new(parts[0]);
-    cmd.args(&parts[1..])
+    // Substitute {file_path} AFTER splitting so paths with spaces
+    // remain a single argument token.
+    let resolved: Vec<String> = template_parts
+        .iter()
+        .map(|p| p.replace("{file_path}", file_path))
+        .collect();
+
+    let mut cmd = Command::new(&resolved[0]);
+    cmd.args(&resolved[1..])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -391,7 +398,7 @@ mod tests {
         // The child lists /dev/fd/ and we verify that no FDs above a
         // reasonable threshold exist. FDs 0-2 are stdin/stdout/stderr,
         // fd 3 is typically the directory listing fd from `ls` itself.
-        let (mut handle, rx) = start_recording("ls /dev/fd/", "/dev/null").unwrap();
+        let (mut handle, rx) = start_command("ls /dev/fd/", "/dev/null").unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(200));
         assert!(handle.try_exit_success().is_some());
@@ -419,8 +426,8 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn stop_terminates_process_group_via_start_recording() {
-        let (mut handle, rx) = start_recording("sleep 60", "/dev/null").unwrap();
+    fn stop_terminates_process_group_via_start_command() {
+        let (mut handle, rx) = start_command("sleep 60", "/dev/null").unwrap();
 
         // Process should be running.
         assert_eq!(handle.try_exit_success(), None);

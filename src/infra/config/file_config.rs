@@ -1,6 +1,8 @@
 use serde::Deserialize;
 
-use crate::infra::config::{AppConfig, CacheConfig, LogConfig, TelegramConfig, VoiceConfig};
+use crate::infra::config::{
+    AppConfig, CacheConfig, LogConfig, OpenConfig, TelegramConfig, VoiceConfig,
+};
 
 #[derive(Debug, Deserialize, Default)]
 pub struct FileConfig {
@@ -8,6 +10,7 @@ pub struct FileConfig {
     pub telegram: Option<FileTelegramConfig>,
     pub cache: Option<FileCacheConfig>,
     pub voice: Option<FileVoiceConfig>,
+    pub open: Option<FileOpenConfig>,
 }
 
 impl FileConfig {
@@ -26,6 +29,10 @@ impl FileConfig {
 
         if let Some(voice) = self.voice {
             voice.merge_into(&mut config.voice);
+        }
+
+        if let Some(open) = self.open {
+            open.merge_into(&mut config.open);
         }
     }
 }
@@ -95,6 +102,21 @@ impl FileVoiceConfig {
     fn merge_into(self, config: &mut VoiceConfig) {
         if let Some(record_cmd) = self.record_cmd {
             config.record_cmd = record_cmd;
+        }
+    }
+}
+
+/// Partial open config from TOML. Merges MIME → command mappings into `OpenConfig`.
+#[derive(Debug, Deserialize, Default)]
+pub struct FileOpenConfig {
+    #[serde(flatten)]
+    pub handlers: Option<std::collections::HashMap<String, String>>,
+}
+
+impl FileOpenConfig {
+    fn merge_into(self, config: &mut OpenConfig) {
+        if let Some(handlers) = self.handlers {
+            config.handlers.extend(handlers);
         }
     }
 }
@@ -174,6 +196,7 @@ level = "warn"
                 min_display_messages: None,
             }),
             voice: None,
+            open: None,
         };
 
         let mut config = AppConfig::default();
@@ -212,6 +235,7 @@ level = "warn"
             voice: Some(FileVoiceConfig {
                 record_cmd: Some("custom-cmd {file_path}".to_owned()),
             }),
+            open: None,
         };
 
         let mut config = AppConfig::default();
@@ -234,6 +258,7 @@ level = "warn"
             telegram: None,
             cache: None,
             voice: None,
+            open: None,
         };
 
         let mut config = AppConfig::default();
@@ -258,5 +283,53 @@ record_cmd = "sox -d {file_path}"
 
         let voice = config.voice.unwrap();
         assert_eq!(voice.record_cmd.unwrap(), "sox -d {file_path}");
+    }
+
+    #[test]
+    fn deserialize_open_section() {
+        let toml = r#"
+[open]
+"audio/ogg" = "mpv --speed=1.5 {file_path}"
+"audio/*" = "mpv {file_path}"
+"#;
+        let config: FileConfig = toml::from_str(toml).unwrap();
+        let open = config.open.unwrap();
+        let handlers = open.handlers.unwrap();
+        assert_eq!(handlers.len(), 2);
+        assert_eq!(
+            handlers.get("audio/ogg").unwrap(),
+            "mpv --speed=1.5 {file_path}"
+        );
+        assert_eq!(handlers.get("audio/*").unwrap(), "mpv {file_path}");
+    }
+
+    #[test]
+    fn open_config_merges_into_app_config() {
+        let toml = r#"
+[open]
+"audio/ogg" = "mpv {file_path}"
+"#;
+        let file: FileConfig = toml::from_str(toml).unwrap();
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config);
+
+        assert_eq!(
+            config.open.handlers.get("audio/ogg").unwrap(),
+            "mpv {file_path}"
+        );
+    }
+
+    #[test]
+    fn open_config_none_preserves_empty_default() {
+        let file = FileConfig {
+            logging: None,
+            telegram: None,
+            cache: None,
+            voice: None,
+            open: None,
+        };
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config);
+        assert!(config.open.handlers.is_empty());
     }
 }

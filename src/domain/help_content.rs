@@ -75,6 +75,10 @@ pub fn messages_hotkeys() -> &'static [HotkeyEntry] {
             action_name: "delete_message",
         },
         HotkeyEntry {
+            key_label: "l",
+            action_name: "open_message",
+        },
+        HotkeyEntry {
             key_label: "o",
             action_name: "open_link_in_browser",
         },

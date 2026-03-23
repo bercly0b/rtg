@@ -10,6 +10,7 @@ pub struct AppConfig {
     pub telegram: TelegramConfig,
     pub cache: CacheConfig,
     pub voice: VoiceConfig,
+    pub open: OpenConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -101,6 +102,19 @@ impl Default for VoiceConfig {
             record_cmd: default_voice_record_cmd(),
         }
     }
+}
+
+/// Configuration for opening message files (mailcap-style MIME → command mappings).
+///
+/// Keys are MIME types or wildcard patterns (e.g. `"audio/ogg"`, `"audio/*"`).
+/// Values are command templates with a `{file_path}` placeholder.
+///
+/// When no matching handler is found, the platform default opener is used
+/// (`open` on macOS, `xdg-open` on Linux).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct OpenConfig {
+    #[serde(flatten)]
+    pub handlers: std::collections::HashMap<String, String>,
 }
 
 #[cfg(test)]

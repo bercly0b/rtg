@@ -720,6 +720,7 @@ mod tests {
                 is_outgoing: false,
                 media: crate::domain::message::MessageMedia::None,
                 status: crate::domain::message::MessageStatus::Delivered,
+                file_info: None,
             }]);
         state.open_chat_mut().set_refreshing(true);
 
@@ -746,6 +747,7 @@ mod tests {
                 is_outgoing: false,
                 media: crate::domain::message::MessageMedia::None,
                 status: crate::domain::message::MessageStatus::Delivered,
+                file_info: None,
             }]);
         state
             .open_chat_mut()
@@ -774,6 +776,7 @@ mod tests {
                 is_outgoing: false,
                 media: crate::domain::message::MessageMedia::None,
                 status: crate::domain::message::MessageStatus::Delivered,
+                file_info: None,
             }]);
 
         let title = open_chat_title(state.open_chat());
