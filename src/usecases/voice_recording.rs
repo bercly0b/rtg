@@ -238,6 +238,44 @@ pub fn start_command(
     Ok((RecordingHandle { child }, rx))
 }
 
+/// Launches a command without a popup or output tracking.
+///
+/// Used for platform default openers (`open` / `xdg-open`) that start an
+/// external application and exit immediately. The child process is fully
+/// detached: stdout/stderr go to `/dev/null` and the caller does not need
+/// to wait for completion.
+///
+/// A lightweight background thread reaps the child to prevent zombie
+/// accumulation.
+pub fn open_detached(cmd_template: &str, file_path: &str) -> anyhow::Result<()> {
+    let template_parts: Vec<&str> = cmd_template.split_whitespace().collect();
+    if template_parts.is_empty() {
+        anyhow::bail!("empty command");
+    }
+
+    let resolved: Vec<String> = template_parts
+        .iter()
+        .map(|p| p.replace("{file_path}", file_path))
+        .collect();
+
+    let mut cmd = Command::new(&resolved[0]);
+    cmd.args(&resolved[1..])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    let mut child = cmd.spawn()?;
+
+    // Reap the child in background to avoid zombies.
+    let _ = thread::Builder::new()
+        .name("rtg-open-reap".into())
+        .spawn(move || {
+            let _ = child.wait();
+        });
+
+    Ok(())
+}
+
 /// Streams command output and preserves carriage-return replacement semantics.
 fn stream_output<R: Read>(reader: R, tx: &mpsc::Sender<CommandEvent>) {
     let mut reader = BufReader::new(reader);
@@ -718,5 +756,25 @@ mod tests {
             "expected Exited event after stop(), got: {:?}",
             events
         );
+    }
+
+    #[test]
+    fn open_detached_spawns_process_without_blocking() {
+        let result = open_detached("true {file_path}", "/dev/null");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn open_detached_rejects_empty_command() {
+        let result = open_detached("", "/dev/null");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn open_detached_substitutes_file_path() {
+        // `echo` writes to stdout which is /dev/null for detached,
+        // so this just verifies the command can spawn without error.
+        let result = open_detached("true {file_path}", "/tmp/test_file");
+        assert!(result.is_ok());
     }
 }

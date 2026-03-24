@@ -21,6 +21,9 @@ pub enum CommandPopupKind {
     Recording,
     /// Media playback — auto-closes on process exit, `q` stops early.
     Playback,
+    /// Static content viewer (e.g. terminal image via chafa) — stays open
+    /// after the process exits so the user can see the output. Any key closes.
+    Viewer,
 }
 
 /// Phase of the command execution lifecycle.
@@ -32,6 +35,9 @@ pub enum CommandPhase {
     Stopping,
     /// The command has finished; the user must confirm an action (e.g. send or discard).
     AwaitingConfirmation { prompt: String },
+    /// The command completed and the popup stays visible for review.
+    /// Any key dismisses the popup (used by `Viewer`).
+    Done,
     /// The command failed; displays an error message and closes on any key.
     Failed { message: String },
 }
@@ -269,5 +275,15 @@ mod tests {
 
         let play = CommandPopupState::new("Play", CommandPopupKind::Playback);
         assert_eq!(play.kind(), CommandPopupKind::Playback);
+
+        let viewer = CommandPopupState::new("View", CommandPopupKind::Viewer);
+        assert_eq!(viewer.kind(), CommandPopupKind::Viewer);
+    }
+
+    #[test]
+    fn set_phase_to_done() {
+        let mut state = test_popup("Test");
+        state.set_phase(CommandPhase::Done);
+        assert_eq!(state.phase(), &CommandPhase::Done);
     }
 }

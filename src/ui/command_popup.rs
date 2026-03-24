@@ -69,6 +69,10 @@ fn footer_line(phase: &CommandPhase) -> Line<'static> {
             prompt.clone(),
             styles::command_popup_footer_style(),
         )),
+        CommandPhase::Done => Line::from(Span::styled(
+            "Press any key to close".to_owned(),
+            styles::command_popup_footer_style(),
+        )),
         CommandPhase::Failed { message } => Line::from(Span::styled(
             message.clone(),
             styles::command_popup_error_style(),
@@ -155,5 +159,18 @@ mod tests {
         assert_eq!(CHROME_LINES, 4);
         // Empty separator line + footer text line
         assert_eq!(FOOTER_LINES, 2);
+    }
+
+    #[test]
+    fn footer_line_done_shows_close_hint() {
+        let line = footer_line(&CommandPhase::Done);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "Press any key to close");
+    }
+
+    #[test]
+    fn footer_line_done_uses_footer_style() {
+        let line = footer_line(&CommandPhase::Done);
+        assert_eq!(line.spans[0].style, styles::command_popup_footer_style());
     }
 }

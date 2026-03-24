@@ -776,15 +776,17 @@ where
 
         match phase {
             CommandPhase::Running => {
-                if key == "q" {
+                if key == "q" || key == "esc" {
                     match kind {
                         CommandPopupKind::Recording => {
-                            self.stop_voice_recording();
-                            if let Some(popup) = self.state.command_popup_mut() {
-                                popup.set_phase(CommandPhase::Stopping);
+                            if key == "q" {
+                                self.stop_voice_recording();
+                                if let Some(popup) = self.state.command_popup_mut() {
+                                    popup.set_phase(CommandPhase::Stopping);
+                                }
                             }
                         }
-                        CommandPopupKind::Playback => {
+                        CommandPopupKind::Playback | CommandPopupKind::Viewer => {
                             self.stop_playback();
                             self.state.close_command_popup();
                         }
@@ -805,6 +807,9 @@ where
                 }
                 _ => {}
             },
+            CommandPhase::Done => {
+                self.state.close_command_popup();
+            }
             CommandPhase::Failed { .. } => {
                 self.state.close_command_popup();
             }
@@ -824,6 +829,14 @@ where
                 // Playback auto-closes on process exit regardless of phase.
                 self.recording_handle = None;
                 self.state.close_command_popup();
+            }
+            CommandPopupKind::Viewer => {
+                // Viewer stays open after the process exits so the user
+                // can see the rendered output. Any key will close it.
+                self.recording_handle = None;
+                if let Some(popup) = self.state.command_popup_mut() {
+                    popup.set_phase(CommandPhase::Done);
+                }
             }
             CommandPopupKind::Recording => match phase {
                 CommandPhase::Running => {
@@ -922,12 +935,18 @@ where
 
     /// Opens the currently selected message using the configured handler.
     ///
-    /// For audio/voice messages, resolves the command via MIME matching
-    /// and opens the playback popup. Silently ignores messages without
-    /// downloadable files or non-audio types.
+    /// Resolves the command via MIME matching and chooses the open strategy:
+    /// - **Voice / Audio** — playback popup (auto-closes on exit).
+    /// - **Photo** — viewer popup (stays open after exit, any key closes).
+    /// - **Video / VideoNote / Animation / Document** — if the resolved
+    ///   command is the platform default (`open` / `xdg-open`), launches the
+    ///   external app detached (no popup). Otherwise opens a playback popup.
+    ///
+    /// Silently ignores messages without downloadable files.
     fn open_selected_message(&mut self) {
         use crate::domain::command_popup_state::CommandPopupKind;
         use crate::domain::message::MessageMedia;
+        use crate::domain::open_defaults::is_platform_default;
 
         if self.state.command_popup().is_some() {
             return;
@@ -938,10 +957,15 @@ where
             None => return,
         };
 
-        // Only handle audio types for now
-        if !matches!(msg.media, MessageMedia::Voice | MessageMedia::Audio) {
-            return;
-        }
+        let popup_kind = match msg.media {
+            MessageMedia::Voice | MessageMedia::Audio => Some(CommandPopupKind::Playback),
+            MessageMedia::Photo => Some(CommandPopupKind::Viewer),
+            MessageMedia::Video
+            | MessageMedia::VideoNote
+            | MessageMedia::Animation
+            | MessageMedia::Document => None, // resolved below based on command
+            _ => return,
+        };
 
         let file_info = match &msg.file_info {
             Some(fi) => fi,
@@ -961,17 +985,42 @@ where
             &self.open_handlers,
         );
 
-        match super::voice_recording::start_command(cmd_template, &local_path) {
-            Ok((handle, rx)) => {
-                self.recording_handle = Some(handle);
-                self.recording_file_path = None;
-                self.pending_command_rx = Some(rx);
-                self.state
-                    .open_command_popup("Playing", CommandPopupKind::Playback);
-                tracing::info!(cmd_template, "playback started");
+        // For types without a predetermined popup kind, decide based on
+        // whether the resolved command is the platform default opener.
+        let popup_kind = match popup_kind {
+            Some(k) => Some(k),
+            None => {
+                if is_platform_default(cmd_template) {
+                    None // detached — no popup
+                } else {
+                    Some(CommandPopupKind::Playback)
+                }
             }
-            Err(err) => {
-                tracing::error!(%err, "failed to start playback command");
+        };
+
+        match popup_kind {
+            Some(kind) => {
+                let title = match kind {
+                    CommandPopupKind::Viewer => "Viewing",
+                    _ => "Playing",
+                };
+                match super::voice_recording::start_command(cmd_template, &local_path) {
+                    Ok((handle, rx)) => {
+                        self.recording_handle = Some(handle);
+                        self.recording_file_path = None;
+                        self.pending_command_rx = Some(rx);
+                        self.state.open_command_popup(title, kind);
+                        tracing::info!(cmd_template, "command started");
+                    }
+                    Err(err) => {
+                        tracing::error!(%err, "failed to start command");
+                    }
+                }
+            }
+            None => {
+                if let Err(err) = super::voice_recording::open_detached(cmd_template, &local_path) {
+                    tracing::error!(%err, "failed to open file");
+                }
             }
         }
     }
@@ -5537,8 +5586,248 @@ mod tests {
         let _ = std::fs::remove_file(&tmp);
     }
 
+    fn photo_message_downloaded(id: i64, path: &str) -> Message {
+        Message {
+            id,
+            sender_name: "User".to_owned(),
+            text: String::new(),
+            timestamp_ms: 1000,
+            is_outgoing: false,
+            media: crate::domain::message::MessageMedia::Photo,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: Some(crate::domain::message::FileInfo {
+                file_id: id as i32,
+                local_path: Some(path.to_owned()),
+                mime_type: "image/jpeg".to_owned(),
+                size: Some(50_000),
+                duration: None,
+                file_name: None,
+                is_listened: false,
+                download_status: crate::domain::message::DownloadStatus::Completed,
+            }),
+        }
+    }
+
+    fn video_message_downloaded(id: i64, path: &str) -> Message {
+        Message {
+            id,
+            sender_name: "User".to_owned(),
+            text: String::new(),
+            timestamp_ms: 1000,
+            is_outgoing: false,
+            media: crate::domain::message::MessageMedia::Video,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: Some(crate::domain::message::FileInfo {
+                file_id: id as i32,
+                local_path: Some(path.to_owned()),
+                mime_type: "video/mp4".to_owned(),
+                size: Some(10_000),
+                duration: Some(30),
+                file_name: None,
+                is_listened: false,
+                download_status: crate::domain::message::DownloadStatus::Completed,
+            }),
+        }
+    }
+
     #[test]
-    fn l_on_video_message_is_ignored() {
+    fn l_on_photo_opens_viewer_popup() {
+        let tmp = std::env::temp_dir().join("rtg_test_photo_view.jpg");
+        std::fs::write(&tmp, b"fake").unwrap();
+        let path = tmp.to_str().unwrap();
+
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![photo_message_downloaded(10, path)],
+        );
+        o.open_handlers
+            .insert("image/*".to_owned(), "true {file_path}".to_owned());
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .unwrap();
+
+        let popup = o.state().command_popup().expect("viewer popup should open");
+        assert_eq!(popup.title(), "Viewing");
+        assert_eq!(
+            popup.kind(),
+            crate::domain::command_popup_state::CommandPopupKind::Viewer
+        );
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn viewer_popup_stays_open_after_process_exit() {
+        let tmp = std::env::temp_dir().join("rtg_test_photo_stay.jpg");
+        std::fs::write(&tmp, b"fake").unwrap();
+        let path = tmp.to_str().unwrap();
+
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![photo_message_downloaded(10, path)],
+        );
+        o.open_handlers
+            .insert("image/*".to_owned(), "true {file_path}".to_owned());
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .unwrap();
+        assert!(o.state().command_popup().is_some());
+
+        o.handle_event(AppEvent::CommandExited { success: true })
+            .unwrap();
+
+        let popup = o
+            .state()
+            .command_popup()
+            .expect("viewer popup should stay open after exit");
+        assert_eq!(
+            popup.phase(),
+            &crate::domain::command_popup_state::CommandPhase::Done
+        );
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn any_key_closes_viewer_in_done_phase() {
+        let tmp = std::env::temp_dir().join("rtg_test_photo_close.jpg");
+        std::fs::write(&tmp, b"fake").unwrap();
+        let path = tmp.to_str().unwrap();
+
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![photo_message_downloaded(10, path)],
+        );
+        o.open_handlers
+            .insert("image/*".to_owned(), "true {file_path}".to_owned());
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .unwrap();
+        o.handle_event(AppEvent::CommandExited { success: true })
+            .unwrap();
+        assert!(o.state().command_popup().is_some());
+
+        // Any key should close
+        o.handle_event(AppEvent::InputKey(KeyInput::new("x", false)))
+            .unwrap();
+        assert!(o.state().command_popup().is_none());
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn q_closes_viewer_during_running_phase() {
+        let tmp = std::env::temp_dir().join("rtg_test_photo_q.jpg");
+        std::fs::write(&tmp, b"fake").unwrap();
+        let path = tmp.to_str().unwrap();
+
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![photo_message_downloaded(10, path)],
+        );
+        o.open_handlers
+            .insert("image/*".to_owned(), "true {file_path}".to_owned());
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .unwrap();
+        assert!(o.state().command_popup().is_some());
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
+            .unwrap();
+        assert!(o.state().command_popup().is_none());
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn esc_closes_viewer_during_running_phase() {
+        let tmp = std::env::temp_dir().join("rtg_test_photo_esc.jpg");
+        std::fs::write(&tmp, b"fake").unwrap();
+        let path = tmp.to_str().unwrap();
+
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![photo_message_downloaded(10, path)],
+        );
+        o.open_handlers
+            .insert("image/*".to_owned(), "true {file_path}".to_owned());
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .unwrap();
+        assert!(o.state().command_popup().is_some());
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
+            .unwrap();
+        assert!(o.state().command_popup().is_none());
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn l_on_video_with_default_handler_opens_detached() {
+        // Video with no custom handler resolves to platform default (open/xdg-open),
+        // which should open detached without a popup.
+        let tmp = std::env::temp_dir().join("rtg_test_video_detach.mp4");
+        std::fs::write(&tmp, b"fake").unwrap();
+        let path = tmp.to_str().unwrap();
+
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![video_message_downloaded(10, path)],
+        );
+        // No handlers configured — falls back to DEFAULT_OPEN (platform default).
+        // open_detached will try to spawn `open`/`xdg-open` which may fail for
+        // a fake file, but the key assertion is that no popup is opened.
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .unwrap();
+        assert!(o.state().command_popup().is_none());
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn l_on_video_with_custom_handler_opens_playback_popup() {
+        let tmp = std::env::temp_dir().join("rtg_test_video_mpv.mp4");
+        std::fs::write(&tmp, b"fake").unwrap();
+        let path = tmp.to_str().unwrap();
+
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![video_message_downloaded(10, path)],
+        );
+        o.open_handlers
+            .insert("video/*".to_owned(), "true {file_path}".to_owned());
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .unwrap();
+
+        let popup = o
+            .state()
+            .command_popup()
+            .expect("playback popup should open for video with custom handler");
+        assert_eq!(popup.title(), "Playing");
+        assert_eq!(
+            popup.kind(),
+            crate::domain::command_popup_state::CommandPopupKind::Playback
+        );
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn l_on_document_with_custom_handler_opens_playback_popup() {
+        let tmp = std::env::temp_dir().join("rtg_test_doc.pdf");
+        std::fs::write(&tmp, b"fake").unwrap();
+        let path = tmp.to_str().unwrap();
+
         let mut o = orchestrator_with_open_chat(
             vec![chat(1, "Chat")],
             1,
@@ -5548,14 +5837,54 @@ mod tests {
                 text: String::new(),
                 timestamp_ms: 1000,
                 is_outgoing: false,
-                media: crate::domain::message::MessageMedia::Video,
+                media: crate::domain::message::MessageMedia::Document,
                 status: crate::domain::message::MessageStatus::Delivered,
                 file_info: Some(crate::domain::message::FileInfo {
                     file_id: 10,
-                    local_path: Some("/tmp/video.mp4".to_owned()),
-                    mime_type: "video/mp4".to_owned(),
-                    size: Some(10_000),
-                    duration: Some(30),
+                    local_path: Some(path.to_owned()),
+                    mime_type: "application/pdf".to_owned(),
+                    size: Some(20_000),
+                    duration: None,
+                    file_name: Some("doc.pdf".to_owned()),
+                    is_listened: false,
+                    download_status: crate::domain::message::DownloadStatus::Completed,
+                }),
+            }],
+        );
+        o.open_handlers
+            .insert("application/pdf".to_owned(), "true {file_path}".to_owned());
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .unwrap();
+
+        let popup = o
+            .state()
+            .command_popup()
+            .expect("playback popup should open for document with custom handler");
+        assert_eq!(popup.title(), "Playing");
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn l_on_sticker_is_ignored() {
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![Message {
+                id: 10,
+                sender_name: "User".to_owned(),
+                text: String::new(),
+                timestamp_ms: 1000,
+                is_outgoing: false,
+                media: crate::domain::message::MessageMedia::Sticker,
+                status: crate::domain::message::MessageStatus::Delivered,
+                file_info: Some(crate::domain::message::FileInfo {
+                    file_id: 10,
+                    local_path: Some("/tmp/sticker.webp".to_owned()),
+                    mime_type: "image/webp".to_owned(),
+                    size: Some(5000),
+                    duration: None,
                     file_name: None,
                     is_listened: false,
                     download_status: crate::domain::message::DownloadStatus::Completed,
@@ -5565,7 +5894,6 @@ mod tests {
 
         o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
             .unwrap();
-
         assert!(o.state().command_popup().is_none());
     }
 
