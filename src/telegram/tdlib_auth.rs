@@ -700,6 +700,191 @@ impl TdLibAuthBackend {
         }
     }
 
+    /// Resolves full chat info for the chat info popup.
+    pub fn resolve_chat_info(
+        &self,
+        chat_id: i64,
+        chat_type: ChatType,
+        title: String,
+    ) -> crate::domain::chat_info_state::ChatInfo {
+        use crate::domain::chat_info_state::ChatInfo;
+
+        let chat = match self.client.get_chat(chat_id) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::debug!(chat_id, error = ?e, "failed to get chat for info popup");
+                return ChatInfo {
+                    title,
+                    chat_type,
+                    status_line: String::new(),
+                    description: None,
+                };
+            }
+        };
+
+        match chat_type {
+            ChatType::Private => self.resolve_private_info(&chat.r#type, title),
+            ChatType::Group => self.resolve_group_info(&chat.r#type, title),
+            ChatType::Channel => self.resolve_channel_info(&chat.r#type, title),
+        }
+    }
+
+    fn resolve_private_info(
+        &self,
+        td_type: &tdlib_rs::enums::ChatType,
+        title: String,
+    ) -> crate::domain::chat_info_state::ChatInfo {
+        use crate::domain::chat_info_state::ChatInfo;
+        use chrono::Local;
+
+        let Some(user_id) = tdlib_mappers::get_private_chat_user_id(td_type) else {
+            return ChatInfo {
+                title,
+                chat_type: ChatType::Private,
+                status_line: String::new(),
+                description: None,
+            };
+        };
+
+        let user = match self.client.get_user(user_id) {
+            Ok(u) => u,
+            Err(_) => {
+                return ChatInfo {
+                    title,
+                    chat_type: ChatType::Private,
+                    status_line: String::new(),
+                    description: None,
+                };
+            }
+        };
+
+        let is_bot = matches!(user.r#type, tdlib_rs::enums::UserType::Bot(_));
+        let status_line = if is_bot {
+            "bot".to_owned()
+        } else {
+            let subtitle = tdlib_mappers::map_user_status_to_subtitle(&user.status);
+            subtitle.format(Local::now())
+        };
+
+        let description = self
+            .client
+            .get_user_full_info(user_id)
+            .ok()
+            .and_then(|info| {
+                let ft = info.bio?;
+                let t = ft.text.trim().to_owned();
+                if t.is_empty() {
+                    None
+                } else {
+                    Some(t)
+                }
+            });
+
+        ChatInfo {
+            title,
+            chat_type: ChatType::Private,
+            status_line,
+            description,
+        }
+    }
+
+    fn resolve_group_info(
+        &self,
+        td_type: &tdlib_rs::enums::ChatType,
+        title: String,
+    ) -> crate::domain::chat_info_state::ChatInfo {
+        use crate::domain::chat_info_state::ChatInfo;
+
+        match td_type {
+            tdlib_rs::enums::ChatType::BasicGroup(bg) => {
+                let (member_count, description) =
+                    match self.client.get_basic_group_full_info(bg.basic_group_id) {
+                        Ok(info) => {
+                            let desc = if info.description.trim().is_empty() {
+                                None
+                            } else {
+                                Some(info.description.clone())
+                            };
+                            (info.members.len() as i32, desc)
+                        }
+                        Err(_) => (0, None),
+                    };
+
+                ChatInfo {
+                    title,
+                    chat_type: ChatType::Group,
+                    status_line: ChatSubtitle::Members(member_count).format(chrono::Local::now()),
+                    description,
+                }
+            }
+            tdlib_rs::enums::ChatType::Supergroup(sg) => {
+                let (member_count, description) =
+                    match self.client.get_supergroup_full_info(sg.supergroup_id) {
+                        Ok(info) => {
+                            let desc = if info.description.trim().is_empty() {
+                                None
+                            } else {
+                                Some(info.description.clone())
+                            };
+                            (info.member_count, desc)
+                        }
+                        Err(_) => (0, None),
+                    };
+
+                ChatInfo {
+                    title,
+                    chat_type: ChatType::Group,
+                    status_line: ChatSubtitle::Members(member_count).format(chrono::Local::now()),
+                    description,
+                }
+            }
+            _ => ChatInfo {
+                title,
+                chat_type: ChatType::Group,
+                status_line: String::new(),
+                description: None,
+            },
+        }
+    }
+
+    fn resolve_channel_info(
+        &self,
+        td_type: &tdlib_rs::enums::ChatType,
+        title: String,
+    ) -> crate::domain::chat_info_state::ChatInfo {
+        use crate::domain::chat_info_state::ChatInfo;
+
+        if let tdlib_rs::enums::ChatType::Supergroup(sg) = td_type {
+            let (subscriber_count, description) =
+                match self.client.get_supergroup_full_info(sg.supergroup_id) {
+                    Ok(info) => {
+                        let desc = if info.description.trim().is_empty() {
+                            None
+                        } else {
+                            Some(info.description.clone())
+                        };
+                        (info.member_count, desc)
+                    }
+                    Err(_) => (0, None),
+                };
+
+            ChatInfo {
+                title,
+                chat_type: ChatType::Channel,
+                status_line: ChatSubtitle::Subscribers(subscriber_count)
+                    .format(chrono::Local::now()),
+                description,
+            }
+        } else {
+            ChatInfo {
+                title,
+                chat_type: ChatType::Channel,
+                status_line: String::new(),
+                description: None,
+            }
+        }
+    }
+
     /// Creates a `MessageMapper` that can be shared with the chat updates monitor.
     ///
     /// The mapper holds clones of the async runtime and client_id, allowing it

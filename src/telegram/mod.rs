@@ -30,7 +30,7 @@ use crate::{
         chat_lifecycle::{
             ChatLifecycle, ChatLifecycleError, ChatReadMarker, FileDownloader, MessageDeleter,
         },
-        chat_subtitle::{ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource},
+        chat_subtitle::{ChatInfoQuery, ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource},
         guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome, TelegramAuthClient},
         list_chats::{CachedChatsSource, ListChatsSource, ListChatsSourceError},
         load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
@@ -385,6 +385,18 @@ impl ChatSubtitleSource for TelegramAdapter {
     ) -> Result<crate::domain::chat_subtitle::ChatSubtitle, ChatSubtitleError> {
         match self.tdlib_backend.as_ref() {
             Some(backend) => Ok(backend.resolve_subtitle(query.chat_id)),
+            None => Err(ChatSubtitleError::Unavailable),
+        }
+    }
+
+    fn resolve_chat_info(
+        &self,
+        query: &ChatInfoQuery,
+    ) -> Result<crate::domain::chat_info_state::ChatInfo, ChatSubtitleError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => {
+                Ok(backend.resolve_chat_info(query.chat_id, query.chat_type, query.title.clone()))
+            }
             None => Err(ChatSubtitleError::Unavailable),
         }
     }

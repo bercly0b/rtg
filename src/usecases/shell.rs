@@ -350,6 +350,25 @@ where
         }
     }
 
+    fn show_chat_info_popup(&mut self) {
+        let Some(chat) = self.state.chat_list().selected_chat() else {
+            return;
+        };
+
+        let chat_id = chat.chat_id;
+        let title = chat.title.clone();
+        let chat_type = chat.chat_type;
+
+        self.state.show_chat_info_loading(chat_id, &title);
+
+        self.dispatcher
+            .dispatch_chat_info(crate::usecases::chat_subtitle::ChatInfoQuery {
+                chat_id,
+                chat_type,
+                title,
+            });
+    }
+
     /// Processes push updates from TDLib for cache warming and UI refresh.
     ///
     /// - `NewMessage`: inserts into `MessageCache` for any chat (warm cache passively)
@@ -597,6 +616,7 @@ where
             }
             "R" => self.dispatch_chat_list_refresh(),
             "r" => self.mark_selected_chat_as_read(),
+            "I" => self.show_chat_info_popup(),
             "enter" | "l" => {
                 if self.state.chat_list().selected_chat().is_some() {
                     self.open_selected_chat();
@@ -1183,6 +1203,31 @@ where
                     }
                 }
             }
+            BackgroundTaskResult::ChatInfoLoaded { chat_id, result } => {
+                use crate::domain::chat_info_state::ChatInfoPopupState;
+
+                // Only update if the popup is still open for the same chat.
+                let popup_chat_id = self.state.chat_info_popup().and_then(|p| p.chat_id());
+                if popup_chat_id == Some(chat_id) {
+                    match result {
+                        Ok(info) => {
+                            tracing::debug!(chat_id, "chat info resolved for popup");
+                            self.state
+                                .set_chat_info_loaded(ChatInfoPopupState::Loaded(info));
+                        }
+                        Err(e) => {
+                            tracing::debug!(chat_id, code = e.code, "chat info resolution failed");
+                            let title = self
+                                .state
+                                .chat_info_popup()
+                                .map(|p| p.title().to_owned())
+                                .unwrap_or_default();
+                            self.state
+                                .set_chat_info_loaded(ChatInfoPopupState::Error { title });
+                        }
+                    }
+                }
+            }
             BackgroundTaskResult::MessagesPrefetched { chat_id, result } => {
                 if self.prefetch_in_flight == Some(chat_id) {
                     self.prefetch_in_flight = None;
@@ -1275,6 +1320,15 @@ where
                 // When command popup is active, intercept keys for popup control.
                 if self.state.command_popup().is_some() {
                     self.handle_command_popup_key(&key.key);
+                    return Ok(());
+                }
+
+                // When chat info popup is visible, only close-actions are accepted.
+                if self.state.chat_info_popup().is_some() {
+                    match key.key.as_str() {
+                        "q" | "esc" | "I" => self.state.close_chat_info_popup(),
+                        _ => {}
+                    }
                     return Ok(());
                 }
 
@@ -1566,6 +1620,10 @@ mod tests {
         }
 
         fn dispatch_download_file(&self, _file_id: i32) {
+            // Recording: no-op for now
+        }
+
+        fn dispatch_chat_info(&self, _query: crate::usecases::chat_subtitle::ChatInfoQuery) {
             // Recording: no-op for now
         }
     }
@@ -5535,5 +5593,186 @@ mod tests {
         assert!(o.state().command_popup().is_some());
 
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    // ── Chat info popup tests ──
+
+    #[test]
+    fn i_key_opens_chat_info_popup_when_chat_selected() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+        o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+            .unwrap();
+        assert!(o.state().chat_info_popup().is_some());
+        assert_eq!(o.state().chat_info_popup().unwrap().title(), "Alice");
+    }
+
+    #[test]
+    fn i_key_does_nothing_when_no_chat_selected() {
+        let mut o = make_orchestrator();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+            .unwrap();
+        assert!(o.state().chat_info_popup().is_none());
+    }
+
+    #[test]
+    fn chat_info_popup_closes_on_esc() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+        o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+            .unwrap();
+        assert!(o.state().chat_info_popup().is_some());
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
+            .unwrap();
+        assert!(o.state().chat_info_popup().is_none());
+    }
+
+    #[test]
+    fn chat_info_popup_closes_on_q() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+        o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
+            .unwrap();
+        assert!(o.state().chat_info_popup().is_none());
+    }
+
+    #[test]
+    fn chat_info_popup_closes_on_second_i() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+        o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+            .unwrap();
+        assert!(o.state().chat_info_popup().is_none());
+    }
+
+    #[test]
+    fn chat_info_popup_ignores_other_keys() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+        o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        // Popup is still open — j key was ignored
+        assert!(o.state().chat_info_popup().is_some());
+    }
+
+    #[test]
+    fn chat_info_loaded_updates_popup_state() {
+        use crate::domain::chat_info_state::{ChatInfo, ChatInfoPopupState};
+
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+        o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+            .unwrap();
+
+        // Simulate background task completion
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::ChatInfoLoaded {
+                chat_id: 1,
+                result: Ok(ChatInfo {
+                    title: "Alice".into(),
+                    chat_type: crate::domain::chat::ChatType::Private,
+                    status_line: "online".into(),
+                    description: Some("Hello world".into()),
+                }),
+            },
+        ))
+        .unwrap();
+
+        match o.state().chat_info_popup().unwrap() {
+            ChatInfoPopupState::Loaded(info) => {
+                assert_eq!(info.title, "Alice");
+                assert_eq!(info.status_line, "online");
+                assert_eq!(info.description.as_deref(), Some("Hello world"));
+            }
+            _ => panic!("expected Loaded state"),
+        }
+    }
+
+    #[test]
+    fn chat_info_loaded_error_sets_error_state() {
+        use crate::domain::chat_info_state::ChatInfoPopupState;
+
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+        o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+            .unwrap();
+
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::ChatInfoLoaded {
+                chat_id: 1,
+                result: Err(BackgroundError::new("CHAT_INFO_UNAVAILABLE")),
+            },
+        ))
+        .unwrap();
+
+        match o.state().chat_info_popup().unwrap() {
+            ChatInfoPopupState::Error { title } => {
+                assert_eq!(title, "Alice");
+            }
+            _ => panic!("expected Error state"),
+        }
+    }
+
+    #[test]
+    fn chat_info_loaded_ignored_when_popup_closed() {
+        use crate::domain::chat_info_state::ChatInfo;
+
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+        // No popup open — result should be silently ignored
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::ChatInfoLoaded {
+                chat_id: 1,
+                result: Ok(ChatInfo {
+                    title: "Alice".into(),
+                    chat_type: crate::domain::chat::ChatType::Private,
+                    status_line: "online".into(),
+                    description: None,
+                }),
+            },
+        ))
+        .unwrap();
+
+        assert!(o.state().chat_info_popup().is_none());
+    }
+
+    #[test]
+    fn chat_info_loaded_stale_result_ignored() {
+        use crate::domain::chat_info_state::{ChatInfo, ChatInfoPopupState};
+
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice"), chat(2, "Bob")]);
+
+        // Open popup for Alice (chat_id=1)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+            .unwrap();
+        assert_eq!(o.state().chat_info_popup().unwrap().title(), "Alice");
+
+        // Close popup and re-open for Bob (chat_id=2)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+            .unwrap();
+        assert_eq!(o.state().chat_info_popup().unwrap().title(), "Bob");
+
+        // Stale result for Alice arrives — should be ignored
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::ChatInfoLoaded {
+                chat_id: 1,
+                result: Ok(ChatInfo {
+                    title: "Alice".into(),
+                    chat_type: crate::domain::chat::ChatType::Private,
+                    status_line: "online".into(),
+                    description: Some("Alice's bio".into()),
+                }),
+            },
+        ))
+        .unwrap();
+
+        // Popup should still show Bob (Loading state), not Alice's data
+        match o.state().chat_info_popup().unwrap() {
+            ChatInfoPopupState::Loading { title, .. } => assert_eq!(title, "Bob"),
+            _ => panic!("expected Loading state for Bob, not stale Alice data"),
+        }
     }
 }

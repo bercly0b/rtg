@@ -573,6 +573,27 @@ impl TdLibClient {
         })
     }
 
+    /// Gets full user information (bio, photos, etc.) by user ID.
+    pub fn get_user_full_info(
+        &self,
+        user_id: i64,
+    ) -> Result<tdlib_rs::types::UserFullInfo, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let info = tdlib_rs::functions::get_user_full_info(user_id, client_id)
+                .await
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })?;
+
+            match info {
+                tdlib_rs::enums::UserFullInfo::UserFullInfo(i) => Ok(i),
+            }
+        })
+    }
+
     /// Gets full information about a supergroup or channel.
     pub fn get_supergroup_full_info(
         &self,
