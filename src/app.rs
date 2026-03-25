@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use anyhow::Result;
 
 use crate::{
@@ -16,7 +14,7 @@ use crate::{
 
 const AUTH_TUI_BOOTSTRAP_FAILED: &str = "AUTH_TUI_BOOTSTRAP_FAILED";
 
-pub fn run(cli: Cli, startup_instant: Instant) -> Result<()> {
+pub fn run(cli: Cli) -> Result<()> {
     tracing::debug!(
         ui = ui::module_name(),
         domain = domain::module_name(),
@@ -28,7 +26,7 @@ pub fn run(cli: Cli, startup_instant: Instant) -> Result<()> {
 
     match cli.command_or_default() {
         Command::Run => {
-            let mut context = bootstrap::bootstrap(cli.config.as_deref(), startup_instant)?;
+            let mut context = bootstrap::bootstrap(cli.config.as_deref())?;
             // Safe: no Arc clones exist yet — context was just created by bootstrap()
             let startup = {
                 let telegram_mut = std::sync::Arc::get_mut(&mut context.telegram)
@@ -36,24 +34,13 @@ pub fn run(cli: Cli, startup_instant: Instant) -> Result<()> {
                 usecases::startup::plan_startup(telegram_mut)?
             };
 
-            eprintln!(
-                "[rtg] plan_startup done: {}ms",
-                startup_instant.elapsed().as_millis()
-            );
-
             match startup.state {
                 usecases::startup::StartupFlowState::LaunchTui => {
                     let mut shell = bootstrap::compose_shell(&context);
-
-                    eprintln!(
-                        "[rtg] compose_shell done: {}ms",
-                        startup_instant.elapsed().as_millis()
-                    );
                     ui::shell::start(
                         &context,
                         shell.event_source.as_mut(),
                         shell.orchestrator.as_mut(),
-                        startup_instant,
                     )?
                 }
                 usecases::startup::StartupFlowState::GuidedAuth { ref reason } => {
@@ -75,7 +62,6 @@ pub fn run(cli: Cli, startup_instant: Instant) -> Result<()> {
                             &context,
                             shell.event_source.as_mut(),
                             shell.orchestrator.as_mut(),
-                            startup_instant,
                         ) {
                             report_post_auth_tui_bootstrap_failure(&error);
                         }
@@ -98,7 +84,7 @@ pub fn run(cli: Cli, startup_instant: Instant) -> Result<()> {
 }
 
 fn build_logout_telegram(config_path: Option<&std::path::Path>) -> TelegramAdapter {
-    match bootstrap::bootstrap(config_path, Instant::now()) {
+    match bootstrap::bootstrap(config_path) {
         Ok(context) => std::sync::Arc::try_unwrap(context.telegram).unwrap_or_else(|arc| {
             tracing::warn!("logout: Arc had multiple owners, creating stub adapter");
             drop(arc);
@@ -186,7 +172,7 @@ mod tests {
             command: Some(crate::cli::Command::Logout),
         };
 
-        run(cli, Instant::now()).expect("logout should succeed despite bootstrap failure");
+        run(cli).expect("logout should succeed despite bootstrap failure");
         assert!(!layout.tdlib_session_exists());
 
         match old_xdg {

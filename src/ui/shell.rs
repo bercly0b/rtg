@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use anyhow::Result;
 
 use crate::usecases::{
@@ -17,7 +15,6 @@ pub fn start(
     context: &AppContext,
     event_source: &mut CrosstermEventSource,
     orchestrator: &mut dyn ShellOrchestrator,
-    startup_instant: Instant,
 ) -> Result<()> {
     tracing::info!(
         log_level = %context.config.logging.level,
@@ -28,21 +25,9 @@ pub fn start(
     let mut terminal = TerminalSession::new()?;
 
     let mut had_command_popup = false;
-    let mut first_render = true;
 
     while orchestrator.state().is_running() {
         terminal.draw(|frame| view::render(frame, orchestrator.state_mut()))?;
-
-        if first_render {
-            let elapsed = startup_instant.elapsed();
-            tracing::info!(
-                elapsed_ms = elapsed.as_millis(),
-                elapsed_us = elapsed.as_micros(),
-                "STARTUP_METRIC: first TUI render completed"
-            );
-            eprintln!("[rtg] first render: {}ms", elapsed.as_millis());
-            first_render = false;
-        }
 
         if let Some(event) = event_source.next_event()? {
             orchestrator.handle_event(event)?;
