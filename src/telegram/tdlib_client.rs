@@ -107,6 +107,8 @@ pub struct TdLibClient {
     /// Update loop thread handle. Kept alive for the client's lifetime.
     _update_thread: Option<thread::JoinHandle<()>>,
     is_closed: AtomicBool,
+    /// Shared cache of Chat/User objects populated by the update loop.
+    cache: super::tdlib_cache::TdLibCache,
 }
 
 impl TdLibClient {
@@ -134,11 +136,13 @@ impl TdLibClient {
 
         let (auth_state_tx, auth_state_rx) = mpsc::channel::<AuthStateUpdate>();
         let (update_tx, update_rx) = mpsc::channel::<TdLibUpdate>();
+        let cache = super::tdlib_cache::TdLibCache::new();
 
         // Spawn update receiver thread (fully synchronous, no async runtime needed)
         let update_thread = {
+            let cache = cache.clone();
             thread::spawn(move || {
-                Self::run_update_loop(client_id, auth_state_tx, update_tx);
+                Self::run_update_loop(client_id, auth_state_tx, update_tx, cache);
             })
         };
 
@@ -191,6 +195,7 @@ impl TdLibClient {
             update_rx: Mutex::new(Some(update_rx)),
             _update_thread: Some(update_thread),
             is_closed: AtomicBool::new(false),
+            cache,
         })
     }
 
@@ -203,6 +208,7 @@ impl TdLibClient {
         client_id: i32,
         auth_state_tx: mpsc::Sender<AuthStateUpdate>,
         update_tx: mpsc::Sender<TdLibUpdate>,
+        cache: super::tdlib_cache::TdLibCache,
     ) {
         tracing::debug!(client_id, "Starting TDLib update loop");
 
@@ -237,6 +243,18 @@ impl TdLibClient {
                             }
                         }
 
+                        // Cache population: TDLib guarantees these arrive before
+                        // the corresponding IDs appear in any response.
+                        Update::NewChat(u) => {
+                            cache.upsert_chat(u.chat.clone());
+                            let _ = update_tx.send(TdLibUpdate::NewChat {
+                                chat: Box::new(u.chat),
+                            });
+                        }
+                        Update::User(u) => {
+                            cache.upsert_user(u.user);
+                        }
+
                         // Message updates
                         Update::NewMessage(u) => {
                             let _ = update_tx.send(TdLibUpdate::NewMessage {
@@ -264,28 +282,37 @@ impl TdLibClient {
                             });
                         }
 
-                        // Chat list updates
+                        // Chat list updates — also write through to cache
                         Update::ChatLastMessage(u) => {
+                            cache.update_chat_last_message(u.chat_id, u.last_message, u.positions);
                             let _ =
                                 update_tx.send(TdLibUpdate::ChatLastMessage { chat_id: u.chat_id });
                         }
                         Update::ChatPosition(u) => {
+                            cache.update_chat_position(u.chat_id, u.position);
                             let _ =
                                 update_tx.send(TdLibUpdate::ChatPosition { chat_id: u.chat_id });
                         }
 
-                        // Read status updates
+                        // Read status updates — also write through to cache
                         Update::ChatReadInbox(u) => {
+                            cache.update_chat_read_inbox(
+                                u.chat_id,
+                                u.unread_count,
+                                u.last_read_inbox_message_id,
+                            );
                             let _ =
                                 update_tx.send(TdLibUpdate::ChatReadInbox { chat_id: u.chat_id });
                         }
                         Update::ChatReadOutbox(u) => {
+                            cache.update_chat_read_outbox(u.chat_id, u.last_read_outbox_message_id);
                             let _ =
                                 update_tx.send(TdLibUpdate::ChatReadOutbox { chat_id: u.chat_id });
                         }
 
-                        // User status updates
+                        // User status updates — write through to cache
                         Update::UserStatus(u) => {
+                            cache.update_user_status(u.user_id, u.status);
                             let _ = update_tx.send(TdLibUpdate::UserStatus { user_id: u.user_id });
                         }
 
@@ -342,6 +369,11 @@ impl TdLibClient {
     #[allow(dead_code)]
     pub fn runtime(&self) -> &Arc<Runtime> {
         &self.rt
+    }
+
+    /// Returns the shared TDLib cache populated by the update loop.
+    pub fn cache(&self) -> &super::tdlib_cache::TdLibCache {
+        &self.cache
     }
 
     /// Checks if the client has been closed.

@@ -5,6 +5,7 @@ mod connectivity;
 mod message_pagination;
 mod status_tracker;
 mod tdlib_auth;
+mod tdlib_cache;
 mod tdlib_client;
 mod tdlib_mappers;
 mod tdlib_updates;
