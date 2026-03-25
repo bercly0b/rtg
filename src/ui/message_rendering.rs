@@ -1608,4 +1608,151 @@ mod tests {
             all_text
         );
     }
+
+    // ── build_content_line_spans_linked tests ──
+
+    use ratatui::style::Modifier;
+
+    #[test]
+    fn spans_linked_plain_text_no_links() {
+        let spans = build_content_line_spans_linked("Hello world", 0, &[]);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content.as_ref(), "Hello world");
+        assert!(!spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn spans_linked_full_text_is_link() {
+        // Entire text is a link: offset 0..11
+        let spans = build_content_line_spans_linked("Click here!", 0, &[(0, 11)]);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content.as_ref(), "Click here!");
+        assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn spans_linked_link_in_middle() {
+        // "Hello link world" — "link" at bytes 6..10 is a link
+        let text = "Hello link world";
+        let spans = build_content_line_spans_linked(text, 0, &[(6, 10)]);
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0].content.as_ref(), "Hello ");
+        assert!(!spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
+        assert_eq!(spans[1].content.as_ref(), "link");
+        assert!(spans[1].style.add_modifier.contains(Modifier::UNDERLINED));
+        assert_eq!(spans[2].content.as_ref(), " world");
+        assert!(!spans[2].style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn spans_linked_with_content_offset() {
+        // Text is at content offset 10, link is at content bytes 10..14
+        let spans = build_content_line_spans_linked("link rest", 10, &[(10, 14)]);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].content.as_ref(), "link");
+        assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
+        assert_eq!(spans[1].content.as_ref(), " rest");
+    }
+
+    #[test]
+    fn spans_linked_non_overlapping_link_ignored() {
+        // Link at bytes 100..110 doesn't overlap with text at offset 0, len 5
+        let spans = build_content_line_spans_linked("Hello", 0, &[(100, 110)]);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content.as_ref(), "Hello");
+        assert!(!spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn spans_linked_media_indicator_not_underlined() {
+        // Media indicators should keep their own styling regardless of links
+        let spans = build_content_line_spans_linked("[Photo]", 0, &[(0, 7)]);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content.as_ref(), "[Photo]");
+        // Should use media style, not link style
+        assert_eq!(spans[0].style, styles::message_media_style());
+    }
+
+    #[test]
+    fn spans_linked_multiple_links() {
+        // "aa bb cc" — two links: "aa" at 0..2, "cc" at 6..8
+        let spans = build_content_line_spans_linked("aa bb cc", 0, &[(0, 2), (6, 8)]);
+        assert_eq!(spans.len(), 4);
+        assert_eq!(spans[0].content.as_ref(), "aa");
+        assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
+        assert_eq!(spans[1].content.as_ref(), " bb ");
+        assert!(!spans[1].style.add_modifier.contains(Modifier::UNDERLINED));
+        assert_eq!(spans[2].content.as_ref(), "cc");
+        assert!(spans[2].style.add_modifier.contains(Modifier::UNDERLINED));
+        // No trailing text after last link — but spans[3] is empty string guard?
+        // Actually "cc" ends at 8 == text.len(), so no trailing span
+    }
+
+    // ── Integration: message with links renders underlined ──
+
+    #[test]
+    fn message_with_text_url_entity_renders_underlined() {
+        use crate::domain::message::TextLink;
+
+        let messages = vec![Message {
+            id: 1,
+            sender_name: "Alice".to_owned(),
+            text: "Click here for details".to_owned(),
+            timestamp_ms: FEB_14_2026_10AM,
+            is_outgoing: false,
+            media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
+            reply_to: None,
+            reaction_count: 0,
+            links: vec![TextLink {
+                offset: 0,
+                length: 10,
+                url: "https://example.com".to_owned(),
+            }],
+        }];
+
+        let elements = build_message_list_elements(&messages);
+        let text = element_to_text(&elements[1], 80);
+
+        // Find spans with underline modifier
+        let underlined_spans: Vec<&Span> = text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.style.add_modifier.contains(Modifier::UNDERLINED))
+            .collect();
+
+        assert!(
+            !underlined_spans.is_empty(),
+            "Message with TextLink should have underlined spans"
+        );
+        assert_eq!(underlined_spans[0].content.as_ref(), "Click here");
+    }
+
+    #[test]
+    fn message_without_links_has_no_underline() {
+        let messages = vec![msg(
+            1,
+            "Alice",
+            "Plain text message",
+            FEB_14_2026_10AM,
+            false,
+        )];
+
+        let elements = build_message_list_elements(&messages);
+        let text = element_to_text(&elements[1], 80);
+
+        let underlined_spans: Vec<&Span> = text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.style.add_modifier.contains(Modifier::UNDERLINED))
+            .collect();
+
+        assert!(
+            underlined_spans.is_empty(),
+            "Plain message should have no underlined spans"
+        );
+    }
 }
