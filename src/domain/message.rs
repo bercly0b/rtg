@@ -97,6 +97,8 @@ pub struct Message {
     /// File metadata for messages that carry downloadable media.
     /// `None` for text-only, poll, contact, location, and other non-file types.
     pub file_info: Option<FileInfo>,
+    /// Total number of reactions on this message (summed across all reaction types).
+    pub reaction_count: u32,
 }
 
 impl Message {
@@ -208,6 +210,7 @@ mod tests {
             media,
             status: MessageStatus::Delivered,
             file_info: None,
+            reaction_count: 0,
         }
     }
 

@@ -31,6 +31,8 @@ pub enum MessageListElement {
         status: MessageStatus,
         /// File metadata line (e.g. "download=yes, size=15.5KB, duration=0:03").
         file_meta: Option<String>,
+        /// Total number of reactions on this message (summed across all types).
+        reaction_count: u32,
     },
 }
 
@@ -81,6 +83,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             content: message.display_content(),
             status: message.status,
             file_meta,
+            reaction_count: message.reaction_count,
         });
 
         prev_date = Some(msg_date);
@@ -140,6 +143,7 @@ pub fn element_to_text(
             content,
             status,
             file_meta,
+            reaction_count,
         } => {
             let lines = build_message_lines(
                 time,
@@ -149,6 +153,7 @@ pub fn element_to_text(
                 content,
                 *status,
                 file_meta.as_deref(),
+                *reaction_count,
                 max_width,
             );
             ratatui::text::Text::from(lines)
@@ -165,6 +170,7 @@ fn build_message_lines(
     content: &str,
     status: MessageStatus,
     file_meta: Option<&str>,
+    reaction_count: u32,
     max_width: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
@@ -249,6 +255,16 @@ fn build_message_lines(
             last_line
                 .spans
                 .push(Span::styled(" sending...", styles::message_sending_style()));
+        }
+    }
+
+    // Append reaction count on the same line as the last content line
+    if reaction_count > 0 {
+        if let Some(last_line) = lines.last_mut() {
+            last_line.spans.push(Span::styled(
+                format!(" [\u{2661}\u{00d7}{}]", reaction_count),
+                styles::message_reaction_style(),
+            ));
         }
     }
 
@@ -413,6 +429,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            reaction_count: 0,
         }
     }
 
@@ -432,6 +449,7 @@ mod tests {
             media,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            reaction_count: 0,
         }
     }
 
@@ -876,6 +894,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Sending,
             file_info: None,
+            reaction_count: 0,
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -917,6 +936,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            reaction_count: 0,
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1038,6 +1058,7 @@ mod tests {
                 is_listened: true,
                 download_status: DownloadStatus::Completed,
             }),
+            reaction_count: 0,
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1076,6 +1097,102 @@ mod tests {
 
         if let MessageListElement::Message { file_meta, .. } = &elements[1] {
             assert!(file_meta.is_none(), "text message should have no file_meta");
+        } else {
+            panic!("Expected Message element");
+        }
+    }
+
+    // ── reaction count tests ──
+
+    #[test]
+    fn message_with_reactions_shows_count() {
+        let messages = vec![Message {
+            id: 1,
+            sender_name: "Alice".to_owned(),
+            text: "Hello".to_owned(),
+            timestamp_ms: FEB_14_2026_10AM,
+            is_outgoing: false,
+            media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
+            reaction_count: 3,
+        }];
+
+        let elements = build_message_list_elements(&messages);
+        let msg_text = element_to_text(&elements[1], 80);
+        let all_text: String = msg_text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+
+        assert!(
+            all_text.contains("[\u{2661}\u{00d7}3]"),
+            "expected reaction count in rendered text, got: {all_text}"
+        );
+    }
+
+    #[test]
+    fn message_without_reactions_has_no_reaction_count() {
+        let messages = vec![msg(1, "Alice", "Hello", FEB_14_2026_10AM, false)];
+
+        let elements = build_message_list_elements(&messages);
+        let msg_text = element_to_text(&elements[1], 80);
+        let all_text: String = msg_text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+
+        assert!(
+            !all_text.contains("\u{2661}"),
+            "no reaction indicator should appear when reaction_count is 0: {all_text}"
+        );
+    }
+
+    #[test]
+    fn reaction_count_appears_on_last_content_line() {
+        let messages = vec![Message {
+            id: 1,
+            sender_name: "Alice".to_owned(),
+            text: "Multi\nLine\nMessage".to_owned(),
+            timestamp_ms: FEB_14_2026_10AM,
+            is_outgoing: false,
+            media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
+            reaction_count: 5,
+        }];
+
+        let elements = build_message_list_elements(&messages);
+        let msg_text = element_to_text(&elements[1], 80);
+
+        let last_line = msg_text.lines.last().expect("should have lines");
+        let last_line_text: String = last_line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            last_line_text.contains("[\u{2661}\u{00d7}5]"),
+            "reaction count should appear on last line, got: {last_line_text}"
+        );
+    }
+
+    #[test]
+    fn reaction_count_propagated_from_domain_message() {
+        let messages = vec![Message {
+            id: 1,
+            sender_name: "Alice".to_owned(),
+            text: "Hello".to_owned(),
+            timestamp_ms: FEB_14_2026_10AM,
+            is_outgoing: false,
+            media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
+            reaction_count: 7,
+        }];
+
+        let elements = build_message_list_elements(&messages);
+
+        if let MessageListElement::Message { reaction_count, .. } = &elements[1] {
+            assert_eq!(*reaction_count, 7);
         } else {
             panic!("Expected Message element");
         }

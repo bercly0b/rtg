@@ -268,6 +268,12 @@ fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
         String::new()
     };
 
+    let reaction_badge = if chat.unread_reaction_count > 0 {
+        " [\u{2661}]" // ♡
+    } else {
+        ""
+    };
+
     let online_indicator =
         if chat.chat_type == ChatType::Private && !chat.is_bot && chat.is_online == Some(true) {
             " \u{2022}" // bullet
@@ -277,7 +283,10 @@ fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
 
     // Calculate layout using display widths (handles emoji and wide chars correctly)
     let fixed_prefix_width = 5 + 3; // timestamp (5) + " | " (3)
-    let suffix_width = outgoing_suffix_width + unread_badge.width() + online_indicator.width();
+    let suffix_width = outgoing_suffix_width
+        + reaction_badge.width()
+        + unread_badge.width()
+        + online_indicator.width();
     let name_width = chat.title.width();
 
     // Total = fixed_prefix + name + 1 (space) + prefix_segments + preview + padding + suffix
@@ -316,6 +325,13 @@ fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'static> {
         spans.push(Span::styled(
             online_indicator.to_owned(),
             styles::online_indicator_style(),
+        ));
+    }
+
+    if !reaction_badge.is_empty() {
+        spans.push(Span::styled(
+            reaction_badge.to_owned(),
+            styles::reaction_badge_style(),
         ));
     }
 
@@ -629,6 +645,7 @@ mod tests {
             is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
             last_message_id: None,
+            unread_reaction_count: 0,
         }
     }
 
@@ -800,6 +817,7 @@ mod tests {
                 media: crate::domain::message::MessageMedia::None,
                 status: crate::domain::message::MessageStatus::Delivered,
                 file_info: None,
+                reaction_count: 0,
             }]);
         state.open_chat_mut().set_refreshing(true);
 
@@ -827,6 +845,7 @@ mod tests {
                 media: crate::domain::message::MessageMedia::None,
                 status: crate::domain::message::MessageStatus::Delivered,
                 file_info: None,
+                reaction_count: 0,
             }]);
         state
             .open_chat_mut()
@@ -856,6 +875,7 @@ mod tests {
                 media: crate::domain::message::MessageMedia::None,
                 status: crate::domain::message::MessageStatus::Delivered,
                 file_info: None,
+                reaction_count: 0,
             }]);
 
         let title = open_chat_title(state.open_chat());
@@ -1005,6 +1025,7 @@ mod tests {
             is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
             last_message_id: None,
+            unread_reaction_count: 0,
         }
     }
 
@@ -1028,6 +1049,7 @@ mod tests {
             is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
             last_message_id: None,
+            unread_reaction_count: 0,
         }
     }
 
@@ -1054,6 +1076,7 @@ mod tests {
                 is_read,
             },
             last_message_id: None,
+            unread_reaction_count: 0,
         }
     }
 
@@ -1106,6 +1129,7 @@ mod tests {
                 is_read,
             },
             last_message_id: None,
+            unread_reaction_count: 0,
         }
     }
 
@@ -1289,6 +1313,7 @@ mod tests {
                 is_read,
             },
             last_message_id: None,
+            unread_reaction_count: 0,
         }
     }
 
@@ -1399,6 +1424,7 @@ mod tests {
             is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
             last_message_id: None,
+            unread_reaction_count: 0,
         };
 
         let line = chat_list_item_line(&chat, 70);
@@ -1424,6 +1450,7 @@ mod tests {
             is_bot: true,
             outgoing_status: OutgoingReadStatus::default(),
             last_message_id: None,
+            unread_reaction_count: 0,
         };
 
         let line = chat_list_item_line(&chat, 70);
@@ -1433,6 +1460,77 @@ mod tests {
             !text.contains("\u{2022}"),
             "online bullet must not appear for bots"
         );
+    }
+
+    // ── reaction badge tests ──
+
+    #[test]
+    fn chat_with_unread_reactions_shows_heart_badge() {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
+        let chat = ChatSummary {
+            chat_id: 1,
+            title: "Alice".to_owned(),
+            unread_count: 0,
+            last_message_preview: Some("Hello".to_owned()),
+            last_message_unix_ms: None,
+            is_pinned: false,
+            chat_type: ChatType::Private,
+            last_message_sender: None,
+            is_online: None,
+            is_bot: false,
+            outgoing_status: OutgoingReadStatus::default(),
+            last_message_id: None,
+            unread_reaction_count: 2,
+        };
+
+        let line = chat_list_item_line(&chat, 70);
+        let text = line_to_string(&line);
+
+        assert!(
+            text.contains("[\u{2661}]"),
+            "expected heart badge in: {text}"
+        );
+    }
+
+    #[test]
+    fn chat_without_unread_reactions_has_no_heart_badge() {
+        let c = chat(1, "Bob", 0, Some("Hi"));
+        let line = chat_list_item_line(&c, 70);
+        let text = line_to_string(&line);
+
+        assert!(
+            !text.contains("\u{2661}"),
+            "heart badge must not appear when unread_reaction_count is 0: {text}"
+        );
+    }
+
+    #[test]
+    fn chat_with_reactions_and_unread_shows_both_badges() {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
+        let chat = ChatSummary {
+            chat_id: 1,
+            title: "Alice".to_owned(),
+            unread_count: 3,
+            last_message_preview: Some("Hello".to_owned()),
+            last_message_unix_ms: None,
+            is_pinned: false,
+            chat_type: ChatType::Private,
+            last_message_sender: None,
+            is_online: None,
+            is_bot: false,
+            outgoing_status: OutgoingReadStatus::default(),
+            last_message_id: None,
+            unread_reaction_count: 1,
+        };
+
+        let line = chat_list_item_line(&chat, 80);
+        let text = line_to_string(&line);
+
+        assert!(
+            text.contains("[\u{2661}]"),
+            "expected heart badge in: {text}"
+        );
+        assert!(text.contains("[3]"), "expected unread badge in: {text}");
     }
 
     // ── compute_input_height tests ──

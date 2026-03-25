@@ -180,6 +180,7 @@ mod tests {
             media: crate::domain::message::MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            reaction_count: 0,
         }
     }
 

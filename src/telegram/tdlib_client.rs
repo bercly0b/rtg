@@ -316,6 +316,26 @@ impl TdLibClient {
                             let _ = update_tx.send(TdLibUpdate::UserStatus { user_id: u.user_id });
                         }
 
+                        // Reaction updates
+                        Update::ChatUnreadReactionCount(u) => {
+                            cache.update_chat_unread_reaction_count(
+                                u.chat_id,
+                                u.unread_reaction_count,
+                            );
+                            let _ = update_tx
+                                .send(TdLibUpdate::ChatUnreadReactionCount { chat_id: u.chat_id });
+                        }
+                        Update::MessageInteractionInfo(u) => {
+                            let reaction_count = super::tdlib_mappers::sum_reaction_counts(
+                                u.interaction_info.as_ref(),
+                            );
+                            let _ = update_tx.send(TdLibUpdate::MessageInteractionInfoChanged {
+                                chat_id: u.chat_id,
+                                message_id: u.message_id,
+                                reaction_count,
+                            });
+                        }
+
                         // File download progress updates
                         Update::File(u) => {
                             let _ = update_tx.send(TdLibUpdate::FileUpdated {

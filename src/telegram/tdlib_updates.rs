@@ -56,6 +56,16 @@ pub enum TdLibUpdate {
     /// Message send succeeded (for sent message confirmation).
     MessageSendSucceeded { chat_id: i64, old_message_id: i64 },
 
+    /// Unread reaction count changed for a chat (affects chat list badge).
+    ChatUnreadReactionCount { chat_id: i64 },
+
+    /// Message interaction info changed (reaction counts on a message).
+    MessageInteractionInfoChanged {
+        chat_id: i64,
+        message_id: i64,
+        reaction_count: u32,
+    },
+
     /// File download progress or completion update.
     FileUpdated {
         file_id: i32,
@@ -81,7 +91,9 @@ impl TdLibUpdate {
             | TdLibUpdate::ChatPosition { chat_id }
             | TdLibUpdate::ChatReadInbox { chat_id }
             | TdLibUpdate::ChatReadOutbox { chat_id }
-            | TdLibUpdate::MessageSendSucceeded { chat_id, .. } => Some(*chat_id),
+            | TdLibUpdate::MessageSendSucceeded { chat_id, .. }
+            | TdLibUpdate::ChatUnreadReactionCount { chat_id }
+            | TdLibUpdate::MessageInteractionInfoChanged { chat_id, .. } => Some(*chat_id),
             TdLibUpdate::UserStatus { .. } | TdLibUpdate::FileUpdated { .. } => None,
         }
     }
@@ -99,6 +111,8 @@ impl TdLibUpdate {
             TdLibUpdate::ChatReadOutbox { .. } => "chat_read_outbox",
             TdLibUpdate::UserStatus { .. } => "user_status",
             TdLibUpdate::MessageSendSucceeded { .. } => "message_send_succeeded",
+            TdLibUpdate::ChatUnreadReactionCount { .. } => "chat_unread_reaction_count",
+            TdLibUpdate::MessageInteractionInfoChanged { .. } => "message_interaction_info_changed",
             TdLibUpdate::FileUpdated { .. } => "file_updated",
         }
     }

@@ -52,6 +52,7 @@ pub fn map_chat_to_summary(
         is_bot,
         outgoing_status,
         last_message_id,
+        unread_reaction_count: chat.unread_reaction_count.max(0) as u32,
     }
 }
 
@@ -259,6 +260,7 @@ pub fn map_tdlib_message_to_domain(msg: &TdMessage, sender_name: String) -> Mess
     let media = extract_message_media(&msg.content);
     let file_info = extract_file_info(&msg.content);
     let timestamp_ms = i64::from(msg.date) * 1000;
+    let reaction_count = extract_total_reaction_count(msg);
 
     Message {
         id: msg.id,
@@ -269,7 +271,28 @@ pub fn map_tdlib_message_to_domain(msg: &TdMessage, sender_name: String) -> Mess
         media,
         status: crate::domain::message::MessageStatus::Delivered,
         file_info,
+        reaction_count,
     }
+}
+
+/// Sums `total_count` across all reaction types from interaction info.
+pub fn sum_reaction_counts(
+    interaction_info: Option<&tdlib_rs::types::MessageInteractionInfo>,
+) -> u32 {
+    interaction_info
+        .and_then(|info| info.reactions.as_ref())
+        .map(|reactions| {
+            reactions
+                .reactions
+                .iter()
+                .map(|r| r.total_count.max(0) as u32)
+                .sum()
+        })
+        .unwrap_or(0)
+}
+
+fn extract_total_reaction_count(msg: &TdMessage) -> u32 {
+    sum_reaction_counts(msg.interaction_info.as_ref())
 }
 
 /// Extracts the media type from a TDLib MessageContent.
@@ -1012,5 +1035,73 @@ mod tests {
         let fi = msg.file_info.expect("voice message should have file_info");
         assert_eq!(fi.file_id, 7);
         assert_eq!(fi.local_path, Some("/tmp/v.ogg".to_owned()));
+    }
+
+    // ── reaction count tests ──
+
+    #[test]
+    fn message_without_interaction_info_has_zero_reactions() {
+        let td_msg = make_test_message(1, "Hello", false);
+        let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned());
+        assert_eq!(msg.reaction_count, 0);
+    }
+
+    #[test]
+    fn message_with_reactions_sums_total_counts() {
+        let mut td_msg = make_test_message(1, "Hello", false);
+        td_msg.interaction_info = Some(tdlib_rs::types::MessageInteractionInfo {
+            view_count: 0,
+            forward_count: 0,
+            reply_info: None,
+            reactions: Some(tdlib_rs::types::MessageReactions {
+                reactions: vec![
+                    tdlib_rs::types::MessageReaction {
+                        r#type: tdlib_rs::enums::ReactionType::Emoji(
+                            tdlib_rs::types::ReactionTypeEmoji {
+                                emoji: "\u{1f44d}".to_owned(),
+                            },
+                        ),
+                        total_count: 2,
+                        is_chosen: false,
+                        used_sender_id: None,
+                        recent_sender_ids: vec![],
+                    },
+                    tdlib_rs::types::MessageReaction {
+                        r#type: tdlib_rs::enums::ReactionType::Emoji(
+                            tdlib_rs::types::ReactionTypeEmoji {
+                                emoji: "\u{2764}".to_owned(),
+                            },
+                        ),
+                        total_count: 1,
+                        is_chosen: false,
+                        used_sender_id: None,
+                        recent_sender_ids: vec![],
+                    },
+                ],
+                are_tags: false,
+                paid_reactors: vec![],
+                can_get_added_reactions: false,
+            }),
+        });
+
+        let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned());
+        assert_eq!(msg.reaction_count, 3);
+    }
+
+    #[test]
+    fn chat_summary_maps_unread_reaction_count() {
+        let mut td_chat = super::super::tdlib_cache::tests::make_test_chat(1, "Test");
+        td_chat.unread_reaction_count = 5;
+
+        let summary = map_chat_to_summary(&td_chat, None, None, false);
+        assert_eq!(summary.unread_reaction_count, 5);
+    }
+
+    #[test]
+    fn chat_summary_maps_zero_unread_reaction_count() {
+        let td_chat = super::super::tdlib_cache::tests::make_test_chat(1, "Test");
+
+        let summary = map_chat_to_summary(&td_chat, None, None, false);
+        assert_eq!(summary.unread_reaction_count, 0);
     }
 }
