@@ -961,7 +961,12 @@ fn enrich_same_chat_reply_info(
 
     let by_id: HashMap<i64, (String, String)> = messages
         .iter()
-        .map(|m| (m.id, (reply_sender_name_for_message(m), m.display_content())))
+        .map(|m| {
+            (
+                m.id,
+                (reply_sender_name_for_message(m), m.display_content()),
+            )
+        })
         .collect();
 
     for (raw, mapped) in raw_messages.iter().zip(messages.iter_mut()) {
