@@ -124,6 +124,13 @@ pub fn message_text_style() -> Style {
     Style::default().fg(Color::White)
 }
 
+/// Style for hyperlink text in messages (underlined).
+pub fn message_link_style() -> Style {
+    Style::default()
+        .fg(Color::Blue)
+        .add_modifier(Modifier::UNDERLINED)
+}
+
 /// Style for media type indicators like [Photo], [Voice].
 pub fn message_media_style() -> Style {
     Style::default().fg(Color::Cyan)

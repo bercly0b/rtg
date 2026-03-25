@@ -1330,6 +1330,7 @@ mod tests {
             file_info: None,
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         };
 
         assert_eq!(reply_sender_name_for_message(&message), "You");

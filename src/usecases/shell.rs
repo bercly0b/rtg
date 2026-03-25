@@ -1128,7 +1128,7 @@ where
             return Ok(());
         };
         let text = msg.display_content();
-        if let Some(url) = extract_first_url(&text) {
+        if let Some(url) = extract_first_url(&text, &msg.links) {
             self.opener.open(url)?;
         }
         Ok(())
@@ -1624,6 +1624,7 @@ mod tests {
             file_info: None,
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -5564,6 +5565,7 @@ mod tests {
             }),
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -5588,6 +5590,7 @@ mod tests {
             }),
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -5612,6 +5615,7 @@ mod tests {
             }),
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -5794,6 +5798,7 @@ mod tests {
             }),
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -5818,6 +5823,7 @@ mod tests {
             }),
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -6001,6 +6007,7 @@ mod tests {
                 }),
                 reply_to: None,
                 reaction_count: 0,
+                links: Vec::new(),
             }],
         );
         o.open_handlers
@@ -6043,6 +6050,7 @@ mod tests {
                 }),
                 reply_to: None,
                 reaction_count: 0,
+                links: Vec::new(),
             }],
         );
 

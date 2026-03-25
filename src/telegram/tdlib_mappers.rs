@@ -8,7 +8,9 @@ use tdlib_rs::types::{Chat as TdChat, Message as TdMessage, User as TdUser};
 
 use crate::domain::chat::{ChatSummary, ChatType, OutgoingReadStatus};
 use crate::domain::chat_subtitle::ChatSubtitle;
-use crate::domain::message::{DownloadStatus, FileInfo, Message, MessageMedia, ReplyInfo};
+use crate::domain::message::{
+    DownloadStatus, FileInfo, Message, MessageMedia, ReplyInfo, TextLink,
+};
 
 /// Maps a TDLib Chat to a domain ChatSummary.
 ///
@@ -264,6 +266,7 @@ pub fn map_tdlib_message_to_domain(
     let text = extract_message_text(&msg.content);
     let media = extract_message_media(&msg.content);
     let file_info = extract_file_info(&msg.content);
+    let links = extract_content_links(&msg.content);
     let timestamp_ms = i64::from(msg.date) * 1000;
     let reaction_count = extract_total_reaction_count(msg);
 
@@ -278,6 +281,7 @@ pub fn map_tdlib_message_to_domain(
         file_info,
         reply_to,
         reaction_count,
+        links,
     }
 }
 
@@ -518,6 +522,57 @@ fn effective_file_size(file: &tdlib_rs::types::File) -> u64 {
         size
     } else {
         file.expected_size.max(0) as u64
+    }
+}
+
+/// Extracts URL-bearing text entities from a `FormattedText` into domain `TextLink`s.
+///
+/// Handles `TextEntityTypeUrl` (URL visible in text) and `TextEntityTypeTextUrl`
+/// (clickable text with a hidden URL).
+fn extract_text_links(formatted: &tdlib_rs::types::FormattedText) -> Vec<TextLink> {
+    use tdlib_rs::enums::TextEntityType;
+
+    formatted
+        .entities
+        .iter()
+        .filter_map(|entity| {
+            let offset = entity.offset as usize;
+            let length = entity.length as usize;
+            match &entity.r#type {
+                TextEntityType::Url => {
+                    let url = formatted
+                        .text
+                        .get(offset..offset + length)
+                        .unwrap_or_default()
+                        .to_owned();
+                    Some(TextLink {
+                        offset,
+                        length,
+                        url,
+                    })
+                }
+                TextEntityType::TextUrl(tu) => Some(TextLink {
+                    offset,
+                    length,
+                    url: tu.url.clone(),
+                }),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// Extracts `TextLink`s from a `MessageContent`'s formatted text.
+fn extract_content_links(content: &MessageContent) -> Vec<TextLink> {
+    match content {
+        MessageContent::MessageText(t) => extract_text_links(&t.text),
+        MessageContent::MessagePhoto(p) => extract_text_links(&p.caption),
+        MessageContent::MessageVideo(v) => extract_text_links(&v.caption),
+        MessageContent::MessageVoiceNote(v) => extract_text_links(&v.caption),
+        MessageContent::MessageDocument(d) => extract_text_links(&d.caption),
+        MessageContent::MessageAudio(a) => extract_text_links(&a.caption),
+        MessageContent::MessageAnimation(a) => extract_text_links(&a.caption),
+        _ => Vec::new(),
     }
 }
 

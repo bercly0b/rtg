@@ -12,7 +12,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::domain::message::{Message, MessageStatus, ReplyInfo};
+use crate::domain::message::{Message, MessageStatus, ReplyInfo, TextLink};
 
 use super::styles;
 
@@ -35,6 +35,8 @@ pub enum MessageListElement {
         reply_info: Option<ReplyInfo>,
         /// Total number of reactions on this message.
         reaction_count: u32,
+        /// Hyperlinks embedded in the message text (byte offsets into `Message::text`).
+        links: Vec<TextLink>,
     },
 }
 
@@ -87,6 +89,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             file_meta,
             reply_info: message.reply_to.clone(),
             reaction_count: message.reaction_count,
+            links: message.links.clone(),
         });
 
         prev_date = Some(msg_date);
@@ -148,6 +151,7 @@ pub fn element_to_text(
             file_meta,
             reply_info,
             reaction_count,
+            links,
         } => {
             let lines = build_message_lines(
                 time,
@@ -159,6 +163,7 @@ pub fn element_to_text(
                 file_meta.as_deref(),
                 reply_info.as_ref(),
                 *reaction_count,
+                links,
                 max_width,
             );
             ratatui::text::Text::from(lines)
@@ -177,11 +182,29 @@ fn build_message_lines(
     file_meta: Option<&str>,
     reply_info: Option<&ReplyInfo>,
     reaction_count: u32,
+    links: &[TextLink],
     max_width: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let indent = "      "; // 6 spaces to align with time column
     let content_width = max_width.saturating_sub(indent.len());
+
+    // Compute link byte ranges in content space.
+    // Links have offsets into Message::text, but content may have a media label prefix.
+    let link_offset_adj = if content.starts_with('[') {
+        content.find('\n').map(|p| p + 1).unwrap_or(0)
+    } else {
+        0
+    };
+    let link_ranges: Vec<(usize, usize)> = links
+        .iter()
+        .map(|l| {
+            (
+                l.offset + link_offset_adj,
+                l.offset + l.length + link_offset_adj,
+            )
+        })
+        .collect();
 
     if sender.is_some() {
         // First message in group: header line (time + sender), then content on separate lines
@@ -193,13 +216,21 @@ fn build_message_lines(
             lines.push(build_reply_line(reply, indent, content_width));
         }
 
+        let mut content_pos = 0usize;
         for text_line in content.lines() {
+            let mut seg_offset = 0;
             for wrapped in wrap_line(text_line, content_width) {
-                let content_spans = build_content_line_spans(&wrapped);
+                let content_spans = build_content_line_spans_linked(
+                    &wrapped,
+                    content_pos + seg_offset,
+                    &link_ranges,
+                );
                 let mut line_spans = vec![Span::raw(indent.to_owned())];
                 line_spans.extend(content_spans);
                 lines.push(Line::from(line_spans));
+                seg_offset += wrapped.len();
             }
+            content_pos += text_line.len() + 1; // +1 for '\n'
         }
 
         if content.is_empty() {
@@ -223,32 +254,52 @@ fn build_message_lines(
         };
 
         let mut content_lines = content.lines();
+        let mut content_pos = 0usize;
 
         if let Some(first_line) = content_lines.next() {
             let first_line_wrapped = wrap_line(first_line, content_width);
             let mut first_iter = first_line_wrapped.iter();
+            let mut seg_offset = 0;
 
             if let Some(first_wrapped) = first_iter.next() {
                 let mut spans = vec![time_span];
-                spans.extend(build_content_line_spans(first_wrapped));
+                spans.extend(build_content_line_spans_linked(
+                    first_wrapped,
+                    content_pos + seg_offset,
+                    &link_ranges,
+                ));
                 lines.push(Line::from(spans));
+                seg_offset += first_wrapped.len();
 
                 for wrapped in first_iter {
-                    let content_spans = build_content_line_spans(wrapped);
+                    let content_spans = build_content_line_spans_linked(
+                        wrapped,
+                        content_pos + seg_offset,
+                        &link_ranges,
+                    );
                     let mut line_spans = vec![Span::raw(indent.to_owned())];
                     line_spans.extend(content_spans);
                     lines.push(Line::from(line_spans));
+                    seg_offset += wrapped.len();
                 }
             }
+            content_pos += first_line.len() + 1;
 
             // Remaining lines with indent
             for text_line in content_lines {
+                let mut seg_offset = 0;
                 for wrapped in wrap_line(text_line, content_width) {
-                    let content_spans = build_content_line_spans(&wrapped);
+                    let content_spans = build_content_line_spans_linked(
+                        &wrapped,
+                        content_pos + seg_offset,
+                        &link_ranges,
+                    );
                     let mut line_spans = vec![Span::raw(indent.to_owned())];
                     line_spans.extend(content_spans);
                     lines.push(Line::from(line_spans));
+                    seg_offset += wrapped.len();
                 }
+                content_pos += text_line.len() + 1;
             }
         } else {
             // Empty content
@@ -454,8 +505,15 @@ fn wrap_line(text: &str, max_width: usize) -> Vec<String> {
     result
 }
 
-/// Builds styled spans for content line, highlighting media indicators in cyan.
-fn build_content_line_spans(text: &str) -> Vec<Span<'static>> {
+/// Builds styled spans for a content line, highlighting media indicators and links.
+///
+/// `content_offset` is the byte offset of `text` within the full `content` string.
+/// `link_ranges` contains `(start, end)` byte ranges in content space for links.
+fn build_content_line_spans_linked(
+    text: &str,
+    content_offset: usize,
+    link_ranges: &[(usize, usize)],
+) -> Vec<Span<'static>> {
     // Check if text starts with a media indicator like [Photo], [Voice], etc.
     if text.starts_with('[') {
         if let Some(end_bracket) = text.find(']') {
@@ -463,13 +521,11 @@ fn build_content_line_spans(text: &str) -> Vec<Span<'static>> {
             let rest = text[end_bracket + 1..].trim_start();
 
             if rest.is_empty() {
-                // Media indicator only
                 return vec![Span::styled(
                     media_part.to_owned(),
                     styles::message_media_style(),
                 )];
             } else {
-                // Media indicator + text
                 return vec![
                     Span::styled(media_part.to_owned(), styles::message_media_style()),
                     Span::raw(" ".to_owned()),
@@ -479,8 +535,51 @@ fn build_content_line_spans(text: &str) -> Vec<Span<'static>> {
         }
     }
 
-    // Regular text
-    vec![Span::styled(text.to_owned(), styles::message_text_style())]
+    // Build spans splitting at link boundaries
+    let text_start = content_offset;
+    let text_end = content_offset + text.len();
+
+    let mut spans = Vec::new();
+    let mut pos = 0usize; // byte position within `text`
+
+    for &(link_start, link_end) in link_ranges {
+        // Skip links that don't overlap with this text segment
+        if link_end <= text_start || link_start >= text_end {
+            continue;
+        }
+        let overlap_start = link_start.saturating_sub(text_start).max(pos);
+        let overlap_end = (link_end - text_start).min(text.len());
+
+        // Text before link
+        if overlap_start > pos {
+            spans.push(Span::styled(
+                text[pos..overlap_start].to_owned(),
+                styles::message_text_style(),
+            ));
+        }
+        // Link text (underlined)
+        if overlap_end > overlap_start {
+            spans.push(Span::styled(
+                text[overlap_start..overlap_end].to_owned(),
+                styles::message_link_style(),
+            ));
+        }
+        pos = overlap_end;
+    }
+
+    // Remaining text after all links
+    if pos < text.len() {
+        spans.push(Span::styled(
+            text[pos..].to_owned(),
+            styles::message_text_style(),
+        ));
+    }
+
+    if spans.is_empty() {
+        spans.push(Span::styled(text.to_owned(), styles::message_text_style()));
+    }
+
+    spans
 }
 
 fn effective_sender_name(message: &Message) -> &str {
@@ -529,6 +628,7 @@ mod tests {
             file_info: None,
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -550,6 +650,7 @@ mod tests {
             file_info: None,
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -996,6 +1097,7 @@ mod tests {
             file_info: None,
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1039,6 +1141,7 @@ mod tests {
             file_info: None,
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1162,6 +1265,7 @@ mod tests {
             }),
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1229,6 +1333,7 @@ mod tests {
                 text: reply_text.to_owned(),
             }),
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -1245,6 +1350,7 @@ mod tests {
             file_info: None,
             reply_to: None,
             reaction_count: 3,
+            links: Vec::new(),
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1271,6 +1377,7 @@ mod tests {
             file_info: None,
             reply_to: None,
             reaction_count: 1,
+            links: Vec::new(),
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1471,6 +1578,7 @@ mod tests {
                     text: "Original text".to_owned(),
                 }),
                 reaction_count: 0,
+                links: Vec::new(),
             },
         ];
 

@@ -84,6 +84,21 @@ pub struct ReplyInfo {
     pub text: String,
 }
 
+/// A hyperlink embedded in message text via a text entity.
+///
+/// Represents both `TextEntityTypeUrl` (URL visible in text) and
+/// `TextEntityTypeTextUrl` (clickable text with a hidden URL).
+/// Offsets are **byte** offsets into `Message::text`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextLink {
+    /// Byte offset of the link text start in `Message::text`.
+    pub offset: usize,
+    /// Byte length of the link text in `Message::text`.
+    pub length: usize,
+    /// The target URL to open.
+    pub url: String,
+}
+
 /// Delivery status of a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MessageStatus {
@@ -111,6 +126,8 @@ pub struct Message {
     pub reply_to: Option<ReplyInfo>,
     /// Total number of reactions on this message (summed across all reaction types).
     pub reaction_count: u32,
+    /// Hyperlinks embedded in the message text via text entities.
+    pub links: Vec<TextLink>,
 }
 
 impl Message {
@@ -200,10 +217,14 @@ pub fn build_file_metadata_display(media: MessageMedia, info: &FileInfo) -> Stri
     parts.join(", ")
 }
 
-/// Extracts the first URL (`http://` or `https://`) from text.
+/// Extracts the first URL from message text and link entities.
 ///
-/// Uses simple whitespace-delimited scanning — no regex dependency required.
-pub fn extract_first_url(text: &str) -> Option<&str> {
+/// Checks entity links first (they may contain URLs not visible in text),
+/// then falls back to whitespace-delimited scanning of plain text.
+pub fn extract_first_url<'a>(text: &'a str, links: &'a [TextLink]) -> Option<&'a str> {
+    if let Some(link) = links.first() {
+        return Some(&link.url);
+    }
     text.split_whitespace()
         .find(|word| word.starts_with("https://") || word.starts_with("http://"))
 }
@@ -224,6 +245,7 @@ mod tests {
             file_info: None,
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -341,13 +363,13 @@ mod tests {
 
     #[test]
     fn extract_first_url_returns_none_when_no_url() {
-        assert_eq!(extract_first_url("hello world"), None);
+        assert_eq!(extract_first_url("hello world", &[]), None);
     }
 
     #[test]
     fn extract_first_url_finds_https() {
         assert_eq!(
-            extract_first_url("visit https://example.com please"),
+            extract_first_url("visit https://example.com please", &[]),
             Some("https://example.com")
         );
     }
@@ -355,7 +377,7 @@ mod tests {
     #[test]
     fn extract_first_url_finds_http() {
         assert_eq!(
-            extract_first_url("go to http://example.com"),
+            extract_first_url("go to http://example.com", &[]),
             Some("http://example.com")
         );
     }
@@ -363,7 +385,7 @@ mod tests {
     #[test]
     fn extract_first_url_returns_first_when_multiple() {
         assert_eq!(
-            extract_first_url("see https://first.com and https://second.com"),
+            extract_first_url("see https://first.com and https://second.com", &[]),
             Some("https://first.com")
         );
     }
@@ -371,7 +393,7 @@ mod tests {
     #[test]
     fn extract_first_url_handles_url_at_start() {
         assert_eq!(
-            extract_first_url("https://start.com is the link"),
+            extract_first_url("https://start.com is the link", &[]),
             Some("https://start.com")
         );
     }
@@ -379,19 +401,40 @@ mod tests {
     #[test]
     fn extract_first_url_handles_url_at_end() {
         assert_eq!(
-            extract_first_url("link: https://end.com"),
+            extract_first_url("link: https://end.com", &[]),
             Some("https://end.com")
         );
     }
 
     #[test]
     fn extract_first_url_returns_none_for_empty_string() {
-        assert_eq!(extract_first_url(""), None);
+        assert_eq!(extract_first_url("", &[]), None);
     }
 
     #[test]
     fn extract_first_url_ignores_non_http_schemes() {
-        assert_eq!(extract_first_url("check ftp://files.com out"), None);
+        assert_eq!(extract_first_url("check ftp://files.com out", &[]), None);
+    }
+
+    #[test]
+    fn extract_first_url_prefers_entity_link() {
+        let links = vec![TextLink {
+            offset: 0,
+            length: 9,
+            url: "https://hidden.com".to_owned(),
+        }];
+        assert_eq!(
+            extract_first_url("click here and https://visible.com", &links),
+            Some("https://hidden.com")
+        );
+    }
+
+    #[test]
+    fn extract_first_url_falls_back_to_text_when_no_entities() {
+        assert_eq!(
+            extract_first_url("go to https://example.com", &[]),
+            Some("https://example.com")
+        );
     }
 
     // ── format_file_size tests ──
