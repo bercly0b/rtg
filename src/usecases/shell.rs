@@ -2273,10 +2273,7 @@ mod tests {
         // Inject a failure
         o.handle_event(AppEvent::BackgroundTaskCompleted(
             BackgroundTaskResult::ChatListLoaded {
-                result: Err(crate::telegram::types::TdError {
-                    code: 500,
-                    message: "test".to_string(),
-                }),
+                result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
             },
         ))
         .unwrap();
