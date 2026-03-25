@@ -112,6 +112,16 @@ pub struct TdLibClient {
 }
 
 impl TdLibClient {
+    fn publish_unread_reaction_count(
+        update_tx: &mpsc::Sender<TdLibUpdate>,
+        cache: &super::tdlib_cache::TdLibCache,
+        chat_id: i64,
+        unread_reaction_count: i32,
+    ) {
+        cache.update_chat_unread_reaction_count(chat_id, unread_reaction_count);
+        let _ = update_tx.send(TdLibUpdate::ChatUnreadReactionCount { chat_id });
+    }
+
     /// Creates a new TDLib client and starts the update receiver loop.
     ///
     /// This allocates a new TDLib client ID and spawns a background thread
@@ -314,6 +324,34 @@ impl TdLibClient {
                         Update::UserStatus(u) => {
                             cache.update_user_status(u.user_id, u.status);
                             let _ = update_tx.send(TdLibUpdate::UserStatus { user_id: u.user_id });
+                        }
+
+                        // Reaction updates
+                        Update::ChatUnreadReactionCount(u) => {
+                            Self::publish_unread_reaction_count(
+                                &update_tx,
+                                &cache,
+                                u.chat_id,
+                                u.unread_reaction_count,
+                            );
+                        }
+                        Update::MessageInteractionInfo(u) => {
+                            let reaction_count = super::tdlib_mappers::sum_reaction_counts(
+                                u.interaction_info.as_ref(),
+                            );
+                            let _ = update_tx.send(TdLibUpdate::MessageInteractionInfoChanged {
+                                chat_id: u.chat_id,
+                                message_id: u.message_id,
+                                reaction_count,
+                            });
+                        }
+                        Update::MessageUnreadReactions(u) => {
+                            Self::publish_unread_reaction_count(
+                                &update_tx,
+                                &cache,
+                                u.chat_id,
+                                u.unread_reaction_count,
+                            );
                         }
 
                         // File download progress updates
@@ -1030,5 +1068,24 @@ mod tests {
         let debug_output = format!("{:?}", config);
         assert!(debug_output.contains("[REDACTED]"));
         assert!(!debug_output.contains("secret_hash"));
+    }
+
+    #[test]
+    fn publish_unread_reaction_count_updates_cache_and_emits_update() {
+        let cache = super::super::tdlib_cache::TdLibCache::new();
+        let chat = super::super::tdlib_cache::tests::make_test_chat(42, "General");
+        cache.upsert_chat(chat);
+
+        let (tx, rx) = mpsc::channel();
+
+        TdLibClient::publish_unread_reaction_count(&tx, &cache, 42, 0);
+
+        let cached = cache.get_chat(42).expect("chat should exist in cache");
+        assert_eq!(cached.unread_reaction_count, 0);
+
+        match rx.recv().expect("should emit unread reaction update") {
+            TdLibUpdate::ChatUnreadReactionCount { chat_id } => assert_eq!(chat_id, 42),
+            other => panic!("unexpected update kind: {}", other.kind()),
+        }
     }
 }

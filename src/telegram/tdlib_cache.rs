@@ -106,6 +106,14 @@ impl TdLibCache {
         }
     }
 
+    /// Updates unread reaction count for a cached chat.
+    pub fn update_chat_unread_reaction_count(&self, chat_id: i64, unread_reaction_count: i32) {
+        let mut inner = self.inner.write().expect("cache write lock poisoned");
+        if let Some(chat) = inner.chats.get_mut(&chat_id) {
+            chat.unread_reaction_count = unread_reaction_count;
+        }
+    }
+
     /// Looks up a chat by ID. Returns a clone.
     pub fn get_chat(&self, chat_id: i64) -> Option<Chat> {
         let inner = self.inner.read().expect("cache read lock poisoned");

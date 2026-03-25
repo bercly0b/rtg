@@ -134,6 +134,7 @@ mod tests {
             is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
             last_message_id: None,
+            unread_reaction_count: 0,
         }
     }
 

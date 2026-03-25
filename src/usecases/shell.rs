@@ -377,20 +377,19 @@ where
     ///
     /// For the currently open chat, also dispatches a message refresh.
     fn handle_chat_updates(&mut self, updates: Vec<ChatUpdate>) {
-        let mut affected_chat_ids = Vec::new();
+        let mut reload_chat_ids = Vec::new();
+        let mut should_refresh_chat_list = false;
 
         for update in updates {
-            if let Some(chat_id) = update.chat_id() {
-                if !affected_chat_ids.contains(&chat_id) {
-                    affected_chat_ids.push(chat_id);
-                }
-            }
-
             match update {
                 ChatUpdate::NewMessage { chat_id, message } => {
                     tracing::debug!(chat_id, message_id = message.id, "caching pushed message");
                     self.maybe_auto_download(chat_id, &message);
                     self.state.message_cache_mut().add_message(chat_id, message);
+                    if !reload_chat_ids.contains(&chat_id) {
+                        reload_chat_ids.push(chat_id);
+                    }
+                    should_refresh_chat_list = true;
                 }
                 ChatUpdate::MessagesDeleted {
                     chat_id,
@@ -404,8 +403,33 @@ where
                     self.state
                         .message_cache_mut()
                         .remove_messages(chat_id, &message_ids);
+                    if !reload_chat_ids.contains(&chat_id) {
+                        reload_chat_ids.push(chat_id);
+                    }
+                    should_refresh_chat_list = true;
                 }
-                ChatUpdate::ChatMetadataChanged { .. } => {}
+                ChatUpdate::ChatMetadataChanged { chat_id } => {
+                    should_refresh_chat_list = true;
+                    if !reload_chat_ids.contains(&chat_id) {
+                        reload_chat_ids.push(chat_id);
+                    }
+                }
+                ChatUpdate::MessageReactionsChanged {
+                    chat_id,
+                    message_id,
+                    reaction_count,
+                } => {
+                    self.state.message_cache_mut().update_reaction_count(
+                        chat_id,
+                        message_id,
+                        reaction_count,
+                    );
+                    if self.state.open_chat().chat_id() == Some(chat_id) {
+                        self.state
+                            .open_chat_mut()
+                            .update_message_reaction_count(message_id, reaction_count);
+                    }
+                }
                 ChatUpdate::FileUpdated {
                     file_id,
                     size,
@@ -426,11 +450,11 @@ where
             }
         }
 
-        // Always refresh the chat list (any update may affect ordering/preview)
-        self.dispatch_chat_list_refresh();
-        // Refresh the currently displayed chat if it was affected
-        if !affected_chat_ids.is_empty() {
-            self.maybe_refresh_open_chat_messages(&affected_chat_ids);
+        if should_refresh_chat_list {
+            self.dispatch_chat_list_refresh();
+        }
+        if !reload_chat_ids.is_empty() {
+            self.maybe_refresh_open_chat_messages(&reload_chat_ids);
         }
     }
 
@@ -1544,6 +1568,7 @@ mod tests {
             is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
             last_message_id: None,
+            unread_reaction_count: 0,
         }
     }
 
@@ -1558,6 +1583,7 @@ mod tests {
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
             reply_to: None,
+            reaction_count: 0,
         }
     }
 
@@ -2008,8 +2034,10 @@ mod tests {
         assert_eq!(o.state().chat_list().selected_index(), Some(0));
 
         // Trigger a background refresh (e.g. from TDLib update)
-        o.handle_event(AppEvent::ChatUpdateReceived { updates: vec![] })
-            .unwrap();
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
+        })
+        .unwrap();
         assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
 
         // User navigates down while refresh is in-flight
@@ -2168,8 +2196,10 @@ mod tests {
     #[test]
     fn chat_list_update_event_dispatches_refresh() {
         let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
-        o.handle_event(AppEvent::ChatUpdateReceived { updates: vec![] })
-            .unwrap();
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
+        })
+        .unwrap();
         assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
     }
 
@@ -2226,8 +2256,10 @@ mod tests {
     fn chat_list_update_event_keeps_data_visible() {
         let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
 
-        o.handle_event(AppEvent::ChatUpdateReceived { updates: vec![] })
-            .unwrap();
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
+        })
+        .unwrap();
 
         // Must not blink — state stays Ready while background fetch runs
         assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Ready);
@@ -3216,6 +3248,7 @@ mod tests {
             is_bot: false,
             outgoing_status: OutgoingReadStatus::default(),
             last_message_id: last_msg_id,
+            unread_reaction_count: 0,
         }
     }
 
@@ -5436,6 +5469,7 @@ mod tests {
                 download_status: crate::domain::message::DownloadStatus::Completed,
             }),
             reply_to: None,
+            reaction_count: 0,
         }
     }
 
@@ -5459,6 +5493,7 @@ mod tests {
                 download_status: crate::domain::message::DownloadStatus::NotStarted,
             }),
             reply_to: None,
+            reaction_count: 0,
         }
     }
 
@@ -5482,6 +5517,7 @@ mod tests {
                 download_status: crate::domain::message::DownloadStatus::Completed,
             }),
             reply_to: None,
+            reaction_count: 0,
         }
     }
 
@@ -5663,6 +5699,7 @@ mod tests {
                 download_status: crate::domain::message::DownloadStatus::Completed,
             }),
             reply_to: None,
+            reaction_count: 0,
         }
     }
 
@@ -5686,6 +5723,7 @@ mod tests {
                 download_status: crate::domain::message::DownloadStatus::Completed,
             }),
             reply_to: None,
+            reaction_count: 0,
         }
     }
 
@@ -5868,6 +5906,7 @@ mod tests {
                     download_status: crate::domain::message::DownloadStatus::Completed,
                 }),
                 reply_to: None,
+                reaction_count: 0,
             }],
         );
         o.open_handlers
@@ -5909,6 +5948,7 @@ mod tests {
                     download_status: crate::domain::message::DownloadStatus::Completed,
                 }),
                 reply_to: None,
+                reaction_count: 0,
             }],
         );
 

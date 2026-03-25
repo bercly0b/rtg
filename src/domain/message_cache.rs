@@ -162,6 +162,15 @@ impl MessageCache {
         }
     }
 
+    /// Updates the `reaction_count` of a specific message in the cache.
+    pub fn update_reaction_count(&mut self, chat_id: i64, message_id: i64, reaction_count: u32) {
+        if let Some(entry) = self.chats.get_mut(&chat_id) {
+            if let Some(msg) = entry.messages.iter_mut().find(|m| m.id == message_id) {
+                msg.reaction_count = reaction_count;
+            }
+        }
+    }
+
     /// Moves `chat_id` to the back (most recently used) of `access_order`.
     ///
     /// O(n) in the number of cached chats via `VecDeque::retain`. Acceptable
@@ -220,6 +229,7 @@ mod tests {
             status: MessageStatus::Delivered,
             file_info: None,
             reply_to: None,
+            reaction_count: 0,
         }
     }
 
@@ -234,6 +244,7 @@ mod tests {
             status: MessageStatus::Delivered,
             file_info: None,
             reply_to: None,
+            reaction_count: 0,
         }
     }
 
@@ -594,5 +605,37 @@ mod tests {
         let cache = MessageCache::default();
         assert_eq!(cache.max_cached_chats, DEFAULT_MAX_CACHED_CHATS);
         assert_eq!(cache.max_messages_per_chat, DEFAULT_MAX_MESSAGES_PER_CHAT);
+    }
+
+    // ── Reaction count update tests ──
+
+    #[test]
+    fn update_reaction_count_modifies_existing_message() {
+        let mut cache = MessageCache::default();
+        cache.put(1, vec![msg(10, "hello"), msg(20, "world")], false);
+
+        cache.update_reaction_count(1, 20, 5);
+
+        let messages = cache.get(1).unwrap();
+        assert_eq!(messages[0].reaction_count, 0);
+        assert_eq!(messages[1].reaction_count, 5);
+    }
+
+    #[test]
+    fn update_reaction_count_noop_for_unknown_chat() {
+        let mut cache = MessageCache::default();
+        cache.update_reaction_count(999, 1, 3);
+        assert!(cache.get(999).is_none());
+    }
+
+    #[test]
+    fn update_reaction_count_noop_for_unknown_message() {
+        let mut cache = MessageCache::default();
+        cache.put(1, vec![msg(10, "hello")], false);
+
+        cache.update_reaction_count(1, 999, 3);
+
+        let messages = cache.get(1).unwrap();
+        assert_eq!(messages[0].reaction_count, 0);
     }
 }

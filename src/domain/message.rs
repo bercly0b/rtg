@@ -109,6 +109,8 @@ pub struct Message {
     /// Information about the message this message replies to.
     /// `None` if the message is not a reply.
     pub reply_to: Option<ReplyInfo>,
+    /// Total number of reactions on this message (summed across all reaction types).
+    pub reaction_count: u32,
 }
 
 impl Message {
@@ -221,6 +223,7 @@ mod tests {
             status: MessageStatus::Delivered,
             file_info: None,
             reply_to: None,
+            reaction_count: 0,
         }
     }
 

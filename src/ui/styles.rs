@@ -23,6 +23,16 @@ pub fn unread_count_style() -> Style {
     Style::default().fg(Color::Green)
 }
 
+/// Style for unread reaction badge in the chat list (pink heart icon).
+pub fn reaction_badge_style() -> Style {
+    Style::default().fg(Color::LightRed)
+}
+
+/// Style for reaction count on individual messages.
+pub fn message_reaction_style() -> Style {
+    Style::default().fg(Color::LightRed)
+}
+
 /// Style for section headers like "-- Pinned --".
 pub fn section_header_style() -> Style {
     Style::default().fg(Color::DarkGray)
@@ -553,6 +563,18 @@ mod tests {
     fn chat_info_popup_value_style_is_white() {
         let style = chat_info_popup_value_style();
         assert_eq!(style.fg, Some(Color::White));
+    }
+
+    #[test]
+    fn reaction_badge_style_is_light_red() {
+        let style = reaction_badge_style();
+        assert_eq!(style.fg, Some(Color::LightRed));
+    }
+
+    #[test]
+    fn message_reaction_style_is_light_red() {
+        let style = message_reaction_style();
+        assert_eq!(style.fg, Some(Color::LightRed));
     }
 
     #[test]

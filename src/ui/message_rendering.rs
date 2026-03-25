@@ -33,6 +33,8 @@ pub enum MessageListElement {
         file_meta: Option<String>,
         /// Reply preview: sender name and text of the replied-to message.
         reply_info: Option<ReplyInfo>,
+        /// Total number of reactions on this message.
+        reaction_count: u32,
     },
 }
 
@@ -84,6 +86,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             status: message.status,
             file_meta,
             reply_info: message.reply_to.clone(),
+            reaction_count: message.reaction_count,
         });
 
         prev_date = Some(msg_date);
@@ -144,6 +147,7 @@ pub fn element_to_text(
             status,
             file_meta,
             reply_info,
+            reaction_count,
         } => {
             let lines = build_message_lines(
                 time,
@@ -154,6 +158,7 @@ pub fn element_to_text(
                 *status,
                 file_meta.as_deref(),
                 reply_info.as_ref(),
+                *reaction_count,
                 max_width,
             );
             ratatui::text::Text::from(lines)
@@ -171,6 +176,7 @@ fn build_message_lines(
     status: MessageStatus,
     file_meta: Option<&str>,
     reply_info: Option<&ReplyInfo>,
+    reaction_count: u32,
     max_width: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
@@ -260,6 +266,10 @@ fn build_message_lines(
         append_file_meta_to_media_line(&mut lines, meta);
     }
 
+    if reaction_count > 0 {
+        append_reaction_indicator(&mut lines, reaction_count);
+    }
+
     // Append sending status indicator on the same line as the last content line
     if status == MessageStatus::Sending {
         if let Some(last_line) = lines.last_mut() {
@@ -270,6 +280,19 @@ fn build_message_lines(
     }
 
     lines
+}
+
+fn append_reaction_indicator(lines: &mut [Line<'static>], reaction_count: u32) {
+    if let Some(last_line) = lines.last_mut() {
+        let badge = if reaction_count == 1 {
+            " [♡]".to_owned()
+        } else {
+            format!(" [♡×{}]", reaction_count)
+        };
+        last_line
+            .spans
+            .push(Span::styled(badge, styles::message_reaction_style()));
+    }
 }
 
 /// Appends file metadata to the line containing the `[Media]` indicator.
@@ -505,6 +528,7 @@ mod tests {
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
             reply_to: None,
+            reaction_count: 0,
         }
     }
 
@@ -525,6 +549,7 @@ mod tests {
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
             reply_to: None,
+            reaction_count: 0,
         }
     }
 
@@ -970,6 +995,7 @@ mod tests {
             status: crate::domain::message::MessageStatus::Sending,
             file_info: None,
             reply_to: None,
+            reaction_count: 0,
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1012,6 +1038,7 @@ mod tests {
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
             reply_to: None,
+            reaction_count: 0,
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1134,6 +1161,7 @@ mod tests {
                 download_status: DownloadStatus::Completed,
             }),
             reply_to: None,
+            reaction_count: 0,
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1200,7 +1228,61 @@ mod tests {
                 sender_name: reply_sender.to_owned(),
                 text: reply_text.to_owned(),
             }),
+            reaction_count: 0,
         }
+    }
+
+    #[test]
+    fn message_with_multiple_reactions_shows_count() {
+        let messages = vec![Message {
+            id: 1,
+            sender_name: "Alice".to_owned(),
+            text: "Hello".to_owned(),
+            timestamp_ms: FEB_14_2026_10AM,
+            is_outgoing: false,
+            media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
+            reply_to: None,
+            reaction_count: 3,
+        }];
+
+        let elements = build_message_list_elements(&messages);
+        let msg_text = element_to_text(&elements[1], 80);
+        let all_text: String = msg_text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+
+        assert!(all_text.contains("[♡×3]"));
+    }
+
+    #[test]
+    fn message_with_single_reaction_shows_heart_without_count() {
+        let messages = vec![Message {
+            id: 1,
+            sender_name: "Alice".to_owned(),
+            text: "Hello".to_owned(),
+            timestamp_ms: FEB_14_2026_10AM,
+            is_outgoing: false,
+            media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
+            reply_to: None,
+            reaction_count: 1,
+        }];
+
+        let elements = build_message_list_elements(&messages);
+        let msg_text = element_to_text(&elements[1], 80);
+        let all_text: String = msg_text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+
+        assert!(all_text.contains("[♡]"));
+        assert!(!all_text.contains("[♡×1]"));
     }
 
     #[test]
@@ -1388,6 +1470,7 @@ mod tests {
                     sender_name: "Bob".to_owned(),
                     text: "Original text".to_owned(),
                 }),
+                reaction_count: 0,
             },
         ];
 

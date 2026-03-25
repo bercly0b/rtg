@@ -40,4 +40,6 @@ pub struct ChatSummary {
     pub outgoing_status: OutgoingReadStatus,
     /// ID of the last message in the chat (used for mark-as-read).
     pub last_message_id: Option<i64>,
+    /// Number of unread reactions on own messages in this chat.
+    pub unread_reaction_count: u32,
 }

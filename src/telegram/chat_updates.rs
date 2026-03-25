@@ -123,9 +123,19 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
         | TdLibUpdate::ChatPosition { chat_id }
         | TdLibUpdate::ChatReadInbox { chat_id }
         | TdLibUpdate::ChatReadOutbox { chat_id }
-        | TdLibUpdate::MessageSendSucceeded { chat_id, .. } => {
+        | TdLibUpdate::MessageSendSucceeded { chat_id, .. }
+        | TdLibUpdate::ChatUnreadReactionCount { chat_id } => {
             Some(ChatUpdate::ChatMetadataChanged { chat_id })
         }
+        TdLibUpdate::MessageInteractionInfoChanged {
+            chat_id,
+            message_id,
+            reaction_count,
+        } => Some(ChatUpdate::MessageReactionsChanged {
+            chat_id,
+            message_id,
+            reaction_count,
+        }),
         TdLibUpdate::FileUpdated {
             file_id,
             size,
@@ -233,6 +243,7 @@ impl MessageMapper for StubMessageMapper {
             status: crate::domain::message::MessageStatus::Delivered,
             file_info,
             reply_to: None,
+            reaction_count: 0,
         }
     }
 }
@@ -432,5 +443,46 @@ mod tests {
     fn inert_monitor_has_no_worker() {
         let monitor = TelegramChatUpdatesMonitor::inert();
         assert!(monitor.worker.is_none());
+    }
+
+    #[test]
+    fn map_chat_unread_reaction_count_to_metadata_changed() {
+        let mapper = StubMessageMapper;
+        let update = TdLibUpdate::ChatUnreadReactionCount { chat_id: 42 };
+
+        let result = map_update(update, &mapper);
+
+        assert!(
+            matches!(
+                result,
+                Some(ChatUpdate::ChatMetadataChanged { chat_id: 42 })
+            ),
+            "expected ChatMetadataChanged, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn map_message_interaction_info_to_reactions_changed() {
+        let mapper = StubMessageMapper;
+        let update = TdLibUpdate::MessageInteractionInfoChanged {
+            chat_id: 10,
+            message_id: 20,
+            reaction_count: 5,
+        };
+
+        let result = map_update(update, &mapper);
+
+        match result {
+            Some(ChatUpdate::MessageReactionsChanged {
+                chat_id,
+                message_id,
+                reaction_count,
+            }) => {
+                assert_eq!(chat_id, 10);
+                assert_eq!(message_id, 20);
+                assert_eq!(reaction_count, 5);
+            }
+            other => panic!("expected MessageReactionsChanged, got: {other:?}"),
+        }
     }
 }

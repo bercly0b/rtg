@@ -181,6 +181,7 @@ mod tests {
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
             reply_to: None,
+            reaction_count: 0,
         }
     }
 

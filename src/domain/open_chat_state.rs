@@ -122,6 +122,13 @@ impl OpenChatState {
         }
     }
 
+    /// Updates the `reaction_count` of a specific message by ID.
+    pub fn update_message_reaction_count(&mut self, message_id: i64, reaction_count: u32) {
+        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == message_id) {
+            msg.reaction_count = reaction_count;
+        }
+    }
+
     pub fn ui_state(&self) -> OpenChatUiState {
         self.ui_state.clone()
     }
@@ -258,6 +265,7 @@ impl OpenChatState {
             status: MessageStatus::Sending,
             file_info: None,
             reply_to,
+            reaction_count: 0,
         };
         self.messages.push(pending);
         self.selected_index = Some(self.messages.len() - 1);
@@ -367,6 +375,7 @@ mod tests {
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
             reply_to: None,
+            reaction_count: 0,
         }
     }
 
@@ -911,5 +920,30 @@ mod tests {
         state.remove_message(999);
 
         assert_eq!(state.messages().len(), 2);
+    }
+
+    // ── Reaction count update tests ──
+
+    #[test]
+    fn update_message_reaction_count_modifies_existing() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A"), message(2, "B")]);
+
+        state.update_message_reaction_count(2, 7);
+
+        assert_eq!(state.messages()[0].reaction_count, 0);
+        assert_eq!(state.messages()[1].reaction_count, 7);
+    }
+
+    #[test]
+    fn update_message_reaction_count_ignores_unknown_id() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Chat".to_owned());
+        state.set_ready(vec![message(1, "A")]);
+
+        state.update_message_reaction_count(999, 3);
+
+        assert_eq!(state.messages()[0].reaction_count, 0);
     }
 }
