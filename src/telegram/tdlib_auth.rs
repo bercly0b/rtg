@@ -340,27 +340,6 @@ impl TdLibAuthBackend {
         self.client.take_update_receiver()
     }
 
-    /// Lists chat summaries from TDLib's local cache only.
-    ///
-    /// Does **not** call `loadChats`, so no network request is made.
-    /// Returns whatever chats are already present in TDLib's SQLite database
-    /// from previous sessions. Useful for instant startup display.
-    pub fn list_cached_chat_summaries(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
-        let limit_i32 = i32::try_from(limit).unwrap_or(i32::MAX);
-
-        let chat_ids = self
-            .client
-            .get_cached_chats(limit_i32)
-            .map_err(map_list_chats_error)?;
-
-        tracing::debug!(count = chat_ids.len(), "Fetched cached chat IDs from TDLib");
-
-        Ok(self.build_summaries_from_ids(chat_ids))
-    }
-
     /// Lists chat summaries from TDLib.
     ///
     /// Fetches chats from the main chat list and maps them to domain `ChatSummary`.

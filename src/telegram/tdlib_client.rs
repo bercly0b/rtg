@@ -456,47 +456,19 @@ impl TdLibClient {
         })
     }
 
-    /// Gets chat IDs already present in TDLib's local database.
-    ///
-    /// Unlike [`get_chats`](Self::get_chats), this does **not** call `loadChats`
-    /// first, so it never triggers a network request. Returns whatever TDLib
-    /// has cached locally from previous sessions (SQLite database).
-    ///
-    /// Useful for instant startup: show cached chats immediately, then
-    /// refresh from the server in the background.
-    pub fn get_cached_chats(&self, limit: i32) -> Result<Vec<i64>, TdLibError> {
-        let client_id = self.client_id;
-
-        self.rt.block_on(async {
-            let chats = tdlib_rs::functions::get_chats(
-                Some(tdlib_rs::enums::ChatList::Main),
-                limit,
-                client_id,
-            )
-            .await
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })?;
-
-            match chats {
-                tdlib_rs::enums::Chats::Chats(c) => Ok(c.chat_ids),
-            }
-        })
-    }
-
     /// Gets list of chat IDs from TDLib.
     ///
     /// Returns up to `limit` chat IDs from the main chat list, sorted by TDLib's order.
+    /// First attempts `loadChats` to fetch from the server, then reads local
+    /// cache via `getChats`. If `loadChats` fails (e.g. no network), we still
+    /// try `getChats` to return whatever is available from TDLib's local
+    /// SQLite database — this keeps the chat list usable in offline scenarios.
     pub fn get_chats(&self, limit: i32) -> Result<Vec<i64>, TdLibError> {
         let client_id = self.client_id;
 
         self.rt.block_on(async {
-            // First, load chats to ensure TDLib has them cached.
-            // TDLib returns error 404 when all chats have already been loaded —
-            // this is a normal "nothing more to load" signal, not a real failure.
-            // We must continue to `get_chats` regardless, because already-cached
-            // chats are still available for retrieval.
+            // Try to load fresh chats from the server. Failures are non-fatal:
+            // TDLib's local cache may still have chats from previous sessions.
             if let Err(e) = tdlib_rs::functions::load_chats(
                 Some(tdlib_rs::enums::ChatList::Main),
                 limit,
@@ -510,16 +482,12 @@ impl TdLibClient {
                     tracing::warn!(
                         code = e.code,
                         message = %e.message,
-                        "load_chats failed with unexpected error"
+                        "load_chats failed; falling back to locally cached chats"
                     );
-                    return Err(TdLibError::Request {
-                        code: e.code,
-                        message: e.message,
-                    });
                 }
             }
 
-            // Then get the chat IDs
+            // Read whatever chat IDs are available (server-fresh or locally cached).
             let chats = tdlib_rs::functions::get_chats(
                 Some(tdlib_rs::enums::ChatList::Main),
                 limit,

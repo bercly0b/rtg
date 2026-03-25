@@ -25,16 +25,12 @@ use crate::{
     },
     usecases::{
         background::ThreadTaskDispatcher, context::AppContext, contracts::ShellOrchestrator,
-        guided_auth::AuthBackendError, list_chats::CachedChatsSource,
-        shell::DefaultShellOrchestrator,
+        guided_auth::AuthBackendError, shell::DefaultShellOrchestrator,
     },
 };
 
 const CONNECTIVITY_MONITOR_START_FAILED: &str = "TELEGRAM_CONNECTIVITY_MONITOR_START_FAILED";
 const CHAT_UPDATES_MONITOR_START_FAILED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_START_FAILED";
-
-/// Number of chats to preload from TDLib cache on startup.
-const DEFAULT_CACHED_CHAT_LIMIT: usize = 50;
 
 pub struct ShellComposition {
     pub event_source: Box<CrosstermEventSource>,
@@ -43,9 +39,17 @@ pub struct ShellComposition {
     _chat_updates_monitor: Option<TelegramChatUpdatesMonitor>,
 }
 
-pub fn bootstrap(config_path: Option<&Path>) -> Result<AppContext, AppError> {
-    let context = build_context(config_path)?;
+pub fn bootstrap(
+    config_path: Option<&Path>,
+    startup_instant: std::time::Instant,
+) -> Result<AppContext, AppError> {
+    let context = build_context(config_path, startup_instant)?;
     infra::logging::init(&context.config.logging)?;
+
+    tracing::info!(
+        elapsed_ms = startup_instant.elapsed().as_millis(),
+        "STARTUP_METRIC: bootstrap complete (config + tdlib + logging)"
+    );
 
     Ok(context)
 }
@@ -120,40 +124,15 @@ fn compose_shell_with_factory(
 
     let cache_cfg = &context.config.cache;
 
-    // Try to preload chats from TDLib's local cache for instant display.
-    // This is a synchronous call that reads from SQLite — no network involved.
-    let initial_state = match context
-        .telegram
-        .list_cached_chats(DEFAULT_CACHED_CHAT_LIMIT)
-    {
-        Ok(chats) if !chats.is_empty() => {
-            tracing::info!(count = chats.len(), "preloaded chat list from TDLib cache");
-            ShellState::with_cache_limits(
-                chats,
-                cache_cfg.max_cached_chats,
-                cache_cfg.max_messages_per_chat,
-            )
-        }
-        Ok(_) => {
-            tracing::debug!("TDLib cache is empty, starting with Loading state");
-            ShellState::with_cache_limits(
-                vec![],
-                cache_cfg.max_cached_chats,
-                cache_cfg.max_messages_per_chat,
-            )
-        }
-        Err(error) => {
-            tracing::debug!(
-                ?error,
-                "failed to preload cached chats, starting with Loading state"
-            );
-            ShellState::with_cache_limits(
-                vec![],
-                cache_cfg.max_cached_chats,
-                cache_cfg.max_messages_per_chat,
-            )
-        }
-    };
+    // Start with an empty Loading state for instant TUI display.
+    // The first Tick in the event loop will trigger a background chat list
+    // fetch, which populates the list asynchronously. This avoids blocking
+    // the main thread with ~100 sequential TDLib calls during startup.
+    let initial_state = ShellState::with_cache_limits(
+        vec![],
+        cache_cfg.max_cached_chats,
+        cache_cfg.max_messages_per_chat,
+    );
 
     // Provide the cache source to the orchestrator for instant message display.
     let cache_source: Option<
@@ -185,25 +164,42 @@ fn compose_shell_with_factory(
     }
 }
 
-fn build_context(config_path: Option<&Path>) -> Result<AppContext, AppError> {
+fn build_context(
+    config_path: Option<&Path>,
+    startup_instant: std::time::Instant,
+) -> Result<AppContext, AppError> {
     let config_adapter = FileConfigAdapter::new(config_path);
-    build_context_with(&config_adapter)
+    build_context_with(&config_adapter, startup_instant)
 }
 
-fn build_context_with(config_adapter: &dyn ConfigAdapter) -> Result<AppContext, AppError> {
-    build_context_with_factories(config_adapter, &RealTelegramAdapterFactory)
+fn build_context_with(
+    config_adapter: &dyn ConfigAdapter,
+    startup_instant: std::time::Instant,
+) -> Result<AppContext, AppError> {
+    build_context_with_factories(config_adapter, &RealTelegramAdapterFactory, startup_instant)
 }
 
 fn build_context_with_factories(
     config_adapter: &dyn ConfigAdapter,
     telegram_factory: &dyn TelegramAdapterFactory,
+    startup_instant: std::time::Instant,
 ) -> Result<AppContext, AppError> {
     let config = config_adapter.load().map_err(AppError::Other)?;
     validate_telegram_config(&config.telegram)?;
 
+    eprintln!(
+        "[rtg] config loaded: {}ms",
+        startup_instant.elapsed().as_millis()
+    );
+
     let telegram = telegram_factory
         .from_config(&config.telegram)
         .map_err(map_telegram_bootstrap_error)?;
+
+    eprintln!(
+        "[rtg] tdlib initialized: {}ms",
+        startup_instant.elapsed().as_millis()
+    );
 
     Ok(AppContext::new(config, telegram))
 }
@@ -367,12 +363,16 @@ mod tests {
         }
     }
 
+    fn test_instant() -> std::time::Instant {
+        std::time::Instant::now()
+    }
+
     #[test]
     fn builds_context_with_default_config_when_file_is_missing() {
         let config_adapter =
             crate::infra::config::FileConfigAdapter::new(Some(Path::new("./missing-config.toml")));
-        let context =
-            build_context_with(&config_adapter).expect("context should build from defaults");
+        let context = build_context_with(&config_adapter, test_instant())
+            .expect("context should build from defaults");
 
         assert_eq!(context.config, crate::infra::config::AppConfig::default());
         assert!(!context.telegram.uses_real_backend());
@@ -381,8 +381,8 @@ mod tests {
     #[test]
     fn builds_context_via_config_contract() {
         let adapter = StubConfigAdapter;
-        let context =
-            build_context_with(&adapter).expect("context should build from config adapter");
+        let context = build_context_with(&adapter, test_instant())
+            .expect("context should build from config adapter");
 
         assert_eq!(context.config, crate::infra::config::AppConfig::default());
         assert!(!context.telegram.uses_real_backend());
@@ -408,8 +408,9 @@ mod tests {
         };
         let telegram_factory = StubTelegramAdapterFactory { result: Ok(()) };
 
-        let context = build_context_with_factories(&config_adapter, &telegram_factory)
-            .expect("unconfigured bootstrap should succeed");
+        let context =
+            build_context_with_factories(&config_adapter, &telegram_factory, test_instant())
+                .expect("unconfigured bootstrap should succeed");
 
         assert!(!context.telegram.uses_real_backend());
     }
@@ -430,8 +431,9 @@ mod tests {
             }),
         };
 
-        let error = build_context_with_factories(&config_adapter, &telegram_factory)
-            .expect_err("configured bootstrap should fail fast");
+        let error =
+            build_context_with_factories(&config_adapter, &telegram_factory, test_instant())
+                .expect_err("configured bootstrap should fail fast");
         let rendered = error.to_string();
 
         assert!(rendered.contains("TELEGRAM_BOOTSTRAP_FAILED"));
@@ -452,8 +454,9 @@ mod tests {
             result: Err(AuthBackendError::InvalidPhone),
         };
 
-        let error = build_context_with_factories(&config_adapter, &telegram_factory)
-            .expect_err("error should be mapped");
+        let error =
+            build_context_with_factories(&config_adapter, &telegram_factory, test_instant())
+                .expect_err("error should be mapped");
 
         assert!(error
             .to_string()
