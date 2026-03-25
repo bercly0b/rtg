@@ -3,6 +3,19 @@
 /// Maximum allowed input length (Telegram message limit).
 const MAX_INPUT_LENGTH: usize = 4096;
 
+/// Context for a reply-to-message action.
+///
+/// Stored while the user is composing a reply and consumed when the message is sent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplyContext {
+    /// ID of the message being replied to (used for the TDLib API call).
+    pub message_id: i64,
+    /// Display name of the original message sender.
+    pub sender_name: String,
+    /// Text preview of the original message.
+    pub text: String,
+}
+
 /// State for the message composition input field.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MessageInputState {
@@ -10,6 +23,8 @@ pub struct MessageInputState {
     text: String,
     /// Cursor position (character index, not byte).
     cursor_position: usize,
+    /// Active reply context (set when user presses `r` on a message).
+    reply_to: Option<ReplyContext>,
 }
 
 impl MessageInputState {
@@ -85,11 +100,12 @@ impl MessageInputState {
         self.cursor_position = self.text.chars().count();
     }
 
-    /// Clears all text and resets cursor.
+    /// Clears all text, reply context, and resets cursor.
     #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.text.clear();
         self.cursor_position = 0;
+        self.reply_to = None;
     }
 
     /// Replaces the current text and moves cursor to the end.
@@ -98,6 +114,28 @@ impl MessageInputState {
     pub fn set_text(&mut self, text: &str) {
         self.text = text.to_owned();
         self.cursor_position = self.text.chars().count();
+    }
+
+    /// Returns the active reply context, if any.
+    pub fn reply_to(&self) -> Option<&ReplyContext> {
+        self.reply_to.as_ref()
+    }
+
+    /// Sets the reply context (user pressed `r` on a message).
+    pub fn set_reply_to(&mut self, reply: ReplyContext) {
+        self.reply_to = Some(reply);
+    }
+
+    /// Clears the reply context without clearing the text.
+    pub fn clear_reply_to(&mut self) {
+        self.reply_to = None;
+    }
+
+    /// Takes the reply context out, leaving `None` in its place.
+    ///
+    /// Used by the send flow to extract reply_to before clearing input.
+    pub fn take_reply_to(&mut self) -> Option<ReplyContext> {
+        self.reply_to.take()
     }
 
     /// Converts character index to byte index.
@@ -302,5 +340,82 @@ mod tests {
         // Should reject additional characters
         assert!(!state.insert_char('y'));
         assert_eq!(state.text().chars().count(), MAX_INPUT_LENGTH);
+    }
+
+    // ── reply context tests ──
+
+    fn sample_reply_context() -> ReplyContext {
+        ReplyContext {
+            message_id: 42,
+            sender_name: "Alice".to_owned(),
+            text: "Original message".to_owned(),
+        }
+    }
+
+    #[test]
+    fn reply_to_is_none_by_default() {
+        let state = MessageInputState::default();
+        assert!(state.reply_to().is_none());
+    }
+
+    #[test]
+    fn set_reply_to_stores_context() {
+        let mut state = MessageInputState::default();
+        state.set_reply_to(sample_reply_context());
+
+        let reply = state.reply_to().expect("should have reply context");
+        assert_eq!(reply.message_id, 42);
+        assert_eq!(reply.sender_name, "Alice");
+        assert_eq!(reply.text, "Original message");
+    }
+
+    #[test]
+    fn clear_reply_to_removes_context() {
+        let mut state = MessageInputState::default();
+        state.set_reply_to(sample_reply_context());
+        state.clear_reply_to();
+
+        assert!(state.reply_to().is_none());
+    }
+
+    #[test]
+    fn clear_also_clears_reply_to() {
+        let mut state = MessageInputState::default();
+        state.insert_char('H');
+        state.set_reply_to(sample_reply_context());
+
+        state.clear();
+
+        assert!(state.is_empty());
+        assert!(state.reply_to().is_none());
+    }
+
+    #[test]
+    fn take_reply_to_returns_and_removes() {
+        let mut state = MessageInputState::default();
+        state.set_reply_to(sample_reply_context());
+
+        let taken = state.take_reply_to();
+        assert!(taken.is_some());
+        assert_eq!(taken.unwrap().message_id, 42);
+        assert!(state.reply_to().is_none());
+    }
+
+    #[test]
+    fn take_reply_to_returns_none_when_empty() {
+        let mut state = MessageInputState::default();
+        assert!(state.take_reply_to().is_none());
+    }
+
+    #[test]
+    fn clear_reply_to_preserves_text() {
+        let mut state = MessageInputState::default();
+        state.insert_char('H');
+        state.insert_char('i');
+        state.set_reply_to(sample_reply_context());
+        state.clear_reply_to();
+
+        assert_eq!(state.text(), "Hi");
+        assert!(state.reply_to().is_none());
     }
 }

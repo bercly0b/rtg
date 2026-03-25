@@ -679,6 +679,9 @@ where
             "D" => {
                 self.download_selected_message_file();
             }
+            "r" => {
+                self.reply_to_selected_message();
+            }
             _ => {}
         }
         Ok(())
@@ -906,9 +909,11 @@ where
         }
 
         // Optimistically show the voice message immediately
-        self.state
-            .open_chat_mut()
-            .add_pending_message(String::new(), crate::domain::message::MessageMedia::Voice);
+        self.state.open_chat_mut().add_pending_message(
+            String::new(),
+            crate::domain::message::MessageMedia::Voice,
+            None,
+        );
         self.dispatcher.dispatch_send_voice(chat_id, file_path);
     }
 
@@ -1029,6 +1034,36 @@ where
         self.dispatcher.dispatch_delete_message(chat_id, message_id);
     }
 
+    fn reply_to_selected_message(&mut self) {
+        use crate::domain::message_input_state::ReplyContext;
+
+        if !self.state.open_chat().is_open() {
+            return;
+        }
+
+        let Some(msg) = self.state.open_chat().selected_message() else {
+            return;
+        };
+
+        // Don't reply to pending (unsent) messages
+        if msg.id == 0 {
+            return;
+        }
+
+        let reply_context = ReplyContext {
+            message_id: msg.id,
+            sender_name: if msg.is_outgoing {
+                "You".to_owned()
+            } else {
+                msg.sender_name.clone()
+            },
+            text: msg.display_content(),
+        };
+
+        self.state.message_input_mut().set_reply_to(reply_context);
+        self.state.set_active_pane(ActivePane::MessageInput);
+    }
+
     fn open_message_url(&mut self) -> Result<()> {
         use crate::domain::message::extract_first_url;
 
@@ -1044,7 +1079,10 @@ where
 
     fn handle_message_input_key(&mut self, key: &str) {
         match key {
-            "esc" => self.state.set_active_pane(ActivePane::Messages),
+            "esc" => {
+                self.state.message_input_mut().clear_reply_to();
+                self.state.set_active_pane(ActivePane::Messages);
+            }
             "enter" => self.try_send_message(),
             "backspace" => self.state.message_input_mut().delete_char_before(),
             "delete" => self.state.message_input_mut().delete_char_at(),
@@ -1077,13 +1115,23 @@ where
 
         tracing::debug!(chat_id, "dispatching send message to background");
 
+        // Extract reply context before clearing input
+        let reply_context = self.state.message_input_mut().take_reply_to();
+        let reply_to_message_id = reply_context.as_ref().map(|r| r.message_id);
+        let pending_reply_info = reply_context.map(|r| crate::domain::message::ReplyInfo {
+            sender_name: r.sender_name,
+            text: r.text,
+        });
+
         // Optimistically clear the input and show the message immediately
         self.state.message_input_mut().clear();
         self.state.open_chat_mut().add_pending_message(
             trimmed.to_owned(),
             crate::domain::message::MessageMedia::None,
+            pending_reply_info,
         );
-        self.dispatcher.dispatch_send_message(chat_id, text.clone());
+        self.dispatcher
+            .dispatch_send_message(chat_id, text.clone(), reply_to_message_id);
     }
 
     fn handle_background_result(&mut self, result: BackgroundTaskResult) {
@@ -1509,6 +1557,7 @@ mod tests {
             media: crate::domain::message::MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            reply_to: None,
         }
     }
 
@@ -1518,7 +1567,7 @@ mod tests {
     struct RecordingDispatcher {
         dispatched_chat_list_count: RefCell<usize>,
         dispatched_messages: RefCell<Vec<i64>>,
-        dispatched_sends: RefCell<Vec<(i64, String)>>,
+        dispatched_sends: RefCell<Vec<(i64, String, Option<i64>)>>,
         dispatched_open_chats: RefCell<Vec<i64>>,
         dispatched_close_chats: RefCell<Vec<i64>>,
         dispatched_mark_as_read: RefCell<Vec<(i64, Vec<i64>)>>,
@@ -1556,7 +1605,7 @@ mod tests {
             self.dispatched_sends.borrow().len()
         }
 
-        fn last_send(&self) -> Option<(i64, String)> {
+        fn last_send(&self) -> Option<(i64, String, Option<i64>)> {
             self.dispatched_sends.borrow().last().cloned()
         }
 
@@ -1618,8 +1667,15 @@ mod tests {
             self.dispatched_messages.borrow_mut().push(chat_id);
         }
 
-        fn dispatch_send_message(&self, chat_id: i64, text: String) {
-            self.dispatched_sends.borrow_mut().push((chat_id, text));
+        fn dispatch_send_message(
+            &self,
+            chat_id: i64,
+            text: String,
+            reply_to_message_id: Option<i64>,
+        ) {
+            self.dispatched_sends
+                .borrow_mut()
+                .push((chat_id, text, reply_to_message_id));
         }
 
         fn dispatch_open_chat(&self, chat_id: i64) {
@@ -2336,7 +2392,7 @@ mod tests {
         // Input should be cleared optimistically
         assert_eq!(o.state().message_input().text(), "");
         assert_eq!(o.dispatcher.send_dispatch_count(), 1);
-        assert_eq!(o.dispatcher.last_send(), Some((1, "Hi".to_owned())));
+        assert_eq!(o.dispatcher.last_send(), Some((1, "Hi".to_owned(), None)));
         assert_eq!(o.state().active_pane(), ActivePane::MessageInput);
     }
 
@@ -5379,6 +5435,7 @@ mod tests {
                 is_listened: false,
                 download_status: crate::domain::message::DownloadStatus::Completed,
             }),
+            reply_to: None,
         }
     }
 
@@ -5401,6 +5458,7 @@ mod tests {
                 is_listened: false,
                 download_status: crate::domain::message::DownloadStatus::NotStarted,
             }),
+            reply_to: None,
         }
     }
 
@@ -5423,6 +5481,7 @@ mod tests {
                 is_listened: false,
                 download_status: crate::domain::message::DownloadStatus::Completed,
             }),
+            reply_to: None,
         }
     }
 
@@ -5603,6 +5662,7 @@ mod tests {
                 is_listened: false,
                 download_status: crate::domain::message::DownloadStatus::Completed,
             }),
+            reply_to: None,
         }
     }
 
@@ -5625,6 +5685,7 @@ mod tests {
                 is_listened: false,
                 download_status: crate::domain::message::DownloadStatus::Completed,
             }),
+            reply_to: None,
         }
     }
 
@@ -5806,6 +5867,7 @@ mod tests {
                     is_listened: false,
                     download_status: crate::domain::message::DownloadStatus::Completed,
                 }),
+                reply_to: None,
             }],
         );
         o.open_handlers
@@ -5846,6 +5908,7 @@ mod tests {
                     is_listened: false,
                     download_status: crate::domain::message::DownloadStatus::Completed,
                 }),
+                reply_to: None,
             }],
         );
 
@@ -6054,5 +6117,133 @@ mod tests {
             ChatInfoPopupState::Loading { title, .. } => assert_eq!(title, "Bob"),
             _ => panic!("expected Loading state for Bob, not stale Alice data"),
         }
+    }
+
+    // ── reply-to-message tests ──
+
+    #[test]
+    fn r_key_sets_reply_context_and_switches_to_input() {
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "General")],
+            1,
+            vec![message(1, "Hello"), message(2, "World")],
+        );
+
+        // Select first message and press r
+        o.handle_event(AppEvent::InputKey(KeyInput::new("k", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .unwrap();
+
+        assert_eq!(o.state().active_pane(), ActivePane::MessageInput);
+        let reply = o
+            .state()
+            .message_input()
+            .reply_to()
+            .expect("should have reply context");
+        assert_eq!(reply.message_id, 1);
+        assert_eq!(reply.text, "Hello");
+    }
+
+    #[test]
+    fn esc_from_input_clears_reply_context() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+
+        // Set reply and switch to input
+        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .unwrap();
+        assert!(o.state().message_input().reply_to().is_some());
+
+        // Press esc to go back
+        o.handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
+            .unwrap();
+
+        assert_eq!(o.state().active_pane(), ActivePane::Messages);
+        assert!(o.state().message_input().reply_to().is_none());
+    }
+
+    #[test]
+    fn send_message_with_reply_dispatches_reply_to_id() {
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "General")],
+            1,
+            vec![message(1, "Hello"), message(2, "World")],
+        );
+
+        // Reply to message 2 (selected by default — last message)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .unwrap();
+
+        // Type text
+        o.handle_event(AppEvent::InputKey(KeyInput::new("O", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("K", false)))
+            .unwrap();
+
+        // Send
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        assert_eq!(o.dispatcher.send_dispatch_count(), 1);
+        let (chat_id, text, reply_to) = o.dispatcher.last_send().unwrap();
+        assert_eq!(chat_id, 1);
+        assert_eq!(text, "OK");
+        assert_eq!(reply_to, Some(2));
+
+        // Reply context should be consumed
+        assert!(o.state().message_input().reply_to().is_none());
+    }
+
+    #[test]
+    fn send_message_without_reply_has_none_reply_to() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+
+        // Enter input mode normally (no reply)
+        o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("H", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+            .unwrap();
+        o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+            .unwrap();
+
+        let (_, _, reply_to) = o.dispatcher.last_send().unwrap();
+        assert_eq!(reply_to, None);
+    }
+
+    #[test]
+    fn r_key_does_nothing_when_no_message_selected() {
+        let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .unwrap();
+
+        // Should stay on Messages pane (not switch to input)
+        assert_eq!(o.state().active_pane(), ActivePane::Messages);
+        assert!(o.state().message_input().reply_to().is_none());
+    }
+
+    #[test]
+    fn r_key_ignores_pending_messages() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+
+        // Add a pending message (id=0) and select it
+        o.state_mut().open_chat_mut().add_pending_message(
+            "Pending".to_owned(),
+            crate::domain::message::MessageMedia::None,
+            None,
+        );
+
+        // Try to reply
+        o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+            .unwrap();
+
+        // Should not set reply context for pending message
+        assert_eq!(o.state().active_pane(), ActivePane::Messages);
+        assert!(o.state().message_input().reply_to().is_none());
     }
 }

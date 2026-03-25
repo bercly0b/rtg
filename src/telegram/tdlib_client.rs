@@ -806,6 +806,7 @@ impl TdLibClient {
         &self,
         chat_id: i64,
         text: &str,
+        reply_to_message_id: Option<i64>,
     ) -> Result<tdlib_rs::types::Message, TdLibError> {
         let client_id = self.client_id;
         let text = text.to_owned();
@@ -824,10 +825,20 @@ impl TdLibClient {
                 },
             );
 
+            let reply_to = reply_to_message_id.map(|msg_id| {
+                tdlib_rs::enums::InputMessageReplyTo::Message(
+                    tdlib_rs::types::InputMessageReplyToMessage {
+                        message_id: msg_id,
+                        quote: None,
+                        checklist_task_id: 0,
+                    },
+                )
+            });
+
             let message = tdlib_rs::functions::send_message(
                 chat_id,
                 None, // topic_id
-                None, // reply_to
+                reply_to,
                 None, // options
                 input_content,
                 client_id,

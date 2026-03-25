@@ -8,6 +8,8 @@
 pub struct SendMessageCommand {
     pub chat_id: i64,
     pub text: String,
+    /// If set, the message is a reply to this message ID.
+    pub reply_to_message_id: Option<i64>,
 }
 
 /// Errors that can occur at the source level (Telegram API).
@@ -41,21 +43,37 @@ pub trait MessageSender {
     /// # Arguments
     /// * `chat_id` - The ID of the chat to send the message to
     /// * `text` - The message text to send
+    /// * `reply_to_message_id` - Optional message ID to reply to
     ///
     /// # Errors
     /// Returns `SendMessageSourceError` if the message could not be sent.
-    fn send_message(&self, chat_id: i64, text: &str) -> Result<(), SendMessageSourceError>;
+    fn send_message(
+        &self,
+        chat_id: i64,
+        text: &str,
+        reply_to_message_id: Option<i64>,
+    ) -> Result<(), SendMessageSourceError>;
 }
 
 impl<T: MessageSender + ?Sized> MessageSender for &T {
-    fn send_message(&self, chat_id: i64, text: &str) -> Result<(), SendMessageSourceError> {
-        (*self).send_message(chat_id, text)
+    fn send_message(
+        &self,
+        chat_id: i64,
+        text: &str,
+        reply_to_message_id: Option<i64>,
+    ) -> Result<(), SendMessageSourceError> {
+        (*self).send_message(chat_id, text, reply_to_message_id)
     }
 }
 
 impl<T: MessageSender + ?Sized> MessageSender for std::sync::Arc<T> {
-    fn send_message(&self, chat_id: i64, text: &str) -> Result<(), SendMessageSourceError> {
-        (**self).send_message(chat_id, text)
+    fn send_message(
+        &self,
+        chat_id: i64,
+        text: &str,
+        reply_to_message_id: Option<i64>,
+    ) -> Result<(), SendMessageSourceError> {
+        (**self).send_message(chat_id, text, reply_to_message_id)
     }
 }
 
@@ -81,7 +99,7 @@ pub fn send_message(
     }
 
     sender
-        .send_message(command.chat_id, text)
+        .send_message(command.chat_id, text, command.reply_to_message_id)
         .map_err(map_source_error)
 }
 
@@ -115,7 +133,12 @@ mod tests {
     }
 
     impl MessageSender for StubSender {
-        fn send_message(&self, chat_id: i64, text: &str) -> Result<(), SendMessageSourceError> {
+        fn send_message(
+            &self,
+            chat_id: i64,
+            text: &str,
+            _reply_to_message_id: Option<i64>,
+        ) -> Result<(), SendMessageSourceError> {
             *self.captured_chat_id.borrow_mut() = Some(chat_id);
             *self.captured_text.borrow_mut() = Some(text.to_owned());
             self.result.clone()
@@ -131,6 +154,7 @@ mod tests {
             SendMessageCommand {
                 chat_id: 1,
                 text: String::new(),
+                reply_to_message_id: None,
             },
         );
 
@@ -147,6 +171,7 @@ mod tests {
             SendMessageCommand {
                 chat_id: 1,
                 text: "   \n\t  ".to_owned(),
+                reply_to_message_id: None,
             },
         );
 
@@ -162,6 +187,7 @@ mod tests {
             SendMessageCommand {
                 chat_id: 42,
                 text: "  hello world  ".to_owned(),
+                reply_to_message_id: None,
             },
         );
 
@@ -180,6 +206,7 @@ mod tests {
             SendMessageCommand {
                 chat_id: 123,
                 text: "test".to_owned(),
+                reply_to_message_id: None,
             },
         );
 
@@ -195,6 +222,7 @@ mod tests {
             SendMessageCommand {
                 chat_id: 1,
                 text: "hello".to_owned(),
+                reply_to_message_id: None,
             },
         );
 
@@ -210,6 +238,7 @@ mod tests {
             SendMessageCommand {
                 chat_id: 1,
                 text: "hello".to_owned(),
+                reply_to_message_id: None,
             },
         );
 
@@ -225,6 +254,7 @@ mod tests {
             SendMessageCommand {
                 chat_id: 1,
                 text: "hello".to_owned(),
+                reply_to_message_id: None,
             },
         );
 
@@ -240,6 +270,7 @@ mod tests {
             SendMessageCommand {
                 chat_id: 1,
                 text: "hello".to_owned(),
+                reply_to_message_id: None,
             },
         );
 

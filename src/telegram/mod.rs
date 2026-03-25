@@ -277,9 +277,14 @@ impl CachedMessagesSource for TelegramAdapter {
 }
 
 impl MessageSender for TelegramAdapter {
-    fn send_message(&self, chat_id: i64, text: &str) -> Result<(), SendMessageSourceError> {
+    fn send_message(
+        &self,
+        chat_id: i64,
+        text: &str,
+        reply_to_message_id: Option<i64>,
+    ) -> Result<(), SendMessageSourceError> {
         match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.send_message(chat_id, text),
+            Some(backend) => backend.send_message(chat_id, text, reply_to_message_id),
             None => Err(SendMessageSourceError::Unauthorized),
         }
     }
@@ -488,7 +493,7 @@ mod tests {
         let adapter = TelegramAdapter::stub();
 
         let error = adapter
-            .send_message(1, "hello")
+            .send_message(1, "hello", None)
             .expect_err("stub adapter should fail");
 
         assert_eq!(error, SendMessageSourceError::Unauthorized);

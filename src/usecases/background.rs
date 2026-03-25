@@ -27,7 +27,7 @@ use super::{
 pub trait TaskDispatcher {
     fn dispatch_chat_list(&self);
     fn dispatch_load_messages(&self, chat_id: i64);
-    fn dispatch_send_message(&self, chat_id: i64, text: String);
+    fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>);
 
     /// Informs TDLib that the user has opened a chat (fire-and-forget).
     fn dispatch_open_chat(&self, chat_id: i64);
@@ -189,7 +189,7 @@ where
         }
     }
 
-    fn dispatch_send_message(&self, chat_id: i64, text: String) {
+    fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>) {
         let sender = Arc::clone(&self.message_sender);
         let messages_source = Arc::clone(&self.messages_source);
         let tx = self.result_tx.clone();
@@ -201,7 +201,11 @@ where
             .name("rtg-bg-send-msg".into())
             .spawn(move || {
                 tracing::debug!(chat_id, "background: sending message");
-                let command = SendMessageCommand { chat_id, text };
+                let command = SendMessageCommand {
+                    chat_id,
+                    text,
+                    reply_to_message_id,
+                };
                 let send_result = send_message(sender.as_ref(), command).map_err(|error| {
                     tracing::warn!(chat_id, error = ?error, "background: send message failed");
                     BackgroundError::new(map_send_message_error(&error))
@@ -606,7 +610,12 @@ pub mod tests {
             // Stub: does not dispatch; tests inject results manually
         }
 
-        fn dispatch_send_message(&self, _chat_id: i64, _text: String) {
+        fn dispatch_send_message(
+            &self,
+            _chat_id: i64,
+            _text: String,
+            _reply_to_message_id: Option<i64>,
+        ) {
             // Stub: does not dispatch; tests inject results manually
         }
 
