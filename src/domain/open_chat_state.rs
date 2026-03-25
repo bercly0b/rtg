@@ -1,3 +1,4 @@
+use super::chat::ChatType;
 use super::chat_subtitle::ChatSubtitle;
 use super::message::{Message, MessageStatus, ReplyInfo};
 
@@ -58,6 +59,7 @@ pub struct OpenChatState {
     chat_id: Option<i64>,
     chat_title: String,
     chat_subtitle: ChatSubtitle,
+    chat_type: ChatType,
     messages: Vec<Message>,
     ui_state: OpenChatUiState,
     selected_index: Option<usize>,
@@ -74,6 +76,7 @@ impl Default for OpenChatState {
             chat_id: None,
             chat_title: String::new(),
             chat_subtitle: ChatSubtitle::None,
+            chat_type: ChatType::Private,
             messages: Vec::new(),
             ui_state: OpenChatUiState::Empty,
             selected_index: None,
@@ -100,6 +103,10 @@ impl OpenChatState {
 
     pub fn set_chat_subtitle(&mut self, subtitle: ChatSubtitle) {
         self.chat_subtitle = subtitle;
+    }
+
+    pub fn chat_type(&self) -> ChatType {
+        self.chat_type
     }
 
     pub fn messages(&self) -> &[Message] {
@@ -168,10 +175,11 @@ impl OpenChatState {
         self.message_source = source;
     }
 
-    pub fn set_loading(&mut self, chat_id: i64, chat_title: String) {
+    pub fn set_loading(&mut self, chat_id: i64, chat_title: String, chat_type: ChatType) {
         self.chat_id = Some(chat_id);
         self.chat_title = chat_title;
         self.chat_subtitle = ChatSubtitle::None;
+        self.chat_type = chat_type;
         self.messages.clear();
         self.ui_state = OpenChatUiState::Loading;
         self.selected_index = None;
@@ -316,6 +324,7 @@ impl OpenChatState {
         self.chat_id = None;
         self.chat_title.clear();
         self.chat_subtitle = ChatSubtitle::None;
+        self.chat_type = ChatType::Private;
         self.messages.clear();
         self.ui_state = OpenChatUiState::Empty;
         self.selected_index = None;
@@ -395,7 +404,7 @@ mod tests {
     fn set_loading_transitions_correctly() {
         let mut state = OpenChatState::default();
 
-        state.set_loading(42, "Test Chat".to_owned());
+        state.set_loading(42, "Test Chat".to_owned(), ChatType::Private);
 
         assert_eq!(state.chat_id(), Some(42));
         assert_eq!(state.chat_title(), "Test Chat");
@@ -408,12 +417,12 @@ mod tests {
     #[test]
     fn set_loading_resets_refreshing_and_source() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A")]);
         state.set_refreshing(true);
         state.set_message_source(MessageSource::Cache);
 
-        state.set_loading(2, "Other Chat".to_owned());
+        state.set_loading(2, "Other Chat".to_owned(), ChatType::Private);
 
         assert!(!state.is_refreshing());
         assert_eq!(state.message_source(), MessageSource::None);
@@ -422,7 +431,7 @@ mod tests {
     #[test]
     fn set_ready_stores_messages_and_selects_last() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
 
         state.set_ready(vec![message(1, "Hello"), message(2, "World")]);
 
@@ -434,7 +443,7 @@ mod tests {
     #[test]
     fn set_ready_with_empty_messages_has_no_selection() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
 
         state.set_ready(vec![]);
 
@@ -447,7 +456,7 @@ mod tests {
     #[test]
     fn set_error_transitions_to_error() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
 
         state.set_error();
 
@@ -457,7 +466,7 @@ mod tests {
     #[test]
     fn set_error_resets_refreshing_and_source() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A")]);
         state.set_refreshing(true);
         state.set_message_source(MessageSource::Cache);
@@ -471,7 +480,7 @@ mod tests {
     #[test]
     fn clear_resets_to_empty() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "Hi")]);
         state.set_refreshing(true);
         state.set_message_source(MessageSource::Cache);
@@ -489,7 +498,7 @@ mod tests {
     #[test]
     fn select_next_moves_down_in_message_list() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B"), message(3, "C")]);
 
         // Initially at last message (index 2)
@@ -512,7 +521,7 @@ mod tests {
     #[test]
     fn select_previous_moves_up_in_message_list() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B"), message(3, "C")]);
 
         // Initially at last message (index 2)
@@ -532,7 +541,7 @@ mod tests {
     #[test]
     fn select_next_on_empty_messages_does_nothing() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![]);
 
         state.select_next();
@@ -543,7 +552,7 @@ mod tests {
     #[test]
     fn select_previous_on_empty_messages_does_nothing() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![]);
 
         state.select_previous();
@@ -554,7 +563,7 @@ mod tests {
     #[test]
     fn select_next_initializes_to_first_when_no_selection() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
         state.selected_index = None; // Force no selection
 
@@ -566,7 +575,7 @@ mod tests {
     #[test]
     fn select_previous_initializes_to_last_when_no_selection() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
         state.selected_index = None; // Force no selection
 
@@ -586,7 +595,7 @@ mod tests {
         let mut state = OpenChatState::default();
         state.scroll_offset = ScrollOffset { item: 5, line: 2 };
 
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
 
         assert_eq!(state.scroll_offset(), ScrollOffset::ZERO);
     }
@@ -594,7 +603,7 @@ mod tests {
     #[test]
     fn set_ready_initializes_scroll_offset_to_bottom() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
 
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
 
@@ -621,7 +630,7 @@ mod tests {
     #[test]
     fn update_messages_clears_refreshing_and_sets_live_source() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A")]);
         state.set_refreshing(true);
         state.set_message_source(MessageSource::Cache);
@@ -635,7 +644,7 @@ mod tests {
     #[test]
     fn update_messages_preserves_selection_by_message_id() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B"), message(3, "C")]);
 
         // Select message 2 (index 1)
@@ -655,7 +664,7 @@ mod tests {
     #[test]
     fn update_messages_falls_back_to_last_when_selected_message_disappears() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B"), message(3, "C")]);
 
         // Select message 3 (index 2)
@@ -672,7 +681,7 @@ mod tests {
     #[test]
     fn update_messages_handles_empty_replacement() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
 
         state.update_messages(vec![]);
@@ -685,7 +694,7 @@ mod tests {
     #[test]
     fn update_messages_on_empty_state_with_new_messages() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![]);
 
         state.update_messages(vec![message(1, "A"), message(2, "B")]);
@@ -699,7 +708,7 @@ mod tests {
     #[test]
     fn update_messages_preserves_selection_same_position() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
 
         // Selected last message (index 1, id 2)
@@ -721,7 +730,7 @@ mod tests {
     #[test]
     fn add_pending_message_appends_and_selects_it() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
 
         state.add_pending_message(
@@ -746,7 +755,7 @@ mod tests {
     #[test]
     fn remove_pending_messages_keeps_delivered() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
 
         state.add_pending_message(
@@ -766,7 +775,7 @@ mod tests {
     #[test]
     fn remove_pending_messages_fixes_selection() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A")]);
 
         state.add_pending_message(
@@ -785,7 +794,7 @@ mod tests {
     #[test]
     fn set_ready_replaces_pending_messages() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A")]);
 
         state.add_pending_message(
@@ -809,7 +818,7 @@ mod tests {
     #[test]
     fn add_pending_message_with_voice_media() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A")]);
 
         state.add_pending_message(
@@ -837,7 +846,7 @@ mod tests {
     #[test]
     fn selected_message_returns_message_at_selected_index() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![
             message(1, "First"),
             message(2, "Second"),
@@ -853,7 +862,7 @@ mod tests {
     #[test]
     fn selected_message_returns_none_when_empty() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![]);
 
         assert!(state.selected_message().is_none());
@@ -862,7 +871,7 @@ mod tests {
     #[test]
     fn selected_message_follows_navigation() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
 
         state.select_previous();
@@ -876,7 +885,7 @@ mod tests {
     #[test]
     fn remove_message_removes_by_id() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B"), message(3, "C")]);
 
         state.remove_message(2);
@@ -889,7 +898,7 @@ mod tests {
     #[test]
     fn remove_message_adjusts_selection_when_last_removed() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
         // Selection defaults to last (index 1, id=2)
 
@@ -902,7 +911,7 @@ mod tests {
     #[test]
     fn remove_message_clears_selection_when_empty() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A")]);
 
         state.remove_message(1);
@@ -914,7 +923,7 @@ mod tests {
     #[test]
     fn remove_message_ignores_unknown_id() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
 
         state.remove_message(999);
@@ -927,7 +936,7 @@ mod tests {
     #[test]
     fn update_message_reaction_count_modifies_existing() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A"), message(2, "B")]);
 
         state.update_message_reaction_count(2, 7);
@@ -939,7 +948,7 @@ mod tests {
     #[test]
     fn update_message_reaction_count_ignores_unknown_id() {
         let mut state = OpenChatState::default();
-        state.set_loading(1, "Chat".to_owned());
+        state.set_loading(1, "Chat".to_owned(), ChatType::Private);
         state.set_ready(vec![message(1, "A")]);
 
         state.update_message_reaction_count(999, 3);

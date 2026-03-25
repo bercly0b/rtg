@@ -4,6 +4,7 @@ use anyhow::Result;
 
 use crate::{
     domain::{
+        chat::ChatType,
         chat_list_state::ChatListUiState,
         events::{AppEvent, BackgroundTaskResult, ChatUpdate},
         message_cache::DEFAULT_MIN_DISPLAY_MESSAGES,
@@ -227,7 +228,7 @@ where
             );
             self.state
                 .open_chat_mut()
-                .set_loading(chat_id, chat_title.clone());
+                .set_loading(chat_id, chat_title.clone(), chat_type);
             self.state.open_chat_mut().set_ready(messages);
             self.state.open_chat_mut().set_refreshing(true);
             self.state
@@ -235,11 +236,13 @@ where
                 .set_message_source(MessageSource::Cache);
             true
         } else {
-            self.try_show_cached_messages(chat_id, &chat_title)
+            self.try_show_cached_messages(chat_id, &chat_title, chat_type)
         };
 
         if !showed_cache {
-            self.state.open_chat_mut().set_loading(chat_id, chat_title);
+            self.state
+                .open_chat_mut()
+                .set_loading(chat_id, chat_title, chat_type);
         }
 
         // Dispatch a full background load (pagination).
@@ -435,6 +438,23 @@ where
                             .update_message_reaction_count(message_id, reaction_count);
                     }
                 }
+                ChatUpdate::UserStatusChanged { user_id } => {
+                    // Re-resolve subtitle for the open private chat if it belongs
+                    // to the user whose status changed.
+                    if let Some(chat_id) = self.state.open_chat().chat_id() {
+                        let chat_type = self.state.open_chat().chat_type();
+                        if chat_type == ChatType::Private {
+                            self.dispatcher
+                                .dispatch_chat_subtitle(ChatSubtitleQuery { chat_id, chat_type });
+                            tracing::debug!(
+                                user_id,
+                                chat_id,
+                                "user status changed, re-resolving chat subtitle"
+                            );
+                        }
+                    }
+                    should_refresh_chat_list = true;
+                }
                 ChatUpdate::FileUpdated {
                     file_id,
                     size,
@@ -597,7 +617,12 @@ where
     /// Returns `true` if cached messages were found (above the smart threshold)
     /// and the state was set to Ready. Sparse results below the threshold are
     /// ignored to avoid the "1 message flash" artifact.
-    fn try_show_cached_messages(&mut self, chat_id: i64, chat_title: &str) -> bool {
+    fn try_show_cached_messages(
+        &mut self,
+        chat_id: i64,
+        chat_title: &str,
+        chat_type: ChatType,
+    ) -> bool {
         let Some(cache) = &self.cache_source else {
             return false;
         };
@@ -611,7 +636,7 @@ where
                 );
                 self.state
                     .open_chat_mut()
-                    .set_loading(chat_id, chat_title.to_owned());
+                    .set_loading(chat_id, chat_title.to_owned(), chat_type);
                 self.state.open_chat_mut().set_ready(messages);
                 self.state.open_chat_mut().set_refreshing(true);
                 self.state

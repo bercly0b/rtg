@@ -113,6 +113,9 @@ pub enum ChatUpdate {
         message_id: i64,
         reaction_count: u32,
     },
+    /// User online/offline status changed.
+    /// The orchestrator should update the open chat subtitle if it belongs to this user.
+    UserStatusChanged { user_id: i64 },
     /// File download progress or completion update from TDLib.
     FileUpdated {
         file_id: i32,

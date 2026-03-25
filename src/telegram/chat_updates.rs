@@ -159,7 +159,7 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
                 downloaded_size: downloaded_size.max(0) as u64,
             })
         }
-        TdLibUpdate::UserStatus { .. } => None,
+        TdLibUpdate::UserStatus { user_id } => Some(ChatUpdate::UserStatusChanged { user_id }),
     }
 }
 
@@ -397,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn monitor_skips_user_status_updates() {
+    fn monitor_forwards_user_status_updates() {
         let (update_tx, update_rx) = mpsc::channel();
         let (signal_tx, signal_rx) = mpsc::channel();
         let mapper = Arc::new(StubMessageMapper);
@@ -409,17 +409,12 @@ mod tests {
             .send(TdLibUpdate::UserStatus { user_id: 456 })
             .expect("send should succeed");
 
-        // Send a second update so we can verify the first was skipped
-        update_tx
-            .send(TdLibUpdate::ChatLastMessage { chat_id: 99 })
-            .expect("send should succeed");
-
         let result = signal_rx.recv_timeout(Duration::from_millis(500));
         match result {
-            Ok(ChatUpdate::ChatMetadataChanged { chat_id }) => {
-                assert_eq!(chat_id, 99);
+            Ok(ChatUpdate::UserStatusChanged { user_id }) => {
+                assert_eq!(user_id, 456);
             }
-            other => panic!("expected ChatMetadataChanged (skip UserStatus), got: {other:?}"),
+            other => panic!("expected UserStatusChanged, got: {other:?}"),
         }
 
         drop(update_tx);
