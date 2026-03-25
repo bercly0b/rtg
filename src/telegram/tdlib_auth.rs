@@ -474,9 +474,12 @@ impl TdLibAuthBackend {
             .iter()
             .map(|msg| {
                 let sender_name = self.resolve_message_sender_name(msg);
-                tdlib_mappers::map_tdlib_message_to_domain(msg, sender_name)
+                let reply_to = self.resolve_reply_info(msg);
+                tdlib_mappers::map_tdlib_message_to_domain(msg, sender_name, reply_to)
             })
             .collect();
+
+        enrich_same_chat_reply_info(&td_messages, &mut messages);
 
         // TDLib returns newest-first; UI expects chronological (oldest-first)
         messages.reverse();
@@ -593,9 +596,12 @@ impl TdLibAuthBackend {
             .iter()
             .map(|msg| {
                 let sender_name = self.resolve_message_sender_name(msg);
-                tdlib_mappers::map_tdlib_message_to_domain(msg, sender_name)
+                let reply_to = self.resolve_reply_info(msg);
+                tdlib_mappers::map_tdlib_message_to_domain(msg, sender_name, reply_to)
             })
             .collect();
+
+        enrich_same_chat_reply_info(&td_messages, &mut messages);
 
         // Reverse to get oldest first (UI expects chronological order)
         messages.reverse();
@@ -604,9 +610,14 @@ impl TdLibAuthBackend {
     }
 
     /// Sends a text message to a chat.
-    pub fn send_message(&self, chat_id: i64, text: &str) -> Result<(), SendMessageSourceError> {
+    pub fn send_message(
+        &self,
+        chat_id: i64,
+        text: &str,
+        reply_to_message_id: Option<i64>,
+    ) -> Result<(), SendMessageSourceError> {
         self.client
-            .send_message(chat_id, text)
+            .send_message(chat_id, text, reply_to_message_id)
             .map_err(map_send_message_error)?;
 
         tracing::debug!(chat_id, text_len = text.len(), "Message sent via TDLib");
@@ -632,6 +643,23 @@ impl TdLibAuthBackend {
     /// Resolves the sender name for a message.
     fn resolve_message_sender_name(&self, msg: &tdlib_rs::types::Message) -> String {
         resolve_sender_name(self.client.cache(), &self.client, msg)
+    }
+
+    /// Resolves reply information for a message using the TDLib cache.
+    fn resolve_reply_info(
+        &self,
+        msg: &tdlib_rs::types::Message,
+    ) -> Option<crate::domain::message::ReplyInfo> {
+        let cache = self.client.cache();
+        tdlib_mappers::extract_reply_info(
+            msg,
+            |user_id| {
+                cache
+                    .get_user(user_id)
+                    .map(|u| tdlib_mappers::format_user_name(&u))
+            },
+            |chat_id| cache.get_chat(chat_id).map(|c| c.title.clone()),
+        )
     }
 
     /// Resolves the chat subtitle (user status, member count, etc.).
@@ -924,6 +952,68 @@ fn resolve_sender_name(
     }
 }
 
+fn enrich_same_chat_reply_info(
+    raw_messages: &[tdlib_rs::types::Message],
+    messages: &mut [Message],
+) {
+    use std::collections::HashMap;
+    use tdlib_rs::enums::MessageReplyTo;
+
+    let by_id: HashMap<i64, (String, String)> = messages
+        .iter()
+        .map(|m| (m.id, (reply_sender_name_for_message(m), m.display_content())))
+        .collect();
+
+    for (raw, mapped) in raw_messages.iter().zip(messages.iter_mut()) {
+        let Some(reply) = mapped.reply_to.as_mut() else {
+            continue;
+        };
+
+        if !reply.sender_name.is_empty() && !reply.text.is_empty() {
+            continue;
+        }
+
+        let Some(MessageReplyTo::Message(info)) = raw.reply_to.as_ref() else {
+            continue;
+        };
+
+        if let Some((sender_name, text)) = by_id.get(&info.message_id) {
+            if reply.sender_name.is_empty() {
+                reply.sender_name = sender_name.clone();
+            }
+            if reply.text.is_empty() {
+                reply.text = text.clone();
+            }
+        }
+    }
+}
+
+fn reply_sender_name_for_message(message: &Message) -> String {
+    if message.is_outgoing {
+        "You".to_owned()
+    } else {
+        message.sender_name.clone()
+    }
+}
+
+/// Resolves reply info from the TDLib cache (used by `TdLibMessageMapper`).
+fn extract_reply_info_from_cache(
+    msg: &tdlib_rs::types::Message,
+    cache: &super::tdlib_cache::TdLibCache,
+    _rt: &std::sync::Arc<tokio::runtime::Runtime>,
+    _client_id: i32,
+) -> Option<crate::domain::message::ReplyInfo> {
+    tdlib_mappers::extract_reply_info(
+        msg,
+        |user_id| {
+            cache
+                .get_user(user_id)
+                .map(|u| tdlib_mappers::format_user_name(&u))
+        },
+        |chat_id| cache.get_chat(chat_id).map(|c| c.title.clone()),
+    )
+}
+
 /// Maps raw TDLib messages to domain `Message` types.
 ///
 /// Uses the shared TDLib cache for sender name resolution (fast path).
@@ -964,7 +1054,8 @@ impl super::chat_updates::MessageMapper for TdLibMessageMapper {
                 }
             }
         };
-        tdlib_mappers::map_tdlib_message_to_domain(raw, sender_name)
+        let reply_to = extract_reply_info_from_cache(raw, &self.cache, &self.rt, self.client_id);
+        tdlib_mappers::map_tdlib_message_to_domain(raw, sender_name, reply_to)
     }
 }
 
@@ -1219,5 +1310,22 @@ mod tests {
                 message: "BAD_REQUEST".to_owned(),
             }
         );
+    }
+
+    #[test]
+    fn reply_sender_name_for_outgoing_message_is_you() {
+        let message = crate::domain::message::Message {
+            id: 1,
+            sender_name: "My Real Name".to_owned(),
+            text: "hello".to_owned(),
+            timestamp_ms: 0,
+            is_outgoing: true,
+            media: crate::domain::message::MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
+            reply_to: None,
+        };
+
+        assert_eq!(reply_sender_name_for_message(&message), "You");
     }
 }

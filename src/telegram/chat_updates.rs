@@ -232,6 +232,7 @@ impl MessageMapper for StubMessageMapper {
             media,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info,
+            reply_to: None,
         }
     }
 }
