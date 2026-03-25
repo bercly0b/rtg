@@ -480,4 +480,17 @@ mod tests {
             other => panic!("expected MessageReactionsChanged, got: {other:?}"),
         }
     }
+
+    #[test]
+    fn map_user_status_to_user_status_changed() {
+        let mapper = StubMessageMapper;
+        let update = TdLibUpdate::UserStatus { user_id: 42 };
+
+        let result = map_update(update, &mapper);
+
+        assert!(
+            matches!(result, Some(ChatUpdate::UserStatusChanged { user_id: 42 })),
+            "expected UserStatusChanged, got: {result:?}"
+        );
+    }
 }

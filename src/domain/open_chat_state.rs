@@ -408,10 +408,32 @@ mod tests {
 
         assert_eq!(state.chat_id(), Some(42));
         assert_eq!(state.chat_title(), "Test Chat");
+        assert_eq!(state.chat_type(), ChatType::Private);
         assert_eq!(state.ui_state(), OpenChatUiState::Loading);
         assert_eq!(state.selected_index(), None);
         assert!(!state.is_refreshing());
         assert_eq!(state.message_source(), MessageSource::None);
+    }
+
+    #[test]
+    fn set_loading_stores_chat_type() {
+        let mut state = OpenChatState::default();
+
+        state.set_loading(1, "Group".to_owned(), ChatType::Group);
+        assert_eq!(state.chat_type(), ChatType::Group);
+
+        state.set_loading(2, "Channel".to_owned(), ChatType::Channel);
+        assert_eq!(state.chat_type(), ChatType::Channel);
+    }
+
+    #[test]
+    fn clear_resets_chat_type() {
+        let mut state = OpenChatState::default();
+        state.set_loading(1, "Group".to_owned(), ChatType::Group);
+
+        state.clear();
+
+        assert_eq!(state.chat_type(), ChatType::Private);
     }
 
     #[test]

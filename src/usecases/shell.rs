@@ -1641,6 +1641,7 @@ mod tests {
         dispatched_prefetches: RefCell<Vec<i64>>,
         dispatched_deletes: RefCell<Vec<(i64, i64)>>,
         dispatched_voice_sends: RefCell<Vec<(i64, String)>>,
+        dispatched_subtitles: RefCell<Vec<ChatSubtitleQuery>>,
     }
 
     impl RecordingDispatcher {
@@ -1656,6 +1657,7 @@ mod tests {
                 dispatched_prefetches: RefCell::new(Vec::new()),
                 dispatched_deletes: RefCell::new(Vec::new()),
                 dispatched_voice_sends: RefCell::new(Vec::new()),
+                dispatched_subtitles: RefCell::new(Vec::new()),
             }
         }
 
@@ -1722,6 +1724,14 @@ mod tests {
         fn last_voice_send(&self) -> Option<(i64, String)> {
             self.dispatched_voice_sends.borrow().last().cloned()
         }
+
+        fn subtitle_dispatch_count(&self) -> usize {
+            self.dispatched_subtitles.borrow().len()
+        }
+
+        fn last_subtitle_query(&self) -> Option<ChatSubtitleQuery> {
+            self.dispatched_subtitles.borrow().last().cloned()
+        }
     }
 
     impl TaskDispatcher for RecordingDispatcher {
@@ -1774,8 +1784,8 @@ mod tests {
                 .push((chat_id, message_id));
         }
 
-        fn dispatch_chat_subtitle(&self, _query: ChatSubtitleQuery) {
-            // Recording: no-op for now
+        fn dispatch_chat_subtitle(&self, query: ChatSubtitleQuery) {
+            self.dispatched_subtitles.borrow_mut().push(query);
         }
 
         fn dispatch_send_voice(&self, chat_id: i64, file_path: String) {
@@ -6369,5 +6379,87 @@ mod tests {
         // Should not set reply context for pending message
         assert_eq!(o.state().active_pane(), ActivePane::Messages);
         assert!(o.state().message_input().reply_to().is_none());
+    }
+
+    // ── UserStatusChanged tests ──
+
+    fn group_chat(chat_id: i64, title: &str) -> ChatSummary {
+        use crate::domain::chat::{ChatType, OutgoingReadStatus};
+        ChatSummary {
+            chat_id,
+            title: title.to_owned(),
+            unread_count: 0,
+            last_message_preview: None,
+            last_message_unix_ms: None,
+            is_pinned: false,
+            chat_type: ChatType::Group,
+            last_message_sender: None,
+            is_online: None,
+            is_bot: false,
+            outgoing_status: OutgoingReadStatus::default(),
+            last_message_id: None,
+            unread_reaction_count: 0,
+        }
+    }
+
+    #[test]
+    fn user_status_changed_dispatches_subtitle_for_open_private_chat() {
+        let mut o =
+            orchestrator_with_open_chat(vec![chat(1, "Alice")], 1, vec![message(1, "Hello")]);
+
+        let before = o.dispatcher.subtitle_dispatch_count();
+
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![ChatUpdate::UserStatusChanged { user_id: 1 }],
+        })
+        .unwrap();
+
+        assert_eq!(o.dispatcher.subtitle_dispatch_count(), before + 1);
+        let query = o.dispatcher.last_subtitle_query().unwrap();
+        assert_eq!(query.chat_id, 1);
+        assert_eq!(query.chat_type, ChatType::Private);
+    }
+
+    #[test]
+    fn user_status_changed_skips_subtitle_for_group_chat() {
+        let mut o =
+            orchestrator_with_open_chat(vec![group_chat(1, "Devs")], 1, vec![message(1, "Hello")]);
+
+        let before = o.dispatcher.subtitle_dispatch_count();
+
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![ChatUpdate::UserStatusChanged { user_id: 42 }],
+        })
+        .unwrap();
+
+        assert_eq!(o.dispatcher.subtitle_dispatch_count(), before);
+    }
+
+    #[test]
+    fn user_status_changed_skips_subtitle_when_no_chat_open() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+
+        let before = o.dispatcher.subtitle_dispatch_count();
+
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![ChatUpdate::UserStatusChanged { user_id: 1 }],
+        })
+        .unwrap();
+
+        assert_eq!(o.dispatcher.subtitle_dispatch_count(), before);
+    }
+
+    #[test]
+    fn user_status_changed_refreshes_chat_list() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+
+        let before = o.dispatcher.chat_list_dispatch_count();
+
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![ChatUpdate::UserStatusChanged { user_id: 1 }],
+        })
+        .unwrap();
+
+        assert_eq!(o.dispatcher.chat_list_dispatch_count(), before + 1);
     }
 }
