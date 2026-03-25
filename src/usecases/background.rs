@@ -70,6 +70,12 @@ pub trait TaskDispatcher {
 
     /// Resolves full chat info (title, status, description) in the background.
     fn dispatch_chat_info(&self, query: ChatInfoQuery);
+
+    /// Opens a file with the platform default opener in the background.
+    ///
+    /// Waits for the process to finish; if it exits with a non-zero code,
+    /// sends `BackgroundTaskResult::OpenFileFailed` with the captured stderr.
+    fn dispatch_open_file(&self, cmd_template: String, file_path: String);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -487,6 +493,60 @@ where
             });
         }
     }
+
+    fn dispatch_open_file(&self, cmd_template: String, file_path: String) {
+        let tx = self.result_tx.clone();
+
+        if let Err(error) = std::thread::Builder::new()
+            .name("rtg-bg-open-file".into())
+            .spawn(move || {
+                let parts: Vec<&str> = cmd_template.split_whitespace().collect();
+                if parts.is_empty() {
+                    let _ = tx.send(BackgroundTaskResult::OpenFileFailed {
+                        stderr: "empty open command".to_owned(),
+                    });
+                    return;
+                }
+
+                let resolved: Vec<String> = parts
+                    .iter()
+                    .map(|p| p.replace("{file_path}", &file_path))
+                    .collect();
+
+                let result = std::process::Command::new(&resolved[0])
+                    .args(&resolved[1..])
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn();
+
+                match result {
+                    Ok(child) => {
+                        let output = child.wait_with_output();
+                        match output {
+                            Ok(out) if !out.status.success() => {
+                                let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+                                let _ = tx.send(BackgroundTaskResult::OpenFileFailed { stderr });
+                            }
+                            Err(e) => {
+                                let _ = tx.send(BackgroundTaskResult::OpenFileFailed {
+                                    stderr: e.to_string(),
+                                });
+                            }
+                            _ => {} // success — no event needed
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(BackgroundTaskResult::OpenFileFailed {
+                            stderr: e.to_string(),
+                        });
+                    }
+                }
+            })
+        {
+            tracing::error!(error = %error, "failed to spawn open file background thread");
+        }
+    }
 }
 
 fn map_list_chats_error(error: &super::list_chats::ListChatsError) -> &'static str {
@@ -588,6 +648,10 @@ pub mod tests {
 
         fn dispatch_chat_info(&self, _query: ChatInfoQuery) {
             // Stub: does not dispatch; tests inject results manually
+        }
+
+        fn dispatch_open_file(&self, _cmd_template: String, _file_path: String) {
+            // Stub: fire-and-forget, no action needed in tests
         }
     }
 
