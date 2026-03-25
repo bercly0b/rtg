@@ -139,6 +139,23 @@ pub fn message_sending_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
 
+/// Style for the reply bar character (`│`).
+pub fn reply_bar_style() -> Style {
+    Style::default().fg(Color::LightBlue)
+}
+
+/// Style for the sender name in a reply preview.
+pub fn reply_sender_style() -> Style {
+    Style::default()
+        .fg(Color::LightBlue)
+        .add_modifier(Modifier::BOLD)
+}
+
+/// Style for the reply text preview.
+pub fn reply_text_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
 // =============================================================================
 // Panel styles
 //
@@ -558,5 +575,24 @@ mod tests {
     fn message_reaction_style_is_light_red() {
         let style = message_reaction_style();
         assert_eq!(style.fg, Some(Color::LightRed));
+    }
+
+    #[test]
+    fn reply_bar_style_is_light_blue() {
+        let style = reply_bar_style();
+        assert_eq!(style.fg, Some(Color::LightBlue));
+    }
+
+    #[test]
+    fn reply_sender_style_is_light_blue_bold() {
+        let style = reply_sender_style();
+        assert_eq!(style.fg, Some(Color::LightBlue));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn reply_text_style_is_dark_gray() {
+        let style = reply_text_style();
+        assert_eq!(style.fg, Some(Color::DarkGray));
     }
 }

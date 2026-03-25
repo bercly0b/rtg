@@ -12,7 +12,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::domain::message::{Message, MessageStatus};
+use crate::domain::message::{Message, MessageStatus, ReplyInfo};
 
 use super::styles;
 
@@ -31,7 +31,9 @@ pub enum MessageListElement {
         status: MessageStatus,
         /// File metadata line (e.g. "download=yes, size=15.5KB, duration=0:03").
         file_meta: Option<String>,
-        /// Total number of reactions on this message (summed across all types).
+        /// Reply preview: sender name and text of the replied-to message.
+        reply_info: Option<ReplyInfo>,
+        /// Total number of reactions on this message.
         reaction_count: u32,
     },
 }
@@ -83,6 +85,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             content: message.display_content(),
             status: message.status,
             file_meta,
+            reply_info: message.reply_to.clone(),
             reaction_count: message.reaction_count,
         });
 
@@ -143,6 +146,7 @@ pub fn element_to_text(
             content,
             status,
             file_meta,
+            reply_info,
             reaction_count,
         } => {
             let lines = build_message_lines(
@@ -153,6 +157,7 @@ pub fn element_to_text(
                 content,
                 *status,
                 file_meta.as_deref(),
+                reply_info.as_ref(),
                 *reaction_count,
                 max_width,
             );
@@ -170,6 +175,7 @@ fn build_message_lines(
     content: &str,
     status: MessageStatus,
     file_meta: Option<&str>,
+    reply_info: Option<&ReplyInfo>,
     reaction_count: u32,
     max_width: usize,
 ) -> Vec<Line<'static>> {
@@ -181,6 +187,11 @@ fn build_message_lines(
         // First message in group: header line (time + sender), then content on separate lines
         let header_line = build_message_header_line(time, show_time, sender, is_outgoing);
         lines.push(header_line);
+
+        // Reply line (if replying to another message)
+        if let Some(reply) = reply_info {
+            lines.push(build_reply_line(reply, indent, content_width));
+        }
 
         for text_line in content.lines() {
             for wrapped in wrap_line(text_line, content_width) {
@@ -199,6 +210,12 @@ fn build_message_lines(
         }
     } else {
         // Grouped message (no sender): time/blank + first line of content on same line
+
+        // Reply line for grouped messages (shown before content)
+        if let Some(reply) = reply_info {
+            lines.push(build_reply_line(reply, indent, content_width));
+        }
+
         let time_span = if show_time {
             Span::styled(format!("{:>5} ", time), styles::message_time_style())
         } else {
@@ -249,6 +266,10 @@ fn build_message_lines(
         append_file_meta_to_media_line(&mut lines, meta);
     }
 
+    if reaction_count > 0 {
+        append_reaction_indicator(&mut lines, reaction_count);
+    }
+
     // Append sending status indicator on the same line as the last content line
     if status == MessageStatus::Sending {
         if let Some(last_line) = lines.last_mut() {
@@ -258,22 +279,20 @@ fn build_message_lines(
         }
     }
 
-    // Append reaction indicator on the same line as the last content line
-    if reaction_count > 0 {
-        if let Some(last_line) = lines.last_mut() {
-            let reaction_badge = if reaction_count == 1 {
-                " [\u{2661}]".to_owned()
-            } else {
-                format!(" [\u{2661}\u{00d7}{}]", reaction_count)
-            };
-            last_line.spans.push(Span::styled(
-                reaction_badge,
-                styles::message_reaction_style(),
-            ));
-        }
-    }
-
     lines
+}
+
+fn append_reaction_indicator(lines: &mut [Line<'static>], reaction_count: u32) {
+    if let Some(last_line) = lines.last_mut() {
+        let badge = if reaction_count == 1 {
+            " [♡]".to_owned()
+        } else {
+            format!(" [♡×{}]", reaction_count)
+        };
+        last_line
+            .spans
+            .push(Span::styled(badge, styles::message_reaction_style()));
+    }
 }
 
 /// Appends file metadata to the line containing the `[Media]` indicator.
@@ -318,6 +337,80 @@ fn build_message_header_line(
     }
 
     Line::from(spans)
+}
+
+/// Builds a reply preview line: `indent + "│ " + SenderName + ": " + truncated text`.
+///
+/// The reply text is truncated to fit within `content_width` on a single line
+/// with an ellipsis (`…`) appended when truncated.
+fn build_reply_line(reply: &ReplyInfo, indent: &str, content_width: usize) -> Line<'static> {
+    use unicode_width::UnicodeWidthStr;
+
+    let bar = "│ ";
+    let bar_width = UnicodeWidthStr::width(bar);
+
+    let sender_part = if reply.sender_name.is_empty() {
+        String::new()
+    } else {
+        format!("{}: ", reply.sender_name)
+    };
+    let sender_width = UnicodeWidthStr::width(sender_part.as_str());
+
+    let reply_text = reply.text.lines().next().unwrap_or("");
+    let available = content_width
+        .saturating_sub(bar_width)
+        .saturating_sub(sender_width);
+    let truncated = truncate_to_width(reply_text, available);
+
+    let mut spans = vec![
+        Span::raw(indent.to_owned()),
+        Span::styled(bar.to_owned(), styles::reply_bar_style()),
+    ];
+
+    if !sender_part.is_empty() {
+        spans.push(Span::styled(sender_part, styles::reply_sender_style()));
+    }
+
+    spans.push(Span::styled(truncated, styles::reply_text_style()));
+
+    Line::from(spans)
+}
+
+/// Truncates text to fit within `max_width` terminal columns.
+///
+/// If the text exceeds the width, it is cut and `…` is appended.
+fn truncate_to_width(text: &str, max_width: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
+
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let total_width: usize = text
+        .chars()
+        .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
+        .sum();
+
+    if total_width <= max_width {
+        return text.to_owned();
+    }
+
+    // Reserve 1 column for the ellipsis
+    let target = max_width.saturating_sub(1);
+    let mut width = 0;
+    let mut result = String::new();
+
+    for ch in text.chars() {
+        let ch_w = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + ch_w > target {
+            break;
+        }
+        result.push(ch);
+        width += ch_w;
+    }
+
+    result.push('…');
+    result
 }
 
 /// Wraps a text line to fit within `max_width` terminal columns.
@@ -434,6 +527,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            reply_to: None,
             reaction_count: 0,
         }
     }
@@ -454,6 +548,7 @@ mod tests {
             media,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            reply_to: None,
             reaction_count: 0,
         }
     }
@@ -899,6 +994,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Sending,
             file_info: None,
+            reply_to: None,
             reaction_count: 0,
         }];
 
@@ -941,6 +1037,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            reply_to: None,
             reaction_count: 0,
         }];
 
@@ -1063,6 +1160,7 @@ mod tests {
                 is_listened: true,
                 download_status: DownloadStatus::Completed,
             }),
+            reply_to: None,
             reaction_count: 0,
         }];
 
@@ -1107,7 +1205,32 @@ mod tests {
         }
     }
 
-    // ── reaction count tests ──
+    // ── reply rendering tests ──
+
+    fn msg_with_reply(
+        id: i64,
+        sender: &str,
+        text: &str,
+        ts_ms: i64,
+        reply_sender: &str,
+        reply_text: &str,
+    ) -> Message {
+        Message {
+            id,
+            sender_name: sender.to_owned(),
+            text: text.to_owned(),
+            timestamp_ms: ts_ms,
+            is_outgoing: false,
+            media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
+            reply_to: Some(ReplyInfo {
+                sender_name: reply_sender.to_owned(),
+                text: reply_text.to_owned(),
+            }),
+            reaction_count: 0,
+        }
+    }
 
     #[test]
     fn message_with_multiple_reactions_shows_count() {
@@ -1120,6 +1243,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            reply_to: None,
             reaction_count: 3,
         }];
 
@@ -1131,10 +1255,7 @@ mod tests {
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();
 
-        assert!(
-            all_text.contains("[\u{2661}\u{00d7}3]"),
-            "expected reaction count in rendered text, got: {all_text}"
-        );
+        assert!(all_text.contains("[♡×3]"));
     }
 
     #[test]
@@ -1148,6 +1269,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            reply_to: None,
             reaction_count: 1,
         }];
 
@@ -1159,79 +1281,223 @@ mod tests {
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();
 
+        assert!(all_text.contains("[♡]"));
+        assert!(!all_text.contains("[♡×1]"));
+    }
+
+    #[test]
+    fn reply_info_propagated_to_element() {
+        let messages = vec![msg_with_reply(
+            1,
+            "Bob",
+            "Yes, done",
+            FEB_14_2026_10AM,
+            "Alice",
+            "Is the PR ready?",
+        )];
+
+        let elements = build_message_list_elements(&messages);
+
+        if let MessageListElement::Message { reply_info, .. } = &elements[1] {
+            let reply = reply_info.as_ref().expect("should have reply_info");
+            assert_eq!(reply.sender_name, "Alice");
+            assert_eq!(reply.text, "Is the PR ready?");
+        } else {
+            panic!("Expected Message element");
+        }
+    }
+
+    #[test]
+    fn reply_renders_between_header_and_content() {
+        let messages = vec![msg_with_reply(
+            1,
+            "Bob",
+            "Yes, done",
+            FEB_14_2026_10AM,
+            "Alice",
+            "Is the PR ready?",
+        )];
+
+        let elements = build_message_list_elements(&messages);
+        let text = element_to_text(&elements[1], 80);
+
+        // Header + reply + content = 3 lines
+        assert_eq!(
+            text.lines.len(),
+            3,
+            "Expected 3 lines (header + reply + content), got {}",
+            text.lines.len()
+        );
+
+        // Reply line should contain bar and sender
+        let reply_line: String = text.lines[1]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
         assert!(
-            all_text.contains("[\u{2661}]"),
-            "expected heart indicator in rendered text, got: {all_text}"
+            reply_line.contains('│'),
+            "Reply line should contain bar: '{}'",
+            reply_line
         );
         assert!(
-            !all_text.contains("[\u{2661}\u{00d7}1]"),
-            "single reaction should not show counter, got: {all_text}"
+            reply_line.contains("Alice"),
+            "Reply line should contain sender name: '{}'",
+            reply_line
+        );
+        assert!(
+            reply_line.contains("Is the PR ready?"),
+            "Reply line should contain reply text: '{}'",
+            reply_line
         );
     }
 
     #[test]
-    fn message_without_reactions_has_no_reaction_count() {
+    fn reply_not_rendered_when_none() {
         let messages = vec![msg(1, "Alice", "Hello", FEB_14_2026_10AM, false)];
 
         let elements = build_message_list_elements(&messages);
-        let msg_text = element_to_text(&elements[1], 80);
-        let all_text: String = msg_text
+        let text = element_to_text(&elements[1], 80);
+
+        // Header + content = 2 lines (no reply)
+        assert_eq!(text.lines.len(), 2);
+
+        let all_text: String = text
             .lines
             .iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();
-
         assert!(
-            !all_text.contains("\u{2661}"),
-            "no reaction indicator should appear when reaction_count is 0: {all_text}"
+            !all_text.contains('│'),
+            "Should not contain reply bar when no reply"
         );
     }
 
     #[test]
-    fn reaction_count_appears_on_last_content_line() {
-        let messages = vec![Message {
-            id: 1,
-            sender_name: "Alice".to_owned(),
-            text: "Multi\nLine\nMessage".to_owned(),
-            timestamp_ms: FEB_14_2026_10AM,
-            is_outgoing: false,
-            media: MessageMedia::None,
-            status: crate::domain::message::MessageStatus::Delivered,
-            file_info: None,
-            reaction_count: 5,
-        }];
+    fn reply_with_empty_sender_omits_name() {
+        let messages = vec![msg_with_reply(
+            1,
+            "Bob",
+            "OK",
+            FEB_14_2026_10AM,
+            "",
+            "Some message",
+        )];
 
         let elements = build_message_list_elements(&messages);
-        let msg_text = element_to_text(&elements[1], 80);
+        let text = element_to_text(&elements[1], 80);
 
-        let last_line = msg_text.lines.last().expect("should have lines");
-        let last_line_text: String = last_line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let reply_line: String = text.lines[1]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(reply_line.contains("Some message"));
+        // No ": " prefix from empty sender
+        assert!(!reply_line.contains(": Some"));
+    }
+
+    // ── truncate_to_width tests ──
+
+    #[test]
+    fn truncate_short_text_unchanged() {
+        assert_eq!(truncate_to_width("hello", 10), "hello");
+    }
+
+    #[test]
+    fn truncate_exact_fit_unchanged() {
+        assert_eq!(truncate_to_width("hello", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_long_text_adds_ellipsis() {
+        let result = truncate_to_width("hello world", 8);
         assert!(
-            last_line_text.contains("[\u{2661}\u{00d7}5]"),
-            "reaction count should appear on last line, got: {last_line_text}"
+            result.ends_with('…'),
+            "Should end with ellipsis: '{}'",
+            result
+        );
+        assert!(
+            result.len() <= 10,
+            "Truncated should be short: '{}'",
+            result
+        );
+        assert!(
+            result.starts_with("hello w"),
+            "Should keep prefix: '{}'",
+            result
         );
     }
 
     #[test]
-    fn reaction_count_propagated_from_domain_message() {
-        let messages = vec![Message {
-            id: 1,
-            sender_name: "Alice".to_owned(),
-            text: "Hello".to_owned(),
-            timestamp_ms: FEB_14_2026_10AM,
-            is_outgoing: false,
-            media: MessageMedia::None,
-            status: crate::domain::message::MessageStatus::Delivered,
-            file_info: None,
-            reaction_count: 7,
-        }];
+    fn truncate_zero_width_returns_empty() {
+        assert_eq!(truncate_to_width("hello", 0), "");
+    }
+
+    #[test]
+    fn truncate_width_one_returns_ellipsis_for_long() {
+        let result = truncate_to_width("hello", 1);
+        assert_eq!(result, "…");
+    }
+
+    #[test]
+    fn truncate_empty_text() {
+        assert_eq!(truncate_to_width("", 10), "");
+    }
+
+    #[test]
+    fn truncate_unicode_text() {
+        let result = truncate_to_width("Привет мир!", 8);
+        assert!(result.ends_with('…'));
+    }
+
+    // ── reply in grouped message ──
+
+    #[test]
+    fn grouped_message_with_reply_shows_reply_line() {
+        let messages = vec![
+            msg(1, "Alice", "First", FEB_14_2026_10AM, false),
+            Message {
+                id: 2,
+                sender_name: "Alice".to_owned(),
+                text: "Reply msg".to_owned(),
+                timestamp_ms: FEB_14_2026_10AM + 5000,
+                is_outgoing: false,
+                media: MessageMedia::None,
+                status: crate::domain::message::MessageStatus::Delivered,
+                file_info: None,
+                reply_to: Some(ReplyInfo {
+                    sender_name: "Bob".to_owned(),
+                    text: "Original text".to_owned(),
+                }),
+                reaction_count: 0,
+            },
+        ];
 
         let elements = build_message_list_elements(&messages);
 
-        if let MessageListElement::Message { reaction_count, .. } = &elements[1] {
-            assert_eq!(*reaction_count, 7);
+        // Second message is grouped (no sender)
+        if let MessageListElement::Message {
+            sender, reply_info, ..
+        } = &elements[2]
+        {
+            assert!(sender.is_none(), "Should be grouped (no sender)");
+            assert!(reply_info.is_some(), "Should have reply_info");
         } else {
             panic!("Expected Message element");
         }
+
+        // Render and verify reply line exists
+        let text = element_to_text(&elements[2], 80);
+        let all_text: String = text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert!(
+            all_text.contains("Bob") && all_text.contains("Original text"),
+            "Grouped message should render reply: '{}'",
+            all_text
+        );
     }
 }

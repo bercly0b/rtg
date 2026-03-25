@@ -75,6 +75,15 @@ pub struct FileInfo {
     pub download_status: DownloadStatus,
 }
 
+/// Information about the message being replied to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplyInfo {
+    /// Display name of the original message sender.
+    pub sender_name: String,
+    /// Text preview of the original message.
+    pub text: String,
+}
+
 /// Delivery status of a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MessageStatus {
@@ -97,6 +106,9 @@ pub struct Message {
     /// File metadata for messages that carry downloadable media.
     /// `None` for text-only, poll, contact, location, and other non-file types.
     pub file_info: Option<FileInfo>,
+    /// Information about the message this message replies to.
+    /// `None` if the message is not a reply.
+    pub reply_to: Option<ReplyInfo>,
     /// Total number of reactions on this message (summed across all reaction types).
     pub reaction_count: u32,
 }
@@ -210,6 +222,7 @@ mod tests {
             media,
             status: MessageStatus::Delivered,
             file_info: None,
+            reply_to: None,
             reaction_count: 0,
         }
     }

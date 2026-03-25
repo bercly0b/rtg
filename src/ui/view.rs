@@ -18,7 +18,7 @@ use super::chat_info_popup;
 use super::chat_message_list::{ChatMessageList, ChatMessageListState};
 use super::command_popup;
 use super::help_popup;
-use super::message_input::render_message_input;
+use super::message_input::{render_message_input, reply_preview_height};
 use super::message_rendering::{
     build_message_list_elements, element_to_text, message_index_to_element_index,
 };
@@ -46,7 +46,8 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
 
     // Compute dynamic input height based on text length and available width.
     let input_height =
-        compute_input_height(state.message_input().text(), messages_with_input_area.width);
+        compute_input_height(state.message_input().text(), messages_with_input_area.width)
+            .saturating_add(reply_preview_height(state.message_input()));
 
     // Split right panel into messages area, horizontal separator, and input field
     let [messages_area, input_separator_area, input_area] = Layout::default()
@@ -817,6 +818,7 @@ mod tests {
                 media: crate::domain::message::MessageMedia::None,
                 status: crate::domain::message::MessageStatus::Delivered,
                 file_info: None,
+                reply_to: None,
                 reaction_count: 0,
             }]);
         state.open_chat_mut().set_refreshing(true);
@@ -845,6 +847,7 @@ mod tests {
                 media: crate::domain::message::MessageMedia::None,
                 status: crate::domain::message::MessageStatus::Delivered,
                 file_info: None,
+                reply_to: None,
                 reaction_count: 0,
             }]);
         state
@@ -875,6 +878,7 @@ mod tests {
                 media: crate::domain::message::MessageMedia::None,
                 status: crate::domain::message::MessageStatus::Delivered,
                 file_info: None,
+                reply_to: None,
                 reaction_count: 0,
             }]);
 

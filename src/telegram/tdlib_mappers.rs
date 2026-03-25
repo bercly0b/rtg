@@ -8,7 +8,7 @@ use tdlib_rs::types::{Chat as TdChat, Message as TdMessage, User as TdUser};
 
 use crate::domain::chat::{ChatSummary, ChatType, OutgoingReadStatus};
 use crate::domain::chat_subtitle::ChatSubtitle;
-use crate::domain::message::{DownloadStatus, FileInfo, Message, MessageMedia};
+use crate::domain::message::{DownloadStatus, FileInfo, Message, MessageMedia, ReplyInfo};
 
 /// Maps a TDLib Chat to a domain ChatSummary.
 ///
@@ -255,7 +255,12 @@ pub fn get_private_chat_user_id(chat_type: &TdChatType) -> Option<i64> {
 /// Maps a TDLib Message to a domain Message.
 ///
 /// Requires the sender name to be resolved externally (via get_user or chat title).
-pub fn map_tdlib_message_to_domain(msg: &TdMessage, sender_name: String) -> Message {
+/// Reply info is also resolved externally via resolver closures.
+pub fn map_tdlib_message_to_domain(
+    msg: &TdMessage,
+    sender_name: String,
+    reply_to: Option<ReplyInfo>,
+) -> Message {
     let text = extract_message_text(&msg.content);
     let media = extract_message_media(&msg.content);
     let file_info = extract_file_info(&msg.content);
@@ -271,6 +276,7 @@ pub fn map_tdlib_message_to_domain(msg: &TdMessage, sender_name: String) -> Mess
         media,
         status: crate::domain::message::MessageStatus::Delivered,
         file_info,
+        reply_to,
         reaction_count,
     }
 }
@@ -293,6 +299,50 @@ pub fn sum_reaction_counts(
 
 fn extract_total_reaction_count(msg: &TdMessage) -> u32 {
     sum_reaction_counts(msg.interaction_info.as_ref())
+}
+
+/// Extracts reply information from a TDLib Message.
+///
+/// Handles `MessageReplyTo::Message` variant, extracting sender name from
+/// `origin` and text from `content`. Story replies are ignored.
+///
+/// `resolve_user_name` resolves a user ID to a display name via cache lookup.
+/// `resolve_chat_title` resolves a chat ID to a chat title via cache lookup.
+pub fn extract_reply_info(
+    msg: &TdMessage,
+    resolve_user_name: impl Fn(i64) -> Option<String>,
+    resolve_chat_title: impl Fn(i64) -> Option<String>,
+) -> Option<ReplyInfo> {
+    use tdlib_rs::enums::{MessageOrigin, MessageReplyTo};
+
+    let reply_to = msg.reply_to.as_ref()?;
+
+    let MessageReplyTo::Message(info) = reply_to else {
+        return None;
+    };
+
+    let sender_name = match info.origin.as_ref() {
+        Some(MessageOrigin::User(u)) => resolve_user_name(u.sender_user_id)
+            .unwrap_or_else(|| format!("User#{}", u.sender_user_id)),
+        Some(MessageOrigin::Chat(c)) => {
+            resolve_chat_title(c.sender_chat_id).unwrap_or_else(|| c.author_signature.clone())
+        }
+        Some(MessageOrigin::HiddenUser(h)) => h.sender_name.clone(),
+        Some(MessageOrigin::Channel(ch)) => {
+            resolve_chat_title(ch.chat_id).unwrap_or_else(|| ch.author_signature.clone())
+        }
+        None => String::new(),
+    };
+
+    let text = if let Some(content) = info.content.as_ref() {
+        extract_message_text(content)
+    } else if let Some(quote) = info.quote.as_ref() {
+        quote.text.text.clone()
+    } else {
+        String::new()
+    };
+
+    Some(ReplyInfo { sender_name, text })
 }
 
 /// Extracts the media type from a TDLib MessageContent.
@@ -730,7 +780,7 @@ mod tests {
     #[test]
     fn map_tdlib_message_to_domain_creates_correct_message() {
         let td_message = make_test_message(123, "Hello from TDLib", false);
-        let message = map_tdlib_message_to_domain(&td_message, "John Doe".to_owned());
+        let message = map_tdlib_message_to_domain(&td_message, "John Doe".to_owned(), None);
 
         assert_eq!(message.id, 123);
         assert_eq!(message.sender_name, "John Doe");
@@ -742,7 +792,7 @@ mod tests {
     #[test]
     fn map_tdlib_message_to_domain_handles_outgoing() {
         let td_message = make_test_message(456, "My message", true);
-        let message = map_tdlib_message_to_domain(&td_message, "Me".to_owned());
+        let message = map_tdlib_message_to_domain(&td_message, "Me".to_owned(), None);
 
         assert!(message.is_outgoing);
     }
@@ -1030,7 +1080,7 @@ mod tests {
             is_listened: false,
         });
 
-        let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned());
+        let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None);
         assert_eq!(msg.media, MessageMedia::Voice);
         let fi = msg.file_info.expect("voice message should have file_info");
         assert_eq!(fi.file_id, 7);
@@ -1042,7 +1092,7 @@ mod tests {
     #[test]
     fn message_without_interaction_info_has_zero_reactions() {
         let td_msg = make_test_message(1, "Hello", false);
-        let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned());
+        let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None);
         assert_eq!(msg.reaction_count, 0);
     }
 
@@ -1084,7 +1134,7 @@ mod tests {
             }),
         });
 
-        let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned());
+        let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None);
         assert_eq!(msg.reaction_count, 3);
     }
 

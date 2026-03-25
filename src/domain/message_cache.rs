@@ -228,6 +228,7 @@ mod tests {
             media: MessageMedia::None,
             status: MessageStatus::Delivered,
             file_info: None,
+            reply_to: None,
             reaction_count: 0,
         }
     }
@@ -242,6 +243,7 @@ mod tests {
             media: MessageMedia::None,
             status: MessageStatus::Delivered,
             file_info: None,
+            reply_to: None,
             reaction_count: 0,
         }
     }
