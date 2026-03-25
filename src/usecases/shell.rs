@@ -936,13 +936,13 @@ where
     /// Opens the currently selected message using the configured handler.
     ///
     /// Resolves the command via MIME matching and chooses the open strategy:
-    /// - **Voice / Audio** — playback popup (auto-closes on exit).
-    /// - **Photo** — viewer popup (stays open after exit, any key closes).
-    /// - **Video / VideoNote / Animation / Document** — if the resolved
-    ///   command is the platform default (`open` / `xdg-open`), launches the
-    ///   external app detached (no popup). Otherwise opens a playback popup.
+    /// - **Custom handler configured** (exact or wildcard MIME match) —
+    ///   playback popup with live output (auto-closes on exit).
+    /// - **No custom handler** (platform default `open` / `xdg-open`) —
+    ///   launches the external app in the background without a popup.
+    ///   If the OS has no app for the file type, a notification is shown.
     ///
-    /// Silently ignores messages without downloadable files.
+    /// Silently ignores unsupported media types and messages without files.
     fn open_selected_message(&mut self) {
         use crate::domain::command_popup_state::CommandPopupKind;
         use crate::domain::message::MessageMedia;
@@ -957,15 +957,17 @@ where
             None => return,
         };
 
-        let popup_kind = match msg.media {
-            MessageMedia::Voice | MessageMedia::Audio => Some(CommandPopupKind::Playback),
-            MessageMedia::Photo => Some(CommandPopupKind::Viewer),
-            MessageMedia::Video
-            | MessageMedia::VideoNote
-            | MessageMedia::Animation
-            | MessageMedia::Document => None, // resolved below based on command
-            _ => return,
-        };
+        if matches!(
+            msg.media,
+            MessageMedia::None
+                | MessageMedia::Sticker
+                | MessageMedia::Contact
+                | MessageMedia::Location
+                | MessageMedia::Poll
+                | MessageMedia::Other
+        ) {
+            return;
+        }
 
         let file_info = match &msg.file_info {
             Some(fi) => fi,
@@ -975,7 +977,7 @@ where
         let local_path = match &file_info.local_path {
             Some(p) => p.clone(),
             None => {
-                tracing::info!("file not downloaded yet");
+                self.state.set_notification("File not downloaded yet");
                 return;
             }
         };
@@ -985,41 +987,24 @@ where
             &self.open_handlers,
         );
 
-        // For types without a predetermined popup kind, decide based on
-        // whether the resolved command is the platform default opener.
-        let popup_kind = match popup_kind {
-            Some(k) => Some(k),
-            None => {
-                if is_platform_default(cmd_template) {
-                    None // detached — no popup
-                } else {
-                    Some(CommandPopupKind::Playback)
+        if is_platform_default(cmd_template) {
+            // No custom handler — delegate to the OS default opener.
+            // Runs in background; shows notification on failure.
+            self.dispatcher
+                .dispatch_open_file(cmd_template.to_owned(), local_path);
+        } else {
+            // Custom handler — run with a playback popup showing live output.
+            match super::voice_recording::start_command(cmd_template, &local_path) {
+                Ok((handle, rx)) => {
+                    self.recording_handle = Some(handle);
+                    self.recording_file_path = None;
+                    self.pending_command_rx = Some(rx);
+                    self.state
+                        .open_command_popup("Playing", CommandPopupKind::Playback);
+                    tracing::info!(cmd_template, "command started");
                 }
-            }
-        };
-
-        match popup_kind {
-            Some(kind) => {
-                let title = match kind {
-                    CommandPopupKind::Viewer => "Viewing",
-                    _ => "Playing",
-                };
-                match super::voice_recording::start_command(cmd_template, &local_path) {
-                    Ok((handle, rx)) => {
-                        self.recording_handle = Some(handle);
-                        self.recording_file_path = None;
-                        self.pending_command_rx = Some(rx);
-                        self.state.open_command_popup(title, kind);
-                        tracing::info!(cmd_template, "command started");
-                    }
-                    Err(err) => {
-                        tracing::error!(%err, "failed to start command");
-                    }
-                }
-            }
-            None => {
-                if let Err(err) = super::voice_recording::open_detached(cmd_template, &local_path) {
-                    tracing::error!(%err, "failed to open file");
+                Err(err) => {
+                    tracing::error!(%err, "failed to start command");
                 }
             }
         }
@@ -1315,6 +1300,15 @@ where
                         self.mark_open_chat_messages_as_read();
                     }
                 }
+            }
+            BackgroundTaskResult::OpenFileFailed { stderr } => {
+                let hint = if stderr.is_empty() {
+                    "Failed to open file. Configure [open] in ~/.config/rtg/config.toml".to_owned()
+                } else {
+                    format!("Open failed: {stderr}")
+                };
+                tracing::warn!(stderr, "background: open file failed");
+                self.state.set_notification(&hint);
             }
         }
     }
@@ -1673,6 +1667,10 @@ mod tests {
         }
 
         fn dispatch_chat_info(&self, _query: crate::usecases::chat_subtitle::ChatInfoQuery) {
+            // Recording: no-op for now
+        }
+
+        fn dispatch_open_file(&self, _cmd_template: String, _file_path: String) {
             // Recording: no-op for now
         }
     }
@@ -5631,8 +5629,8 @@ mod tests {
     }
 
     #[test]
-    fn l_on_photo_opens_viewer_popup() {
-        let tmp = std::env::temp_dir().join("rtg_test_photo_view.jpg");
+    fn l_on_photo_with_custom_handler_opens_playback_popup() {
+        let tmp = std::env::temp_dir().join("rtg_test_photo_custom.jpg");
         std::fs::write(&tmp, b"fake").unwrap();
         let path = tmp.to_str().unwrap();
 
@@ -5645,54 +5643,24 @@ mod tests {
             .insert("image/*".to_owned(), "true {file_path}".to_owned());
 
         o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
-            .unwrap();
-
-        let popup = o.state().command_popup().expect("viewer popup should open");
-        assert_eq!(popup.title(), "Viewing");
-        assert_eq!(
-            popup.kind(),
-            crate::domain::command_popup_state::CommandPopupKind::Viewer
-        );
-
-        let _ = std::fs::remove_file(&tmp);
-    }
-
-    #[test]
-    fn viewer_popup_stays_open_after_process_exit() {
-        let tmp = std::env::temp_dir().join("rtg_test_photo_stay.jpg");
-        std::fs::write(&tmp, b"fake").unwrap();
-        let path = tmp.to_str().unwrap();
-
-        let mut o = orchestrator_with_open_chat(
-            vec![chat(1, "Chat")],
-            1,
-            vec![photo_message_downloaded(10, path)],
-        );
-        o.open_handlers
-            .insert("image/*".to_owned(), "true {file_path}".to_owned());
-
-        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
-            .unwrap();
-        assert!(o.state().command_popup().is_some());
-
-        o.handle_event(AppEvent::CommandExited { success: true })
             .unwrap();
 
         let popup = o
             .state()
             .command_popup()
-            .expect("viewer popup should stay open after exit");
+            .expect("playback popup should open for photo with custom handler");
+        assert_eq!(popup.title(), "Playing");
         assert_eq!(
-            popup.phase(),
-            &crate::domain::command_popup_state::CommandPhase::Done
+            popup.kind(),
+            crate::domain::command_popup_state::CommandPopupKind::Playback
         );
 
         let _ = std::fs::remove_file(&tmp);
     }
 
     #[test]
-    fn any_key_closes_viewer_in_done_phase() {
-        let tmp = std::env::temp_dir().join("rtg_test_photo_close.jpg");
+    fn l_on_photo_without_handler_dispatches_open_no_popup() {
+        let tmp = std::env::temp_dir().join("rtg_test_photo_default.jpg");
         std::fs::write(&tmp, b"fake").unwrap();
         let path = tmp.to_str().unwrap();
 
@@ -5701,17 +5669,10 @@ mod tests {
             1,
             vec![photo_message_downloaded(10, path)],
         );
-        o.open_handlers
-            .insert("image/*".to_owned(), "true {file_path}".to_owned());
+        // No handlers — falls back to platform default (open/xdg-open).
+        // dispatch_open_file is called (no-op in RecordingDispatcher), no popup.
 
         o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
-            .unwrap();
-        o.handle_event(AppEvent::CommandExited { success: true })
-            .unwrap();
-        assert!(o.state().command_popup().is_some());
-
-        // Any key should close
-        o.handle_event(AppEvent::InputKey(KeyInput::new("x", false)))
             .unwrap();
         assert!(o.state().command_popup().is_none());
 
@@ -5719,60 +5680,8 @@ mod tests {
     }
 
     #[test]
-    fn q_closes_viewer_during_running_phase() {
-        let tmp = std::env::temp_dir().join("rtg_test_photo_q.jpg");
-        std::fs::write(&tmp, b"fake").unwrap();
-        let path = tmp.to_str().unwrap();
-
-        let mut o = orchestrator_with_open_chat(
-            vec![chat(1, "Chat")],
-            1,
-            vec![photo_message_downloaded(10, path)],
-        );
-        o.open_handlers
-            .insert("image/*".to_owned(), "true {file_path}".to_owned());
-
-        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
-            .unwrap();
-        assert!(o.state().command_popup().is_some());
-
-        o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
-            .unwrap();
-        assert!(o.state().command_popup().is_none());
-
-        let _ = std::fs::remove_file(&tmp);
-    }
-
-    #[test]
-    fn esc_closes_viewer_during_running_phase() {
-        let tmp = std::env::temp_dir().join("rtg_test_photo_esc.jpg");
-        std::fs::write(&tmp, b"fake").unwrap();
-        let path = tmp.to_str().unwrap();
-
-        let mut o = orchestrator_with_open_chat(
-            vec![chat(1, "Chat")],
-            1,
-            vec![photo_message_downloaded(10, path)],
-        );
-        o.open_handlers
-            .insert("image/*".to_owned(), "true {file_path}".to_owned());
-
-        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
-            .unwrap();
-        assert!(o.state().command_popup().is_some());
-
-        o.handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
-            .unwrap();
-        assert!(o.state().command_popup().is_none());
-
-        let _ = std::fs::remove_file(&tmp);
-    }
-
-    #[test]
-    fn l_on_video_with_default_handler_opens_detached() {
-        // Video with no custom handler resolves to platform default (open/xdg-open),
-        // which should open detached without a popup.
-        let tmp = std::env::temp_dir().join("rtg_test_video_detach.mp4");
+    fn l_on_video_without_handler_dispatches_open_no_popup() {
+        let tmp = std::env::temp_dir().join("rtg_test_video_default.mp4");
         std::fs::write(&tmp, b"fake").unwrap();
         let path = tmp.to_str().unwrap();
 
@@ -5781,15 +5690,63 @@ mod tests {
             1,
             vec![video_message_downloaded(10, path)],
         );
-        // No handlers configured — falls back to DEFAULT_OPEN (platform default).
-        // open_detached will try to spawn `open`/`xdg-open` which may fail for
-        // a fake file, but the key assertion is that no popup is opened.
+        // No handlers — falls back to platform default, no popup.
 
         o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
             .unwrap();
         assert!(o.state().command_popup().is_none());
 
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn l_on_not_downloaded_file_shows_notification() {
+        let mut o = orchestrator_with_open_chat(
+            vec![chat(1, "Chat")],
+            1,
+            vec![voice_message_not_downloaded(10)],
+        );
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+            .unwrap();
+        assert!(o.state().command_popup().is_none());
+        assert!(o.state().active_notification().is_some());
+    }
+
+    #[test]
+    fn open_file_failed_shows_notification() {
+        let mut o = make_orchestrator();
+
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::OpenFileFailed {
+                stderr: "No application knows how to open this file".to_owned(),
+            },
+        ))
+        .unwrap();
+
+        let notification = o
+            .state()
+            .active_notification()
+            .expect("notification should be set");
+        assert!(notification.contains("Open failed"));
+    }
+
+    #[test]
+    fn open_file_failed_empty_stderr_shows_config_hint() {
+        let mut o = make_orchestrator();
+
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::OpenFileFailed {
+                stderr: String::new(),
+            },
+        ))
+        .unwrap();
+
+        let notification = o
+            .state()
+            .active_notification()
+            .expect("notification should be set");
+        assert!(notification.contains("config.toml"));
     }
 
     #[test]
@@ -5898,8 +5855,8 @@ mod tests {
     }
 
     #[test]
-    fn playback_uses_fallback_default_open_command() {
-        let tmp = std::env::temp_dir().join("rtg_test_play_fallback.ogg");
+    fn voice_with_wildcard_handler_opens_playback_popup() {
+        let tmp = std::env::temp_dir().join("rtg_test_play_wildcard.ogg");
         std::fs::write(&tmp, b"fake").unwrap();
         let path = tmp.to_str().unwrap();
 
@@ -5908,11 +5865,6 @@ mod tests {
             1,
             vec![voice_message_downloaded(10, path)],
         );
-        // No handlers configured — should fall back to DEFAULT_OPEN.
-        // The `open` / `xdg-open` command will fail for a fake file,
-        // but start_command will at least attempt to spawn it.
-        // We can't easily test the actual command, but we verify the popup opens.
-        // Use a handler for the test to avoid platform dependency.
         o.open_handlers
             .insert("audio/*".to_owned(), "true".to_owned());
 

@@ -70,6 +70,9 @@ pub enum BackgroundTaskResult {
         chat_id: i64,
         result: Result<super::chat_info_state::ChatInfo, BackgroundError>,
     },
+    /// Platform default file opener failed (non-zero exit code).
+    /// The orchestrator should display the error as a notification.
+    OpenFileFailed { stderr: String },
 }
 
 /// Lightweight error type for background task failures.

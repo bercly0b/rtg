@@ -23,6 +23,7 @@ pub enum CommandPopupKind {
     Playback,
     /// Static content viewer (e.g. terminal image via chafa) — stays open
     /// after the process exits so the user can see the output. Any key closes.
+    #[allow(dead_code)]
     Viewer,
 }
 
