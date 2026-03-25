@@ -65,32 +65,6 @@ where
     }
 }
 
-/// Source of cached (local-only) chat summaries.
-///
-/// Returns chats already present in TDLib's local database without
-/// triggering any network requests. Used for instant display on startup.
-pub trait CachedChatsSource {
-    fn list_cached_chats(&self, limit: usize) -> Result<Vec<ChatSummary>, ListChatsSourceError>;
-}
-
-impl<T> CachedChatsSource for &T
-where
-    T: CachedChatsSource + ?Sized,
-{
-    fn list_cached_chats(&self, limit: usize) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
-        (*self).list_cached_chats(limit)
-    }
-}
-
-impl<T> CachedChatsSource for std::sync::Arc<T>
-where
-    T: CachedChatsSource + ?Sized,
-{
-    fn list_cached_chats(&self, limit: usize) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
-        (**self).list_cached_chats(limit)
-    }
-}
-
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListChatsError {

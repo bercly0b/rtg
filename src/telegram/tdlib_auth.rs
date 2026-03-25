@@ -340,27 +340,6 @@ impl TdLibAuthBackend {
         self.client.take_update_receiver()
     }
 
-    /// Lists chat summaries from TDLib's local cache only.
-    ///
-    /// Does **not** call `loadChats`, so no network request is made.
-    /// Returns whatever chats are already present in TDLib's SQLite database
-    /// from previous sessions. Useful for instant startup display.
-    pub fn list_cached_chat_summaries(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
-        let limit_i32 = i32::try_from(limit).unwrap_or(i32::MAX);
-
-        let chat_ids = self
-            .client
-            .get_cached_chats(limit_i32)
-            .map_err(map_list_chats_error)?;
-
-        tracing::debug!(count = chat_ids.len(), "Fetched cached chat IDs from TDLib");
-
-        Ok(self.build_summaries_from_ids(chat_ids))
-    }
-
     /// Lists chat summaries from TDLib.
     ///
     /// Fetches chats from the main chat list and maps them to domain `ChatSummary`.
@@ -382,38 +361,54 @@ impl TdLibAuthBackend {
 
     /// Builds domain `ChatSummary` list from raw TDLib chat IDs.
     ///
-    /// Fetches full chat info for each ID and maps to domain types.
-    /// Skips individual chats that fail to load.
+    /// Uses the update-driven cache for lookups instead of per-item TDLib
+    /// calls. Falls back to `get_chat`/`get_user` if the cache misses
+    /// (should be rare — TDLib guarantees updates arrive before IDs).
     fn build_summaries_from_ids(&self, chat_ids: Vec<i64>) -> Vec<ChatSummary> {
+        let cache = self.client.cache();
         let mut summaries = Vec::with_capacity(chat_ids.len());
 
         for chat_id in chat_ids {
-            match self.client.get_chat(chat_id) {
-                Ok(chat) => {
-                    let (sender_name, is_online, is_bot) = self.resolve_chat_metadata(&chat);
-                    let summary =
-                        tdlib_mappers::map_chat_to_summary(&chat, sender_name, is_online, is_bot);
-                    summaries.push(summary);
-                }
-                Err(e) => {
-                    tracing::warn!(chat_id, error = %e, "Failed to fetch chat details, skipping");
-                }
-            }
+            let chat = match cache.get_chat(chat_id) {
+                Some(c) => c,
+                None => match self.client.get_chat(chat_id) {
+                    Ok(c) => {
+                        cache.upsert_chat(c.clone());
+                        c
+                    }
+                    Err(e) => {
+                        tracing::warn!(chat_id, error = %e, "chat missing from cache and TDLib");
+                        continue;
+                    }
+                },
+            };
+
+            let (sender_name, is_online, is_bot) = self.resolve_chat_metadata(&chat, cache);
+            let summary = tdlib_mappers::map_chat_to_summary(&chat, sender_name, is_online, is_bot);
+            summaries.push(summary);
         }
 
         summaries
     }
 
     /// Resolves additional metadata for a chat (sender name, online status).
+    ///
+    /// Uses the cache for user lookups. Falls back to `get_user` on miss.
     fn resolve_chat_metadata(
         &self,
         chat: &tdlib_rs::types::Chat,
+        cache: &super::tdlib_cache::TdLibCache,
     ) -> (Option<String>, Option<bool>, bool) {
         let chat_type = tdlib_mappers::map_chat_type(&chat.r#type);
 
         let (is_online, is_bot) = if matches!(chat_type, crate::domain::chat::ChatType::Private) {
             if let Some(user_id) = tdlib_mappers::get_private_chat_user_id(&chat.r#type) {
-                match self.client.get_user(user_id).ok() {
+                let user = cache.get_user(user_id).or_else(|| {
+                    let u = self.client.get_user(user_id).ok()?;
+                    cache.upsert_user(u.clone());
+                    Some(u)
+                });
+                match user {
                     Some(u) => (
                         Some(tdlib_mappers::is_user_online(&u.status)),
                         matches!(u.r#type, tdlib_rs::enums::UserType::Bot(_)),
@@ -427,17 +422,18 @@ impl TdLibAuthBackend {
             (None, false)
         };
 
-        // For group chats, get the sender name of the last message
         let sender_name = if matches!(
             chat_type,
             crate::domain::chat::ChatType::Group | crate::domain::chat::ChatType::Channel
         ) {
             chat.last_message.as_ref().and_then(|msg| {
                 if let Some(user_id) = tdlib_mappers::get_sender_user_id(&msg.sender_id) {
-                    self.client
-                        .get_user(user_id)
-                        .ok()
-                        .map(|u| tdlib_mappers::format_user_name(&u))
+                    let user = cache.get_user(user_id).or_else(|| {
+                        let u = self.client.get_user(user_id).ok()?;
+                        cache.upsert_user(u.clone());
+                        Some(u)
+                    });
+                    user.map(|u| tdlib_mappers::format_user_name(&u))
                 } else {
                     None
                 }
@@ -635,7 +631,7 @@ impl TdLibAuthBackend {
 
     /// Resolves the sender name for a message.
     fn resolve_message_sender_name(&self, msg: &tdlib_rs::types::Message) -> String {
-        resolve_sender_name(&self.client, msg)
+        resolve_sender_name(self.client.cache(), &self.client, msg)
     }
 
     /// Resolves the chat subtitle (user status, member count, etc.).
@@ -887,35 +883,54 @@ impl TdLibAuthBackend {
 
     /// Creates a `MessageMapper` that can be shared with the chat updates monitor.
     ///
-    /// The mapper holds clones of the async runtime and client_id, allowing it
-    /// to resolve sender names via `get_user`/`get_chat` on the monitor thread.
+    /// The mapper uses the shared TDLib cache for sender name resolution
+    /// (fast path). Falls back to `rt.block_on(get_user/get_chat)` for cache
+    /// misses, warming the cache on success.
     pub fn create_message_mapper(&self) -> std::sync::Arc<dyn super::chat_updates::MessageMapper> {
         std::sync::Arc::new(TdLibMessageMapper {
+            cache: self.client.cache().clone(),
             rt: self.client.runtime().clone(),
             client_id: self.client.client_id(),
         })
     }
 }
 
-/// Resolves the sender name for a TDLib message using the TDLib client.
-fn resolve_sender_name(client: &TdLibClient, msg: &tdlib_rs::types::Message) -> String {
+/// Resolves the sender name for a TDLib message using the cache with
+/// TDLib client fallback.
+fn resolve_sender_name(
+    cache: &super::tdlib_cache::TdLibCache,
+    client: &TdLibClient,
+    msg: &tdlib_rs::types::Message,
+) -> String {
     match &msg.sender_id {
-        tdlib_rs::enums::MessageSender::User(u) => client
+        tdlib_rs::enums::MessageSender::User(u) => cache
             .get_user(u.user_id)
+            .or_else(|| {
+                let user = client.get_user(u.user_id).ok()?;
+                cache.upsert_user(user.clone());
+                Some(user)
+            })
             .map(|user| tdlib_mappers::format_user_name(&user))
-            .unwrap_or_else(|_| "Unknown".to_owned()),
-        tdlib_rs::enums::MessageSender::Chat(c) => client
+            .unwrap_or_else(|| "Unknown".to_owned()),
+        tdlib_rs::enums::MessageSender::Chat(c) => cache
             .get_chat(c.chat_id)
+            .or_else(|| {
+                let chat = client.get_chat(c.chat_id).ok()?;
+                cache.upsert_chat(chat.clone());
+                Some(chat)
+            })
             .map(|chat| chat.title.clone())
-            .unwrap_or_else(|_| "Channel".to_owned()),
+            .unwrap_or_else(|| "Channel".to_owned()),
     }
 }
 
 /// Maps raw TDLib messages to domain `Message` types.
 ///
-/// Holds the TDLib async runtime and client ID so it can resolve sender names
-/// via `get_user`/`get_chat` on the monitor thread.
+/// Uses the shared TDLib cache for sender name resolution (fast path).
+/// Falls back to `rt.block_on(get_user/get_chat)` on cache misses and
+/// warms the cache on success.
 struct TdLibMessageMapper {
+    cache: super::tdlib_cache::TdLibCache,
     rt: std::sync::Arc<tokio::runtime::Runtime>,
     client_id: i32,
 }
@@ -923,20 +938,31 @@ struct TdLibMessageMapper {
 impl super::chat_updates::MessageMapper for TdLibMessageMapper {
     fn map_message(&self, raw: &tdlib_rs::types::Message) -> Message {
         let sender_name = match &raw.sender_id {
-            tdlib_rs::enums::MessageSender::User(u) => self
-                .rt
-                .block_on(async { tdlib_rs::functions::get_user(u.user_id, self.client_id).await })
-                .map(|user| match user {
-                    tdlib_rs::enums::User::User(u) => tdlib_mappers::format_user_name(&u),
-                })
-                .unwrap_or_else(|_| "Unknown".to_owned()),
-            tdlib_rs::enums::MessageSender::Chat(c) => self
-                .rt
-                .block_on(async { tdlib_rs::functions::get_chat(c.chat_id, self.client_id).await })
-                .map(|chat| match chat {
-                    tdlib_rs::enums::Chat::Chat(c) => c.title,
-                })
-                .unwrap_or_else(|_| "Channel".to_owned()),
+            tdlib_rs::enums::MessageSender::User(u) => {
+                if let Some(user) = self.cache.get_user(u.user_id) {
+                    tdlib_mappers::format_user_name(&user)
+                } else if let Ok(tdlib_rs::enums::User::User(user)) = self.rt.block_on(async {
+                    tdlib_rs::functions::get_user(u.user_id, self.client_id).await
+                }) {
+                    self.cache.upsert_user(user.clone());
+                    tdlib_mappers::format_user_name(&user)
+                } else {
+                    "Unknown".to_owned()
+                }
+            }
+            tdlib_rs::enums::MessageSender::Chat(c) => {
+                if let Some(chat) = self.cache.get_chat(c.chat_id) {
+                    chat.title.clone()
+                } else if let Ok(tdlib_rs::enums::Chat::Chat(chat)) = self.rt.block_on(async {
+                    tdlib_rs::functions::get_chat(c.chat_id, self.client_id).await
+                }) {
+                    let title = chat.title.clone();
+                    self.cache.upsert_chat(chat);
+                    title
+                } else {
+                    "Channel".to_owned()
+                }
+            }
         };
         tdlib_mappers::map_tdlib_message_to_domain(raw, sender_name)
     }

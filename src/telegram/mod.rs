@@ -5,6 +5,7 @@ mod connectivity;
 mod message_pagination;
 mod status_tracker;
 mod tdlib_auth;
+mod tdlib_cache;
 mod tdlib_client;
 mod tdlib_mappers;
 mod tdlib_updates;
@@ -32,7 +33,7 @@ use crate::{
         },
         chat_subtitle::{ChatInfoQuery, ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource},
         guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome, TelegramAuthClient},
-        list_chats::{CachedChatsSource, ListChatsSource, ListChatsSourceError},
+        list_chats::{ListChatsSource, ListChatsSourceError},
         load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
         send_message::{MessageSender, SendMessageSourceError},
         send_voice::VoiceNoteSender,
@@ -245,18 +246,6 @@ impl ListChatsSource for TelegramAdapter {
         match self.tdlib_backend.as_ref() {
             Some(backend) => backend.list_chat_summaries(limit),
             None => Err(ListChatsSourceError::Unavailable),
-        }
-    }
-}
-
-impl CachedChatsSource for TelegramAdapter {
-    fn list_cached_chats(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<crate::domain::chat::ChatSummary>, ListChatsSourceError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.list_cached_chat_summaries(limit),
-            None => Ok(Vec::new()),
         }
     }
 }

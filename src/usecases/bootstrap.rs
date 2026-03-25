@@ -25,16 +25,12 @@ use crate::{
     },
     usecases::{
         background::ThreadTaskDispatcher, context::AppContext, contracts::ShellOrchestrator,
-        guided_auth::AuthBackendError, list_chats::CachedChatsSource,
-        shell::DefaultShellOrchestrator,
+        guided_auth::AuthBackendError, shell::DefaultShellOrchestrator,
     },
 };
 
 const CONNECTIVITY_MONITOR_START_FAILED: &str = "TELEGRAM_CONNECTIVITY_MONITOR_START_FAILED";
 const CHAT_UPDATES_MONITOR_START_FAILED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_START_FAILED";
-
-/// Number of chats to preload from TDLib cache on startup.
-const DEFAULT_CACHED_CHAT_LIMIT: usize = 50;
 
 pub struct ShellComposition {
     pub event_source: Box<CrosstermEventSource>,
@@ -120,40 +116,15 @@ fn compose_shell_with_factory(
 
     let cache_cfg = &context.config.cache;
 
-    // Try to preload chats from TDLib's local cache for instant display.
-    // This is a synchronous call that reads from SQLite — no network involved.
-    let initial_state = match context
-        .telegram
-        .list_cached_chats(DEFAULT_CACHED_CHAT_LIMIT)
-    {
-        Ok(chats) if !chats.is_empty() => {
-            tracing::info!(count = chats.len(), "preloaded chat list from TDLib cache");
-            ShellState::with_cache_limits(
-                chats,
-                cache_cfg.max_cached_chats,
-                cache_cfg.max_messages_per_chat,
-            )
-        }
-        Ok(_) => {
-            tracing::debug!("TDLib cache is empty, starting with Loading state");
-            ShellState::with_cache_limits(
-                vec![],
-                cache_cfg.max_cached_chats,
-                cache_cfg.max_messages_per_chat,
-            )
-        }
-        Err(error) => {
-            tracing::debug!(
-                ?error,
-                "failed to preload cached chats, starting with Loading state"
-            );
-            ShellState::with_cache_limits(
-                vec![],
-                cache_cfg.max_cached_chats,
-                cache_cfg.max_messages_per_chat,
-            )
-        }
-    };
+    // Start with an empty Loading state for instant TUI display.
+    // The first Tick in the event loop will trigger a background chat list
+    // fetch, which populates the list asynchronously. This avoids blocking
+    // the main thread with ~100 sequential TDLib calls during startup.
+    let initial_state = ShellState::with_cache_limits(
+        vec![],
+        cache_cfg.max_cached_chats,
+        cache_cfg.max_messages_per_chat,
+    );
 
     // Provide the cache source to the orchestrator for instant message display.
     let cache_source: Option<

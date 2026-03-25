@@ -16,6 +16,11 @@ use tdlib_rs::types::Message as TdMessage;
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // Fields reserved for future granular update handling
 pub enum TdLibUpdate {
+    /// A new chat was discovered by TDLib. Carries the full Chat object
+    /// for cache population. Guaranteed to arrive before the chat ID
+    /// appears in any TDLib response.
+    NewChat { chat: Box<tdlib_rs::types::Chat> },
+
     /// New message received in a chat. Carries the full raw TDLib message
     /// for mapping to domain types downstream.
     NewMessage {
@@ -68,6 +73,7 @@ impl TdLibUpdate {
     #[allow(dead_code)]
     pub fn chat_id(&self) -> Option<i64> {
         match self {
+            TdLibUpdate::NewChat { chat } => Some(chat.id),
             TdLibUpdate::NewMessage { chat_id, .. }
             | TdLibUpdate::MessageContentChanged { chat_id, .. }
             | TdLibUpdate::DeleteMessages { chat_id, .. }
@@ -83,6 +89,7 @@ impl TdLibUpdate {
     /// Returns the kind of update for logging.
     pub fn kind(&self) -> &'static str {
         match self {
+            TdLibUpdate::NewChat { .. } => "new_chat",
             TdLibUpdate::NewMessage { .. } => "new_message",
             TdLibUpdate::MessageContentChanged { .. } => "message_content",
             TdLibUpdate::DeleteMessages { .. } => "delete_messages",
@@ -187,5 +194,15 @@ mod tests {
         };
         assert_eq!(update.chat_id(), Some(42));
         assert_eq!(update.kind(), "delete_messages");
+    }
+
+    #[test]
+    fn new_chat_has_chat_id() {
+        let chat = super::super::tdlib_cache::tests::make_test_chat(77, "Test");
+        let update = TdLibUpdate::NewChat {
+            chat: Box::new(chat),
+        };
+        assert_eq!(update.chat_id(), Some(77));
+        assert_eq!(update.kind(), "new_chat");
     }
 }
