@@ -258,11 +258,16 @@ fn build_message_lines(
         }
     }
 
-    // Append reaction count on the same line as the last content line
+    // Append reaction indicator on the same line as the last content line
     if reaction_count > 0 {
         if let Some(last_line) = lines.last_mut() {
+            let reaction_badge = if reaction_count == 1 {
+                " [\u{2661}]".to_owned()
+            } else {
+                format!(" [\u{2661}\u{00d7}{}]", reaction_count)
+            };
             last_line.spans.push(Span::styled(
-                format!(" [\u{2661}\u{00d7}{}]", reaction_count),
+                reaction_badge,
                 styles::message_reaction_style(),
             ));
         }
@@ -1105,7 +1110,7 @@ mod tests {
     // ── reaction count tests ──
 
     #[test]
-    fn message_with_reactions_shows_count() {
+    fn message_with_multiple_reactions_shows_count() {
         let messages = vec![Message {
             id: 1,
             sender_name: "Alice".to_owned(),
@@ -1129,6 +1134,38 @@ mod tests {
         assert!(
             all_text.contains("[\u{2661}\u{00d7}3]"),
             "expected reaction count in rendered text, got: {all_text}"
+        );
+    }
+
+    #[test]
+    fn message_with_single_reaction_shows_heart_without_count() {
+        let messages = vec![Message {
+            id: 1,
+            sender_name: "Alice".to_owned(),
+            text: "Hello".to_owned(),
+            timestamp_ms: FEB_14_2026_10AM,
+            is_outgoing: false,
+            media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
+            reaction_count: 1,
+        }];
+
+        let elements = build_message_list_elements(&messages);
+        let msg_text = element_to_text(&elements[1], 80);
+        let all_text: String = msg_text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+
+        assert!(
+            all_text.contains("[\u{2661}]"),
+            "expected heart indicator in rendered text, got: {all_text}"
+        );
+        assert!(
+            !all_text.contains("[\u{2661}\u{00d7}1]"),
+            "single reaction should not show counter, got: {all_text}"
         );
     }
 
