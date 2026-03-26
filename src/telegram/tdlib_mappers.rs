@@ -8,7 +8,9 @@ use tdlib_rs::types::{Chat as TdChat, Message as TdMessage, User as TdUser};
 
 use crate::domain::chat::{ChatSummary, ChatType, OutgoingReadStatus};
 use crate::domain::chat_subtitle::ChatSubtitle;
-use crate::domain::message::{DownloadStatus, FileInfo, Message, MessageMedia, ReplyInfo};
+use crate::domain::message::{
+    DownloadStatus, FileInfo, Message, MessageMedia, ReplyInfo, TextLink,
+};
 
 /// Maps a TDLib Chat to a domain ChatSummary.
 ///
@@ -264,6 +266,7 @@ pub fn map_tdlib_message_to_domain(
     let text = extract_message_text(&msg.content);
     let media = extract_message_media(&msg.content);
     let file_info = extract_file_info(&msg.content);
+    let links = extract_content_links(&msg.content);
     let timestamp_ms = i64::from(msg.date) * 1000;
     let reaction_count = extract_total_reaction_count(msg);
 
@@ -278,6 +281,7 @@ pub fn map_tdlib_message_to_domain(
         file_info,
         reply_to,
         reaction_count,
+        links,
     }
 }
 
@@ -518,6 +522,79 @@ fn effective_file_size(file: &tdlib_rs::types::File) -> u64 {
         size
     } else {
         file.expected_size.max(0) as u64
+    }
+}
+
+/// Converts a UTF-16 code-unit offset to a UTF-8 byte offset within `text`.
+///
+/// TDLib reports entity offsets/lengths in UTF-16 code units, while Rust
+/// strings are UTF-8. This function walks the string and maps between the two.
+/// Returns `None` if the UTF-16 offset exceeds the string.
+fn utf16_offset_to_byte_offset(text: &str, utf16_offset: usize) -> Option<usize> {
+    let mut utf16_pos = 0;
+    for (byte_pos, ch) in text.char_indices() {
+        if utf16_pos == utf16_offset {
+            return Some(byte_pos);
+        }
+        utf16_pos += ch.len_utf16();
+    }
+    // Offset pointing exactly past the last character
+    if utf16_pos == utf16_offset {
+        return Some(text.len());
+    }
+    None
+}
+
+/// Extracts URL-bearing text entities from a `FormattedText` into domain `TextLink`s.
+///
+/// Handles `TextEntityTypeUrl` (URL visible in text) and `TextEntityTypeTextUrl`
+/// (clickable text with a hidden URL). Converts TDLib's UTF-16 offsets to byte offsets.
+fn extract_text_links(formatted: &tdlib_rs::types::FormattedText) -> Vec<TextLink> {
+    use tdlib_rs::enums::TextEntityType;
+
+    formatted
+        .entities
+        .iter()
+        .filter_map(|entity| {
+            let utf16_offset = entity.offset as usize;
+            let utf16_length = entity.length as usize;
+
+            let byte_offset = utf16_offset_to_byte_offset(&formatted.text, utf16_offset)?;
+            let byte_end =
+                utf16_offset_to_byte_offset(&formatted.text, utf16_offset + utf16_length)?;
+            let byte_length = byte_end - byte_offset;
+
+            match &entity.r#type {
+                TextEntityType::Url => {
+                    let url = formatted.text[byte_offset..byte_end].to_owned();
+                    Some(TextLink {
+                        offset: byte_offset,
+                        length: byte_length,
+                        url,
+                    })
+                }
+                TextEntityType::TextUrl(tu) => Some(TextLink {
+                    offset: byte_offset,
+                    length: byte_length,
+                    url: tu.url.clone(),
+                }),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// Extracts `TextLink`s from a `MessageContent`'s formatted text.
+fn extract_content_links(content: &MessageContent) -> Vec<TextLink> {
+    match content {
+        MessageContent::MessageText(t) => extract_text_links(&t.text),
+        MessageContent::MessagePhoto(p) => extract_text_links(&p.caption),
+        MessageContent::MessageVideo(v) => extract_text_links(&v.caption),
+        MessageContent::MessageVoiceNote(v) => extract_text_links(&v.caption),
+        MessageContent::MessageDocument(d) => extract_text_links(&d.caption),
+        MessageContent::MessageAudio(a) => extract_text_links(&a.caption),
+        MessageContent::MessageAnimation(a) => extract_text_links(&a.caption),
+        _ => Vec::new(),
     }
 }
 
@@ -1153,5 +1230,179 @@ mod tests {
 
         let summary = map_chat_to_summary(&td_chat, None, None, false);
         assert_eq!(summary.unread_reaction_count, 0);
+    }
+
+    // ── extract_text_links tests ──
+
+    fn make_formatted_text(
+        text: &str,
+        entities: Vec<tdlib_rs::types::TextEntity>,
+    ) -> tdlib_rs::types::FormattedText {
+        tdlib_rs::types::FormattedText {
+            text: text.to_owned(),
+            entities,
+        }
+    }
+
+    fn make_url_entity(offset: i32, length: i32) -> tdlib_rs::types::TextEntity {
+        tdlib_rs::types::TextEntity {
+            offset,
+            length,
+            r#type: tdlib_rs::enums::TextEntityType::Url,
+        }
+    }
+
+    fn make_text_url_entity(offset: i32, length: i32, url: &str) -> tdlib_rs::types::TextEntity {
+        tdlib_rs::types::TextEntity {
+            offset,
+            length,
+            r#type: tdlib_rs::enums::TextEntityType::TextUrl(
+                tdlib_rs::types::TextEntityTypeTextUrl {
+                    url: url.to_owned(),
+                },
+            ),
+        }
+    }
+
+    #[test]
+    fn extract_text_links_returns_empty_for_no_entities() {
+        let ft = make_formatted_text("Hello world", vec![]);
+        assert!(extract_text_links(&ft).is_empty());
+    }
+
+    #[test]
+    fn extract_text_links_extracts_url_entity() {
+        let text = "Visit https://example.com please";
+        let ft = make_formatted_text(text, vec![make_url_entity(6, 19)]);
+
+        let links = extract_text_links(&ft);
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].offset, 6);
+        assert_eq!(links[0].length, 19);
+        assert_eq!(links[0].url, "https://example.com");
+    }
+
+    #[test]
+    fn extract_text_links_extracts_text_url_entity() {
+        let text = "Click here for info";
+        let ft = make_formatted_text(
+            text,
+            vec![make_text_url_entity(0, 10, "https://hidden.com")],
+        );
+
+        let links = extract_text_links(&ft);
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].offset, 0);
+        assert_eq!(links[0].length, 10);
+        assert_eq!(links[0].url, "https://hidden.com");
+    }
+
+    #[test]
+    fn extract_text_links_ignores_non_url_entities() {
+        let text = "Bold text here";
+        let ft = make_formatted_text(
+            text,
+            vec![tdlib_rs::types::TextEntity {
+                offset: 0,
+                length: 4,
+                r#type: tdlib_rs::enums::TextEntityType::Bold,
+            }],
+        );
+
+        assert!(extract_text_links(&ft).is_empty());
+    }
+
+    #[test]
+    fn extract_text_links_handles_multiple_links() {
+        let text = "See https://a.com and https://b.com";
+        let ft = make_formatted_text(text, vec![make_url_entity(4, 13), make_url_entity(22, 13)]);
+
+        let links = extract_text_links(&ft);
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].url, "https://a.com");
+        assert_eq!(links[1].url, "https://b.com");
+    }
+
+    #[test]
+    fn extract_content_links_from_text_message() {
+        let content = MessageContent::MessageText(tdlib_rs::types::MessageText {
+            text: make_formatted_text("Check https://example.com", vec![make_url_entity(6, 19)]),
+            link_preview: None,
+            link_preview_options: None,
+        });
+
+        let links = extract_content_links(&content);
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].url, "https://example.com");
+    }
+
+    #[test]
+    fn extract_content_links_returns_empty_for_no_caption_types() {
+        let content = MessageContent::MessageContact(tdlib_rs::types::MessageContact {
+            contact: tdlib_rs::types::Contact {
+                phone_number: "+1234567890".to_owned(),
+                first_name: "John".to_owned(),
+                last_name: String::new(),
+                vcard: String::new(),
+                user_id: 0,
+            },
+        });
+
+        assert!(extract_content_links(&content).is_empty());
+    }
+
+    // ── UTF-16 offset conversion tests ──
+
+    #[test]
+    fn utf16_offset_to_byte_offset_ascii() {
+        assert_eq!(utf16_offset_to_byte_offset("hello", 0), Some(0));
+        assert_eq!(utf16_offset_to_byte_offset("hello", 3), Some(3));
+        assert_eq!(utf16_offset_to_byte_offset("hello", 5), Some(5));
+    }
+
+    #[test]
+    fn utf16_offset_to_byte_offset_cyrillic() {
+        // "Привет" — each Cyrillic char is 2 bytes in UTF-8 but 1 UTF-16 code unit
+        let text = "Привет";
+        assert_eq!(utf16_offset_to_byte_offset(text, 0), Some(0));
+        assert_eq!(utf16_offset_to_byte_offset(text, 1), Some(2)); // after 'П'
+        assert_eq!(utf16_offset_to_byte_offset(text, 6), Some(12)); // end
+    }
+
+    #[test]
+    fn utf16_offset_to_byte_offset_out_of_range() {
+        assert_eq!(utf16_offset_to_byte_offset("hi", 10), None);
+    }
+
+    #[test]
+    fn extract_text_links_with_cyrillic_prefix() {
+        // "Смотри тут" — "Смотри " is 7 Cyrillic chars = 7 UTF-16 code units, 14 UTF-8 bytes
+        // "тут" starts at UTF-16 offset 7, length 3
+        let text = "Смотри тут";
+        let ft = make_formatted_text(
+            text,
+            vec![make_text_url_entity(7, 3, "https://example.com")],
+        );
+
+        let links = extract_text_links(&ft);
+        assert_eq!(links.len(), 1);
+        // Byte offset of "тут" in UTF-8: "Смотри " = 12 bytes (6 × 2) + 1 space = 13
+        assert_eq!(links[0].offset, 13);
+        assert_eq!(links[0].length, 6); // "тут" = 3 chars × 2 bytes
+        assert_eq!(links[0].url, "https://example.com");
+    }
+
+    #[test]
+    fn extract_text_links_with_emoji_prefix() {
+        // "👍 link" — 👍 is 1 UTF-16 surrogate pair (2 code units), 4 UTF-8 bytes
+        let text = "👍 link";
+        // "link" starts at UTF-16 offset 3 (2 for emoji + 1 for space), length 4
+        let ft = make_formatted_text(text, vec![make_url_entity(3, 4)]);
+
+        let links = extract_text_links(&ft);
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].offset, 5); // 4 bytes for 👍 + 1 for space
+        assert_eq!(links[0].length, 4);
+        assert_eq!(links[0].url, "link");
     }
 }

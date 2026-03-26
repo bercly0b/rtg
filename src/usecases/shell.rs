@@ -393,7 +393,9 @@ where
                 ChatUpdate::NewMessage { chat_id, message } => {
                     tracing::debug!(chat_id, message_id = message.id, "caching pushed message");
                     self.maybe_auto_download(chat_id, &message);
-                    self.state.message_cache_mut().add_message(chat_id, message);
+                    self.state
+                        .message_cache_mut()
+                        .add_message(chat_id, *message);
                     if !reload_chat_ids.contains(&chat_id) {
                         reload_chat_ids.push(chat_id);
                     }
@@ -1128,8 +1130,8 @@ where
             return Ok(());
         };
         let text = msg.display_content();
-        if let Some(url) = extract_first_url(&text) {
-            self.opener.open(url)?;
+        if let Some(url) = extract_first_url(&text, &msg.links) {
+            self.opener.open(&url)?;
         }
         Ok(())
     }
@@ -1624,6 +1626,7 @@ mod tests {
             file_info: None,
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -3801,7 +3804,7 @@ mod tests {
         o.handle_event(AppEvent::ChatUpdateReceived {
             updates: vec![ChatUpdate::NewMessage {
                 chat_id: 2,
-                message: message(10, "Hey from Bob"),
+                message: Box::new(message(10, "Hey from Bob")),
             }],
         })
         .unwrap();
@@ -3827,7 +3830,7 @@ mod tests {
         o.handle_event(AppEvent::ChatUpdateReceived {
             updates: vec![ChatUpdate::NewMessage {
                 chat_id: 1,
-                message: message(2, "Second"),
+                message: Box::new(message(2, "Second")),
             }],
         })
         .unwrap();
@@ -3870,7 +3873,7 @@ mod tests {
         o.handle_event(AppEvent::ChatUpdateReceived {
             updates: vec![ChatUpdate::NewMessage {
                 chat_id: 1,
-                message: message(2, "New message"),
+                message: Box::new(message(2, "New message")),
             }],
         })
         .unwrap();
@@ -3901,11 +3904,11 @@ mod tests {
             updates: vec![
                 ChatUpdate::NewMessage {
                     chat_id: 2,
-                    message: message(10, "Bob msg 1"),
+                    message: Box::new(message(10, "Bob msg 1")),
                 },
                 ChatUpdate::NewMessage {
                     chat_id: 2,
-                    message: message(11, "Bob msg 2"),
+                    message: Box::new(message(11, "Bob msg 2")),
                 },
             ],
         })
@@ -5564,6 +5567,7 @@ mod tests {
             }),
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -5588,6 +5592,7 @@ mod tests {
             }),
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -5612,6 +5617,7 @@ mod tests {
             }),
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -5794,6 +5800,7 @@ mod tests {
             }),
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -5818,6 +5825,7 @@ mod tests {
             }),
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 
@@ -6001,6 +6009,7 @@ mod tests {
                 }),
                 reply_to: None,
                 reaction_count: 0,
+                links: Vec::new(),
             }],
         );
         o.open_handlers
@@ -6043,6 +6052,7 @@ mod tests {
                 }),
                 reply_to: None,
                 reaction_count: 0,
+                links: Vec::new(),
             }],
         );
 

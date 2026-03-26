@@ -182,6 +182,7 @@ mod tests {
             file_info: None,
             reply_to: None,
             reaction_count: 0,
+            links: Vec::new(),
         }
     }
 

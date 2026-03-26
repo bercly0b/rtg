@@ -100,7 +100,7 @@ pub enum ChatUpdate {
     /// A new message arrived in a chat.
     NewMessage {
         chat_id: i64,
-        message: super::message::Message,
+        message: Box<super::message::Message>,
     },
     /// Messages were deleted from a chat.
     MessagesDeleted { chat_id: i64, message_ids: Vec<i64> },
