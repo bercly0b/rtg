@@ -550,6 +550,11 @@ fn build_content_line_spans_linked(
         let overlap_start = link_start.saturating_sub(text_start).max(pos);
         let overlap_end = (link_end - text_start).min(text.len());
 
+        // Skip if offsets land on invalid char boundaries (defensive guard)
+        if !text.is_char_boundary(overlap_start) || !text.is_char_boundary(overlap_end) {
+            continue;
+        }
+
         // Text before link
         if overlap_start > pos {
             spans.push(Span::styled(

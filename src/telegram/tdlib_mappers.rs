@@ -525,10 +525,30 @@ fn effective_file_size(file: &tdlib_rs::types::File) -> u64 {
     }
 }
 
+/// Converts a UTF-16 code-unit offset to a UTF-8 byte offset within `text`.
+///
+/// TDLib reports entity offsets/lengths in UTF-16 code units, while Rust
+/// strings are UTF-8. This function walks the string and maps between the two.
+/// Returns `None` if the UTF-16 offset exceeds the string.
+fn utf16_offset_to_byte_offset(text: &str, utf16_offset: usize) -> Option<usize> {
+    let mut utf16_pos = 0;
+    for (byte_pos, ch) in text.char_indices() {
+        if utf16_pos == utf16_offset {
+            return Some(byte_pos);
+        }
+        utf16_pos += ch.len_utf16();
+    }
+    // Offset pointing exactly past the last character
+    if utf16_pos == utf16_offset {
+        return Some(text.len());
+    }
+    None
+}
+
 /// Extracts URL-bearing text entities from a `FormattedText` into domain `TextLink`s.
 ///
 /// Handles `TextEntityTypeUrl` (URL visible in text) and `TextEntityTypeTextUrl`
-/// (clickable text with a hidden URL).
+/// (clickable text with a hidden URL). Converts TDLib's UTF-16 offsets to byte offsets.
 fn extract_text_links(formatted: &tdlib_rs::types::FormattedText) -> Vec<TextLink> {
     use tdlib_rs::enums::TextEntityType;
 
@@ -536,24 +556,26 @@ fn extract_text_links(formatted: &tdlib_rs::types::FormattedText) -> Vec<TextLin
         .entities
         .iter()
         .filter_map(|entity| {
-            let offset = entity.offset as usize;
-            let length = entity.length as usize;
+            let utf16_offset = entity.offset as usize;
+            let utf16_length = entity.length as usize;
+
+            let byte_offset = utf16_offset_to_byte_offset(&formatted.text, utf16_offset)?;
+            let byte_end =
+                utf16_offset_to_byte_offset(&formatted.text, utf16_offset + utf16_length)?;
+            let byte_length = byte_end - byte_offset;
+
             match &entity.r#type {
                 TextEntityType::Url => {
-                    let url = formatted
-                        .text
-                        .get(offset..offset + length)
-                        .unwrap_or_default()
-                        .to_owned();
+                    let url = formatted.text[byte_offset..byte_end].to_owned();
                     Some(TextLink {
-                        offset,
-                        length,
+                        offset: byte_offset,
+                        length: byte_length,
                         url,
                     })
                 }
                 TextEntityType::TextUrl(tu) => Some(TextLink {
-                    offset,
-                    length,
+                    offset: byte_offset,
+                    length: byte_length,
                     url: tu.url.clone(),
                 }),
                 _ => None,
@@ -1327,5 +1349,60 @@ mod tests {
         });
 
         assert!(extract_content_links(&content).is_empty());
+    }
+
+    // ── UTF-16 offset conversion tests ──
+
+    #[test]
+    fn utf16_offset_to_byte_offset_ascii() {
+        assert_eq!(utf16_offset_to_byte_offset("hello", 0), Some(0));
+        assert_eq!(utf16_offset_to_byte_offset("hello", 3), Some(3));
+        assert_eq!(utf16_offset_to_byte_offset("hello", 5), Some(5));
+    }
+
+    #[test]
+    fn utf16_offset_to_byte_offset_cyrillic() {
+        // "Привет" — each Cyrillic char is 2 bytes in UTF-8 but 1 UTF-16 code unit
+        let text = "Привет";
+        assert_eq!(utf16_offset_to_byte_offset(text, 0), Some(0));
+        assert_eq!(utf16_offset_to_byte_offset(text, 1), Some(2)); // after 'П'
+        assert_eq!(utf16_offset_to_byte_offset(text, 6), Some(12)); // end
+    }
+
+    #[test]
+    fn utf16_offset_to_byte_offset_out_of_range() {
+        assert_eq!(utf16_offset_to_byte_offset("hi", 10), None);
+    }
+
+    #[test]
+    fn extract_text_links_with_cyrillic_prefix() {
+        // "Смотри тут" — "Смотри " is 7 Cyrillic chars = 7 UTF-16 code units, 14 UTF-8 bytes
+        // "тут" starts at UTF-16 offset 7, length 3
+        let text = "Смотри тут";
+        let ft = make_formatted_text(
+            text,
+            vec![make_text_url_entity(7, 3, "https://example.com")],
+        );
+
+        let links = extract_text_links(&ft);
+        assert_eq!(links.len(), 1);
+        // Byte offset of "тут" in UTF-8: "Смотри " = 12 bytes (6 × 2) + 1 space = 13
+        assert_eq!(links[0].offset, 13);
+        assert_eq!(links[0].length, 6); // "тут" = 3 chars × 2 bytes
+        assert_eq!(links[0].url, "https://example.com");
+    }
+
+    #[test]
+    fn extract_text_links_with_emoji_prefix() {
+        // "👍 link" — 👍 is 1 UTF-16 surrogate pair (2 code units), 4 UTF-8 bytes
+        let text = "👍 link";
+        // "link" starts at UTF-16 offset 3 (2 for emoji + 1 for space), length 4
+        let ft = make_formatted_text(text, vec![make_url_entity(3, 4)]);
+
+        let links = extract_text_links(&ft);
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].offset, 5); // 4 bytes for 👍 + 1 for space
+        assert_eq!(links[0].length, 4);
+        assert_eq!(links[0].url, "link");
     }
 }
