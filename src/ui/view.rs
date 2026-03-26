@@ -796,7 +796,11 @@ mod tests {
     #[test]
     fn open_chat_title_includes_chat_name_when_open() {
         let mut state = ShellState::default();
-        state.open_chat_mut().set_loading(1, "General".to_owned());
+        state.open_chat_mut().set_loading(
+            1,
+            "General".to_owned(),
+            crate::domain::chat::ChatType::Private,
+        );
 
         let title = open_chat_title(state.open_chat());
 
@@ -806,7 +810,11 @@ mod tests {
     #[test]
     fn open_chat_title_shows_updating_when_refreshing() {
         let mut state = ShellState::default();
-        state.open_chat_mut().set_loading(1, "General".to_owned());
+        state.open_chat_mut().set_loading(
+            1,
+            "General".to_owned(),
+            crate::domain::chat::ChatType::Private,
+        );
         state
             .open_chat_mut()
             .set_ready(vec![crate::domain::message::Message {
@@ -835,7 +843,11 @@ mod tests {
     #[test]
     fn open_chat_title_shows_subtitle_when_set() {
         let mut state = ShellState::default();
-        state.open_chat_mut().set_loading(1, "Alice".to_owned());
+        state.open_chat_mut().set_loading(
+            1,
+            "Alice".to_owned(),
+            crate::domain::chat::ChatType::Private,
+        );
         state
             .open_chat_mut()
             .set_ready(vec![crate::domain::message::Message {
@@ -866,7 +878,11 @@ mod tests {
     #[test]
     fn open_chat_title_no_subtitle_when_not_set() {
         let mut state = ShellState::default();
-        state.open_chat_mut().set_loading(1, "General".to_owned());
+        state.open_chat_mut().set_loading(
+            1,
+            "General".to_owned(),
+            crate::domain::chat::ChatType::Private,
+        );
         state
             .open_chat_mut()
             .set_ready(vec![crate::domain::message::Message {
