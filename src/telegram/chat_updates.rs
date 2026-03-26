@@ -108,7 +108,7 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
             let domain_msg = mapper.map_message(&message);
             Some(ChatUpdate::NewMessage {
                 chat_id,
-                message: domain_msg,
+                message: Box::new(domain_msg),
             })
         }
         TdLibUpdate::DeleteMessages {
