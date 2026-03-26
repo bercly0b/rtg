@@ -1682,15 +1682,13 @@ mod tests {
     fn spans_linked_multiple_links() {
         // "aa bb cc" — two links: "aa" at 0..2, "cc" at 6..8
         let spans = build_content_line_spans_linked("aa bb cc", 0, &[(0, 2), (6, 8)]);
-        assert_eq!(spans.len(), 4);
+        assert_eq!(spans.len(), 3);
         assert_eq!(spans[0].content.as_ref(), "aa");
         assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
         assert_eq!(spans[1].content.as_ref(), " bb ");
         assert!(!spans[1].style.add_modifier.contains(Modifier::UNDERLINED));
         assert_eq!(spans[2].content.as_ref(), "cc");
         assert!(spans[2].style.add_modifier.contains(Modifier::UNDERLINED));
-        // No trailing text after last link — but spans[3] is empty string guard?
-        // Actually "cc" ends at 8 == text.len(), so no trailing span
     }
 
     // ── Integration: message with links renders underlined ──

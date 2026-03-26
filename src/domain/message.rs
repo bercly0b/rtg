@@ -221,12 +221,26 @@ pub fn build_file_metadata_display(media: MessageMedia, info: &FileInfo) -> Stri
 ///
 /// Checks entity links first (they may contain URLs not visible in text),
 /// then falls back to whitespace-delimited scanning of plain text.
-pub fn extract_first_url<'a>(text: &'a str, links: &'a [TextLink]) -> Option<&'a str> {
+/// URLs without a scheme get `http://` prepended so they can be opened by the OS.
+pub fn extract_first_url(text: &str, links: &[TextLink]) -> Option<String> {
     if let Some(link) = links.first() {
-        return Some(&link.url);
+        return Some(normalize_url(&link.url));
     }
     text.split_whitespace()
         .find(|word| word.starts_with("https://") || word.starts_with("http://"))
+        .map(|s| s.to_owned())
+}
+
+/// Ensures a URL has an `http://` or `https://` scheme.
+///
+/// TDLib `TextEntityTypeUrl` may match bare hosts like `127.0.0.1:8080`
+/// or `example.com/path` — the OS launcher needs a full scheme to work.
+fn normalize_url(url: &str) -> String {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        url.to_owned()
+    } else {
+        format!("http://{url}")
+    }
 }
 
 #[cfg(test)]
@@ -370,7 +384,7 @@ mod tests {
     fn extract_first_url_finds_https() {
         assert_eq!(
             extract_first_url("visit https://example.com please", &[]),
-            Some("https://example.com")
+            Some("https://example.com".to_owned())
         );
     }
 
@@ -378,7 +392,7 @@ mod tests {
     fn extract_first_url_finds_http() {
         assert_eq!(
             extract_first_url("go to http://example.com", &[]),
-            Some("http://example.com")
+            Some("http://example.com".to_owned())
         );
     }
 
@@ -386,7 +400,7 @@ mod tests {
     fn extract_first_url_returns_first_when_multiple() {
         assert_eq!(
             extract_first_url("see https://first.com and https://second.com", &[]),
-            Some("https://first.com")
+            Some("https://first.com".to_owned())
         );
     }
 
@@ -394,7 +408,7 @@ mod tests {
     fn extract_first_url_handles_url_at_start() {
         assert_eq!(
             extract_first_url("https://start.com is the link", &[]),
-            Some("https://start.com")
+            Some("https://start.com".to_owned())
         );
     }
 
@@ -402,7 +416,7 @@ mod tests {
     fn extract_first_url_handles_url_at_end() {
         assert_eq!(
             extract_first_url("link: https://end.com", &[]),
-            Some("https://end.com")
+            Some("https://end.com".to_owned())
         );
     }
 
@@ -425,7 +439,7 @@ mod tests {
         }];
         assert_eq!(
             extract_first_url("click here and https://visible.com", &links),
-            Some("https://hidden.com")
+            Some("https://hidden.com".to_owned())
         );
     }
 
@@ -433,8 +447,52 @@ mod tests {
     fn extract_first_url_falls_back_to_text_when_no_entities() {
         assert_eq!(
             extract_first_url("go to https://example.com", &[]),
-            Some("https://example.com")
+            Some("https://example.com".to_owned())
         );
+    }
+
+    #[test]
+    fn extract_first_url_prepends_scheme_to_bare_host() {
+        let links = vec![TextLink {
+            offset: 0,
+            length: 18,
+            url: "127.0.0.1:18789".to_owned(),
+        }];
+        assert_eq!(
+            extract_first_url("127.0.0.1:18789", &links),
+            Some("http://127.0.0.1:18789".to_owned())
+        );
+    }
+
+    #[test]
+    fn extract_first_url_preserves_existing_scheme() {
+        let links = vec![TextLink {
+            offset: 0,
+            length: 22,
+            url: "https://example.com".to_owned(),
+        }];
+        assert_eq!(
+            extract_first_url("https://example.com", &links),
+            Some("https://example.com".to_owned())
+        );
+    }
+
+    // ── normalize_url tests ──
+
+    #[test]
+    fn normalize_url_adds_http_to_bare_host() {
+        assert_eq!(normalize_url("127.0.0.1:8080"), "http://127.0.0.1:8080");
+        assert_eq!(normalize_url("example.com/path"), "http://example.com/path");
+    }
+
+    #[test]
+    fn normalize_url_keeps_https() {
+        assert_eq!(normalize_url("https://example.com"), "https://example.com");
+    }
+
+    #[test]
+    fn normalize_url_keeps_http() {
+        assert_eq!(normalize_url("http://example.com"), "http://example.com");
     }
 
     // ── format_file_size tests ──

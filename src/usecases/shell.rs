@@ -1131,7 +1131,7 @@ where
         };
         let text = msg.display_content();
         if let Some(url) = extract_first_url(&text, &msg.links) {
-            self.opener.open(url)?;
+            self.opener.open(&url)?;
         }
         Ok(())
     }
