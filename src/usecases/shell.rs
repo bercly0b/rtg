@@ -35,6 +35,9 @@ where
     cache_source: Option<Arc<dyn CachedMessagesSource>>,
     /// Guards against dispatching duplicate chat list requests while one is in-flight.
     chat_list_in_flight: bool,
+    /// When `true`, the current in-flight chat list refresh was triggered by the user (R key)
+    /// so we should show a status-bar notification when it completes.
+    user_requested_chat_refresh: bool,
     /// Guards against dispatching duplicate message refresh requests while one is in-flight.
     messages_refresh_in_flight: bool,
     /// When `true`, the orchestrator was initialised with cached data and needs
@@ -85,6 +88,7 @@ where
             dispatcher,
             cache_source: None,
             chat_list_in_flight: false,
+            user_requested_chat_refresh: false,
             messages_refresh_in_flight: false,
             initial_refresh_needed: false,
             tdlib_opened_chat_id: None,
@@ -129,6 +133,7 @@ where
             dispatcher,
             cache_source,
             chat_list_in_flight: false,
+            user_requested_chat_refresh: false,
             messages_refresh_in_flight: false,
             initial_refresh_needed,
             tdlib_opened_chat_id: None,
@@ -638,7 +643,10 @@ where
                 self.state.chat_list_mut().select_previous();
                 self.maybe_prefetch_selected_chat();
             }
-            "R" => self.dispatch_chat_list_refresh(),
+            "R" => {
+                self.user_requested_chat_refresh = true;
+                self.dispatch_chat_list_refresh();
+            }
             "r" => self.mark_selected_chat_as_read(),
             "I" => self.show_chat_info_popup(),
             "enter" | "l" => {
@@ -1162,9 +1170,13 @@ where
         match result {
             BackgroundTaskResult::ChatListLoaded { result } => {
                 self.chat_list_in_flight = false;
+                let user_requested = std::mem::take(&mut self.user_requested_chat_refresh);
                 match result {
                     Ok(chats) => {
                         tracing::debug!(chat_count = chats.len(), "background: chat list loaded");
+                        if user_requested {
+                            self.state.set_notification("Chat list refreshed");
+                        }
                         // Always use the *current* selected chat_id from state
                         // to preserve the user's cursor position. This prevents
                         // cursor jumps when background TDLib updates trigger
@@ -1173,6 +1185,9 @@ where
                     }
                     Err(error) => {
                         tracing::warn!(code = error.code, "background: chat list load failed");
+                        if user_requested {
+                            self.state.set_notification("Chat list refresh failed");
+                        }
                         self.state.chat_list_mut().set_error();
                     }
                 }
@@ -2232,6 +2247,50 @@ mod tests {
         o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
             .unwrap();
         assert_eq!(o.dispatcher.chat_list_dispatch_count(), 2);
+    }
+
+    #[test]
+    fn user_refresh_shows_notification_on_success() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+        // User presses R to refresh
+        o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
+            .unwrap();
+        assert!(o.state().active_notification().is_none());
+
+        // Background result arrives
+        inject_chat_list(&mut o, vec![chat(1, "General"), chat(2, "Backend")]);
+        assert_eq!(o.state().active_notification(), Some("Chat list refreshed"));
+    }
+
+    #[test]
+    fn user_refresh_shows_notification_on_failure() {
+        let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+        o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
+            .unwrap();
+
+        // Inject a failure
+        o.handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::ChatListLoaded {
+                result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
+            },
+        ))
+        .unwrap();
+        assert_eq!(
+            o.state().active_notification(),
+            Some("Chat list refresh failed")
+        );
+    }
+
+    #[test]
+    fn automatic_refresh_does_not_show_notification() {
+        let mut o = make_orchestrator();
+        // Initial tick triggers automatic refresh
+        o.handle_event(AppEvent::Tick).unwrap();
+
+        inject_chat_list(&mut o, vec![chat(1, "General")]);
+        assert!(o.state().active_notification().is_none());
     }
 
     #[test]
