@@ -441,7 +441,10 @@ fn build_reply_line(reply: &ReplyInfo, indent: &str, content_width: usize) -> Li
     ];
 
     if !sender_part.is_empty() {
-        spans.push(Span::styled(sender_part, styles::reply_sender_style()));
+        spans.push(Span::styled(
+            sender_part,
+            styles::reply_sender_style(&reply.sender_name),
+        ));
     }
 
     spans.push(Span::styled(truncated, styles::reply_text_style()));

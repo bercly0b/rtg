@@ -82,7 +82,7 @@ const SENDER_COLOR_PALETTE: &[Color] = &[
     Color::Yellow,
     Color::LightRed,
     Color::LightMagenta,
-    Color::LightGreen,
+    Color::Blue,
     Color::LightYellow,
     Color::Red,
 ];
@@ -157,10 +157,11 @@ pub fn reply_bar_style() -> Style {
 }
 
 /// Style for the sender name in a reply preview.
-pub fn reply_sender_style() -> Style {
-    Style::default()
-        .fg(Color::LightBlue)
-        .add_modifier(Modifier::BOLD)
+///
+/// Uses the same deterministic color as the message list so that a user's
+/// name always appears in the same color regardless of context.
+pub fn reply_sender_style(name: &str) -> Style {
+    sender_name_style(name, false)
 }
 
 /// Style for the reply text preview.
@@ -602,9 +603,10 @@ mod tests {
     }
 
     #[test]
-    fn reply_sender_style_is_light_blue_bold() {
-        let style = reply_sender_style();
-        assert_eq!(style.fg, Some(Color::LightBlue));
+    fn reply_sender_style_matches_message_list_color() {
+        let style = reply_sender_style("Alice");
+        let expected = sender_name_style("Alice", false);
+        assert_eq!(style.fg, expected.fg);
         assert!(style.add_modifier.contains(Modifier::BOLD));
     }
 
