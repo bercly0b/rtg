@@ -146,6 +146,11 @@ pub fn message_sending_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
 
+/// Style for the "edited" indicator on edited messages.
+pub fn message_edited_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
 /// Style for the reply bar character (`│`).
 pub fn reply_bar_style() -> Style {
     Style::default().fg(Color::LightBlue)
@@ -570,6 +575,12 @@ mod tests {
     fn chat_info_popup_value_style_is_white() {
         let style = chat_info_popup_value_style();
         assert_eq!(style.fg, Some(Color::White));
+    }
+
+    #[test]
+    fn message_edited_style_is_dark_gray() {
+        let style = message_edited_style();
+        assert_eq!(style.fg, Some(Color::DarkGray));
     }
 
     #[test]

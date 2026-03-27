@@ -245,6 +245,7 @@ impl MessageMapper for StubMessageMapper {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: raw.edit_date > 0,
         }
     }
 }

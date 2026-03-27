@@ -829,6 +829,7 @@ mod tests {
                 reply_to: None,
                 reaction_count: 0,
                 links: Vec::new(),
+                is_edited: false,
             }]);
         state.open_chat_mut().set_refreshing(true);
 
@@ -863,6 +864,7 @@ mod tests {
                 reply_to: None,
                 reaction_count: 0,
                 links: Vec::new(),
+                is_edited: false,
             }]);
         state
             .open_chat_mut()
@@ -899,6 +901,7 @@ mod tests {
                 reply_to: None,
                 reaction_count: 0,
                 links: Vec::new(),
+                is_edited: false,
             }]);
 
         let title = open_chat_title(state.open_chat());

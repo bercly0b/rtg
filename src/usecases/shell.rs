@@ -1627,6 +1627,7 @@ mod tests {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         }
     }
 
@@ -5568,6 +5569,7 @@ mod tests {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         }
     }
 
@@ -5593,6 +5595,7 @@ mod tests {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         }
     }
 
@@ -5618,6 +5621,7 @@ mod tests {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         }
     }
 
@@ -5801,6 +5805,7 @@ mod tests {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         }
     }
 
@@ -5826,6 +5831,7 @@ mod tests {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         }
     }
 
@@ -6010,6 +6016,7 @@ mod tests {
                 reply_to: None,
                 reaction_count: 0,
                 links: Vec::new(),
+                is_edited: false,
             }],
         );
         o.open_handlers
@@ -6053,6 +6060,7 @@ mod tests {
                 reply_to: None,
                 reaction_count: 0,
                 links: Vec::new(),
+                is_edited: false,
             }],
         );
 

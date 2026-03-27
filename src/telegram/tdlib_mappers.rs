@@ -282,6 +282,7 @@ pub fn map_tdlib_message_to_domain(
         reply_to,
         reaction_count,
         links,
+        is_edited: msg.edit_date > 0,
     }
 }
 
