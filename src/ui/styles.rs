@@ -604,10 +604,37 @@ mod tests {
 
     #[test]
     fn reply_sender_style_matches_message_list_color() {
-        let style = reply_sender_style("Alice");
-        let expected = sender_name_style("Alice", false);
-        assert_eq!(style.fg, expected.fg);
-        assert!(style.add_modifier.contains(Modifier::BOLD));
+        // Every name must get the same color in reply as in the message list.
+        let names = ["Alice", "Bob", "Charlie", "Diana"];
+        for name in &names {
+            let reply = reply_sender_style(name);
+            let message = sender_name_style(name, false);
+            assert_eq!(
+                reply.fg, message.fg,
+                "Color mismatch for '{}': reply {:?} vs message {:?}",
+                name, reply.fg, message.fg,
+            );
+            assert!(reply.add_modifier.contains(Modifier::BOLD));
+        }
+    }
+
+    #[test]
+    fn reply_sender_style_is_deterministic() {
+        let a = reply_sender_style("Alice");
+        let b = reply_sender_style("Alice");
+        assert_eq!(a.fg, b.fg);
+    }
+
+    #[test]
+    fn sender_palette_avoids_green_like_colors() {
+        // Green is reserved for "You"; LightGreen is visually too close.
+        for color in SENDER_COLOR_PALETTE {
+            assert_ne!(
+                *color,
+                Color::LightGreen,
+                "Palette must not contain LightGreen (too close to Green/You)"
+            );
+        }
     }
 
     #[test]
