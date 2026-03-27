@@ -14,6 +14,7 @@ pub enum MessageMedia {
     Contact,
     Location,
     Poll,
+    Call,
     Other,
 }
 
@@ -33,6 +34,7 @@ impl MessageMedia {
             MessageMedia::Contact => Some("[Contact]"),
             MessageMedia::Location => Some("[Location]"),
             MessageMedia::Poll => Some("[Poll]"),
+            MessageMedia::Call => Some("[Call]"),
             MessageMedia::Other => Some("[Media]"),
         }
     }
@@ -73,6 +75,72 @@ pub struct FileInfo {
     pub is_listened: bool,
     /// Current download state.
     pub download_status: DownloadStatus,
+}
+
+/// Reason why a call was ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallDiscardReason {
+    /// Normal hang-up or unknown reason.
+    HungUp,
+    /// The call was missed (incoming) or cancelled (outgoing).
+    Missed,
+    /// The other party declined the call.
+    Declined,
+    /// The users were disconnected during the call.
+    Disconnected,
+}
+
+/// Metadata for a call message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallInfo {
+    /// Whether this was a video call.
+    pub is_video: bool,
+    /// Call duration in seconds (0 if the call didn't connect).
+    pub duration: i32,
+    /// Why the call ended.
+    pub discard_reason: CallDiscardReason,
+}
+
+/// Builds a display string for call metadata.
+///
+/// Uses `is_outgoing` from the message to determine direction.
+/// Examples: `"Outgoing, 1:23"`, `"Missed"`, `"Declined"`, `"Cancelled"`.
+pub fn build_call_metadata_display(info: &CallInfo, is_outgoing: bool) -> String {
+    let call_type = if info.is_video { "Video call" } else { "Call" };
+
+    match info.discard_reason {
+        CallDiscardReason::Missed => {
+            if is_outgoing {
+                format!("{call_type}, Cancelled")
+            } else {
+                format!("{call_type}, Missed")
+            }
+        }
+        CallDiscardReason::Declined => format!("{call_type}, Declined"),
+        CallDiscardReason::Disconnected => {
+            if info.duration > 0 {
+                format!(
+                    "{call_type}, Disconnected, {}",
+                    format_duration(info.duration)
+                )
+            } else {
+                format!("{call_type}, Disconnected")
+            }
+        }
+        CallDiscardReason::HungUp => {
+            if info.duration > 0 {
+                let direction = if is_outgoing { "Outgoing" } else { "Incoming" };
+                format!(
+                    "{call_type}, {direction}, {}",
+                    format_duration(info.duration)
+                )
+            } else if is_outgoing {
+                format!("{call_type}, Cancelled")
+            } else {
+                format!("{call_type}, Missed")
+            }
+        }
+    }
 }
 
 /// Information about the message being replied to.
@@ -121,6 +189,8 @@ pub struct Message {
     /// File metadata for messages that carry downloadable media.
     /// `None` for text-only, poll, contact, location, and other non-file types.
     pub file_info: Option<FileInfo>,
+    /// Call metadata for `MessageMedia::Call` messages.
+    pub call_info: Option<CallInfo>,
     /// Information about the message this message replies to.
     /// `None` if the message is not a reply.
     pub reply_to: Option<ReplyInfo>,
@@ -259,6 +329,7 @@ mod tests {
             media,
             status: MessageStatus::Delivered,
             file_info: None,
+            call_info: None,
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
@@ -362,6 +433,7 @@ mod tests {
             (MessageMedia::Contact, "[Contact]"),
             (MessageMedia::Location, "[Location]"),
             (MessageMedia::Poll, "[Poll]"),
+            (MessageMedia::Call, "[Call]"),
             (MessageMedia::Other, "[Media]"),
         ];
 
@@ -630,5 +702,122 @@ mod tests {
             !display.contains("listened"),
             "should not show listened=yes when not listened"
         );
+    }
+
+    // ── build_call_metadata_display tests ──
+
+    #[test]
+    fn call_metadata_outgoing_connected() {
+        let info = CallInfo {
+            is_video: false,
+            duration: 83,
+            discard_reason: CallDiscardReason::HungUp,
+        };
+        assert_eq!(
+            build_call_metadata_display(&info, true),
+            "Call, Outgoing, 1:23"
+        );
+    }
+
+    #[test]
+    fn call_metadata_incoming_connected() {
+        let info = CallInfo {
+            is_video: false,
+            duration: 5,
+            discard_reason: CallDiscardReason::HungUp,
+        };
+        assert_eq!(
+            build_call_metadata_display(&info, false),
+            "Call, Incoming, 0:05"
+        );
+    }
+
+    #[test]
+    fn call_metadata_missed_incoming() {
+        let info = CallInfo {
+            is_video: false,
+            duration: 0,
+            discard_reason: CallDiscardReason::Missed,
+        };
+        assert_eq!(build_call_metadata_display(&info, false), "Call, Missed");
+    }
+
+    #[test]
+    fn call_metadata_missed_outgoing_shows_cancelled() {
+        let info = CallInfo {
+            is_video: false,
+            duration: 0,
+            discard_reason: CallDiscardReason::Missed,
+        };
+        assert_eq!(build_call_metadata_display(&info, true), "Call, Cancelled");
+    }
+
+    #[test]
+    fn call_metadata_declined() {
+        let info = CallInfo {
+            is_video: false,
+            duration: 0,
+            discard_reason: CallDiscardReason::Declined,
+        };
+        assert_eq!(build_call_metadata_display(&info, false), "Call, Declined");
+    }
+
+    #[test]
+    fn call_metadata_video_call() {
+        let info = CallInfo {
+            is_video: true,
+            duration: 60,
+            discard_reason: CallDiscardReason::HungUp,
+        };
+        assert_eq!(
+            build_call_metadata_display(&info, true),
+            "Video call, Outgoing, 1:00"
+        );
+    }
+
+    #[test]
+    fn call_metadata_video_missed() {
+        let info = CallInfo {
+            is_video: true,
+            duration: 0,
+            discard_reason: CallDiscardReason::Missed,
+        };
+        assert_eq!(
+            build_call_metadata_display(&info, false),
+            "Video call, Missed"
+        );
+    }
+
+    #[test]
+    fn call_metadata_disconnected_with_duration() {
+        let info = CallInfo {
+            is_video: false,
+            duration: 30,
+            discard_reason: CallDiscardReason::Disconnected,
+        };
+        assert_eq!(
+            build_call_metadata_display(&info, true),
+            "Call, Disconnected, 0:30"
+        );
+    }
+
+    #[test]
+    fn call_metadata_hungup_zero_duration_incoming_shows_missed() {
+        let info = CallInfo {
+            is_video: false,
+            duration: 0,
+            discard_reason: CallDiscardReason::HungUp,
+        };
+        assert_eq!(build_call_metadata_display(&info, false), "Call, Missed");
+    }
+
+    #[test]
+    fn call_metadata_hungup_zero_duration_outgoing_shows_cancelled() {
+        let info = CallInfo {
+            is_video: false,
+            duration: 0,
+            discard_reason: CallDiscardReason::HungUp,
+        };
+        assert_eq!(build_call_metadata_display(&info, true), "Call, Cancelled");
     }
 }

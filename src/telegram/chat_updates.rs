@@ -242,6 +242,7 @@ impl MessageMapper for StubMessageMapper {
             media,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info,
+            call_info: None,
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),

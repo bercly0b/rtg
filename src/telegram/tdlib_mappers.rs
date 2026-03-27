@@ -9,7 +9,7 @@ use tdlib_rs::types::{Chat as TdChat, Message as TdMessage, User as TdUser};
 use crate::domain::chat::{ChatSummary, ChatType, OutgoingReadStatus};
 use crate::domain::chat_subtitle::ChatSubtitle;
 use crate::domain::message::{
-    DownloadStatus, FileInfo, Message, MessageMedia, ReplyInfo, TextLink,
+    CallInfo, DownloadStatus, FileInfo, Message, MessageMedia, ReplyInfo, TextLink,
 };
 
 /// Maps a TDLib Chat to a domain ChatSummary.
@@ -164,7 +164,17 @@ pub fn extract_message_preview(content: &MessageContent) -> Option<String> {
         MessageContent::MessageContact(c) => Some(format!("[Contact] {}", c.contact.first_name)),
         MessageContent::MessageLocation(_) => Some("[Location]".to_owned()),
         MessageContent::MessagePoll(p) => Some(format!("[Poll] {}", p.poll.question.text)),
-        MessageContent::MessageCall(_) => Some("[Call]".to_owned()),
+        MessageContent::MessageCall(c) => {
+            use tdlib_rs::enums::CallDiscardReason as TdReason;
+            let kind = if c.is_video { "Video call" } else { "Call" };
+            let detail = match &c.discard_reason {
+                TdReason::Missed => "Missed".to_owned(),
+                TdReason::Declined => "Declined".to_owned(),
+                _ if c.duration > 0 => crate::domain::message::format_duration(c.duration),
+                _ => "Cancelled".to_owned(),
+            };
+            Some(format!("[{kind}] {detail}"))
+        }
         // Service messages
         MessageContent::MessageChatAddMembers(_) => Some("[Members added]".to_owned()),
         MessageContent::MessageChatJoinByLink => Some("[Joined via link]".to_owned()),
@@ -266,6 +276,7 @@ pub fn map_tdlib_message_to_domain(
     let text = extract_message_text(&msg.content);
     let media = extract_message_media(&msg.content);
     let file_info = extract_file_info(&msg.content);
+    let call_info = extract_call_info(&msg.content);
     let links = extract_content_links(&msg.content);
     let timestamp_ms = i64::from(msg.date) * 1000;
     let reaction_count = extract_total_reaction_count(msg);
@@ -279,6 +290,7 @@ pub fn map_tdlib_message_to_domain(
         media,
         status: crate::domain::message::MessageStatus::Delivered,
         file_info,
+        call_info,
         reply_to,
         reaction_count,
         links,
@@ -367,6 +379,7 @@ pub fn extract_message_media(content: &MessageContent) -> MessageMedia {
             MessageMedia::Location
         }
         MessageContent::MessagePoll(_) => MessageMedia::Poll,
+        MessageContent::MessageCall(_) => MessageMedia::Call,
         // Service messages and other types
         _ => MessageMedia::Other,
     }
@@ -512,6 +525,30 @@ fn build_file_info(file: &tdlib_rs::types::File, meta: FileMetadata) -> FileInfo
         is_listened: meta.is_listened,
         download_status,
     }
+}
+
+/// Extracts call metadata from a `MessageCall` content.
+fn extract_call_info(content: &MessageContent) -> Option<CallInfo> {
+    let MessageContent::MessageCall(c) = content else {
+        return None;
+    };
+
+    use tdlib_rs::enums::CallDiscardReason as TdReason;
+
+    let discard_reason = match &c.discard_reason {
+        TdReason::Missed => crate::domain::message::CallDiscardReason::Missed,
+        TdReason::Declined => crate::domain::message::CallDiscardReason::Declined,
+        TdReason::Disconnected => crate::domain::message::CallDiscardReason::Disconnected,
+        TdReason::HungUp | TdReason::Empty | TdReason::UpgradeToGroupCall(_) => {
+            crate::domain::message::CallDiscardReason::HungUp
+        }
+    };
+
+    Some(CallInfo {
+        is_video: c.is_video,
+        duration: c.duration,
+        discard_reason,
+    })
 }
 
 /// Returns the best known file size from TDLib's `File` struct.
