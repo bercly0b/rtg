@@ -82,7 +82,7 @@ const SENDER_COLOR_PALETTE: &[Color] = &[
     Color::Yellow,
     Color::LightRed,
     Color::LightMagenta,
-    Color::LightGreen,
+    Color::Blue,
     Color::LightYellow,
     Color::Red,
 ];
@@ -157,10 +157,11 @@ pub fn reply_bar_style() -> Style {
 }
 
 /// Style for the sender name in a reply preview.
-pub fn reply_sender_style() -> Style {
-    Style::default()
-        .fg(Color::LightBlue)
-        .add_modifier(Modifier::BOLD)
+///
+/// Uses the same deterministic color as the message list so that a user's
+/// name always appears in the same color regardless of context.
+pub fn reply_sender_style(name: &str, is_outgoing: bool) -> Style {
+    sender_name_style(name, is_outgoing)
 }
 
 /// Style for the reply text preview.
@@ -602,10 +603,45 @@ mod tests {
     }
 
     #[test]
-    fn reply_sender_style_is_light_blue_bold() {
-        let style = reply_sender_style();
-        assert_eq!(style.fg, Some(Color::LightBlue));
+    fn reply_sender_style_matches_message_list_color() {
+        // Every name must get the same color in reply as in the message list.
+        let names = ["Alice", "Bob", "Charlie", "Diana"];
+        for name in &names {
+            let reply = reply_sender_style(name, false);
+            let message = sender_name_style(name, false);
+            assert_eq!(
+                reply.fg, message.fg,
+                "Color mismatch for '{}': reply {:?} vs message {:?}",
+                name, reply.fg, message.fg,
+            );
+            assert!(reply.add_modifier.contains(Modifier::BOLD));
+        }
+    }
+
+    #[test]
+    fn reply_sender_style_outgoing_is_green() {
+        let style = reply_sender_style("You", true);
+        assert_eq!(style.fg, Some(Color::Green));
         assert!(style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn reply_sender_style_is_deterministic() {
+        let a = reply_sender_style("Alice", false);
+        let b = reply_sender_style("Alice", false);
+        assert_eq!(a.fg, b.fg);
+    }
+
+    #[test]
+    fn sender_palette_avoids_green_like_colors() {
+        // Green is reserved for "You"; LightGreen is visually too close.
+        for color in SENDER_COLOR_PALETTE {
+            assert_ne!(
+                *color,
+                Color::LightGreen,
+                "Palette must not contain LightGreen (too close to Green/You)"
+            );
+        }
     }
 
     #[test]

@@ -265,6 +265,15 @@ impl TdLibClient {
                             cache.upsert_user(u.user);
                         }
 
+                        // TDLib option updates (e.g. "my_id" for current user)
+                        Update::Option(u) => {
+                            if u.name == "my_id" {
+                                if let tdlib_rs::enums::OptionValue::Integer(v) = u.value {
+                                    cache.set_my_user_id(v.value);
+                                }
+                            }
+                        }
+
                         // Message updates
                         Update::NewMessage(u) => {
                             let _ = update_tx.send(TdLibUpdate::NewMessage {

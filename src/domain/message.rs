@@ -142,6 +142,8 @@ pub struct ReplyInfo {
     pub sender_name: String,
     /// Text preview of the original message.
     pub text: String,
+    /// Whether the replied-to message was sent by the current user.
+    pub is_outgoing: bool,
 }
 
 /// A hyperlink embedded in message text via a text entity.
