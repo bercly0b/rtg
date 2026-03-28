@@ -8,7 +8,7 @@
 mod auth;
 mod chats;
 mod messages;
-pub mod types;
+mod types;
 mod update_loop;
 
 pub use types::{AuthStateUpdate, TdLibConfig, TdLibError};

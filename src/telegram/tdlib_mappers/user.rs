@@ -1,22 +1,7 @@
 use tdlib_rs::enums::{ChatType as TdChatType, MessageSender, UserStatus};
-use tdlib_rs::types::{Message as TdMessage, User as TdUser};
+use tdlib_rs::types::User as TdUser;
 
 use crate::domain::chat_subtitle::ChatSubtitle;
-
-/// Extracts the sender name from a TDLib message using a pre-resolved user list.
-#[allow(dead_code)]
-pub fn extract_sender_name_from_message(
-    msg: &TdMessage,
-    users: &[(i64, TdUser)],
-) -> Option<String> {
-    match &msg.sender_id {
-        MessageSender::User(u) => users
-            .iter()
-            .find(|(id, _)| *id == u.user_id)
-            .map(|(_, user)| format_user_name(user)),
-        MessageSender::Chat(_) => None, // For channel posts, we use chat title
-    }
-}
 
 /// Formats a user's display name from TDLib User.
 pub fn format_user_name(user: &TdUser) -> String {
