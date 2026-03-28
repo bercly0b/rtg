@@ -12,8 +12,7 @@ Project structure and module layout guide: [docs/project-structure.md](docs/proj
 
 1. Before starting any development task:
    - if current branch is `main`, create a feature branch first;
-   - recommended naming: `feature/<short-task-name>`;
-   - **recall hindsight memories** relevant to the task area (`hindsight memory recall`) to get context from previous work.
+   - recommended naming: `feature/<short-task-name>`.
 
 2. Planning -> implementation:
    - plan first;
@@ -43,13 +42,6 @@ Project structure and module layout guide: [docs/project-structure.md](docs/proj
 7. Commit after development task completion:
    - after finishing a development task (implementation + tests/quality gate), create a git commit;
    - commit messages must be written in English.
-
-8. Store learnings in hindsight:
-   - after completing a task, **store useful knowledge** via `hindsight memory retain`;
-   - only store **high-level knowledge** that impacts future tasks: architectural decisions, design patterns chosen, discovered pitfalls, non-obvious workarounds, project conventions, integration nuances;
-   - **do NOT store** low-level implementation details or trivial facts (e.g. "changed color to green", "renamed variable X to Y", "added field Z to struct") — these are visible in git history and carry no reusable value;
-   - rule of thumb: if the knowledge would not influence a decision in a future task, it does not belong in hindsight;
-   - be specific and include outcomes (what worked and what didn't).
 
 ## Documentation rules
 
