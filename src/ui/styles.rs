@@ -160,8 +160,8 @@ pub fn reply_bar_style() -> Style {
 ///
 /// Uses the same deterministic color as the message list so that a user's
 /// name always appears in the same color regardless of context.
-pub fn reply_sender_style(name: &str) -> Style {
-    sender_name_style(name, false)
+pub fn reply_sender_style(name: &str, is_outgoing: bool) -> Style {
+    sender_name_style(name, is_outgoing)
 }
 
 /// Style for the reply text preview.
@@ -607,7 +607,7 @@ mod tests {
         // Every name must get the same color in reply as in the message list.
         let names = ["Alice", "Bob", "Charlie", "Diana"];
         for name in &names {
-            let reply = reply_sender_style(name);
+            let reply = reply_sender_style(name, false);
             let message = sender_name_style(name, false);
             assert_eq!(
                 reply.fg, message.fg,
@@ -619,9 +619,16 @@ mod tests {
     }
 
     #[test]
+    fn reply_sender_style_outgoing_is_green() {
+        let style = reply_sender_style("You", true);
+        assert_eq!(style.fg, Some(Color::Green));
+        assert!(style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
     fn reply_sender_style_is_deterministic() {
-        let a = reply_sender_style("Alice");
-        let b = reply_sender_style("Alice");
+        let a = reply_sender_style("Alice", false);
+        let b = reply_sender_style("Alice", false);
         assert_eq!(a.fg, b.fg);
     }
 

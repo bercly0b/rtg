@@ -443,7 +443,7 @@ fn build_reply_line(reply: &ReplyInfo, indent: &str, content_width: usize) -> Li
     if !sender_part.is_empty() {
         spans.push(Span::styled(
             sender_part,
-            styles::reply_sender_style(&reply.sender_name),
+            styles::reply_sender_style(&reply.sender_name, reply.is_outgoing),
         ));
     }
 
@@ -1472,6 +1472,7 @@ mod tests {
             reply_to: Some(ReplyInfo {
                 sender_name: reply_sender.to_owned(),
                 text: reply_text.to_owned(),
+                is_outgoing: false,
             }),
             reaction_count: 0,
             links: Vec::new(),
@@ -1723,6 +1724,7 @@ mod tests {
                 reply_to: Some(ReplyInfo {
                     sender_name: "Bob".to_owned(),
                     text: "Original text".to_owned(),
+                    is_outgoing: false,
                 }),
                 reaction_count: 0,
                 links: Vec::new(),

@@ -651,6 +651,7 @@ impl TdLibAuthBackend {
         msg: &tdlib_rs::types::Message,
     ) -> Option<crate::domain::message::ReplyInfo> {
         let cache = self.client.cache();
+        let my_user_id = cache.my_user_id();
         tdlib_mappers::extract_reply_info(
             msg,
             |user_id| {
@@ -659,6 +660,7 @@ impl TdLibAuthBackend {
                     .map(|u| tdlib_mappers::format_user_name(&u))
             },
             |chat_id| cache.get_chat(chat_id).map(|c| c.title.clone()),
+            my_user_id,
         )
     }
 
@@ -959,12 +961,16 @@ fn enrich_same_chat_reply_info(
     use std::collections::HashMap;
     use tdlib_rs::enums::MessageReplyTo;
 
-    let by_id: HashMap<i64, (String, String)> = messages
+    let by_id: HashMap<i64, (String, String, bool)> = messages
         .iter()
         .map(|m| {
             (
                 m.id,
-                (reply_sender_name_for_message(m), m.display_content()),
+                (
+                    reply_sender_name_for_message(m),
+                    m.display_content(),
+                    m.is_outgoing,
+                ),
             )
         })
         .collect();
@@ -974,21 +980,18 @@ fn enrich_same_chat_reply_info(
             continue;
         };
 
-        if !reply.sender_name.is_empty() && !reply.text.is_empty() {
-            continue;
-        }
-
         let Some(MessageReplyTo::Message(info)) = raw.reply_to.as_ref() else {
             continue;
         };
 
-        if let Some((sender_name, text)) = by_id.get(&info.message_id) {
+        if let Some((sender_name, text, is_outgoing)) = by_id.get(&info.message_id) {
             if reply.sender_name.is_empty() {
                 reply.sender_name = sender_name.clone();
             }
             if reply.text.is_empty() {
                 reply.text = text.clone();
             }
+            reply.is_outgoing = *is_outgoing;
         }
     }
 }
@@ -1008,6 +1011,7 @@ fn extract_reply_info_from_cache(
     _rt: &std::sync::Arc<tokio::runtime::Runtime>,
     _client_id: i32,
 ) -> Option<crate::domain::message::ReplyInfo> {
+    let my_user_id = cache.my_user_id();
     tdlib_mappers::extract_reply_info(
         msg,
         |user_id| {
@@ -1016,6 +1020,7 @@ fn extract_reply_info_from_cache(
                 .map(|u| tdlib_mappers::format_user_name(&u))
         },
         |chat_id| cache.get_chat(chat_id).map(|c| c.title.clone()),
+        my_user_id,
     )
 }
 

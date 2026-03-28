@@ -9,6 +9,7 @@
 //! should always succeed for IDs obtained from TDLib responses.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use tdlib_rs::types::{Chat, ChatPosition, User};
@@ -20,6 +21,9 @@ use tdlib_rs::types::{Chat, ChatPosition, User};
 #[derive(Debug, Clone)]
 pub struct TdLibCache {
     inner: Arc<RwLock<CacheInner>>,
+    /// Current user's TDLib user ID, set from `updateOption("my_id")`.
+    /// 0 means not yet known.
+    my_user_id: Arc<AtomicI64>,
 }
 
 #[derive(Debug, Default)]
@@ -32,6 +36,22 @@ impl TdLibCache {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(RwLock::new(CacheInner::default())),
+            my_user_id: Arc::new(AtomicI64::new(0)),
+        }
+    }
+
+    /// Stores the current user's ID (from TDLib `updateOption("my_id")`).
+    pub fn set_my_user_id(&self, user_id: i64) {
+        self.my_user_id.store(user_id, Ordering::Relaxed);
+    }
+
+    /// Returns the current user's ID, or `None` if not yet known.
+    pub fn my_user_id(&self) -> Option<i64> {
+        let id = self.my_user_id.load(Ordering::Relaxed);
+        if id != 0 {
+            Some(id)
+        } else {
+            None
         }
     }
 

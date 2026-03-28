@@ -126,9 +126,10 @@ fn build_reply_preview_line(reply: &ReplyContext, available_width: usize) -> Lin
 
     let mut spans = vec![Span::styled(bar.to_owned(), styles::reply_bar_style())];
     if !sender.is_empty() {
+        let is_outgoing = reply.sender_name == "You";
         spans.push(Span::styled(
             sender,
-            styles::reply_sender_style(&reply.sender_name),
+            styles::reply_sender_style(&reply.sender_name, is_outgoing),
         ));
     }
     spans.push(Span::styled(text, styles::reply_text_style()));

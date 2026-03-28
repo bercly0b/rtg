@@ -1178,7 +1178,8 @@ where
         let reply_context = self.state.message_input_mut().take_reply_to();
         let reply_to_message_id = reply_context.as_ref().map(|r| r.message_id);
         let pending_reply_info = reply_context.map(|r| crate::domain::message::ReplyInfo {
-            sender_name: r.sender_name,
+            sender_name: r.sender_name.clone(),
+            is_outgoing: r.sender_name == "You",
             text: r.text,
         });
 

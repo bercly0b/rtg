@@ -329,6 +329,7 @@ pub fn extract_reply_info(
     msg: &TdMessage,
     resolve_user_name: impl Fn(i64) -> Option<String>,
     resolve_chat_title: impl Fn(i64) -> Option<String>,
+    my_user_id: Option<i64>,
 ) -> Option<ReplyInfo> {
     use tdlib_rs::enums::{MessageOrigin, MessageReplyTo};
 
@@ -338,17 +339,29 @@ pub fn extract_reply_info(
         return None;
     };
 
-    let sender_name = match info.origin.as_ref() {
-        Some(MessageOrigin::User(u)) => resolve_user_name(u.sender_user_id)
-            .unwrap_or_else(|| format!("User#{}", u.sender_user_id)),
+    let (sender_name, is_outgoing) = match info.origin.as_ref() {
+        Some(MessageOrigin::User(u)) => {
+            let outgoing = my_user_id.is_some_and(|me| me == u.sender_user_id);
+            let name = if outgoing {
+                "You".to_owned()
+            } else {
+                resolve_user_name(u.sender_user_id)
+                    .unwrap_or_else(|| format!("User#{}", u.sender_user_id))
+            };
+            (name, outgoing)
+        }
         Some(MessageOrigin::Chat(c)) => {
-            resolve_chat_title(c.sender_chat_id).unwrap_or_else(|| c.author_signature.clone())
+            let name =
+                resolve_chat_title(c.sender_chat_id).unwrap_or_else(|| c.author_signature.clone());
+            (name, false)
         }
-        Some(MessageOrigin::HiddenUser(h)) => h.sender_name.clone(),
+        Some(MessageOrigin::HiddenUser(h)) => (h.sender_name.clone(), false),
         Some(MessageOrigin::Channel(ch)) => {
-            resolve_chat_title(ch.chat_id).unwrap_or_else(|| ch.author_signature.clone())
+            let name =
+                resolve_chat_title(ch.chat_id).unwrap_or_else(|| ch.author_signature.clone());
+            (name, false)
         }
-        None => String::new(),
+        None => (String::new(), false),
     };
 
     let text = if let Some(content) = info.content.as_ref() {
@@ -359,7 +372,11 @@ pub fn extract_reply_info(
         String::new()
     };
 
-    Some(ReplyInfo { sender_name, text })
+    Some(ReplyInfo {
+        sender_name,
+        text,
+        is_outgoing,
+    })
 }
 
 /// Extracts the media type from a TDLib MessageContent.
