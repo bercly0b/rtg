@@ -109,7 +109,7 @@ When adding a new top-level command or changing the startup sequence, start from
 - **Validation in separate modules**: extract input validation out of the main workflow code.
 - **Utility helpers in dedicated modules**: don't bury reusable helpers inside large files.
 - **Trait ports in `usecases/`**, implementations in `telegram/` or `infra/`.
-- **Tests are inline**: use `#[cfg(test)] mod tests` within the module. No separate `tests/` directory.
+- **Tests are inline** by default: use `#[cfg(test)] mod tests` within the module. For large decomposed modules (directory-based), tests may live in a `tests/` submodule — see [refactoring-guide.md](refactoring-guide.md).
 - **Stubs for testing**: every trait used for dependency injection should have a stub/mock implementation (see `infra/stubs.rs` and `TelegramAdapter::stub()`).
 
 ## Where to put new functionality — decision guide

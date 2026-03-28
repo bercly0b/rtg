@@ -1,17 +1,30 @@
+mod background_results;
+mod chat_list;
+mod chat_open;
+mod chat_updates;
+mod message_actions;
+mod message_input;
+mod message_keys;
+mod voice;
+
 use std::sync::Arc;
 
 use anyhow::Result;
 
 use crate::{
     domain::{
-        chat::ChatType,
         chat_list_state::ChatListUiState,
-        events::{AppEvent, BackgroundTaskResult, ChatUpdate},
+        events::AppEvent,
         message_cache::DEFAULT_MIN_DISPLAY_MESSAGES,
-        open_chat_state::{MessageSource, OpenChatUiState},
         shell_state::{ActivePane, ShellState},
     },
     infra::contracts::{ExternalOpener, StorageAdapter},
+};
+
+// Re-exported for test modules that rely on `use super::*`.
+#[cfg(test)]
+use crate::{
+    domain::{chat::ChatType, events::ChatUpdate, open_chat_state::MessageSource},
     usecases::chat_subtitle::ChatSubtitleQuery,
 };
 
@@ -21,6 +34,32 @@ use super::{
 
 /// Default limit for cached message preloading.
 const DEFAULT_CACHED_MESSAGES_LIMIT: usize = 50;
+
+/// Mutable context passed to free functions extracted from `DefaultShellOrchestrator`.
+///
+/// Groups all the borrowed orchestrator fields so that sub-module functions
+/// receive a single `&mut OrchestratorCtx` instead of 10+ individual parameters.
+pub(super) struct OrchestratorCtx<'a, D: TaskDispatcher> {
+    pub state: &'a mut ShellState,
+    pub dispatcher: &'a D,
+    pub chat_list_in_flight: &'a mut bool,
+    pub user_requested_chat_refresh: &'a mut bool,
+    pub messages_refresh_in_flight: &'a mut bool,
+    pub active_downloads: &'a mut std::collections::HashMap<i32, (i64, i64)>,
+    pub max_auto_download_bytes: u64,
+    pub recording_handle: &'a mut Option<super::voice_recording::RecordingHandle>,
+    pub recording_file_path: &'a mut Option<String>,
+    pub pending_command_rx:
+        &'a mut Option<std::sync::mpsc::Receiver<crate::domain::events::CommandEvent>>,
+    pub voice_record_cmd: &'a str,
+    pub tdlib_opened_chat_id: &'a mut Option<i64>,
+    pub prefetch_in_flight: &'a mut Option<i64>,
+    pub min_display_messages: usize,
+    pub pending_d: &'a mut bool,
+    pub cache_source: &'a Option<Arc<dyn CachedMessagesSource>>,
+    pub open_handlers: &'a std::collections::HashMap<String, String>,
+    pub opener: &'a dyn crate::infra::contracts::ExternalOpener,
+}
 
 pub struct DefaultShellOrchestrator<S, O, D>
 where
@@ -151,512 +190,26 @@ where
         }
     }
 
-    fn dispatch_chat_list_refresh(&mut self) {
-        if self.chat_list_in_flight {
-            tracing::debug!("chat list refresh already in-flight, skipping");
-            return;
-        }
-
-        tracing::debug!("dispatching chat list refresh to background");
-
-        // Only show the loader when there is no data to display (initial load,
-        // after error, or empty state).  When the list is already visible
-        // (Ready), keep showing stale data while the background fetch runs —
-        // this prevents the "blink" where the chat list is momentarily replaced
-        // by a loading indicator on every Telegram update.
-        if self.state.chat_list().ui_state() != ChatListUiState::Ready {
-            self.state.chat_list_mut().set_loading();
-        }
-
-        self.chat_list_in_flight = true;
-        self.dispatcher.dispatch_chat_list();
-    }
-
-    fn open_selected_chat(&mut self) {
-        let Some(selected) = self.state.chat_list().selected_chat() else {
-            return;
-        };
-
-        let chat_id = selected.chat_id;
-        let chat_title = selected.title.clone();
-        let chat_type = selected.chat_type;
-
-        // Cancel any in-flight prefetch — the user explicitly opened a chat.
-        self.prefetch_in_flight = None;
-
-        // If the same chat is already open and Ready, just switch focus — no reload.
-        // But always ensure the TDLib lifecycle is maintained.
-        if self.state.open_chat().chat_id() == Some(chat_id)
-            && self.state.open_chat().ui_state() == OpenChatUiState::Ready
-        {
-            tracing::debug!(chat_id, "chat already open and ready, skipping reload");
-            // Re-open in TDLib if it was closed (e.g. user pressed h then l)
-            if self.tdlib_opened_chat_id != Some(chat_id) {
-                self.dispatcher.dispatch_open_chat(chat_id);
-                self.tdlib_opened_chat_id = Some(chat_id);
-                // Mark existing messages as read in the reopened chat
-                self.mark_open_chat_messages_as_read();
-            }
-            return;
-        }
-
-        tracing::debug!(chat_id, chat_title = %chat_title, "opening chat (non-blocking)");
-
-        // Close the previously opened TDLib chat if switching to a different one.
-        self.close_tdlib_chat_if_needed(chat_id);
-
-        // Open this chat in TDLib for update delivery and read tracking.
-        self.dispatcher.dispatch_open_chat(chat_id);
-        self.tdlib_opened_chat_id = Some(chat_id);
-
-        // Try app-level message cache first (instant, no TDLib call).
-        // Fall back to TDLib local cache if the app cache has no data.
-        // Apply the smart threshold: if cache has fewer than min_display_messages,
-        // show Loading instead of a sparse preview (eliminates the "1 message flash").
-        let min_msgs = self.min_display_messages;
-        let showed_cache = if let Some(cached) = self
-            .state
-            .message_cache_mut()
-            .get(chat_id)
-            .filter(|m| m.len() >= min_msgs)
-        {
-            let messages = cached.to_vec();
-            tracing::debug!(
-                chat_id,
-                count = messages.len(),
-                "showing messages from app cache"
-            );
-            self.state
-                .open_chat_mut()
-                .set_loading(chat_id, chat_title.clone(), chat_type);
-            self.state.open_chat_mut().set_ready(messages);
-            self.state.open_chat_mut().set_refreshing(true);
-            self.state
-                .open_chat_mut()
-                .set_message_source(MessageSource::Cache);
-            true
-        } else {
-            self.try_show_cached_messages(chat_id, &chat_title, chat_type)
-        };
-
-        if !showed_cache {
-            self.state
-                .open_chat_mut()
-                .set_loading(chat_id, chat_title, chat_type);
-        }
-
-        // Dispatch a full background load (pagination).
-        self.messages_refresh_in_flight = true;
-        self.dispatcher.dispatch_load_messages(chat_id);
-
-        // Dispatch subtitle resolution (user status / member count).
-        self.dispatcher
-            .dispatch_chat_subtitle(ChatSubtitleQuery { chat_id, chat_type });
-    }
-
-    /// Prefetches messages for the currently highlighted chat in the chat list.
-    ///
-    /// Triggered by j/k navigation. Skips if:
-    /// - Another prefetch is already in-flight (debounce)
-    /// - The highlighted chat already has data in the message cache
-    fn maybe_prefetch_selected_chat(&mut self) {
-        if self.prefetch_in_flight.is_some() {
-            return;
-        }
-
-        let Some(selected) = self.state.chat_list().selected_chat() else {
-            return;
-        };
-
-        let chat_id = selected.chat_id;
-
-        if self.state.message_cache().has_messages(chat_id) {
-            return;
-        }
-
-        tracing::debug!(chat_id, "prefetching messages for highlighted chat");
-        self.prefetch_in_flight = Some(chat_id);
-        self.dispatcher.dispatch_prefetch_messages(chat_id);
-    }
-
-    /// Closes the currently TDLib-opened chat if it differs from `next_chat_id`.
-    ///
-    /// Called before opening a new chat or when navigating away.
-    fn close_tdlib_chat_if_needed(&mut self, next_chat_id: i64) {
-        if let Some(prev_id) = self.tdlib_opened_chat_id {
-            if prev_id != next_chat_id {
-                tracing::debug!(prev_id, "closing previous TDLib chat");
-                self.dispatcher.dispatch_close_chat(prev_id);
-                self.tdlib_opened_chat_id = None;
-            }
-        }
-    }
-
-    /// Closes the currently TDLib-opened chat unconditionally.
-    fn close_tdlib_chat(&mut self) {
-        if let Some(chat_id) = self.tdlib_opened_chat_id.take() {
-            tracing::debug!(chat_id, "closing TDLib chat on navigate away");
-            self.dispatcher.dispatch_close_chat(chat_id);
-            self.messages_refresh_in_flight = false;
-        }
-    }
-
-    fn maybe_refresh_open_chat_messages(&mut self, affected_chat_ids: &[i64]) {
-        if self.messages_refresh_in_flight {
-            return;
-        }
-
-        let Some(open_id) = self.state.open_chat().chat_id() else {
-            return;
-        };
-
-        if self.state.open_chat().ui_state() != OpenChatUiState::Ready {
-            return;
-        }
-
-        if !affected_chat_ids.contains(&open_id) {
-            return;
-        }
-
-        tracing::debug!(
-            chat_id = open_id,
-            "refreshing open chat messages from update"
-        );
-        self.messages_refresh_in_flight = true;
-        self.dispatcher.dispatch_load_messages(open_id);
-    }
-
-    /// Marks the selected chat in the chat list as read (from the chat list view).
-    ///
-    /// Uses optimistic update: the unread counter is cleared immediately in local
-    /// state before dispatching the background request to TDLib.
-    fn mark_selected_chat_as_read(&mut self) {
-        let Some(chat) = self.state.chat_list().selected_chat() else {
-            return;
-        };
-
-        if chat.unread_count == 0 {
-            return;
-        }
-
-        let Some(last_message_id) = chat.last_message_id else {
-            return;
-        };
-
-        let chat_id = chat.chat_id;
-
-        // Optimistic update: clear unread counter immediately in local state
-        self.state.chat_list_mut().clear_selected_chat_unread();
-
-        // If this chat is already opened in TDLib, just mark messages as read directly
-        if self.tdlib_opened_chat_id == Some(chat_id) {
-            self.dispatcher
-                .dispatch_mark_as_read(chat_id, vec![last_message_id]);
-        } else {
-            self.dispatcher
-                .dispatch_mark_chat_as_read(chat_id, last_message_id);
-        }
-    }
-
-    fn show_chat_info_popup(&mut self) {
-        let Some(chat) = self.state.chat_list().selected_chat() else {
-            return;
-        };
-
-        let chat_id = chat.chat_id;
-        let title = chat.title.clone();
-        let chat_type = chat.chat_type;
-
-        self.state.show_chat_info_loading(chat_id, &title);
-
-        self.dispatcher
-            .dispatch_chat_info(crate::usecases::chat_subtitle::ChatInfoQuery {
-                chat_id,
-                chat_type,
-                title,
-            });
-    }
-
-    /// Processes push updates from TDLib for cache warming and UI refresh.
-    ///
-    /// - `NewMessage`: inserts into `MessageCache` for any chat (warm cache passively)
-    /// - `MessagesDeleted`: removes from `MessageCache`
-    /// - `ChatMetadataChanged`: triggers chat list refresh
-    ///
-    /// For the currently open chat, also dispatches a message refresh.
-    fn handle_chat_updates(&mut self, updates: Vec<ChatUpdate>) {
-        let mut reload_chat_ids = Vec::new();
-        let mut should_refresh_chat_list = false;
-
-        for update in updates {
-            match update {
-                ChatUpdate::NewMessage { chat_id, message } => {
-                    tracing::debug!(chat_id, message_id = message.id, "caching pushed message");
-                    self.maybe_auto_download(chat_id, &message);
-                    self.state
-                        .message_cache_mut()
-                        .add_message(chat_id, *message);
-                    if !reload_chat_ids.contains(&chat_id) {
-                        reload_chat_ids.push(chat_id);
-                    }
-                    should_refresh_chat_list = true;
-                }
-                ChatUpdate::MessagesDeleted {
-                    chat_id,
-                    message_ids,
-                } => {
-                    tracing::debug!(
-                        chat_id,
-                        count = message_ids.len(),
-                        "removing deleted messages from cache"
-                    );
-                    self.state
-                        .message_cache_mut()
-                        .remove_messages(chat_id, &message_ids);
-                    if !reload_chat_ids.contains(&chat_id) {
-                        reload_chat_ids.push(chat_id);
-                    }
-                    should_refresh_chat_list = true;
-                }
-                ChatUpdate::ChatMetadataChanged { chat_id } => {
-                    should_refresh_chat_list = true;
-                    if !reload_chat_ids.contains(&chat_id) {
-                        reload_chat_ids.push(chat_id);
-                    }
-                }
-                ChatUpdate::MessageReactionsChanged {
-                    chat_id,
-                    message_id,
-                    reaction_count,
-                } => {
-                    self.state.message_cache_mut().update_reaction_count(
-                        chat_id,
-                        message_id,
-                        reaction_count,
-                    );
-                    if self.state.open_chat().chat_id() == Some(chat_id) {
-                        self.state
-                            .open_chat_mut()
-                            .update_message_reaction_count(message_id, reaction_count);
-                    }
-                }
-                ChatUpdate::UserStatusChanged { user_id } => {
-                    // Re-resolve subtitle for the open private chat if it belongs
-                    // to the user whose status changed.
-                    if let Some(chat_id) = self.state.open_chat().chat_id() {
-                        let chat_type = self.state.open_chat().chat_type();
-                        if chat_type == ChatType::Private {
-                            self.dispatcher
-                                .dispatch_chat_subtitle(ChatSubtitleQuery { chat_id, chat_type });
-                            tracing::debug!(
-                                user_id,
-                                chat_id,
-                                "user status changed, re-resolving chat subtitle"
-                            );
-                        }
-                    }
-                    should_refresh_chat_list = true;
-                }
-                ChatUpdate::FileUpdated {
-                    file_id,
-                    size,
-                    local_path,
-                    is_downloading_active,
-                    is_downloading_completed,
-                    downloaded_size,
-                } => {
-                    self.handle_file_update(
-                        file_id,
-                        size,
-                        local_path,
-                        is_downloading_active,
-                        is_downloading_completed,
-                        downloaded_size,
-                    );
-                }
-            }
-        }
-
-        if should_refresh_chat_list {
-            self.dispatch_chat_list_refresh();
-        }
-        if !reload_chat_ids.is_empty() {
-            self.maybe_refresh_open_chat_messages(&reload_chat_ids);
-        }
-    }
-
-    /// Handles a file download progress/completion update from TDLib.
-    ///
-    /// Updates the `FileInfo` on the relevant message in both the open chat
-    /// and the message cache.
-    fn handle_file_update(
-        &mut self,
-        file_id: i32,
-        size: u64,
-        local_path: String,
-        is_downloading_active: bool,
-        is_downloading_completed: bool,
-        downloaded_size: u64,
-    ) {
-        use crate::domain::message::DownloadStatus;
-
-        let Some(&(chat_id, message_id)) = self.active_downloads.get(&file_id) else {
-            return;
-        };
-
-        let new_status = if is_downloading_completed && !local_path.is_empty() {
-            DownloadStatus::Completed
-        } else if is_downloading_active {
-            let percent = if size > 0 {
-                (downloaded_size * 100 / size).min(99) as u8
-            } else {
-                0
-            };
-            DownloadStatus::Downloading {
-                progress_percent: percent,
-            }
-        } else {
-            DownloadStatus::NotStarted
-        };
-
-        let new_local_path = if is_downloading_completed && !local_path.is_empty() {
-            Some(local_path)
-        } else {
-            None
-        };
-
-        // Update the message in the open chat view
-        if self.state.open_chat().chat_id() == Some(chat_id) {
-            self.state
-                .open_chat_mut()
-                .update_message_file_info(message_id, |fi| {
-                    fi.download_status = new_status;
-                    if let Some(ref path) = new_local_path {
-                        fi.local_path = Some(path.clone());
-                    }
-                    if size > 0 {
-                        fi.size = Some(size);
-                    }
-                });
-        }
-
-        // Update the message in the cache
-        self.state
-            .message_cache_mut()
-            .update_file_info(chat_id, message_id, |fi| {
-                fi.download_status = new_status;
-                if let Some(ref path) = new_local_path {
-                    fi.local_path = Some(path.clone());
-                }
-                if size > 0 {
-                    fi.size = Some(size);
-                }
-            });
-
-        // Clean up completed or failed/cancelled downloads
-        if is_downloading_completed {
-            self.active_downloads.remove(&file_id);
-            tracing::info!(file_id, chat_id, message_id, "file download completed");
-        } else if !is_downloading_active {
-            self.active_downloads.remove(&file_id);
-            tracing::warn!(
-                file_id,
-                chat_id,
-                message_id,
-                "file download failed or cancelled"
-            );
-        }
-    }
-
-    /// Checks whether a new message should be auto-downloaded and triggers the download.
-    fn maybe_auto_download(&mut self, chat_id: i64, message: &crate::domain::message::Message) {
-        let Some(ref fi) = message.file_info else {
-            return;
-        };
-
-        if fi.download_status != crate::domain::message::DownloadStatus::NotStarted {
-            return;
-        }
-
-        let size = fi.size.unwrap_or(0);
-        if size == 0 || size > self.max_auto_download_bytes {
-            return;
-        }
-
-        // Avoid duplicate downloads
-        if self.active_downloads.contains_key(&fi.file_id) {
-            return;
-        }
-
-        tracing::debug!(
-            file_id = fi.file_id,
-            size,
-            message_id = message.id,
-            "auto-downloading file"
-        );
-        self.active_downloads
-            .insert(fi.file_id, (chat_id, message.id));
-        self.dispatcher.dispatch_download_file(fi.file_id);
-    }
-
-    /// Dispatches a mark-as-read request for all messages currently loaded in the open chat.
-    fn mark_open_chat_messages_as_read(&self) {
-        let Some(chat_id) = self.state.open_chat().chat_id() else {
-            return;
-        };
-
-        let messages = self.state.open_chat().messages();
-        if messages.is_empty() {
-            return;
-        }
-
-        let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
-        self.dispatcher.dispatch_mark_as_read(chat_id, message_ids);
-    }
-
-    /// Attempts to synchronously load cached messages for instant display.
-    ///
-    /// Returns `true` if cached messages were found (above the smart threshold)
-    /// and the state was set to Ready. Sparse results below the threshold are
-    /// ignored to avoid the "1 message flash" artifact.
-    fn try_show_cached_messages(
-        &mut self,
-        chat_id: i64,
-        chat_title: &str,
-        chat_type: ChatType,
-    ) -> bool {
-        let Some(cache) = &self.cache_source else {
-            return false;
-        };
-
-        match cache.list_cached_messages(chat_id, DEFAULT_CACHED_MESSAGES_LIMIT) {
-            Ok(messages) if messages.len() >= self.min_display_messages => {
-                tracing::debug!(
-                    chat_id,
-                    count = messages.len(),
-                    "showing cached messages instantly"
-                );
-                self.state
-                    .open_chat_mut()
-                    .set_loading(chat_id, chat_title.to_owned(), chat_type);
-                self.state.open_chat_mut().set_ready(messages);
-                self.state.open_chat_mut().set_refreshing(true);
-                self.state
-                    .open_chat_mut()
-                    .set_message_source(MessageSource::Cache);
-                true
-            }
-            Ok(_) => {
-                tracing::debug!(
-                    chat_id,
-                    "no/sparse cached messages, skipping instant display"
-                );
-                false
-            }
-            Err(e) => {
-                tracing::debug!(chat_id, error = ?e, "failed to load cached messages");
-                false
-            }
+    fn as_ctx(&mut self) -> OrchestratorCtx<'_, D> {
+        OrchestratorCtx {
+            state: &mut self.state,
+            dispatcher: &self.dispatcher,
+            chat_list_in_flight: &mut self.chat_list_in_flight,
+            user_requested_chat_refresh: &mut self.user_requested_chat_refresh,
+            messages_refresh_in_flight: &mut self.messages_refresh_in_flight,
+            active_downloads: &mut self.active_downloads,
+            max_auto_download_bytes: self.max_auto_download_bytes,
+            recording_handle: &mut self.recording_handle,
+            recording_file_path: &mut self.recording_file_path,
+            pending_command_rx: &mut self.pending_command_rx,
+            voice_record_cmd: &self.voice_record_cmd,
+            tdlib_opened_chat_id: &mut self.tdlib_opened_chat_id,
+            prefetch_in_flight: &mut self.prefetch_in_flight,
+            min_display_messages: self.min_display_messages,
+            pending_d: &mut self.pending_d,
+            cache_source: &self.cache_source,
+            open_handlers: &self.open_handlers,
+            opener: &self.opener,
         }
     }
 
@@ -664,21 +217,21 @@ where
         match key {
             "j" => {
                 self.state.chat_list_mut().select_next();
-                self.maybe_prefetch_selected_chat();
+                chat_open::maybe_prefetch_selected_chat(&mut self.as_ctx());
             }
             "k" => {
                 self.state.chat_list_mut().select_previous();
-                self.maybe_prefetch_selected_chat();
+                chat_open::maybe_prefetch_selected_chat(&mut self.as_ctx());
             }
             "R" => {
                 self.user_requested_chat_refresh = true;
-                self.dispatch_chat_list_refresh();
+                chat_list::dispatch_chat_list_refresh(&mut self.as_ctx());
             }
-            "r" => self.mark_selected_chat_as_read(),
-            "I" => self.show_chat_info_popup(),
+            "r" => chat_list::mark_selected_chat_as_read(&mut self.as_ctx()),
+            "I" => chat_list::show_chat_info_popup(&mut self.as_ctx()),
             "enter" | "l" => {
                 if self.state.chat_list().selected_chat().is_some() {
-                    self.open_selected_chat();
+                    chat_open::open_selected_chat(&mut self.as_ctx());
                     self.state.set_active_pane(ActivePane::Messages);
                     self.storage.save_last_action("open_chat")?;
                 }
@@ -689,743 +242,17 @@ where
     }
 
     fn handle_messages_key(&mut self, key: &str) -> Result<()> {
-        // Vim-style `dd`: first `d` sets pending, second `d` triggers delete.
-        if key == "d" {
-            if self.pending_d {
-                self.pending_d = false;
-                self.delete_selected_message();
-            } else {
-                self.pending_d = true;
-            }
-            return Ok(());
-        }
-        // Any non-`d` key cancels the pending state.
-        self.pending_d = false;
-
-        match key {
-            "j" => self.state.open_chat_mut().select_next(),
-            "k" => self.state.open_chat_mut().select_previous(),
-            "h" | "esc" => {
-                self.close_tdlib_chat();
-                self.state.set_active_pane(ActivePane::ChatList);
-            }
-            "i" => {
-                if self.state.open_chat().is_open() {
-                    self.state.set_active_pane(ActivePane::MessageInput);
-                }
-            }
-            "y" => {
-                if let Some(msg) = self.state.open_chat().selected_message() {
-                    let text = msg.display_content();
-                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                        if clipboard.set_text(text).is_ok() {
-                            self.state.set_notification("Copied to clipboard");
-                        }
-                    }
-                }
-            }
-            "o" => self.open_message_url()?,
-            "l" => {
-                if self.state.open_chat().is_open() {
-                    self.open_selected_message();
-                }
-            }
-            "v" => {
-                if self.state.open_chat().is_open() {
-                    self.start_voice_recording();
-                }
-            }
-            "D" => {
-                self.download_selected_message_file();
-            }
-            "r" => {
-                self.reply_to_selected_message();
-            }
-            _ => {}
-        }
-        Ok(())
+        message_keys::handle_messages_key(&mut self.as_ctx(), key)
     }
 
-    /// Triggers a manual download of the selected message's file.
-    fn download_selected_message_file(&mut self) {
-        use crate::domain::message::DownloadStatus;
-
-        let Some(chat_id) = self.state.open_chat().chat_id() else {
-            return;
-        };
-
-        let Some(msg) = self.state.open_chat().selected_message() else {
-            return;
-        };
-
-        let Some(ref fi) = msg.file_info else {
-            return;
-        };
-
-        if fi.download_status != DownloadStatus::NotStarted {
-            return;
-        }
-
-        if self.active_downloads.contains_key(&fi.file_id) {
-            return;
-        }
-
-        let file_id = fi.file_id;
-        let message_id = msg.id;
-
-        tracing::info!(
-            file_id,
-            chat_id,
-            message_id,
-            "manual file download triggered"
-        );
-        self.active_downloads.insert(file_id, (chat_id, message_id));
-        self.dispatcher.dispatch_download_file(file_id);
-    }
-
-    fn start_voice_recording(&mut self) {
-        use super::voice_recording;
-
-        if self.state.command_popup().is_some() {
-            return; // already recording or popup active
-        }
-
-        let file_path = voice_recording::generate_voice_file_path();
-
-        match voice_recording::start_command(&self.voice_record_cmd, &file_path) {
-            Ok((handle, rx)) => {
-                self.recording_handle = Some(handle);
-                self.recording_file_path = Some(file_path);
-                self.pending_command_rx = Some(rx);
-                self.state.open_command_popup(
-                    "Recording Voice",
-                    crate::domain::command_popup_state::CommandPopupKind::Recording,
-                );
-                tracing::info!("voice recording started");
-            }
-            Err(err) => {
-                tracing::error!(%err, "failed to start voice recording");
-            }
-        }
-    }
-
-    /// Stops the recording process in a background thread to avoid blocking the UI.
-    ///
-    /// The handle is moved to the thread, which calls `stop()` and then drops it.
-    /// The pipe readers will naturally send `CommandExited` when the process dies.
-    /// If the thread fails to spawn, `Drop` on the handle still terminates the process.
-    fn stop_voice_recording(&mut self) {
-        if let Some(mut handle) = self.recording_handle.take() {
-            if std::thread::Builder::new()
-                .name("rtg-rec-stop".into())
-                .spawn(move || handle.stop())
-                .is_err()
-            {
-                tracing::warn!(
-                    "failed to spawn stop thread; handle dropped (Drop will stop process)"
-                );
-            }
-        }
-    }
-
-    fn handle_command_popup_key(&mut self, key: &str) {
-        use crate::domain::command_popup_state::{CommandPhase, CommandPopupKind};
-
-        let (phase, kind) = match self.state.command_popup() {
-            Some(popup) => (popup.phase().clone(), popup.kind()),
-            None => return,
-        };
-
-        match phase {
-            CommandPhase::Running => {
-                if key == "q" || key == "esc" {
-                    match kind {
-                        CommandPopupKind::Recording => {
-                            if key == "q" {
-                                self.stop_voice_recording();
-                                if let Some(popup) = self.state.command_popup_mut() {
-                                    popup.set_phase(CommandPhase::Stopping);
-                                }
-                            }
-                        }
-                        CommandPopupKind::Playback | CommandPopupKind::Viewer => {
-                            self.stop_playback();
-                            self.state.close_command_popup();
-                        }
-                    }
-                }
-            }
-            CommandPhase::Stopping => {
-                // Ignore all keys while the process is being terminated.
-            }
-            CommandPhase::AwaitingConfirmation { .. } => match key {
-                "y" => {
-                    self.send_voice_recording();
-                    self.state.close_command_popup();
-                }
-                "n" | "esc" => {
-                    self.discard_voice_recording();
-                    self.state.close_command_popup();
-                }
-                _ => {}
-            },
-            CommandPhase::Done => {
-                self.state.close_command_popup();
-            }
-            CommandPhase::Failed { .. } => {
-                self.state.close_command_popup();
-            }
-        }
-    }
-
-    fn handle_command_exited(&mut self, _event_success: bool) {
-        use crate::domain::command_popup_state::{CommandPhase, CommandPopupKind};
-
-        let (phase, kind) = match self.state.command_popup() {
-            Some(popup) => (popup.phase().clone(), popup.kind()),
-            None => return,
-        };
-
-        match kind {
-            CommandPopupKind::Playback => {
-                // Playback auto-closes on process exit regardless of phase.
-                self.recording_handle = None;
-                self.state.close_command_popup();
-            }
-            CommandPopupKind::Viewer => {
-                // Viewer stays open after the process exits so the user
-                // can see the rendered output. Any key will close it.
-                self.recording_handle = None;
-                if let Some(popup) = self.state.command_popup_mut() {
-                    popup.set_phase(CommandPhase::Done);
-                }
-            }
-            CommandPopupKind::Recording => match phase {
-                CommandPhase::Running => {
-                    let process_succeeded = self
-                        .recording_handle
-                        .as_mut()
-                        .and_then(|h| h.try_exit_success())
-                        .unwrap_or(false);
-                    self.recording_handle = None;
-
-                    if let Some(popup) = self.state.command_popup_mut() {
-                        if process_succeeded {
-                            popup.set_phase(CommandPhase::AwaitingConfirmation {
-                                prompt: "Command finished. Send recording? (y/n)".into(),
-                            });
-                        } else {
-                            popup.set_phase(CommandPhase::Failed {
-                                message:
-                                    "Recording failed. Override recording command via [voice] record_cmd in ~/.config/rtg/config.toml (press any key)"
-                                        .into(),
-                            });
-                            self.discard_voice_recording();
-                        }
-                    }
-                }
-                CommandPhase::Stopping => {
-                    let file_ok = self
-                        .recording_file_path
-                        .as_ref()
-                        .map(|p| std::fs::metadata(p).map(|m| m.len() > 0).unwrap_or(false))
-                        .unwrap_or(false);
-
-                    if let Some(popup) = self.state.command_popup_mut() {
-                        if file_ok {
-                            popup.set_phase(CommandPhase::AwaitingConfirmation {
-                                prompt: "Send recording? (y/n)".into(),
-                            });
-                        } else {
-                            popup.set_phase(CommandPhase::Failed {
-                                message:
-                                    "Recording failed. Override recording command via [voice] record_cmd in ~/.config/rtg/config.toml (press any key)"
-                                        .into(),
-                            });
-                            self.discard_voice_recording();
-                        }
-                    }
-                }
-                _ => {
-                    // AwaitingConfirmation / Failed — do not override.
-                }
-            },
-        }
-    }
-
+    #[cfg(test)]
     fn send_voice_recording(&mut self) {
-        let Some(file_path) = self.recording_file_path.take() else {
-            return;
-        };
-        let Some(chat_id) = self.state.open_chat().chat_id() else {
-            tracing::warn!("no chat open to send voice recording");
-            return;
-        };
-
-        if !std::path::Path::new(&file_path).exists() {
-            tracing::warn!(file_path, "recorded file does not exist");
-            return;
-        }
-
-        // Optimistically show the voice message immediately
-        self.state.open_chat_mut().add_pending_message(
-            String::new(),
-            crate::domain::message::MessageMedia::Voice,
-            None,
-        );
-        self.dispatcher.dispatch_send_voice(chat_id, file_path);
+        voice::send_voice_recording(&mut self.as_ctx());
     }
 
-    /// Stops the playback process immediately. Unlike recording stop,
-    /// this is fire-and-forget — the popup closes right away.
-    fn stop_playback(&mut self) {
-        if let Some(mut handle) = self.recording_handle.take() {
-            if std::thread::Builder::new()
-                .name("rtg-play-stop".into())
-                .spawn(move || handle.stop())
-                .is_err()
-            {
-                tracing::warn!("failed to spawn playback stop thread; handle dropped");
-            }
-        }
-    }
-
+    #[cfg(test)]
     fn discard_voice_recording(&mut self) {
-        if let Some(file_path) = self.recording_file_path.take() {
-            let _ = std::fs::remove_file(&file_path);
-            tracing::info!(file_path, "voice recording discarded");
-        }
-    }
-
-    /// Opens the currently selected message using the configured handler.
-    ///
-    /// Resolves the command via MIME matching and chooses the open strategy:
-    /// - **Custom handler configured** (exact or wildcard MIME match) —
-    ///   playback popup with live output (auto-closes on exit).
-    /// - **No custom handler** (platform default `open` / `xdg-open`) —
-    ///   launches the external app in the background without a popup.
-    ///   If the OS has no app for the file type, a notification is shown.
-    ///
-    /// Silently ignores unsupported media types and messages without files.
-    fn open_selected_message(&mut self) {
-        use crate::domain::command_popup_state::CommandPopupKind;
-        use crate::domain::message::MessageMedia;
-        use crate::domain::open_defaults::is_platform_default;
-
-        if self.state.command_popup().is_some() {
-            return;
-        }
-
-        let msg = match self.state.open_chat().selected_message() {
-            Some(m) => m,
-            None => return,
-        };
-
-        if matches!(
-            msg.media,
-            MessageMedia::None
-                | MessageMedia::Sticker
-                | MessageMedia::Contact
-                | MessageMedia::Location
-                | MessageMedia::Poll
-                | MessageMedia::Other
-        ) {
-            return;
-        }
-
-        let file_info = match &msg.file_info {
-            Some(fi) => fi,
-            None => return,
-        };
-
-        let local_path = match &file_info.local_path {
-            Some(p) => p.clone(),
-            None => {
-                self.state.set_notification("File not downloaded yet");
-                return;
-            }
-        };
-
-        let cmd_template = crate::domain::open_handler::resolve_open_command(
-            &file_info.mime_type,
-            &self.open_handlers,
-        );
-
-        if is_platform_default(cmd_template) {
-            // No custom handler — delegate to the OS default opener.
-            // Runs in background; shows notification on failure.
-            self.dispatcher
-                .dispatch_open_file(cmd_template.to_owned(), local_path);
-        } else {
-            // Custom handler — run with a playback popup showing live output.
-            match super::voice_recording::start_command(cmd_template, &local_path) {
-                Ok((handle, rx)) => {
-                    self.recording_handle = Some(handle);
-                    self.recording_file_path = None;
-                    self.pending_command_rx = Some(rx);
-                    self.state
-                        .open_command_popup("Playing", CommandPopupKind::Playback);
-                    tracing::info!(cmd_template, "command started");
-                }
-                Err(err) => {
-                    tracing::error!(%err, "failed to start command");
-                }
-            }
-        }
-    }
-
-    fn delete_selected_message(&mut self) {
-        let Some(chat_id) = self.state.open_chat().chat_id() else {
-            return;
-        };
-        let Some(msg) = self.state.open_chat().selected_message() else {
-            return;
-        };
-        let message_id = msg.id;
-        if message_id == 0 {
-            return; // Pending messages have id=0, skip
-        }
-
-        // Optimistically remove from UI
-        self.state.open_chat_mut().remove_message(message_id);
-        self.state.set_notification("Message deleted");
-        // Dispatch background deletion (fire-and-forget)
-        self.dispatcher.dispatch_delete_message(chat_id, message_id);
-    }
-
-    fn reply_to_selected_message(&mut self) {
-        use crate::domain::message_input_state::ReplyContext;
-
-        if !self.state.open_chat().is_open() {
-            return;
-        }
-
-        let Some(msg) = self.state.open_chat().selected_message() else {
-            return;
-        };
-
-        // Don't reply to pending (unsent) messages
-        if msg.id == 0 {
-            return;
-        }
-
-        let reply_context = ReplyContext {
-            message_id: msg.id,
-            sender_name: if msg.is_outgoing {
-                "You".to_owned()
-            } else {
-                msg.sender_name.clone()
-            },
-            text: msg.display_content(),
-        };
-
-        self.state.message_input_mut().set_reply_to(reply_context);
-        self.state.set_active_pane(ActivePane::MessageInput);
-    }
-
-    fn open_message_url(&mut self) -> Result<()> {
-        use crate::domain::message::extract_first_url;
-
-        let Some(msg) = self.state.open_chat().selected_message() else {
-            return Ok(());
-        };
-        let text = msg.display_content();
-        if let Some(url) = extract_first_url(&text, &msg.links) {
-            self.opener.open(&url)?;
-        }
-        Ok(())
-    }
-
-    fn handle_message_input_key(&mut self, key: &str) {
-        match key {
-            "esc" => {
-                self.state.message_input_mut().clear_reply_to();
-                self.state.set_active_pane(ActivePane::Messages);
-            }
-            "enter" => self.try_send_message(),
-            "backspace" => self.state.message_input_mut().delete_char_before(),
-            "delete" => self.state.message_input_mut().delete_char_at(),
-            "left" => self.state.message_input_mut().move_cursor_left(),
-            "right" => self.state.message_input_mut().move_cursor_right(),
-            "home" => self.state.message_input_mut().move_cursor_home(),
-            "end" => self.state.message_input_mut().move_cursor_end(),
-            // Single character input
-            ch if ch.chars().count() == 1 => {
-                if let Some(c) = ch.chars().next() {
-                    self.state.message_input_mut().insert_char(c);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn try_send_message(&mut self) {
-        let text = self.state.message_input().text().to_string();
-        let trimmed = text.trim();
-
-        // Validate locally — empty/whitespace messages are rejected immediately
-        if trimmed.is_empty() {
-            return;
-        }
-
-        let Some(chat_id) = self.state.open_chat().chat_id() else {
-            return;
-        };
-
-        tracing::debug!(chat_id, "dispatching send message to background");
-
-        // Extract reply context before clearing input
-        let reply_context = self.state.message_input_mut().take_reply_to();
-        let reply_to_message_id = reply_context.as_ref().map(|r| r.message_id);
-        let pending_reply_info = reply_context.map(|r| crate::domain::message::ReplyInfo {
-            sender_name: r.sender_name.clone(),
-            is_outgoing: r.sender_name == "You",
-            text: r.text,
-        });
-
-        // Optimistically clear the input and show the message immediately
-        self.state.message_input_mut().clear();
-        self.state.open_chat_mut().add_pending_message(
-            trimmed.to_owned(),
-            crate::domain::message::MessageMedia::None,
-            pending_reply_info,
-        );
-        self.dispatcher
-            .dispatch_send_message(chat_id, text.clone(), reply_to_message_id);
-    }
-
-    fn handle_background_result(&mut self, result: BackgroundTaskResult) {
-        match result {
-            BackgroundTaskResult::ChatListLoaded { result } => {
-                self.chat_list_in_flight = false;
-                let user_requested = std::mem::take(&mut self.user_requested_chat_refresh);
-                match result {
-                    Ok(chats) => {
-                        tracing::debug!(chat_count = chats.len(), "background: chat list loaded");
-                        if user_requested {
-                            self.state.set_notification("Chat list refreshed");
-                        }
-                        // Always use the *current* selected chat_id from state
-                        // to preserve the user's cursor position. This prevents
-                        // cursor jumps when background TDLib updates trigger
-                        // chat list refreshes while the user is navigating.
-                        self.state.chat_list_mut().set_ready(chats);
-                    }
-                    Err(error) => {
-                        tracing::warn!(code = error.code, "background: chat list load failed");
-                        if user_requested {
-                            self.state.set_notification("Chat list refresh failed");
-                        }
-                        self.state.chat_list_mut().set_error();
-                    }
-                }
-            }
-            BackgroundTaskResult::MessagesLoaded { chat_id, result } => {
-                self.messages_refresh_in_flight = false;
-
-                // Always cache successful results, even if the user navigated away.
-                if let Ok(ref messages) = result {
-                    self.state
-                        .message_cache_mut()
-                        .put(chat_id, messages.clone(), true);
-                }
-
-                if self.state.open_chat().chat_id() != Some(chat_id) {
-                    tracing::debug!(
-                        chat_id,
-                        "background: discarding stale messages result (user navigated away)"
-                    );
-                    return;
-                }
-
-                match result {
-                    Ok(messages) => {
-                        tracing::debug!(
-                            chat_id,
-                            message_count = messages.len(),
-                            "background: messages loaded"
-                        );
-                        // If the chat is already Ready (e.g. from cached messages),
-                        // use update_messages to preserve the user's scroll position.
-                        // update_messages also clears refreshing and sets source to Live.
-                        if self.state.open_chat().ui_state() == OpenChatUiState::Ready {
-                            self.state.open_chat_mut().update_messages(messages);
-                        } else {
-                            self.state.open_chat_mut().set_ready(messages);
-                            self.state
-                                .open_chat_mut()
-                                .set_message_source(MessageSource::Live);
-                        }
-                        // Mark all loaded messages as read via TDLib viewMessages.
-                        // This triggers Update::ChatReadInbox → reactive unread_count update.
-                        self.mark_open_chat_messages_as_read();
-                    }
-                    Err(error) => {
-                        tracing::warn!(
-                            chat_id,
-                            code = error.code,
-                            "background: messages load failed"
-                        );
-                        self.state.open_chat_mut().set_error();
-                    }
-                }
-            }
-            BackgroundTaskResult::MessageSent {
-                chat_id,
-                original_text,
-                result,
-            } => match result {
-                Ok(()) => {
-                    tracing::debug!(chat_id, "background: message sent successfully");
-                    // Input was already cleared optimistically
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        chat_id,
-                        code = error.code,
-                        "background: send message failed"
-                    );
-                    // Remove the optimistic pending message and restore input for retry
-                    self.state.open_chat_mut().remove_pending_messages();
-                    self.state.message_input_mut().set_text(&original_text);
-                }
-            },
-            BackgroundTaskResult::MessageSentRefreshCompleted { chat_id, result } => {
-                self.messages_refresh_in_flight = false;
-
-                if let Ok(ref messages) = result {
-                    self.state
-                        .message_cache_mut()
-                        .put(chat_id, messages.clone(), true);
-                }
-
-                if self.state.open_chat().chat_id() != Some(chat_id) {
-                    return;
-                }
-
-                match result {
-                    Ok(messages) => {
-                        tracing::debug!(
-                            chat_id,
-                            message_count = messages.len(),
-                            "background: messages refreshed after send"
-                        );
-                        // Intentionally use set_ready (not update_messages) to
-                        // scroll to the bottom after sending — the user expects
-                        // to see their new message at the end of the list.
-                        self.state.open_chat_mut().set_ready(messages);
-                        self.state.open_chat_mut().set_refreshing(false);
-                        self.state
-                            .open_chat_mut()
-                            .set_message_source(MessageSource::Live);
-                        // Mark new messages as read (including the one just sent).
-                        self.mark_open_chat_messages_as_read();
-                    }
-                    Err(error) => {
-                        tracing::warn!(
-                            chat_id,
-                            code = error.code,
-                            "background: message refresh after send failed"
-                        );
-                        // Don't change UI state — the message was already sent.
-                        // But clear refreshing since the refresh attempt is done.
-                        self.state.open_chat_mut().set_refreshing(false);
-                    }
-                }
-            }
-            BackgroundTaskResult::VoiceSendFailed { chat_id } => {
-                tracing::warn!(chat_id, "background: voice send failed, rolling back");
-                if self.state.open_chat().chat_id() == Some(chat_id) {
-                    self.state.open_chat_mut().remove_pending_messages();
-                }
-            }
-            BackgroundTaskResult::ChatSubtitleLoaded { chat_id, result } => {
-                if self.state.open_chat().chat_id() == Some(chat_id) {
-                    match result {
-                        Ok(subtitle) => {
-                            tracing::debug!(chat_id, ?subtitle, "chat subtitle resolved");
-                            self.state.open_chat_mut().set_chat_subtitle(subtitle);
-                        }
-                        Err(e) => {
-                            tracing::debug!(chat_id, error = ?e, "chat subtitle resolution failed");
-                        }
-                    }
-                }
-            }
-            BackgroundTaskResult::ChatInfoLoaded { chat_id, result } => {
-                use crate::domain::chat_info_state::ChatInfoPopupState;
-
-                // Only update if the popup is still open for the same chat.
-                let popup_chat_id = self.state.chat_info_popup().and_then(|p| p.chat_id());
-                if popup_chat_id == Some(chat_id) {
-                    match result {
-                        Ok(info) => {
-                            tracing::debug!(chat_id, "chat info resolved for popup");
-                            self.state
-                                .set_chat_info_loaded(ChatInfoPopupState::Loaded(info));
-                        }
-                        Err(e) => {
-                            tracing::debug!(chat_id, code = e.code, "chat info resolution failed");
-                            let title = self
-                                .state
-                                .chat_info_popup()
-                                .map(|p| p.title().to_owned())
-                                .unwrap_or_default();
-                            self.state
-                                .set_chat_info_loaded(ChatInfoPopupState::Error { title });
-                        }
-                    }
-                }
-            }
-            BackgroundTaskResult::MessagesPrefetched { chat_id, result } => {
-                if self.prefetch_in_flight == Some(chat_id) {
-                    self.prefetch_in_flight = None;
-                }
-
-                if let Ok(messages) = result {
-                    if !messages.is_empty() {
-                        tracing::debug!(
-                            chat_id,
-                            count = messages.len(),
-                            "background: prefetched messages cached"
-                        );
-                        self.state.message_cache_mut().put(chat_id, messages, true);
-                    }
-                }
-
-                // If the user opened this chat while the prefetch was in-flight
-                // and the chat is still in Loading state, populate it from cache
-                // (only if it meets the smart display threshold).
-                let min_msgs = self.min_display_messages;
-                if self.state.open_chat().chat_id() == Some(chat_id)
-                    && self.state.open_chat().ui_state() == OpenChatUiState::Loading
-                {
-                    if let Some(cached) = self
-                        .state
-                        .message_cache_mut()
-                        .get(chat_id)
-                        .filter(|m| m.len() >= min_msgs)
-                    {
-                        let msgs = cached.to_vec();
-                        self.state.open_chat_mut().set_ready(msgs);
-                        self.state.open_chat_mut().set_refreshing(true);
-                        self.state
-                            .open_chat_mut()
-                            .set_message_source(MessageSource::Cache);
-                        self.mark_open_chat_messages_as_read();
-                    }
-                }
-            }
-            BackgroundTaskResult::OpenFileFailed { stderr } => {
-                let hint = if stderr.is_empty() {
-                    "Failed to open file. Configure [open] in ~/.config/rtg/config.toml".to_owned()
-                } else {
-                    format!("Open failed: {stderr}")
-                };
-                tracing::warn!(stderr, "background: open file failed");
-                self.state.set_notification(&hint);
-            }
-        }
+        voice::discard_voice_recording(&mut self.as_ctx());
     }
 }
 
@@ -1447,18 +274,15 @@ where
         match event {
             AppEvent::Tick => {
                 if self.state.chat_list().ui_state() == ChatListUiState::Loading {
-                    self.dispatch_chat_list_refresh();
+                    chat_list::dispatch_chat_list_refresh(&mut self.as_ctx());
                 } else if self.initial_refresh_needed {
-                    // Chat list was pre-populated from cache; trigger a background
-                    // refresh to pick up any server-side changes.
                     self.initial_refresh_needed = false;
-                    self.dispatch_chat_list_refresh();
+                    chat_list::dispatch_chat_list_refresh(&mut self.as_ctx());
                 }
                 self.storage.save_last_action("tick")?;
             }
             AppEvent::QuitRequested => {
-                // Only Ctrl+C produces QuitRequested — always quit.
-                self.close_tdlib_chat();
+                chat_open::close_tdlib_chat(&mut self.as_ctx());
                 self.state.stop();
             }
             AppEvent::CommandOutputLine { text, replace_last } => {
@@ -1472,16 +296,14 @@ where
             }
             AppEvent::CommandExited { success } => {
                 tracing::info!(success, "external command exited");
-                self.handle_command_exited(success);
+                voice::handle_command_exited(&mut self.as_ctx(), success);
             }
             AppEvent::InputKey(key) => {
-                // When command popup is active, intercept keys for popup control.
                 if self.state.command_popup().is_some() {
-                    self.handle_command_popup_key(&key.key);
+                    voice::handle_command_popup_key(&mut self.as_ctx(), &key.key);
                     return Ok(());
                 }
 
-                // When chat info popup is visible, only close-actions are accepted.
                 if self.state.chat_info_popup().is_some() {
                     match key.key.as_str() {
                         "q" | "esc" | "I" => self.state.close_chat_info_popup(),
@@ -1490,7 +312,6 @@ where
                     return Ok(());
                 }
 
-                // When help popup is visible, only close-actions are accepted.
                 if self.state.help_visible() {
                     match key.key.as_str() {
                         "q" | "?" | "esc" => self.state.hide_help(),
@@ -1499,7 +320,6 @@ where
                     return Ok(());
                 }
 
-                // `?` opens help from ChatList/Messages; types `?` in MessageInput.
                 if key.key == "?" {
                     match self.state.active_pane() {
                         ActivePane::ChatList | ActivePane::Messages => {
@@ -1507,20 +327,19 @@ where
                             return Ok(());
                         }
                         ActivePane::MessageInput => {
-                            self.handle_message_input_key("?");
+                            message_input::handle_message_input_key(&mut self.as_ctx(), "?");
                             return Ok(());
                         }
                     }
                 }
 
-                // `q` quits from ChatList/Messages; types `q` in MessageInput.
                 if key.key == "q" && !key.ctrl {
                     match self.state.active_pane() {
                         ActivePane::MessageInput => {
-                            self.handle_message_input_key("q");
+                            message_input::handle_message_input_key(&mut self.as_ctx(), "q");
                         }
                         _ => {
-                            self.close_tdlib_chat();
+                            chat_open::close_tdlib_chat(&mut self.as_ctx());
                             self.state.stop();
                         }
                     }
@@ -1530,7 +349,9 @@ where
                 match self.state.active_pane() {
                     ActivePane::ChatList => self.handle_chat_list_key(&key.key)?,
                     ActivePane::Messages => self.handle_messages_key(&key.key)?,
-                    ActivePane::MessageInput => self.handle_message_input_key(&key.key),
+                    ActivePane::MessageInput => {
+                        message_input::handle_message_input_key(&mut self.as_ctx(), &key.key);
+                    }
                 }
             }
             AppEvent::ConnectivityChanged(status) => {
@@ -1538,10 +359,10 @@ where
             }
             AppEvent::ChatUpdateReceived { updates } => {
                 tracing::debug!(count = updates.len(), "orchestrator received chat updates");
-                self.handle_chat_updates(updates);
+                chat_updates::handle_chat_updates(&mut self.as_ctx(), updates);
             }
             AppEvent::BackgroundTaskCompleted(result) => {
-                self.handle_background_result(result);
+                background_results::handle_background_result(&mut self.as_ctx(), result);
             }
         }
 
