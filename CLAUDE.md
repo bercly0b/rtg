@@ -57,6 +57,8 @@ Project structure and module layout guide: [docs/project-structure.md](docs/proj
 4. Keep type definitions in dedicated modules/files.
 5. Soft limit: around 200 LOC per module.
 6. Prefer logical modular decomposition over file growth.
+7. When a module grows beyond the soft limit, decompose into sub-modules with free functions; struct methods stay as thin delegates. Prefer free functions over methods — they explicitly declare data dependencies and are easier to test in isolation.
+8. Extract tests into a `tests/` sub-directory when inline `#[cfg(test)]` exceeds ~300 LOC. Tests must exercise the public API of the module, not internal functions. Shared test doubles and factories live in `tests/mod.rs`.
 
 ## Rust engineering style
 

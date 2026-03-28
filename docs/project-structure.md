@@ -44,53 +44,31 @@
 
 Core entities, state machines, enums, events. Zero external dependencies, no I/O, no framework imports.
 
-**Put here**: new entity struct, state machine, event type, value object, domain enum.
-
-**Do not put here**: anything that performs I/O, calls external APIs, or depends on framework crates.
-
 Examples: `ChatSummary`, `Message`, `ShellState`, `AppEvent`, `MessageCache`, `ChatListState`.
 
 ### `usecases/` — Business logic and orchestration
 
-Application workflows, use case functions, trait definitions (ports) for external dependencies, background task dispatching.
-
-Traits defined here act as contracts — they describe *what* the application needs from the outside world without specifying *how*.
-
-**Put here**: new use case / workflow, new trait for an external dependency, orchestration logic, background task definition.
-
-**Do not put here**: TDLib-specific code, rendering logic, raw config parsing.
+Application workflows, use case functions, trait definitions (ports) for external dependencies, background task dispatching. Traits defined here act as contracts — they describe *what* the application needs without specifying *how*.
 
 Examples: `ListChatsSource` trait, `send_message()`, `ShellOrchestrator`, `TaskDispatcher`.
 
 ### `telegram/` — TDLib integration
 
-Implements usecase-layer traits using TDLib. Contains the TDLib client wrapper, type mappers (TDLib → domain), update monitors, pagination helpers.
+Implements usecase-layer traits using TDLib. TDLib client wrapper, type mappers (TDLib → domain), update monitors, pagination helpers.
 
-**Put here**: anything that talks to TDLib — API calls, response mapping, update processing, TDLib configuration.
-
-**Do not put here**: business logic decisions, rendering, generic infrastructure.
-
-Examples: `TelegramAdapter`, `TdLibClient`, `tdlib_mappers`, `TelegramChatUpdatesMonitor`.
+Examples: `TelegramAdapter`, `TdLibClient`, `tdlib_mappers/`, `TelegramChatUpdatesMonitor`.
 
 ### `ui/` — Terminal interface (ratatui)
 
 TUI rendering, custom widgets, event source adapters, visual styles. Consumes domain state, produces `AppEvent`s.
 
-**Put here**: new widget, visual component, render function, style definition, terminal event handling.
-
-**Do not put here**: business logic, API calls, state mutation logic.
-
-Examples: `view.rs` (layout), `chat_message_list.rs` (widget), `styles.rs`, `event_source.rs`.
+Examples: `view/` (layout), `chat_message_list/` (widget), `styles/`, `event_source/`, `message_rendering/`.
 
 ### `infra/` — Infrastructure and cross-cutting concerns
 
-Configuration loading, logging setup, file system paths, error types, secret redaction, stubs for testing, external tool wrappers (browser opener).
+Configuration loading, logging setup, file system paths, error types, secret redaction, stubs for testing, external tool wrappers.
 
-**Put here**: config structs and loaders, logging init, storage path resolution, infrastructure error types, test stubs, external utility adapters (clipboard, browser).
-
-**Do not put here**: business logic, Telegram-specific code, UI rendering.
-
-Examples: `AppConfig`, `StorageLayout`, `logging.rs`, `secrets.rs`, `BrowserOpener`.
+Examples: `config/`, `StorageLayout`, `logging.rs`, `secrets.rs`, `stubs.rs`.
 
 ## Entry points
 
@@ -104,13 +82,27 @@ When adding a new top-level command or changing the startup sequence, start from
 
 ## Module conventions
 
-- **~200 LOC soft limit** per module. When a file grows beyond this, split by responsibility.
-- **Dedicated files for types**: keep struct/enum definitions in their own modules rather than mixing them with logic.
-- **Validation in separate modules**: extract input validation out of the main workflow code.
-- **Utility helpers in dedicated modules**: don't bury reusable helpers inside large files.
-- **Trait ports in `usecases/`**, implementations in `telegram/` or `infra/`.
-- **Tests are inline** by default: use `#[cfg(test)] mod tests` within the module. For large decomposed modules (directory-based), tests may live in a `tests/` submodule — see [refactoring-guide.md](refactoring-guide.md).
-- **Stubs for testing**: every trait used for dependency injection should have a stub/mock implementation (see `infra/stubs.rs` and `TelegramAdapter::stub()`).
+Code organization rules (LOC limits, decomposition, test extraction) — see [CLAUDE.md](../CLAUDE.md) § Code organization rules.
+
+- **Trait ports** live in `usecases/`; implementations in `telegram/` or `infra/`.
+- **Stubs for testing**: every trait used for DI should have a stub/mock (see `infra/stubs.rs`).
+
+### Directory-based module layout
+
+When a module is decomposed into a directory, follow this structure:
+
+```
+src/layer/module/
+  mod.rs             — struct, constructors, trait impls, thin delegate methods
+  feature_a.rs       — free functions for feature A (pub(super) visibility)
+  feature_b.rs       — free functions for feature B
+  tests/
+    mod.rs           — #[cfg(test)] gate, shared test doubles, helpers, factories
+    feature_a.rs     — tests for feature A
+    feature_b.rs     — tests for feature B
+```
+
+Sub-module names reflect **responsibility**, not the struct name. Tests exercise the module's **public API**, not internal free functions.
 
 ## Where to put new functionality — decision guide
 
