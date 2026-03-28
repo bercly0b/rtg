@@ -12,8 +12,7 @@ Project structure and module layout guide: [docs/project-structure.md](docs/proj
 
 1. Before starting any development task:
    - if current branch is `main`, create a feature branch first;
-   - recommended naming: `feature/<short-task-name>`;
-   - **recall hindsight memories** relevant to the task area (`hindsight memory recall`) to get context from previous work.
+   - recommended naming: `feature/<short-task-name>`.
 
 2. Planning -> implementation:
    - plan first;
@@ -44,13 +43,6 @@ Project structure and module layout guide: [docs/project-structure.md](docs/proj
    - after finishing a development task (implementation + tests/quality gate), create a git commit;
    - commit messages must be written in English.
 
-8. Store learnings in hindsight:
-   - after completing a task, **store useful knowledge** via `hindsight memory retain`;
-   - only store **high-level knowledge** that impacts future tasks: architectural decisions, design patterns chosen, discovered pitfalls, non-obvious workarounds, project conventions, integration nuances;
-   - **do NOT store** low-level implementation details or trivial facts (e.g. "changed color to green", "renamed variable X to Y", "added field Z to struct") — these are visible in git history and carry no reusable value;
-   - rule of thumb: if the knowledge would not influence a decision in a future task, it does not belong in hindsight;
-   - be specific and include outcomes (what worked and what didn't).
-
 ## Documentation rules
 
 1. `docs/` is for project-wide, high-level documentation (module organization, hotkey conventions, architectural decisions, etc.).
@@ -65,6 +57,8 @@ Project structure and module layout guide: [docs/project-structure.md](docs/proj
 4. Keep type definitions in dedicated modules/files.
 5. Soft limit: around 200 LOC per module.
 6. Prefer logical modular decomposition over file growth.
+7. When a module grows beyond the soft limit, decompose into sub-modules with free functions; struct methods stay as thin delegates. Prefer free functions over methods — they explicitly declare data dependencies and are easier to test in isolation.
+8. Extract tests into a `tests/` sub-directory when inline `#[cfg(test)]` exceeds ~300 LOC. Tests must exercise the public API of the module, not internal functions. Shared test doubles and factories live in `tests/mod.rs`.
 
 ## Rust engineering style
 

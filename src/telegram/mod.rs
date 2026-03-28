@@ -1,5 +1,6 @@
 //! Telegram integration layer: API clients and event mapping.
 
+mod auth_impl;
 mod chat_updates;
 mod connectivity;
 mod message_pagination;
@@ -9,6 +10,7 @@ mod tdlib_cache;
 mod tdlib_client;
 mod tdlib_mappers;
 mod tdlib_updates;
+mod trait_impls;
 
 // Re-export TDLib types for external use
 #[allow(unused_imports)]
@@ -25,19 +27,9 @@ pub use chat_updates::{ChatUpdatesMonitorStartError, TelegramChatUpdatesMonitor}
 pub use connectivity::{ConnectivityMonitorStartError, TelegramConnectivityMonitor};
 
 use crate::{
-    domain::{events::ConnectivityStatus, message::Message, status::AuthConnectivityStatus},
+    domain::{events::ConnectivityStatus, status::AuthConnectivityStatus},
     infra::{config::TelegramConfig, storage_layout::StorageLayout},
-    usecases::{
-        chat_lifecycle::{
-            ChatLifecycle, ChatLifecycleError, ChatReadMarker, FileDownloader, MessageDeleter,
-        },
-        chat_subtitle::{ChatInfoQuery, ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource},
-        guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome, TelegramAuthClient},
-        list_chats::{ListChatsSource, ListChatsSourceError},
-        load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
-        send_message::{MessageSender, SendMessageSourceError},
-        send_voice::VoiceNoteSender,
-    },
+    usecases::guided_auth::AuthBackendError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,227 +167,6 @@ impl TelegramAdapter {
     }
 }
 
-impl TelegramAuthClient for TelegramAdapter {
-    fn auth_status_snapshot(&self) -> Option<AuthConnectivityStatus> {
-        Some(self.status_snapshot())
-    }
-
-    fn request_login_code(&mut self, phone: &str) -> Result<AuthCodeToken, AuthBackendError> {
-        self.status_tracker.on_auth_start();
-
-        let result = match self.tdlib_backend.as_mut() {
-            Some(backend) => backend.request_login_code(phone),
-            None => Err(AuthBackendError::Transient {
-                code: "AUTH_BACKEND_UNAVAILABLE",
-                message: "Telegram auth backend is not configured".into(),
-            }),
-        };
-
-        if let Err(error) = &result {
-            self.status_tracker.on_auth_error(error);
-        }
-
-        result
-    }
-
-    fn sign_in_with_code(
-        &mut self,
-        token: &AuthCodeToken,
-        code: &str,
-    ) -> Result<SignInOutcome, AuthBackendError> {
-        let result = match self.tdlib_backend.as_mut() {
-            Some(backend) => backend.sign_in_with_code(token, code),
-            None => Err(AuthBackendError::Transient {
-                code: "AUTH_BACKEND_UNAVAILABLE",
-                message: "Telegram auth backend is not configured".into(),
-            }),
-        };
-
-        match &result {
-            Ok(SignInOutcome::Authorized) => self.status_tracker.on_auth_success(),
-            Ok(SignInOutcome::PasswordRequired) => self.status_tracker.on_auth_password_required(),
-            Err(error) => self.status_tracker.on_auth_error(error),
-        }
-
-        result
-    }
-
-    fn verify_password(&mut self, password: &str) -> Result<(), AuthBackendError> {
-        let result = match self.tdlib_backend.as_mut() {
-            Some(backend) => backend.verify_password(password),
-            None => Err(AuthBackendError::Transient {
-                code: "AUTH_BACKEND_UNAVAILABLE",
-                message: "Telegram auth backend is not configured".into(),
-            }),
-        };
-
-        match &result {
-            Ok(()) => self.status_tracker.on_auth_success(),
-            Err(error) => self.status_tracker.on_auth_error(error),
-        }
-
-        result
-    }
-}
-
-impl ListChatsSource for TelegramAdapter {
-    fn list_chats(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<crate::domain::chat::ChatSummary>, ListChatsSourceError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.list_chat_summaries(limit),
-            None => Err(ListChatsSourceError::Unavailable),
-        }
-    }
-}
-
-impl MessagesSource for TelegramAdapter {
-    fn list_messages(
-        &self,
-        chat_id: i64,
-        limit: usize,
-    ) -> Result<Vec<Message>, MessagesSourceError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.list_messages(chat_id, limit),
-            None => Err(MessagesSourceError::Unavailable),
-        }
-    }
-}
-
-impl CachedMessagesSource for TelegramAdapter {
-    fn list_cached_messages(
-        &self,
-        chat_id: i64,
-        limit: usize,
-    ) -> Result<Vec<Message>, MessagesSourceError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.list_cached_messages(chat_id, limit),
-            None => Ok(Vec::new()),
-        }
-    }
-}
-
-impl MessageSender for TelegramAdapter {
-    fn send_message(
-        &self,
-        chat_id: i64,
-        text: &str,
-        reply_to_message_id: Option<i64>,
-    ) -> Result<(), SendMessageSourceError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.send_message(chat_id, text, reply_to_message_id),
-            None => Err(SendMessageSourceError::Unauthorized),
-        }
-    }
-}
-
-impl VoiceNoteSender for TelegramAdapter {
-    fn send_voice_note(
-        &self,
-        chat_id: i64,
-        file_path: &str,
-        duration: i32,
-        waveform: &str,
-    ) -> Result<(), SendMessageSourceError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.send_voice_note(chat_id, file_path, duration, waveform),
-            None => Err(SendMessageSourceError::Unauthorized),
-        }
-    }
-}
-
-impl ChatLifecycle for TelegramAdapter {
-    fn open_chat(&self, chat_id: i64) -> Result<(), ChatLifecycleError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.open_chat(chat_id).map_err(|e| {
-                tracing::debug!(chat_id, error = ?e, "open_chat mapped to lifecycle error");
-                ChatLifecycleError::Unavailable
-            }),
-            None => Err(ChatLifecycleError::Unavailable),
-        }
-    }
-
-    fn close_chat(&self, chat_id: i64) -> Result<(), ChatLifecycleError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.close_chat(chat_id).map_err(|e| {
-                tracing::debug!(chat_id, error = ?e, "close_chat mapped to lifecycle error");
-                ChatLifecycleError::Unavailable
-            }),
-            None => Err(ChatLifecycleError::Unavailable),
-        }
-    }
-}
-
-impl FileDownloader for TelegramAdapter {
-    fn download_file(&self, file_id: i32) -> Result<(), ChatLifecycleError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.download_file(file_id).map_err(|e| {
-                tracing::debug!(file_id, error = ?e, "download_file mapped to lifecycle error");
-                ChatLifecycleError::Unavailable
-            }),
-            None => Err(ChatLifecycleError::Unavailable),
-        }
-    }
-}
-
-impl ChatReadMarker for TelegramAdapter {
-    fn mark_messages_read(
-        &self,
-        chat_id: i64,
-        message_ids: Vec<i64>,
-    ) -> Result<(), ChatLifecycleError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.view_messages(chat_id, message_ids).map_err(|e| {
-                tracing::debug!(chat_id, error = ?e, "view_messages mapped to lifecycle error");
-                ChatLifecycleError::Unavailable
-            }),
-            None => Err(ChatLifecycleError::Unavailable),
-        }
-    }
-}
-
-impl MessageDeleter for TelegramAdapter {
-    fn delete_messages(
-        &self,
-        chat_id: i64,
-        message_ids: Vec<i64>,
-        revoke: bool,
-    ) -> Result<(), ChatLifecycleError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.delete_messages(chat_id, message_ids, revoke).map_err(|e| {
-                tracing::debug!(chat_id, error = ?e, "delete_messages mapped to lifecycle error");
-                ChatLifecycleError::Unavailable
-            }),
-            None => Err(ChatLifecycleError::Unavailable),
-        }
-    }
-}
-
-impl ChatSubtitleSource for TelegramAdapter {
-    fn resolve_chat_subtitle(
-        &self,
-        query: &ChatSubtitleQuery,
-    ) -> Result<crate::domain::chat_subtitle::ChatSubtitle, ChatSubtitleError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => Ok(backend.resolve_subtitle(query.chat_id)),
-            None => Err(ChatSubtitleError::Unavailable),
-        }
-    }
-
-    fn resolve_chat_info(
-        &self,
-        query: &ChatInfoQuery,
-    ) -> Result<crate::domain::chat_info_state::ChatInfo, ChatSubtitleError> {
-        match self.tdlib_backend.as_ref() {
-            Some(backend) => {
-                Ok(backend.resolve_chat_info(query.chat_id, query.chat_type, query.title.clone()))
-            }
-            None => Err(ChatSubtitleError::Unavailable),
-        }
-    }
-}
-
 /// Returns the telegram module name for smoke checks.
 pub fn module_name() -> &'static str {
     "telegram"
@@ -404,6 +175,13 @@ pub fn module_name() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::usecases::{
+        chat_lifecycle::{ChatLifecycle, ChatLifecycleError, ChatReadMarker, MessageDeleter},
+        guided_auth::TelegramAuthClient,
+        list_chats::{ListChatsSource, ListChatsSourceError},
+        load_messages::{MessagesSource, MessagesSourceError},
+        send_message::{MessageSender, SendMessageSourceError},
+    };
 
     #[test]
     fn uses_stub_backend_when_config_is_not_set() {
