@@ -106,35 +106,33 @@ pub struct CallInfo {
 /// Builds a display string for call metadata.
 ///
 /// Uses `is_outgoing` from the message to determine direction.
-/// Examples: `"Outgoing, 1:23"`, `"Missed"`, `"Declined"`, `"Cancelled"`.
+///
+/// Format follows the same `key=value` convention as file metadata:
+/// `"direction=outgoing, duration=1:23"`, `"status=missed"`.
 pub fn build_call_metadata_display(info: &CallInfo, is_outgoing: bool) -> String {
-    match info.discard_reason {
-        CallDiscardReason::Missed => {
-            if is_outgoing {
-                "Cancelled".to_owned()
-            } else {
-                "Missed".to_owned()
-            }
+    let mut parts = Vec::new();
+
+    let status = match info.discard_reason {
+        CallDiscardReason::Missed => Some(if is_outgoing { "cancelled" } else { "missed" }),
+        CallDiscardReason::Declined => Some("declined"),
+        CallDiscardReason::Disconnected => Some("disconnected"),
+        CallDiscardReason::HungUp if info.duration == 0 => {
+            Some(if is_outgoing { "cancelled" } else { "missed" })
         }
-        CallDiscardReason::Declined => "Declined".to_owned(),
-        CallDiscardReason::Disconnected => {
-            if info.duration > 0 {
-                format!("Disconnected, {}", format_duration(info.duration))
-            } else {
-                "Disconnected".to_owned()
-            }
-        }
-        CallDiscardReason::HungUp => {
-            if info.duration > 0 {
-                let direction = if is_outgoing { "Outgoing" } else { "Incoming" };
-                format!("{direction}, {}", format_duration(info.duration))
-            } else if is_outgoing {
-                "Cancelled".to_owned()
-            } else {
-                "Missed".to_owned()
-            }
-        }
+        CallDiscardReason::HungUp => None,
+    };
+
+    if let Some(s) = status {
+        parts.push(format!("status={s}"));
     }
+
+    if info.duration > 0 {
+        let dir = if is_outgoing { "outgoing" } else { "incoming" };
+        parts.push(format!("direction={dir}"));
+        parts.push(format!("duration={}", format_duration(info.duration)));
+    }
+
+    parts.join(", ")
 }
 
 /// Information about the message being replied to.
@@ -708,7 +706,10 @@ mod tests {
             duration: 83,
             discard_reason: CallDiscardReason::HungUp,
         };
-        assert_eq!(build_call_metadata_display(&info, true), "Outgoing, 1:23");
+        assert_eq!(
+            build_call_metadata_display(&info, true),
+            "direction=outgoing, duration=1:23"
+        );
     }
 
     #[test]
@@ -718,7 +719,10 @@ mod tests {
             duration: 5,
             discard_reason: CallDiscardReason::HungUp,
         };
-        assert_eq!(build_call_metadata_display(&info, false), "Incoming, 0:05");
+        assert_eq!(
+            build_call_metadata_display(&info, false),
+            "direction=incoming, duration=0:05"
+        );
     }
 
     #[test]
@@ -728,7 +732,7 @@ mod tests {
             duration: 0,
             discard_reason: CallDiscardReason::Missed,
         };
-        assert_eq!(build_call_metadata_display(&info, false), "Missed");
+        assert_eq!(build_call_metadata_display(&info, false), "status=missed");
     }
 
     #[test]
@@ -738,7 +742,7 @@ mod tests {
             duration: 0,
             discard_reason: CallDiscardReason::Missed,
         };
-        assert_eq!(build_call_metadata_display(&info, true), "Cancelled");
+        assert_eq!(build_call_metadata_display(&info, true), "status=cancelled");
     }
 
     #[test]
@@ -748,7 +752,7 @@ mod tests {
             duration: 0,
             discard_reason: CallDiscardReason::Declined,
         };
-        assert_eq!(build_call_metadata_display(&info, false), "Declined");
+        assert_eq!(build_call_metadata_display(&info, false), "status=declined");
     }
 
     #[test]
@@ -758,7 +762,10 @@ mod tests {
             duration: 60,
             discard_reason: CallDiscardReason::HungUp,
         };
-        assert_eq!(build_call_metadata_display(&info, true), "Outgoing, 1:00");
+        assert_eq!(
+            build_call_metadata_display(&info, true),
+            "direction=outgoing, duration=1:00"
+        );
     }
 
     #[test]
@@ -768,7 +775,7 @@ mod tests {
             duration: 0,
             discard_reason: CallDiscardReason::Missed,
         };
-        assert_eq!(build_call_metadata_display(&info, false), "Missed");
+        assert_eq!(build_call_metadata_display(&info, false), "status=missed");
     }
 
     #[test]
@@ -780,7 +787,7 @@ mod tests {
         };
         assert_eq!(
             build_call_metadata_display(&info, true),
-            "Disconnected, 0:30"
+            "status=disconnected, direction=outgoing, duration=0:30"
         );
     }
 
@@ -791,7 +798,7 @@ mod tests {
             duration: 0,
             discard_reason: CallDiscardReason::HungUp,
         };
-        assert_eq!(build_call_metadata_display(&info, false), "Missed");
+        assert_eq!(build_call_metadata_display(&info, false), "status=missed");
     }
 
     #[test]
@@ -801,6 +808,6 @@ mod tests {
             duration: 0,
             discard_reason: CallDiscardReason::HungUp,
         };
-        assert_eq!(build_call_metadata_display(&info, true), "Cancelled");
+        assert_eq!(build_call_metadata_display(&info, true), "status=cancelled");
     }
 }
