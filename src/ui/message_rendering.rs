@@ -37,6 +37,8 @@ pub enum MessageListElement {
         reaction_count: u32,
         /// Hyperlinks embedded in the message text (byte offsets into `Message::text`).
         links: Vec<TextLink>,
+        /// Whether the message has been edited.
+        is_edited: bool,
     },
 }
 
@@ -90,6 +92,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             reply_info: message.reply_to.clone(),
             reaction_count: message.reaction_count,
             links: message.links.clone(),
+            is_edited: message.is_edited,
         });
 
         prev_date = Some(msg_date);
@@ -152,6 +155,7 @@ pub fn element_to_text(
             reply_info,
             reaction_count,
             links,
+            is_edited,
         } => {
             let lines = build_message_lines(
                 time,
@@ -165,6 +169,7 @@ pub fn element_to_text(
                 *reaction_count,
                 links,
                 max_width,
+                *is_edited,
             );
             ratatui::text::Text::from(lines)
         }
@@ -184,6 +189,7 @@ fn build_message_lines(
     reaction_count: u32,
     links: &[TextLink],
     max_width: usize,
+    is_edited: bool,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let indent = "      "; // 6 spaces to align with time column
@@ -327,6 +333,15 @@ fn build_message_lines(
             last_line
                 .spans
                 .push(Span::styled(" sending...", styles::message_sending_style()));
+        }
+    }
+
+    // Append edited indicator on the same line as the last content line
+    if is_edited {
+        if let Some(last_line) = lines.last_mut() {
+            last_line
+                .spans
+                .push(Span::styled(" edited", styles::message_edited_style()));
         }
     }
 
@@ -634,6 +649,7 @@ mod tests {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         }
     }
 
@@ -656,6 +672,7 @@ mod tests {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         }
     }
 
@@ -1103,6 +1120,7 @@ mod tests {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1147,6 +1165,7 @@ mod tests {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1160,6 +1179,103 @@ mod tests {
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
             .collect();
         assert!(!all_text.contains("sending..."));
+    }
+
+    // ── edited indicator tests ──
+
+    #[test]
+    fn edited_message_shows_edited_indicator() {
+        let messages = vec![Message {
+            id: 1,
+            sender_name: "User".to_owned(),
+            text: "Hello".to_owned(),
+            timestamp_ms: FEB_14_2026_10AM,
+            is_outgoing: false,
+            media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
+            reply_to: None,
+            reaction_count: 0,
+            links: Vec::new(),
+            is_edited: true,
+        }];
+
+        let elements = build_message_list_elements(&messages);
+        let msg_text = element_to_text(&elements[1], 80);
+
+        let all_text: String = msg_text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert!(
+            all_text.contains("edited"),
+            "Edited message should contain 'edited' indicator, got: '{}'",
+            all_text
+        );
+    }
+
+    #[test]
+    fn non_edited_message_has_no_edited_indicator() {
+        let messages = vec![Message {
+            id: 1,
+            sender_name: "User".to_owned(),
+            text: "Hello".to_owned(),
+            timestamp_ms: FEB_14_2026_10AM,
+            is_outgoing: false,
+            media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
+            reply_to: None,
+            reaction_count: 0,
+            links: Vec::new(),
+            is_edited: false,
+        }];
+
+        let elements = build_message_list_elements(&messages);
+        let msg_text = element_to_text(&elements[1], 80);
+
+        let all_text: String = msg_text
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert!(
+            !all_text.contains("edited"),
+            "Non-edited message should not contain 'edited' indicator"
+        );
+    }
+
+    #[test]
+    fn edited_indicator_on_same_line_as_content() {
+        let messages = vec![Message {
+            id: 1,
+            sender_name: "User".to_owned(),
+            text: "Hello".to_owned(),
+            timestamp_ms: FEB_14_2026_10AM,
+            is_outgoing: true,
+            media: MessageMedia::None,
+            status: crate::domain::message::MessageStatus::Delivered,
+            file_info: None,
+            reply_to: None,
+            reaction_count: 0,
+            links: Vec::new(),
+            is_edited: true,
+        }];
+
+        let elements = build_message_list_elements(&messages);
+        let msg_text = element_to_text(&elements[1], 80);
+
+        // Header line + content line with "edited" = 2 lines (no extra line)
+        assert_eq!(msg_text.lines.len(), 2);
+
+        let last_line = &msg_text.lines[1];
+        let last_line_text: String = last_line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            last_line_text.contains("Hello") && last_line_text.contains("edited"),
+            "Content and 'edited' should be on the same line, got: '{}'",
+            last_line_text
+        );
     }
 
     // ── media on separate line tests ──
@@ -1271,6 +1387,7 @@ mod tests {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1339,6 +1456,7 @@ mod tests {
             }),
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         }
     }
 
@@ -1356,6 +1474,7 @@ mod tests {
             reply_to: None,
             reaction_count: 3,
             links: Vec::new(),
+            is_edited: false,
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1383,6 +1502,7 @@ mod tests {
             reply_to: None,
             reaction_count: 1,
             links: Vec::new(),
+            is_edited: false,
         }];
 
         let elements = build_message_list_elements(&messages);
@@ -1584,6 +1704,7 @@ mod tests {
                 }),
                 reaction_count: 0,
                 links: Vec::new(),
+                is_edited: false,
             },
         ];
 
@@ -1713,6 +1834,7 @@ mod tests {
                 length: 10,
                 url: "https://example.com".to_owned(),
             }],
+            is_edited: false,
         }];
 
         let elements = build_message_list_elements(&messages);

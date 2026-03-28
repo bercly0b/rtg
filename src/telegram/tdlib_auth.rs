@@ -1331,6 +1331,7 @@ mod tests {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         };
 
         assert_eq!(reply_sender_name_for_message(&message), "You");

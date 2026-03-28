@@ -128,6 +128,8 @@ pub struct Message {
     pub reaction_count: u32,
     /// Hyperlinks embedded in the message text via text entities.
     pub links: Vec<TextLink>,
+    /// Whether the message has been edited after sending.
+    pub is_edited: bool,
 }
 
 impl Message {
@@ -260,6 +262,7 @@ mod tests {
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
+            is_edited: false,
         }
     }
 
