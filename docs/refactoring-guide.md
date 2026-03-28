@@ -75,7 +75,15 @@ src/layer/module/
 
 ## Test organization
 
-When the test module is large (500+ LOC), split it into sub-modules under `tests/`:
+### When to split tests
+
+Tests follow the same soft limit as production code: **~200 LOC per file**. Inline `#[cfg(test)] mod tests` is fine for small modules. When a test module exceeds ~300 LOC or the parent file becomes hard to navigate, split tests into a `tests/` directory.
+
+### Rule: tests must not inflate production modules
+
+A production file should contain production code. If an inline test module pushes the file well beyond the soft limit, extract the tests. Never leave 4000+ LOC of tests at the bottom of a production module.
+
+### Directory layout
 
 ```
 src/layer/module/
@@ -83,9 +91,25 @@ src/layer/module/
   feature_a.rs
   feature_b.rs
   tests/
-    mod.rs           — shared test infrastructure (test doubles, helpers, factories)
+    mod.rs           — #[cfg(test)] gate, shared test doubles, domain helpers, factories
     feature_a.rs     — tests for feature A
     feature_b.rs     — tests for feature B
+```
+
+`mod.rs` in the parent module declares the test sub-module:
+
+```rust
+#[cfg(test)]
+mod tests;
+```
+
+`tests/mod.rs` re-exports shared infrastructure and declares sub-modules:
+
+```rust
+mod feature_a;
+mod feature_b;
+
+// shared test doubles, helpers, factories below
 ```
 
 ### Test infrastructure
@@ -94,6 +118,16 @@ src/layer/module/
 - **Domain helpers** (factory functions like `chat()`, `message()`) live in `tests/mod.rs`.
 - **Orchestrator factories** (`make_orchestrator()`, `orchestrator_with_chats()`) live in `tests/mod.rs`.
 - Each test sub-module imports from `super::*` to access the shared infrastructure.
+
+### Test sub-module grouping
+
+Group tests by **feature area**, not by production module. One test sub-module should cover a cohesive set of behaviors. Typical grouping:
+
+- `lifecycle.rs` — startup, shutdown, connectivity
+- `chat_list.rs` — chat list loading, selection, refresh
+- `chat_open.rs` — open/close/reopen, cached display, TDLib lifecycle
+- `voice.rs` — recording, playback, command popup
+- etc.
 
 ### Tests call the public API
 
