@@ -379,7 +379,13 @@ pub fn extract_message_media(content: &MessageContent) -> MessageMedia {
             MessageMedia::Location
         }
         MessageContent::MessagePoll(_) => MessageMedia::Poll,
-        MessageContent::MessageCall(_) => MessageMedia::Call,
+        MessageContent::MessageCall(c) => {
+            if c.is_video {
+                MessageMedia::VideoCall
+            } else {
+                MessageMedia::Call
+            }
+        }
         // Service messages and other types
         _ => MessageMedia::Other,
     }

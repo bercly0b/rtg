@@ -15,6 +15,7 @@ pub enum MessageMedia {
     Location,
     Poll,
     Call,
+    VideoCall,
     Other,
 }
 
@@ -35,6 +36,7 @@ impl MessageMedia {
             MessageMedia::Location => Some("[Location]"),
             MessageMedia::Poll => Some("[Poll]"),
             MessageMedia::Call => Some("[Call]"),
+            MessageMedia::VideoCall => Some("[Video call]"),
             MessageMedia::Other => Some("[Media]"),
         }
     }
@@ -106,38 +108,30 @@ pub struct CallInfo {
 /// Uses `is_outgoing` from the message to determine direction.
 /// Examples: `"Outgoing, 1:23"`, `"Missed"`, `"Declined"`, `"Cancelled"`.
 pub fn build_call_metadata_display(info: &CallInfo, is_outgoing: bool) -> String {
-    let call_type = if info.is_video { "Video call" } else { "Call" };
-
     match info.discard_reason {
         CallDiscardReason::Missed => {
             if is_outgoing {
-                format!("{call_type}, Cancelled")
+                "Cancelled".to_owned()
             } else {
-                format!("{call_type}, Missed")
+                "Missed".to_owned()
             }
         }
-        CallDiscardReason::Declined => format!("{call_type}, Declined"),
+        CallDiscardReason::Declined => "Declined".to_owned(),
         CallDiscardReason::Disconnected => {
             if info.duration > 0 {
-                format!(
-                    "{call_type}, Disconnected, {}",
-                    format_duration(info.duration)
-                )
+                format!("Disconnected, {}", format_duration(info.duration))
             } else {
-                format!("{call_type}, Disconnected")
+                "Disconnected".to_owned()
             }
         }
         CallDiscardReason::HungUp => {
             if info.duration > 0 {
                 let direction = if is_outgoing { "Outgoing" } else { "Incoming" };
-                format!(
-                    "{call_type}, {direction}, {}",
-                    format_duration(info.duration)
-                )
+                format!("{direction}, {}", format_duration(info.duration))
             } else if is_outgoing {
-                format!("{call_type}, Cancelled")
+                "Cancelled".to_owned()
             } else {
-                format!("{call_type}, Missed")
+                "Missed".to_owned()
             }
         }
     }
@@ -434,6 +428,7 @@ mod tests {
             (MessageMedia::Location, "[Location]"),
             (MessageMedia::Poll, "[Poll]"),
             (MessageMedia::Call, "[Call]"),
+            (MessageMedia::VideoCall, "[Video call]"),
             (MessageMedia::Other, "[Media]"),
         ];
 
@@ -713,10 +708,7 @@ mod tests {
             duration: 83,
             discard_reason: CallDiscardReason::HungUp,
         };
-        assert_eq!(
-            build_call_metadata_display(&info, true),
-            "Call, Outgoing, 1:23"
-        );
+        assert_eq!(build_call_metadata_display(&info, true), "Outgoing, 1:23");
     }
 
     #[test]
@@ -726,10 +718,7 @@ mod tests {
             duration: 5,
             discard_reason: CallDiscardReason::HungUp,
         };
-        assert_eq!(
-            build_call_metadata_display(&info, false),
-            "Call, Incoming, 0:05"
-        );
+        assert_eq!(build_call_metadata_display(&info, false), "Incoming, 0:05");
     }
 
     #[test]
@@ -739,7 +728,7 @@ mod tests {
             duration: 0,
             discard_reason: CallDiscardReason::Missed,
         };
-        assert_eq!(build_call_metadata_display(&info, false), "Call, Missed");
+        assert_eq!(build_call_metadata_display(&info, false), "Missed");
     }
 
     #[test]
@@ -749,7 +738,7 @@ mod tests {
             duration: 0,
             discard_reason: CallDiscardReason::Missed,
         };
-        assert_eq!(build_call_metadata_display(&info, true), "Call, Cancelled");
+        assert_eq!(build_call_metadata_display(&info, true), "Cancelled");
     }
 
     #[test]
@@ -759,20 +748,17 @@ mod tests {
             duration: 0,
             discard_reason: CallDiscardReason::Declined,
         };
-        assert_eq!(build_call_metadata_display(&info, false), "Call, Declined");
+        assert_eq!(build_call_metadata_display(&info, false), "Declined");
     }
 
     #[test]
-    fn call_metadata_video_call() {
+    fn call_metadata_video_outgoing_connected() {
         let info = CallInfo {
             is_video: true,
             duration: 60,
             discard_reason: CallDiscardReason::HungUp,
         };
-        assert_eq!(
-            build_call_metadata_display(&info, true),
-            "Video call, Outgoing, 1:00"
-        );
+        assert_eq!(build_call_metadata_display(&info, true), "Outgoing, 1:00");
     }
 
     #[test]
@@ -782,10 +768,7 @@ mod tests {
             duration: 0,
             discard_reason: CallDiscardReason::Missed,
         };
-        assert_eq!(
-            build_call_metadata_display(&info, false),
-            "Video call, Missed"
-        );
+        assert_eq!(build_call_metadata_display(&info, false), "Missed");
     }
 
     #[test]
@@ -797,7 +780,7 @@ mod tests {
         };
         assert_eq!(
             build_call_metadata_display(&info, true),
-            "Call, Disconnected, 0:30"
+            "Disconnected, 0:30"
         );
     }
 
@@ -808,7 +791,7 @@ mod tests {
             duration: 0,
             discard_reason: CallDiscardReason::HungUp,
         };
-        assert_eq!(build_call_metadata_display(&info, false), "Call, Missed");
+        assert_eq!(build_call_metadata_display(&info, false), "Missed");
     }
 
     #[test]
@@ -818,6 +801,6 @@ mod tests {
             duration: 0,
             discard_reason: CallDiscardReason::HungUp,
         };
-        assert_eq!(build_call_metadata_display(&info, true), "Call, Cancelled");
+        assert_eq!(build_call_metadata_display(&info, true), "Cancelled");
     }
 }
