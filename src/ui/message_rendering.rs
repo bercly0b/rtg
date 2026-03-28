@@ -76,10 +76,17 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
         // or when HH:MM changes within the group.
         let show_time = show_sender || prev_time.as_deref() != Some(&time);
 
-        let file_meta = message
-            .file_info
-            .as_ref()
-            .map(|fi| crate::domain::message::build_file_metadata_display(message.media, fi));
+        let file_meta = if let Some(ci) = &message.call_info {
+            Some(crate::domain::message::build_call_metadata_display(
+                ci,
+                message.is_outgoing,
+            ))
+        } else {
+            message
+                .file_info
+                .as_ref()
+                .map(|fi| crate::domain::message::build_file_metadata_display(message.media, fi))
+        };
 
         elements.push(MessageListElement::Message {
             time: time.clone(),
@@ -646,6 +653,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            call_info: None,
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
@@ -669,6 +677,7 @@ mod tests {
             media,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            call_info: None,
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
@@ -1117,6 +1126,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Sending,
             file_info: None,
+            call_info: None,
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
@@ -1162,6 +1172,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            call_info: None,
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
@@ -1194,6 +1205,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            call_info: None,
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
@@ -1226,6 +1238,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            call_info: None,
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
@@ -1257,6 +1270,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            call_info: None,
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
@@ -1384,6 +1398,7 @@ mod tests {
                 is_listened: true,
                 download_status: DownloadStatus::Completed,
             }),
+            call_info: None,
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
@@ -1450,6 +1465,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            call_info: None,
             reply_to: Some(ReplyInfo {
                 sender_name: reply_sender.to_owned(),
                 text: reply_text.to_owned(),
@@ -1471,6 +1487,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            call_info: None,
             reply_to: None,
             reaction_count: 3,
             links: Vec::new(),
@@ -1499,6 +1516,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            call_info: None,
             reply_to: None,
             reaction_count: 1,
             links: Vec::new(),
@@ -1698,6 +1716,7 @@ mod tests {
                 media: MessageMedia::None,
                 status: crate::domain::message::MessageStatus::Delivered,
                 file_info: None,
+                call_info: None,
                 reply_to: Some(ReplyInfo {
                     sender_name: "Bob".to_owned(),
                     text: "Original text".to_owned(),
@@ -1827,6 +1846,7 @@ mod tests {
             media: MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            call_info: None,
             reply_to: None,
             reaction_count: 0,
             links: vec![TextLink {

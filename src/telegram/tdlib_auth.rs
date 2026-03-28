@@ -1328,6 +1328,7 @@ mod tests {
             media: crate::domain::message::MessageMedia::None,
             status: crate::domain::message::MessageStatus::Delivered,
             file_info: None,
+            call_info: None,
             reply_to: None,
             reaction_count: 0,
             links: Vec::new(),
