@@ -38,37 +38,29 @@ impl TdLibAuthBackend {
 
     /// Builds domain `ChatSummary` list from raw TDLib chat IDs.
     ///
-    /// Uses `get_chat()` as the primary data source — this reads from
-    /// TDLib's internal SQLite database which is always up-to-date after
-    /// `loadChats`. The in-memory `TdLibCache` is updated from each
-    /// successful `get_chat()` result to keep it consistent for other
-    /// consumers (e.g. `MessageMapper`).
-    ///
-    /// Falls back to the cache when `get_chat()` fails (e.g. for chats
-    /// with message types that `tdlib-rs` cannot deserialize yet).
+    /// Uses the update-driven cache for lookups — fast in-memory reads.
+    /// Falls back to `get_chat` (TDLib SQLite) on cache miss and populates
+    /// the cache from the result. Cache misses should be rare: TDLib
+    /// guarantees that `updateNewChat` arrives before the ID appears in
+    /// `getChats` responses, so the update loop normally populates the
+    /// cache ahead of this call.
     pub(super) fn build_summaries_from_ids(&self, chat_ids: Vec<i64>) -> Vec<ChatSummary> {
         let cache = self.client.cache();
         let mut summaries = Vec::with_capacity(chat_ids.len());
 
         for chat_id in chat_ids {
-            let chat = match self.client.get_chat(chat_id) {
-                Ok(c) => {
-                    cache.upsert_chat(c.clone());
-                    c
-                }
-                Err(e) => {
-                    tracing::debug!(chat_id, error = %e, "get_chat failed, falling back to cache");
-                    match cache.get_chat(chat_id) {
-                        Some(c) => c,
-                        None => {
-                            tracing::warn!(
-                                chat_id,
-                                "chat unavailable from both TDLib and cache, skipping"
-                            );
-                            continue;
-                        }
+            let chat = match cache.get_chat(chat_id) {
+                Some(c) => c,
+                None => match self.client.get_chat(chat_id) {
+                    Ok(c) => {
+                        cache.upsert_chat(c.clone());
+                        c
                     }
-                }
+                    Err(e) => {
+                        tracing::warn!(chat_id, error = %e, "chat missing from cache and TDLib");
+                        continue;
+                    }
+                },
             };
 
             let (sender_name, is_online, is_bot) = self.resolve_chat_metadata(&chat, cache);
