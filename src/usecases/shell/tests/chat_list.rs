@@ -218,12 +218,15 @@ fn in_flight_guard_resets_after_result() {
 fn user_refresh_shows_notification_on_success() {
     let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
 
-    // User presses R to refresh
+    // User presses R to refresh — immediate "Refreshing..." feedback
     o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
         .unwrap();
-    assert!(o.state().active_notification().is_none());
+    assert_eq!(
+        o.state().active_notification(),
+        Some("Refreshing chat list...")
+    );
 
-    // Background result arrives
+    // Background result arrives — notification updates to "refreshed"
     inject_chat_list(&mut o, vec![chat(1, "General"), chat(2, "Backend")]);
     assert_eq!(o.state().active_notification(), Some("Chat list refreshed"));
 }
@@ -234,6 +237,10 @@ fn user_refresh_shows_notification_on_failure() {
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
         .unwrap();
+    assert_eq!(
+        o.state().active_notification(),
+        Some("Refreshing chat list...")
+    );
 
     // Inject a failure
     o.handle_event(AppEvent::BackgroundTaskCompleted(

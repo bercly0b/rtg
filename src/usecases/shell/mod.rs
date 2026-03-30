@@ -225,6 +225,7 @@ where
             }
             "R" => {
                 self.user_requested_chat_refresh = true;
+                self.state.set_notification("Refreshing chat list...");
                 chat_list::dispatch_chat_list_refresh(&mut self.as_ctx());
             }
             "r" => chat_list::mark_selected_chat_as_read(&mut self.as_ctx()),
