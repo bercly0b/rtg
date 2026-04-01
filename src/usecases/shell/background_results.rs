@@ -15,7 +15,17 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
     match result {
         BackgroundTaskResult::ChatListLoaded { result } => {
             *ctx.chat_list_in_flight = false;
-            let user_requested = std::mem::take(ctx.user_requested_chat_refresh);
+            let was_pending = std::mem::take(ctx.chat_list_refresh_pending);
+            let pending_force = std::mem::take(ctx.chat_list_pending_force);
+
+            // When a re-dispatch is about to happen, defer the user notification
+            // to the next completion — the pending result will be more up-to-date.
+            let user_requested = if was_pending {
+                false
+            } else {
+                std::mem::take(ctx.user_requested_chat_refresh)
+            };
+
             match result {
                 Ok(chats) => {
                     tracing::debug!(chat_count = chats.len(), "background: chat list loaded");
@@ -31,6 +41,14 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                     }
                     ctx.state.chat_list_mut().set_error();
                 }
+            }
+
+            if was_pending {
+                tracing::debug!(
+                    pending_force,
+                    "re-dispatching chat list refresh (pending flag was set)"
+                );
+                super::chat_list::dispatch_chat_list_refresh(ctx, pending_force);
             }
         }
         BackgroundTaskResult::MessagesLoaded { chat_id, result } => {

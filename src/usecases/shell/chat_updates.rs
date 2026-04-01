@@ -108,7 +108,7 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
     }
 
     if should_refresh_chat_list {
-        chat_list::dispatch_chat_list_refresh(ctx);
+        chat_list::dispatch_chat_list_refresh(ctx, false);
     }
     if !reload_chat_ids.is_empty() {
         maybe_refresh_open_chat_messages(ctx, &reload_chat_ids);

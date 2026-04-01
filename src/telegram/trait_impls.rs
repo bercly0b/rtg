@@ -18,9 +18,10 @@ impl ListChatsSource for TelegramAdapter {
     fn list_chats(
         &self,
         limit: usize,
+        force: bool,
     ) -> Result<Vec<crate::domain::chat::ChatSummary>, ListChatsSourceError> {
         match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.list_chat_summaries(limit),
+            Some(backend) => backend.list_chat_summaries(limit, force),
             None => Err(ListChatsSourceError::Unavailable),
         }
     }

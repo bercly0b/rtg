@@ -30,7 +30,7 @@ use super::{
 /// `dispatch_mark_as_read`) are fire-and-forget: errors are logged
 /// but do not produce `BackgroundTaskResult`.
 pub trait TaskDispatcher {
-    fn dispatch_chat_list(&self);
+    fn dispatch_chat_list(&self, force: bool);
     fn dispatch_load_messages(&self, chat_id: i64);
     fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>);
 
@@ -139,8 +139,8 @@ where
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
     S: ChatSubtitleSource + Send + Sync + 'static,
 {
-    fn dispatch_chat_list(&self) {
-        lifecycle::dispatch_chat_list(&self.chats_source, &self.result_tx);
+    fn dispatch_chat_list(&self, force: bool) {
+        lifecycle::dispatch_chat_list(&self.chats_source, &self.result_tx, force);
     }
 
     fn dispatch_load_messages(&self, chat_id: i64) {

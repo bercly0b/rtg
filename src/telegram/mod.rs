@@ -249,7 +249,7 @@ mod tests {
         let adapter = TelegramAdapter::stub();
 
         let error = adapter
-            .list_chats(20)
+            .list_chats(20, false)
             .expect_err("stub adapter should fail");
 
         assert_eq!(error, ListChatsSourceError::Unavailable);

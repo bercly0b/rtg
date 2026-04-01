@@ -89,6 +89,7 @@ fn message(id: i64, text: &str) -> Message {
 /// Records what the orchestrator dispatched and allows inspection.
 struct RecordingDispatcher {
     dispatched_chat_list_count: RefCell<usize>,
+    dispatched_chat_list_force: RefCell<Vec<bool>>,
     dispatched_messages: RefCell<Vec<i64>>,
     dispatched_sends: RefCell<Vec<(i64, String, Option<i64>)>>,
     dispatched_open_chats: RefCell<Vec<i64>>,
@@ -105,6 +106,7 @@ impl RecordingDispatcher {
     fn new() -> Self {
         Self {
             dispatched_chat_list_count: RefCell::new(0),
+            dispatched_chat_list_force: RefCell::new(Vec::new()),
             dispatched_messages: RefCell::new(Vec::new()),
             dispatched_sends: RefCell::new(Vec::new()),
             dispatched_open_chats: RefCell::new(Vec::new()),
@@ -120,6 +122,10 @@ impl RecordingDispatcher {
 
     fn chat_list_dispatch_count(&self) -> usize {
         *self.dispatched_chat_list_count.borrow()
+    }
+
+    fn last_chat_list_force(&self) -> Option<bool> {
+        self.dispatched_chat_list_force.borrow().last().copied()
     }
 
     fn messages_dispatch_count(&self) -> usize {
@@ -192,8 +198,9 @@ impl RecordingDispatcher {
 }
 
 impl TaskDispatcher for RecordingDispatcher {
-    fn dispatch_chat_list(&self) {
+    fn dispatch_chat_list(&self, force: bool) {
         *self.dispatched_chat_list_count.borrow_mut() += 1;
+        self.dispatched_chat_list_force.borrow_mut().push(force);
     }
 
     fn dispatch_load_messages(&self, chat_id: i64) {

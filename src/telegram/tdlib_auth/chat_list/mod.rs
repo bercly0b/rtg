@@ -36,9 +36,13 @@ impl TdLibAuthBackend {
     /// Lists chat summaries from TDLib.
     ///
     /// Fetches chats from the main chat list and maps them to domain `ChatSummary`.
+    /// When `force` is `true`, bypasses the in-memory cache and reads every chat
+    /// directly from TDLib's SQLite via `get_chat()` — guarantees fresh data at
+    /// the cost of ~1-2ms per chat.
     pub fn list_chat_summaries(
         &self,
         limit: usize,
+        force: bool,
     ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
         let limit_i32 = i32::try_from(limit).unwrap_or(i32::MAX);
 
@@ -48,9 +52,13 @@ impl TdLibAuthBackend {
             .map_err(map_list_chats_error)?;
 
         let requested_count = chat_ids.len();
-        tracing::debug!(count = requested_count, "Fetched chat IDs from TDLib");
+        tracing::debug!(
+            count = requested_count,
+            force,
+            "Fetched chat IDs from TDLib"
+        );
 
-        let summaries = build_summaries_from_ids(&self.client, chat_ids);
+        let summaries = build_summaries_from_ids(&self.client, chat_ids, force);
 
         if requested_count > 0 && summaries.is_empty() {
             tracing::warn!(
@@ -66,32 +74,48 @@ impl TdLibAuthBackend {
 
 /// Builds domain `ChatSummary` list from raw TDLib chat IDs.
 ///
-/// Uses the update-driven cache for lookups — fast in-memory reads.
-/// Falls back to `get_chat` (TDLib SQLite) on cache miss and populates
-/// the cache from the result. Cache misses should be rare: TDLib
-/// guarantees that `updateNewChat` arrives before the ID appears in
-/// `getChats` responses, so the update loop normally populates the
-/// cache ahead of this call.
+/// When `force` is `false` (default), uses the update-driven cache for
+/// lookups — fast in-memory reads. Falls back to `get_chat` (TDLib SQLite)
+/// on cache miss and populates the cache from the result.
+///
+/// When `force` is `true`, bypasses the cache entirely and calls `get_chat`
+/// for every chat. This guarantees fresh data from TDLib's SQLite, which is
+/// always up-to-date after `loadChats()`. Used for user-initiated refreshes
+/// where stale data is unacceptable.
 pub(super) fn build_summaries_from_ids(
     resolver: &dyn ChatDataResolver,
     chat_ids: Vec<i64>,
+    force: bool,
 ) -> Vec<ChatSummary> {
     let cache = resolver.cache();
     let mut summaries = Vec::with_capacity(chat_ids.len());
 
     for chat_id in chat_ids {
-        let chat = match cache.get_chat(chat_id) {
-            Some(c) => c,
-            None => match resolver.get_chat(chat_id) {
+        let chat = if force {
+            match resolver.get_chat(chat_id) {
                 Ok(c) => {
                     cache.upsert_chat(c.clone());
                     c
                 }
                 Err(e) => {
-                    tracing::warn!(chat_id, error = %e, "chat missing from cache and TDLib");
+                    tracing::warn!(chat_id, error = %e, "chat missing from TDLib (force refresh)");
                     continue;
                 }
-            },
+            }
+        } else {
+            match cache.get_chat(chat_id) {
+                Some(c) => c,
+                None => match resolver.get_chat(chat_id) {
+                    Ok(c) => {
+                        cache.upsert_chat(c.clone());
+                        c
+                    }
+                    Err(e) => {
+                        tracing::warn!(chat_id, error = %e, "chat missing from cache and TDLib");
+                        continue;
+                    }
+                },
+            }
         };
 
         let (sender_name, is_online, is_bot) = resolve_chat_metadata(resolver, &chat, cache);
