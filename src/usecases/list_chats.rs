@@ -7,12 +7,16 @@ const MAX_CHAT_PAGE_SIZE: usize = 200;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListChatsQuery {
     pub limit: usize,
+    /// When `true`, bypasses the in-memory cache and reads directly from
+    /// TDLib's SQLite — guarantees fresh data for user-initiated refreshes.
+    pub force: bool,
 }
 
 impl Default for ListChatsQuery {
     fn default() -> Self {
         Self {
             limit: DEFAULT_CHAT_PAGE_SIZE,
+            force: false,
         }
     }
 }
@@ -44,15 +48,23 @@ pub enum ListChatsSourceError {
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub trait ListChatsSource {
-    fn list_chats(&self, limit: usize) -> Result<Vec<ChatSummary>, ListChatsSourceError>;
+    fn list_chats(
+        &self,
+        limit: usize,
+        force: bool,
+    ) -> Result<Vec<ChatSummary>, ListChatsSourceError>;
 }
 
 impl<T> ListChatsSource for &T
 where
     T: ListChatsSource + ?Sized,
 {
-    fn list_chats(&self, limit: usize) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
-        (*self).list_chats(limit)
+    fn list_chats(
+        &self,
+        limit: usize,
+        force: bool,
+    ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+        (*self).list_chats(limit, force)
     }
 }
 
@@ -60,8 +72,12 @@ impl<T> ListChatsSource for std::sync::Arc<T>
 where
     T: ListChatsSource + ?Sized,
 {
-    fn list_chats(&self, limit: usize) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
-        (**self).list_chats(limit)
+    fn list_chats(
+        &self,
+        limit: usize,
+        force: bool,
+    ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+        (**self).list_chats(limit, force)
     }
 }
 
@@ -79,7 +95,9 @@ pub fn list_chats(
     query: ListChatsQuery,
 ) -> Result<ListChatsOutput, ListChatsError> {
     let limit = query.normalized_limit();
-    let chats = source.list_chats(limit).map_err(map_source_error)?;
+    let chats = source
+        .list_chats(limit, query.force)
+        .map_err(map_source_error)?;
 
     Ok(ListChatsOutput { chats })
 }
@@ -113,7 +131,11 @@ mod tests {
     }
 
     impl ListChatsSource for StubSource {
-        fn list_chats(&self, limit: usize) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+        fn list_chats(
+            &self,
+            limit: usize,
+            _force: bool,
+        ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
             *self.captured_limit.lock().expect("limit lock") = Some(limit);
             self.result.clone()
         }
@@ -142,7 +164,14 @@ mod tests {
     fn uses_default_limit_when_query_limit_is_zero() {
         let source = StubSource::with_result(Ok(vec![]));
 
-        let _ = list_chats(&source, ListChatsQuery { limit: 0 }).expect("list should succeed");
+        let _ = list_chats(
+            &source,
+            ListChatsQuery {
+                limit: 0,
+                ..ListChatsQuery::default()
+            },
+        )
+        .expect("list should succeed");
 
         assert_eq!(*source.captured_limit.lock().expect("limit lock"), Some(50));
     }
@@ -151,7 +180,14 @@ mod tests {
     fn caps_limit_to_maximum_boundary() {
         let source = StubSource::with_result(Ok(vec![]));
 
-        let _ = list_chats(&source, ListChatsQuery { limit: 999 }).expect("list should succeed");
+        let _ = list_chats(
+            &source,
+            ListChatsQuery {
+                limit: 999,
+                ..ListChatsQuery::default()
+            },
+        )
+        .expect("list should succeed");
 
         assert_eq!(
             *source.captured_limit.lock().expect("limit lock"),

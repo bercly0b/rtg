@@ -2,13 +2,21 @@ use crate::{domain::chat_list_state::ChatListUiState, usecases::background::Task
 
 use super::OrchestratorCtx;
 
-pub(super) fn dispatch_chat_list_refresh<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn dispatch_chat_list_refresh<D: TaskDispatcher>(
+    ctx: &mut OrchestratorCtx<'_, D>,
+    force: bool,
+) {
     if *ctx.chat_list_in_flight {
-        tracing::debug!("chat list refresh already in-flight, skipping");
+        tracing::debug!(
+            force,
+            "chat list refresh already in-flight, marking pending"
+        );
+        *ctx.chat_list_refresh_pending = true;
+        *ctx.chat_list_pending_force |= force;
         return;
     }
 
-    tracing::debug!("dispatching chat list refresh to background");
+    tracing::debug!(force, "dispatching chat list refresh to background");
 
     // Only show the loader when there is no data to display (initial load,
     // after error, or empty state).  When the list is already visible
@@ -20,7 +28,7 @@ pub(super) fn dispatch_chat_list_refresh<D: TaskDispatcher>(ctx: &mut Orchestrat
     }
 
     *ctx.chat_list_in_flight = true;
-    ctx.dispatcher.dispatch_chat_list();
+    ctx.dispatcher.dispatch_chat_list(force);
 }
 
 pub(super) fn mark_selected_chat_as_read<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {

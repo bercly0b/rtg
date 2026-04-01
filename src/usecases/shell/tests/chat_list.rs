@@ -184,19 +184,18 @@ fn chat_list_update_event_dispatches_refresh() {
 }
 
 #[test]
-fn duplicate_chat_list_dispatch_is_guarded() {
+fn duplicate_chat_list_dispatch_is_guarded_but_sets_pending() {
     let mut o = make_orchestrator();
     // First tick dispatches
     o.handle_event(AppEvent::Tick).unwrap();
     assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
     assert!(o.chat_list_in_flight);
+    assert!(!o.chat_list_refresh_pending);
 
-    // Second tick should not dispatch again
+    // Second tick should not dispatch again, but sets pending flag
     o.handle_event(AppEvent::Tick).unwrap();
-    // chat_list state changed to non-Loading after first dispatch set it,
-    // but actually the state is still Loading since we haven't injected a result.
-    // The in-flight guard prevents a second dispatch.
     assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+    assert!(o.chat_list_refresh_pending);
 }
 
 #[test]
@@ -392,4 +391,216 @@ fn r_key_optimistically_clears_unread_counter() {
     let chats = o.state().chat_list().chats();
     assert_eq!(chats[0].unread_count, 5); // first chat unchanged
     assert_eq!(chats[1].unread_count, 0); // second chat cleared
+}
+
+// ── Dirty flag: pending refresh after in-flight completion ──
+
+#[test]
+fn pending_flag_triggers_re_dispatch_after_chat_list_loaded() {
+    let mut o = make_orchestrator();
+
+    // First tick dispatches chat list load
+    o.handle_event(AppEvent::Tick).unwrap();
+    assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+    assert!(o.chat_list_in_flight);
+
+    // TDLib update arrives while in-flight — sets pending flag
+    o.handle_event(AppEvent::ChatUpdateReceived {
+        updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
+    })
+    .unwrap();
+    assert_eq!(
+        o.dispatcher.chat_list_dispatch_count(),
+        1,
+        "should not dispatch while in-flight"
+    );
+    assert!(o.chat_list_refresh_pending);
+
+    // Background result arrives — triggers auto re-dispatch
+    inject_chat_list(&mut o, vec![chat(1, "General")]);
+    assert_eq!(
+        o.dispatcher.chat_list_dispatch_count(),
+        2,
+        "pending flag should trigger another dispatch"
+    );
+    assert!(
+        !o.chat_list_refresh_pending,
+        "pending flag should be cleared"
+    );
+}
+
+#[test]
+fn no_extra_dispatch_when_pending_flag_is_not_set() {
+    let mut o = make_orchestrator();
+
+    // First tick dispatches
+    o.handle_event(AppEvent::Tick).unwrap();
+    assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+    assert!(!o.chat_list_refresh_pending);
+
+    // Background result arrives without any pending updates
+    inject_chat_list(&mut o, vec![chat(1, "General")]);
+    assert_eq!(
+        o.dispatcher.chat_list_dispatch_count(),
+        1,
+        "no extra dispatch without pending flag"
+    );
+}
+
+#[test]
+fn pending_flag_cleared_on_error_result_and_re_dispatches() {
+    let mut o = make_orchestrator();
+
+    // First tick dispatches
+    o.handle_event(AppEvent::Tick).unwrap();
+
+    // Set pending via update while in-flight
+    o.handle_event(AppEvent::ChatUpdateReceived {
+        updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
+    })
+    .unwrap();
+    assert!(o.chat_list_refresh_pending);
+
+    // Error result still triggers re-dispatch
+    o.handle_event(AppEvent::BackgroundTaskCompleted(
+        BackgroundTaskResult::ChatListLoaded {
+            result: Err(BackgroundError::new("FAIL")),
+        },
+    ))
+    .unwrap();
+    assert_eq!(o.dispatcher.chat_list_dispatch_count(), 2);
+    assert!(!o.chat_list_refresh_pending);
+}
+
+// ── Force refresh: R key dispatches with force=true ──
+
+#[test]
+fn r_key_dispatches_with_force_true() {
+    let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
+        .unwrap();
+
+    assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+    assert_eq!(
+        o.dispatcher.last_chat_list_force(),
+        Some(true),
+        "R key should dispatch with force=true"
+    );
+}
+
+#[test]
+fn tick_dispatches_with_force_false() {
+    let mut o = make_orchestrator();
+
+    o.handle_event(AppEvent::Tick).unwrap();
+
+    assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+    assert_eq!(
+        o.dispatcher.last_chat_list_force(),
+        Some(false),
+        "tick should dispatch with force=false"
+    );
+}
+
+#[test]
+fn chat_update_dispatches_with_force_false() {
+    let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+    o.handle_event(AppEvent::ChatUpdateReceived {
+        updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
+    })
+    .unwrap();
+
+    assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+    assert_eq!(
+        o.dispatcher.last_chat_list_force(),
+        Some(false),
+        "auto-refresh from update should use force=false"
+    );
+}
+
+#[test]
+fn r_during_inflight_preserves_force_on_pending_redispatch() {
+    let mut o = make_orchestrator();
+
+    // Initial auto-refresh from Tick
+    o.handle_event(AppEvent::Tick).unwrap();
+    assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
+    assert_eq!(o.dispatcher.last_chat_list_force(), Some(false));
+
+    // User presses R while auto-refresh is in-flight
+    o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
+        .unwrap();
+    assert_eq!(
+        o.dispatcher.chat_list_dispatch_count(),
+        1,
+        "should not dispatch while in-flight"
+    );
+    assert!(o.chat_list_refresh_pending);
+    assert!(o.chat_list_pending_force, "force=true should be preserved");
+
+    // First result arrives — triggers pending re-dispatch with force
+    inject_chat_list(&mut o, vec![chat(1, "General")]);
+    assert_eq!(o.dispatcher.chat_list_dispatch_count(), 2);
+    assert_eq!(
+        o.dispatcher.last_chat_list_force(),
+        Some(true),
+        "pending re-dispatch should use force=true from R key"
+    );
+}
+
+#[test]
+fn r_during_inflight_defers_notification_to_redispatch() {
+    let mut o = make_orchestrator();
+
+    // Initial auto-refresh
+    o.handle_event(AppEvent::Tick).unwrap();
+
+    // User presses R while in-flight
+    o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
+        .unwrap();
+
+    // First result arrives — should NOT show "Chat list refreshed" yet
+    inject_chat_list(&mut o, vec![chat(1, "General")]);
+    assert_eq!(
+        o.state().active_notification(),
+        Some("Refreshing chat list..."),
+        "notification from R key press should persist until re-dispatch completes"
+    );
+
+    // Second result (the force-refresh) arrives — NOW show notification
+    inject_chat_list(&mut o, vec![chat(1, "General"), chat(2, "Backend")]);
+    assert_eq!(
+        o.state().active_notification(),
+        Some("Chat list refreshed"),
+        "notification should appear after the forced re-dispatch completes"
+    );
+}
+
+#[test]
+fn auto_update_during_inflight_redispatches_without_force() {
+    let mut o = make_orchestrator();
+
+    // Initial auto-refresh
+    o.handle_event(AppEvent::Tick).unwrap();
+
+    // Auto-update arrives while in-flight (no force)
+    o.handle_event(AppEvent::ChatUpdateReceived {
+        updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
+    })
+    .unwrap();
+    assert!(o.chat_list_refresh_pending);
+    assert!(
+        !o.chat_list_pending_force,
+        "auto-update should not set force"
+    );
+
+    // First result arrives — re-dispatch without force
+    inject_chat_list(&mut o, vec![chat(1, "General")]);
+    assert_eq!(
+        o.dispatcher.last_chat_list_force(),
+        Some(false),
+        "auto-update re-dispatch should use force=false"
+    );
 }

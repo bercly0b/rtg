@@ -43,6 +43,8 @@ pub(super) struct OrchestratorCtx<'a, D: TaskDispatcher> {
     pub state: &'a mut ShellState,
     pub dispatcher: &'a D,
     pub chat_list_in_flight: &'a mut bool,
+    pub chat_list_refresh_pending: &'a mut bool,
+    pub chat_list_pending_force: &'a mut bool,
     pub user_requested_chat_refresh: &'a mut bool,
     pub messages_refresh_in_flight: &'a mut bool,
     pub active_downloads: &'a mut std::collections::HashMap<i32, (i64, i64)>,
@@ -75,6 +77,14 @@ where
     cache_source: Option<Arc<dyn CachedMessagesSource>>,
     /// Guards against dispatching duplicate chat list requests while one is in-flight.
     chat_list_in_flight: bool,
+    /// When `true`, a refresh request arrived while one was already in-flight.
+    /// The in-flight result may be stale, so another refresh is dispatched
+    /// automatically when the current one completes.
+    chat_list_refresh_pending: bool,
+    /// Accumulated `force` flag for the pending refresh. OR-merged from all
+    /// refresh requests that arrived while in-flight: if any of them was
+    /// `force=true`, the pending re-dispatch will also be forced.
+    chat_list_pending_force: bool,
     /// When `true`, the current in-flight chat list refresh was triggered by the user (R key)
     /// so we should show a status-bar notification when it completes.
     user_requested_chat_refresh: bool,
@@ -128,6 +138,8 @@ where
             dispatcher,
             cache_source: None,
             chat_list_in_flight: false,
+            chat_list_refresh_pending: false,
+            chat_list_pending_force: false,
             user_requested_chat_refresh: false,
             messages_refresh_in_flight: false,
             initial_refresh_needed: false,
@@ -173,6 +185,8 @@ where
             dispatcher,
             cache_source,
             chat_list_in_flight: false,
+            chat_list_refresh_pending: false,
+            chat_list_pending_force: false,
             user_requested_chat_refresh: false,
             messages_refresh_in_flight: false,
             initial_refresh_needed,
@@ -195,6 +209,8 @@ where
             state: &mut self.state,
             dispatcher: &self.dispatcher,
             chat_list_in_flight: &mut self.chat_list_in_flight,
+            chat_list_refresh_pending: &mut self.chat_list_refresh_pending,
+            chat_list_pending_force: &mut self.chat_list_pending_force,
             user_requested_chat_refresh: &mut self.user_requested_chat_refresh,
             messages_refresh_in_flight: &mut self.messages_refresh_in_flight,
             active_downloads: &mut self.active_downloads,
@@ -226,7 +242,7 @@ where
             "R" => {
                 self.user_requested_chat_refresh = true;
                 self.state.set_notification("Refreshing chat list...");
-                chat_list::dispatch_chat_list_refresh(&mut self.as_ctx());
+                chat_list::dispatch_chat_list_refresh(&mut self.as_ctx(), true);
             }
             "r" => chat_list::mark_selected_chat_as_read(&mut self.as_ctx()),
             "I" => chat_list::show_chat_info_popup(&mut self.as_ctx()),
@@ -275,10 +291,10 @@ where
         match event {
             AppEvent::Tick => {
                 if self.state.chat_list().ui_state() == ChatListUiState::Loading {
-                    chat_list::dispatch_chat_list_refresh(&mut self.as_ctx());
+                    chat_list::dispatch_chat_list_refresh(&mut self.as_ctx(), false);
                 } else if self.initial_refresh_needed {
                     self.initial_refresh_needed = false;
-                    chat_list::dispatch_chat_list_refresh(&mut self.as_ctx());
+                    chat_list::dispatch_chat_list_refresh(&mut self.as_ctx(), false);
                 }
                 self.storage.save_last_action("tick")?;
             }

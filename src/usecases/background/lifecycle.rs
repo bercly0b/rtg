@@ -14,6 +14,7 @@ use super::error_mapping::map_list_chats_error;
 pub(super) fn dispatch_chat_list<C: ListChatsSource + Send + Sync + 'static>(
     source: &Arc<C>,
     tx: &Sender<BackgroundTaskResult>,
+    force: bool,
 ) {
     let source = Arc::clone(source);
     let tx = tx.clone();
@@ -22,8 +23,12 @@ pub(super) fn dispatch_chat_list<C: ListChatsSource + Send + Sync + 'static>(
     let spawn_result = std::thread::Builder::new()
         .name("rtg-bg-chat-list".into())
         .spawn(move || {
-            tracing::debug!("background: fetching chat list");
-            let result = list_chats(source.as_ref(), ListChatsQuery::default())
+            tracing::debug!(force, "background: fetching chat list");
+            let query = ListChatsQuery {
+                force,
+                ..ListChatsQuery::default()
+            };
+            let result = list_chats(source.as_ref(), query)
                 .map(|output| output.chats)
                 .map_err(|error| {
                     tracing::warn!(error = ?error, "background: chat list fetch failed");

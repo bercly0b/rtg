@@ -29,7 +29,7 @@ impl StubTaskDispatcher {
 }
 
 impl TaskDispatcher for StubTaskDispatcher {
-    fn dispatch_chat_list(&self) {}
+    fn dispatch_chat_list(&self, _force: bool) {}
 
     fn dispatch_load_messages(&self, _chat_id: i64) {}
 

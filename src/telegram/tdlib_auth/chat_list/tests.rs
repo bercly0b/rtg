@@ -10,6 +10,8 @@ use crate::telegram::tdlib_client::TdLibError;
 
 use super::{build_summaries_from_ids, ChatDataResolver};
 
+const NO_FORCE: bool = false;
+
 // ---------------------------------------------------------------------------
 // Fake resolver
 // ---------------------------------------------------------------------------
@@ -98,7 +100,7 @@ impl ChatDataResolver for FakeResolver {
 fn cache_hit_skips_get_chat() {
     let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Cached Chat"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1]);
+    let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].chat_id, 1);
@@ -114,7 +116,7 @@ fn cache_hit_skips_get_chat() {
 fn cache_miss_falls_back_to_get_chat() {
     let resolver = FakeResolver::new().with_tdlib_chat(make_test_chat(2, "TDLib Chat"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![2]);
+    let summaries = build_summaries_from_ids(&resolver, vec![2], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].chat_id, 2);
@@ -126,7 +128,7 @@ fn cache_miss_falls_back_to_get_chat() {
 fn cache_miss_fallback_populates_cache() {
     let resolver = FakeResolver::new().with_tdlib_chat(make_test_chat(3, "Backfilled"));
 
-    let _ = build_summaries_from_ids(&resolver, vec![3]);
+    let _ = build_summaries_from_ids(&resolver, vec![3], NO_FORCE);
 
     let cached = resolver.cache.get_chat(3);
     assert!(
@@ -142,7 +144,7 @@ fn mixed_cache_hit_and_miss() {
         .with_cached_chat(make_test_chat(1, "From Cache"))
         .with_tdlib_chat(make_test_chat(2, "From TDLib"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1, 2]);
+    let summaries = build_summaries_from_ids(&resolver, vec![1, 2], NO_FORCE);
 
     assert_eq!(summaries.len(), 2);
     assert_eq!(summaries[0].title, "From Cache");
@@ -162,7 +164,7 @@ fn mixed_cache_hit_and_miss() {
 fn double_miss_skips_chat() {
     let resolver = FakeResolver::new();
 
-    let summaries = build_summaries_from_ids(&resolver, vec![999]);
+    let summaries = build_summaries_from_ids(&resolver, vec![999], NO_FORCE);
 
     assert!(summaries.is_empty(), "unresolvable chat should be skipped");
     assert_eq!(
@@ -176,7 +178,7 @@ fn double_miss_skips_chat() {
 fn all_chats_fail_returns_empty_vec() {
     let resolver = FakeResolver::new();
 
-    let summaries = build_summaries_from_ids(&resolver, vec![10, 20, 30]);
+    let summaries = build_summaries_from_ids(&resolver, vec![10, 20, 30], NO_FORCE);
 
     assert!(summaries.is_empty());
     assert_eq!(resolver.get_chat_call_count(), 3);
@@ -186,7 +188,7 @@ fn all_chats_fail_returns_empty_vec() {
 fn partial_failure_returns_resolved_chats_only() {
     let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Good Chat"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1, 2]);
+    let summaries = build_summaries_from_ids(&resolver, vec![1, 2], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].chat_id, 1);
@@ -207,7 +209,7 @@ fn stale_cache_serves_cached_data_without_tdlib_call() {
 
     let resolver = FakeResolver::new().with_cached_chat(stale_chat);
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1]);
+    let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].unread_count, 5);
@@ -226,7 +228,7 @@ fn stale_cache_serves_cached_data_without_tdlib_call() {
 fn empty_chat_ids_returns_empty_vec() {
     let resolver = FakeResolver::new();
 
-    let summaries = build_summaries_from_ids(&resolver, vec![]);
+    let summaries = build_summaries_from_ids(&resolver, vec![], NO_FORCE);
 
     assert!(summaries.is_empty());
     assert_eq!(resolver.get_chat_call_count(), 0);
@@ -242,7 +244,7 @@ fn private_chat_resolves_user_from_cache() {
         .with_cached_chat(make_test_chat(1, "Alice"))
         .with_cached_user(make_online_user(1, "Alice"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1]);
+    let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].is_online, Some(true));
@@ -259,7 +261,7 @@ fn private_chat_falls_back_to_get_user_on_cache_miss() {
         .with_cached_chat(make_test_chat(1, "Bob"))
         .with_tdlib_user(make_online_user(1, "Bob"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1]);
+    let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].is_online, Some(true));
@@ -272,7 +274,7 @@ fn private_chat_user_fallback_populates_cache() {
         .with_cached_chat(make_test_chat(1, "Charlie"))
         .with_tdlib_user(make_online_user(1, "Charlie"));
 
-    let _ = build_summaries_from_ids(&resolver, vec![1]);
+    let _ = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
 
     assert!(
         resolver.cache.get_user(1).is_some(),
@@ -284,7 +286,7 @@ fn private_chat_user_fallback_populates_cache() {
 fn private_chat_missing_user_returns_none_online() {
     let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Unknown User"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1]);
+    let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].is_online, None);
@@ -303,7 +305,7 @@ fn group_chat_resolves_sender_name() {
         .with_cached_chat(group_chat)
         .with_cached_user(make_test_user(42, "Sender"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![100]);
+    let summaries = build_summaries_from_ids(&resolver, vec![100], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].last_message_sender.as_deref(), Some("Sender"));
@@ -317,7 +319,7 @@ fn group_chat_missing_sender_returns_none() {
 
     let resolver = FakeResolver::new().with_cached_chat(group_chat);
 
-    let summaries = build_summaries_from_ids(&resolver, vec![100]);
+    let summaries = build_summaries_from_ids(&resolver, vec![100], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].last_message_sender, None);
@@ -334,7 +336,7 @@ fn preserves_input_order() {
         .with_cached_chat(make_test_chat(1, "First"))
         .with_cached_chat(make_test_chat(2, "Second"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1, 2, 3]);
+    let summaries = build_summaries_from_ids(&resolver, vec![1, 2, 3], NO_FORCE);
 
     let ids: Vec<i64> = summaries.iter().map(|s| s.chat_id).collect();
     assert_eq!(ids, vec![1, 2, 3]);
@@ -350,10 +352,72 @@ fn private_chat_detects_bot() {
         .with_cached_chat(make_test_chat(1, "Bot Chat"))
         .with_cached_user(make_bot_user(1, "HelpBot"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1]);
+    let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert!(summaries[0].is_bot);
+}
+
+// ---------------------------------------------------------------------------
+// Force refresh: bypasses cache, reads from TDLib directly
+// ---------------------------------------------------------------------------
+
+#[test]
+fn force_bypasses_cache_and_calls_get_chat() {
+    let resolver = FakeResolver::new()
+        .with_cached_chat(make_test_chat(1, "Stale Cache"))
+        .with_tdlib_chat(make_test_chat(1, "Fresh TDLib"));
+
+    let summaries = build_summaries_from_ids(&resolver, vec![1], true);
+
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].title, "Fresh TDLib");
+    assert_eq!(
+        resolver.get_chat_call_count(),
+        1,
+        "force=true must call get_chat even when cache has data"
+    );
+}
+
+#[test]
+fn force_populates_cache_from_tdlib() {
+    let resolver = FakeResolver::new().with_tdlib_chat(make_test_chat(1, "From TDLib"));
+
+    let _ = build_summaries_from_ids(&resolver, vec![1], true);
+
+    let cached = resolver.cache.get_chat(1);
+    assert!(cached.is_some(), "force path should populate cache");
+    assert_eq!(cached.unwrap().title, "From TDLib");
+}
+
+#[test]
+fn force_skips_chat_on_tdlib_failure() {
+    let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Cached Only"));
+
+    let summaries = build_summaries_from_ids(&resolver, vec![1], true);
+
+    // Chat is in cache but NOT in tdlib_chats HashMap — force path fails
+    assert!(
+        summaries.is_empty(),
+        "force=true should not fall back to cache on TDLib failure"
+    );
+    assert_eq!(resolver.get_chat_call_count(), 1);
+}
+
+#[test]
+fn no_force_uses_cache_first() {
+    let resolver = FakeResolver::new()
+        .with_cached_chat(make_test_chat(1, "From Cache"))
+        .with_tdlib_chat(make_test_chat(1, "From TDLib"));
+
+    let summaries = build_summaries_from_ids(&resolver, vec![1], false);
+
+    assert_eq!(summaries[0].title, "From Cache");
+    assert_eq!(
+        resolver.get_chat_call_count(),
+        0,
+        "force=false should use cache"
+    );
 }
 
 // ---------------------------------------------------------------------------
