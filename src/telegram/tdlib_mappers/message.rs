@@ -138,6 +138,7 @@ pub fn extract_message_media(content: &MessageContent) -> MessageMedia {
             MessageMedia::Location
         }
         MessageContent::MessagePoll(_) => MessageMedia::Poll,
+        MessageContent::MessageAnimatedEmoji(_) => MessageMedia::AnimatedEmoji,
         MessageContent::MessageCall(c) => {
             if c.is_video {
                 MessageMedia::VideoCall
@@ -180,6 +181,7 @@ pub fn extract_message_preview(content: &MessageContent) -> Option<String> {
         }
         MessageContent::MessageVideoNote(_) => Some("[Video message]".to_owned()),
         MessageContent::MessageSticker(s) => Some(format!("{} Sticker", s.sticker.emoji)),
+        MessageContent::MessageAnimatedEmoji(e) => Some(format!("{} Animated Emoji", e.emoji)),
         MessageContent::MessageDocument(d) => {
             let name = &d.document.file_name;
             if name.is_empty() {
@@ -261,6 +263,7 @@ pub fn extract_message_text(content: &MessageContent) -> String {
         MessageContent::MessageAudio(a) => a.caption.text.clone(),
         MessageContent::MessageAnimation(a) => a.caption.text.clone(),
         // These types don't have captions or text
+        MessageContent::MessageAnimatedEmoji(e) => e.emoji.clone(),
         MessageContent::MessageVideoNote(_)
         | MessageContent::MessageSticker(_)
         | MessageContent::MessageContact(_)

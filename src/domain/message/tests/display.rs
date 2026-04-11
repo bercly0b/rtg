@@ -21,6 +21,20 @@ fn display_label_returns_sticker_indicator() {
 }
 
 #[test]
+fn display_label_returns_animated_emoji_indicator() {
+    assert_eq!(
+        MessageMedia::AnimatedEmoji.display_label(),
+        Some("[Animated Emoji]")
+    );
+}
+
+#[test]
+fn display_content_animated_emoji_with_text() {
+    let message = msg("😂", MessageMedia::AnimatedEmoji);
+    assert_eq!(message.display_content(), "[Animated Emoji]\n😂");
+}
+
+#[test]
 fn display_label_returns_video_note_indicator() {
     assert_eq!(
         MessageMedia::VideoNote.display_label(),
@@ -95,6 +109,7 @@ fn display_content_handles_all_media_types() {
         (MessageMedia::Poll, "[Poll]"),
         (MessageMedia::Call, "[Call]"),
         (MessageMedia::VideoCall, "[Video call]"),
+        (MessageMedia::AnimatedEmoji, "[Animated Emoji]"),
         (MessageMedia::Other, "[Media]"),
     ];
 

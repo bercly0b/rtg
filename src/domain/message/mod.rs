@@ -30,6 +30,7 @@ pub enum MessageMedia {
     Poll,
     Call,
     VideoCall,
+    AnimatedEmoji,
     Other,
 }
 
@@ -51,6 +52,7 @@ impl MessageMedia {
             MessageMedia::Poll => Some("[Poll]"),
             MessageMedia::Call => Some("[Call]"),
             MessageMedia::VideoCall => Some("[Video call]"),
+            MessageMedia::AnimatedEmoji => Some("[Animated Emoji]"),
             MessageMedia::Other => Some("[Media]"),
         }
     }
