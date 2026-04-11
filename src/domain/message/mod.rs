@@ -67,6 +67,11 @@ pub struct ReplyInfo {
     pub is_outgoing: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForwardInfo {
+    pub sender_name: String,
+}
+
 /// Delivery status of a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MessageStatus {
@@ -94,6 +99,7 @@ pub struct Message {
     /// Information about the message this message replies to.
     /// `None` if the message is not a reply.
     pub reply_to: Option<ReplyInfo>,
+    pub forward_info: Option<ForwardInfo>,
     /// Total number of reactions on this message (summed across all reaction types).
     pub reaction_count: u32,
     /// Hyperlinks embedded in the message text via text entities.

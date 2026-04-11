@@ -131,6 +131,7 @@ fn grouped_message_with_reply_shows_reply_line() {
                 text: "Original text".to_owned(),
                 is_outgoing: false,
             }),
+            forward_info: None,
             reaction_count: 0,
             links: Vec::new(),
             is_edited: false,

@@ -5,10 +5,11 @@
 
 use ratatui::text::{Line, Span};
 
-use crate::domain::message::{MessageStatus, ReplyInfo, TextLink};
+use crate::domain::message::{ForwardInfo, MessageStatus, ReplyInfo, TextLink};
 use crate::ui::styles;
 
 use super::content_spans::build_content_line_spans_linked;
+use super::forward::build_forward_line;
 use super::reply::build_reply_line;
 use super::text_utils::wrap_line;
 
@@ -22,6 +23,7 @@ pub(super) fn build_message_lines(
     status: MessageStatus,
     file_meta: Option<&str>,
     reply_info: Option<&ReplyInfo>,
+    forward_info: Option<&ForwardInfo>,
     reaction_count: u32,
     links: &[TextLink],
     max_width: usize,
@@ -57,6 +59,10 @@ pub(super) fn build_message_lines(
             lines.push(build_reply_line(reply, indent, content_width));
         }
 
+        if let Some(fwd) = forward_info {
+            lines.push(build_forward_line(fwd, indent, content_width));
+        }
+
         let mut content_pos = 0usize;
         for text_line in content.lines() {
             let mut seg_offset = 0;
@@ -85,6 +91,10 @@ pub(super) fn build_message_lines(
 
         if let Some(reply) = reply_info {
             lines.push(build_reply_line(reply, indent, content_width));
+        }
+
+        if let Some(fwd) = forward_info {
+            lines.push(build_forward_line(fwd, indent, content_width));
         }
 
         let time_span = if show_time {

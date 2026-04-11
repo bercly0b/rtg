@@ -88,6 +88,7 @@ fn message_with_text_url_entity_renders_underlined() {
         file_info: None,
         call_info: None,
         reply_to: None,
+        forward_info: None,
         reaction_count: 0,
         links: vec![TextLink {
             offset: 0,
