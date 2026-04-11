@@ -449,4 +449,45 @@ mod tests {
         state.set_notification("Second");
         assert_eq!(state.active_notification(), Some("Second"));
     }
+
+    #[test]
+    fn message_info_popup_none_by_default() {
+        let state = ShellState::default();
+        assert!(state.message_info_popup().is_none());
+    }
+
+    #[test]
+    fn show_message_info_loading_creates_popup() {
+        let mut state = ShellState::default();
+        state.show_message_info_loading(1, 42);
+        assert!(state.message_info_popup().is_some());
+        assert_eq!(state.message_info_popup().unwrap().ids(), Some((1, 42)));
+    }
+
+    #[test]
+    fn close_message_info_popup_clears_state() {
+        let mut state = ShellState::default();
+        state.show_message_info_loading(1, 42);
+        state.close_message_info_popup();
+        assert!(state.message_info_popup().is_none());
+    }
+
+    #[test]
+    fn set_message_info_loaded_updates_popup() {
+        use crate::domain::message_info_state::{MessageInfo, MessageInfoPopupState};
+        let mut state = ShellState::default();
+        state.show_message_info_loading(1, 42);
+        state.set_message_info_loaded(MessageInfoPopupState::Loaded(MessageInfo {
+            reactions: vec![],
+            viewers: vec![],
+            read_date: None,
+            edit_date: Some(1700000000),
+        }));
+        match state.message_info_popup().unwrap() {
+            MessageInfoPopupState::Loaded(info) => {
+                assert_eq!(info.edit_date, Some(1700000000));
+            }
+            _ => panic!("expected Loaded state"),
+        }
+    }
 }

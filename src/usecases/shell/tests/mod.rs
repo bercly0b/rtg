@@ -6,6 +6,7 @@ mod help_popup;
 mod lifecycle;
 mod message_actions;
 mod message_cache;
+mod message_info;
 mod message_input;
 mod playback;
 mod voice;
