@@ -30,7 +30,6 @@ pub enum MessageMedia {
     Poll,
     Call,
     VideoCall,
-    AnimatedEmoji,
     Other,
 }
 
@@ -43,7 +42,7 @@ impl MessageMedia {
             MessageMedia::Voice => Some("[Voice]"),
             MessageMedia::Video => Some("[Video]"),
             MessageMedia::VideoNote => Some("[Video message]"),
-            MessageMedia::Sticker => Some("[Sticker]"),
+            MessageMedia::Sticker => None,
             MessageMedia::Document => Some("[Document]"),
             MessageMedia::Audio => Some("[Audio]"),
             MessageMedia::Animation => Some("[GIF]"),
@@ -52,7 +51,6 @@ impl MessageMedia {
             MessageMedia::Poll => Some("[Poll]"),
             MessageMedia::Call => Some("[Call]"),
             MessageMedia::VideoCall => Some("[Video call]"),
-            MessageMedia::AnimatedEmoji => Some("[Animated Emoji]"),
             MessageMedia::Other => Some("[Media]"),
         }
     }
