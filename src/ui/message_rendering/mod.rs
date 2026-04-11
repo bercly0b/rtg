@@ -90,6 +90,8 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
                 ci,
                 message.is_outgoing,
             ))
+        } else if message.media == crate::domain::message::MessageMedia::Sticker {
+            Some("Sticker".to_owned())
         } else {
             message
                 .file_info

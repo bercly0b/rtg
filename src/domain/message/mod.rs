@@ -42,7 +42,7 @@ impl MessageMedia {
             MessageMedia::Voice => Some("[Voice]"),
             MessageMedia::Video => Some("[Video]"),
             MessageMedia::VideoNote => Some("[Video message]"),
-            MessageMedia::Sticker => Some("[Sticker]"),
+            MessageMedia::Sticker => None,
             MessageMedia::Document => Some("[Document]"),
             MessageMedia::Audio => Some("[Audio]"),
             MessageMedia::Animation => Some("[GIF]"),

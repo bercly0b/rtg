@@ -16,8 +16,14 @@ fn display_label_returns_voice_indicator() {
 }
 
 #[test]
-fn display_label_returns_sticker_indicator() {
-    assert_eq!(MessageMedia::Sticker.display_label(), Some("[Sticker]"));
+fn display_label_returns_none_for_sticker() {
+    assert_eq!(MessageMedia::Sticker.display_label(), None);
+}
+
+#[test]
+fn display_content_sticker_returns_emoji_only() {
+    let message = msg("😂", MessageMedia::Sticker);
+    assert_eq!(message.display_content(), "😂");
 }
 
 #[test]
@@ -86,7 +92,6 @@ fn display_content_handles_all_media_types() {
         (MessageMedia::Voice, "[Voice]"),
         (MessageMedia::Video, "[Video]"),
         (MessageMedia::VideoNote, "[Video message]"),
-        (MessageMedia::Sticker, "[Sticker]"),
         (MessageMedia::Document, "[Document]"),
         (MessageMedia::Audio, "[Audio]"),
         (MessageMedia::Animation, "[GIF]"),
