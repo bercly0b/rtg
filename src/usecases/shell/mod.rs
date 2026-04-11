@@ -254,8 +254,8 @@ where
             "I" => chat_list::show_chat_info_popup(&mut self.as_ctx()),
             "enter" | "l" => {
                 if self.state.chat_list().selected_chat().is_some() {
-                    chat_open::open_selected_chat(&mut self.as_ctx());
                     self.state.set_active_pane(ActivePane::Messages);
+                    chat_open::open_selected_chat(&mut self.as_ctx());
                     self.storage.save_last_action("open_chat")?;
                 }
             }

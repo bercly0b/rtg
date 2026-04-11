@@ -168,3 +168,115 @@ fn stale_messages_do_not_dispatch_mark_as_read() {
 
     assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 0);
 }
+
+#[test]
+fn messages_loaded_does_not_mark_as_read_when_focus_on_chat_list() {
+    let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    // Navigate back to chat list while messages are still loading.
+    // Note: pressing h closes TDLib chat but does NOT clear open_chat state,
+    // so the MessagesLoaded result still passes the stale-chat check and
+    // reaches the focus guard.
+    o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+        .unwrap();
+    assert_eq!(o.state().active_pane(), ActivePane::ChatList);
+
+    // Messages arrive while focus is on ChatList — should NOT mark as read
+    o.handle_event(AppEvent::BackgroundTaskCompleted(
+        BackgroundTaskResult::MessagesLoaded {
+            chat_id: 1,
+            result: Ok(vec![message(10, "A"), message(20, "B")]),
+        },
+    ))
+    .unwrap();
+
+    assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 0);
+}
+
+#[test]
+fn messages_loaded_marks_as_read_when_focus_on_messages() {
+    let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    assert_eq!(o.state().active_pane(), ActivePane::Messages);
+
+    o.handle_event(AppEvent::BackgroundTaskCompleted(
+        BackgroundTaskResult::MessagesLoaded {
+            chat_id: 1,
+            result: Ok(vec![message(10, "A"), message(20, "B")]),
+        },
+    ))
+    .unwrap();
+
+    assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 1);
+}
+
+#[test]
+fn messages_loaded_marks_as_read_when_focus_on_message_input() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+
+    // Switch to message input
+    o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+        .unwrap();
+    assert_eq!(o.state().active_pane(), ActivePane::MessageInput);
+
+    let prev_count = o.dispatcher.mark_as_read_dispatch_count();
+
+    o.handle_event(AppEvent::BackgroundTaskCompleted(
+        BackgroundTaskResult::MessagesLoaded {
+            chat_id: 1,
+            result: Ok(vec![message(1, "Hello"), message(2, "New")]),
+        },
+    ))
+    .unwrap();
+
+    assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), prev_count + 1);
+}
+
+#[test]
+fn reopen_chat_marks_as_read_after_returning_focus() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+
+    // Navigate away (h closes TDLib chat)
+    o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+        .unwrap();
+    assert_eq!(o.state().active_pane(), ActivePane::ChatList);
+
+    let prev_count = o.dispatcher.mark_as_read_dispatch_count();
+
+    // Reopen: enter sets focus to Messages first, then mark_open_chat_messages_as_read
+    // fires inside the TDLib-reopen branch of open_selected_chat
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), prev_count + 1);
+}
+
+#[test]
+fn prefetched_messages_do_not_mark_as_read_when_focus_on_chat_list() {
+    let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+
+    // Open the chat (sets focus to Messages, dispatches load_messages)
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    // Navigate back to chat list while chat is still Loading
+    o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+        .unwrap();
+    assert_eq!(o.state().active_pane(), ActivePane::ChatList);
+
+    // Prefetched messages arrive while focus is on ChatList — should NOT mark as read
+    o.handle_event(AppEvent::BackgroundTaskCompleted(
+        BackgroundTaskResult::MessagesPrefetched {
+            chat_id: 1,
+            result: Ok(vec![message(10, "A"), message(20, "B")]),
+        },
+    ))
+    .unwrap();
+
+    assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 0);
+}

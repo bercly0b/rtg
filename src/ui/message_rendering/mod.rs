@@ -7,6 +7,7 @@
 //! - Media type indicators
 
 mod content_spans;
+mod forward;
 mod line_builder;
 mod reply;
 mod text_utils;
@@ -16,7 +17,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::domain::message::{Message, MessageStatus, ReplyInfo, TextLink};
+use crate::domain::message::{ForwardInfo, Message, MessageStatus, ReplyInfo, TextLink};
 
 use super::styles;
 
@@ -40,6 +41,7 @@ pub enum MessageListElement {
         file_meta: Option<String>,
         /// Reply preview: sender name and text of the replied-to message.
         reply_info: Option<ReplyInfo>,
+        forward_info: Option<ForwardInfo>,
         /// Total number of reactions on this message.
         reaction_count: u32,
         /// Hyperlinks embedded in the message text (byte offsets into `Message::text`).
@@ -104,6 +106,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             status: message.status,
             file_meta,
             reply_info: message.reply_to.clone(),
+            forward_info: message.forward_info.clone(),
             reaction_count: message.reaction_count,
             links: message.links.clone(),
             is_edited: message.is_edited,
@@ -167,6 +170,7 @@ pub fn element_to_text(
             status,
             file_meta,
             reply_info,
+            forward_info,
             reaction_count,
             links,
             is_edited,
@@ -180,6 +184,7 @@ pub fn element_to_text(
                 *status,
                 file_meta.as_deref(),
                 reply_info.as_ref(),
+                forward_info.as_ref(),
                 *reaction_count,
                 links,
                 max_width,
