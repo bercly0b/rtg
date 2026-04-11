@@ -110,6 +110,7 @@ fn reply_sender_name_for_outgoing_message_is_you() {
         file_info: None,
         call_info: None,
         reply_to: None,
+        forward_info: None,
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,

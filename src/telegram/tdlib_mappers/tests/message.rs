@@ -2,7 +2,7 @@ use tdlib_rs::enums::MessageContent;
 
 use crate::domain::message::MessageMedia;
 use crate::telegram::tdlib_mappers::{
-    extract_message_media, extract_message_text, map_tdlib_message_to_domain,
+    extract_forward_info, extract_message_media, extract_message_text, map_tdlib_message_to_domain,
 };
 
 use super::{make_test_file, make_test_message};
@@ -136,7 +136,7 @@ fn extract_message_text_returns_caption_from_photo() {
 #[test]
 fn map_tdlib_message_to_domain_creates_correct_message() {
     let td_message = make_test_message(123, "Hello from TDLib", false);
-    let message = map_tdlib_message_to_domain(&td_message, "John Doe".to_owned(), None);
+    let message = map_tdlib_message_to_domain(&td_message, "John Doe".to_owned(), None, None);
 
     assert_eq!(message.id, 123);
     assert_eq!(message.sender_name, "John Doe");
@@ -148,7 +148,7 @@ fn map_tdlib_message_to_domain_creates_correct_message() {
 #[test]
 fn map_tdlib_message_to_domain_handles_outgoing() {
     let td_message = make_test_message(456, "My message", true);
-    let message = map_tdlib_message_to_domain(&td_message, "Me".to_owned(), None);
+    let message = map_tdlib_message_to_domain(&td_message, "Me".to_owned(), None, None);
 
     assert!(message.is_outgoing);
 }
@@ -171,7 +171,7 @@ fn map_tdlib_message_includes_file_info() {
         is_listened: false,
     });
 
-    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None);
+    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None);
     assert_eq!(msg.media, MessageMedia::Voice);
     let fi = msg.file_info.expect("voice message should have file_info");
     assert_eq!(fi.file_id, 7);
@@ -183,7 +183,7 @@ fn map_tdlib_message_includes_file_info() {
 #[test]
 fn message_without_interaction_info_has_zero_reactions() {
     let td_msg = make_test_message(1, "Hello", false);
-    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None);
+    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None);
     assert_eq!(msg.reaction_count, 0);
 }
 
@@ -225,6 +225,158 @@ fn message_with_reactions_sums_total_counts() {
         }),
     });
 
-    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None);
+    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None);
     assert_eq!(msg.reaction_count, 3);
+}
+
+// ── forward info extraction tests ──
+
+#[test]
+fn extract_forward_info_returns_none_when_no_forward() {
+    let td_msg = make_test_message(1, "Hello", false);
+    let result = extract_forward_info(&td_msg, |_| None, |_| None);
+    assert!(result.is_none());
+}
+
+#[test]
+fn extract_forward_info_from_user_origin() {
+    let mut td_msg = make_test_message(1, "Hello", false);
+    td_msg.forward_info = Some(tdlib_rs::types::MessageForwardInfo {
+        origin: tdlib_rs::enums::MessageOrigin::User(tdlib_rs::types::MessageOriginUser {
+            sender_user_id: 42,
+        }),
+        date: 0,
+        source: None,
+        public_service_announcement_type: String::new(),
+    });
+
+    let result = extract_forward_info(
+        &td_msg,
+        |uid| {
+            if uid == 42 {
+                Some("Alice".to_owned())
+            } else {
+                None
+            }
+        },
+        |_| None,
+    );
+
+    let fwd = result.expect("should have forward_info");
+    assert_eq!(fwd.sender_name, "Alice");
+}
+
+#[test]
+fn extract_forward_info_from_hidden_user() {
+    let mut td_msg = make_test_message(1, "Hello", false);
+    td_msg.forward_info = Some(tdlib_rs::types::MessageForwardInfo {
+        origin: tdlib_rs::enums::MessageOrigin::HiddenUser(
+            tdlib_rs::types::MessageOriginHiddenUser {
+                sender_name: "Hidden Person".to_owned(),
+            },
+        ),
+        date: 0,
+        source: None,
+        public_service_announcement_type: String::new(),
+    });
+
+    let result = extract_forward_info(&td_msg, |_| None, |_| None);
+    let fwd = result.expect("should have forward_info");
+    assert_eq!(fwd.sender_name, "Hidden Person");
+}
+
+#[test]
+fn extract_forward_info_from_channel_origin() {
+    let mut td_msg = make_test_message(1, "Hello", false);
+    td_msg.forward_info = Some(tdlib_rs::types::MessageForwardInfo {
+        origin: tdlib_rs::enums::MessageOrigin::Channel(tdlib_rs::types::MessageOriginChannel {
+            chat_id: 999,
+            message_id: 1,
+            author_signature: "fallback".to_owned(),
+        }),
+        date: 0,
+        source: None,
+        public_service_announcement_type: String::new(),
+    });
+
+    let result = extract_forward_info(
+        &td_msg,
+        |_| None,
+        |cid| {
+            if cid == 999 {
+                Some("News Channel".to_owned())
+            } else {
+                None
+            }
+        },
+    );
+
+    let fwd = result.expect("should have forward_info");
+    assert_eq!(fwd.sender_name, "News Channel");
+}
+
+#[test]
+fn extract_forward_info_channel_falls_back_to_signature() {
+    let mut td_msg = make_test_message(1, "Hello", false);
+    td_msg.forward_info = Some(tdlib_rs::types::MessageForwardInfo {
+        origin: tdlib_rs::enums::MessageOrigin::Channel(tdlib_rs::types::MessageOriginChannel {
+            chat_id: 999,
+            message_id: 1,
+            author_signature: "Author Sig".to_owned(),
+        }),
+        date: 0,
+        source: None,
+        public_service_announcement_type: String::new(),
+    });
+
+    let result = extract_forward_info(&td_msg, |_| None, |_| None);
+    let fwd = result.expect("should have forward_info");
+    assert_eq!(fwd.sender_name, "Author Sig");
+}
+
+#[test]
+fn extract_forward_info_from_chat_origin() {
+    let mut td_msg = make_test_message(1, "Hello", false);
+    td_msg.forward_info = Some(tdlib_rs::types::MessageForwardInfo {
+        origin: tdlib_rs::enums::MessageOrigin::Chat(tdlib_rs::types::MessageOriginChat {
+            sender_chat_id: 555,
+            author_signature: "Sig".to_owned(),
+        }),
+        date: 0,
+        source: None,
+        public_service_announcement_type: String::new(),
+    });
+
+    let result = extract_forward_info(
+        &td_msg,
+        |_| None,
+        |cid| {
+            if cid == 555 {
+                Some("Group Chat".to_owned())
+            } else {
+                None
+            }
+        },
+    );
+
+    let fwd = result.expect("should have forward_info");
+    assert_eq!(fwd.sender_name, "Group Chat");
+}
+
+#[test]
+fn extract_forward_info_chat_falls_back_to_signature() {
+    let mut td_msg = make_test_message(1, "Hello", false);
+    td_msg.forward_info = Some(tdlib_rs::types::MessageForwardInfo {
+        origin: tdlib_rs::enums::MessageOrigin::Chat(tdlib_rs::types::MessageOriginChat {
+            sender_chat_id: 555,
+            author_signature: "Chat Sig".to_owned(),
+        }),
+        date: 0,
+        source: None,
+        public_service_announcement_type: String::new(),
+    });
+
+    let result = extract_forward_info(&td_msg, |_| None, |_| None);
+    let fwd = result.expect("should have forward_info");
+    assert_eq!(fwd.sender_name, "Chat Sig");
 }
