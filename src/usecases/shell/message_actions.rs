@@ -128,6 +128,59 @@ pub(super) fn reply_to_selected_message<D: TaskDispatcher>(ctx: &mut Orchestrato
     ctx.state.set_active_pane(ActivePane::MessageInput);
 }
 
+pub(super) fn save_selected_message_file<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+    use crate::domain::message::DownloadStatus;
+
+    let Some(chat_id) = ctx.state.open_chat().chat_id() else {
+        return;
+    };
+
+    let Some(msg) = ctx.state.open_chat().selected_message() else {
+        return;
+    };
+
+    let Some(ref fi) = msg.file_info else {
+        return;
+    };
+
+    match fi.download_status {
+        DownloadStatus::Completed => {
+            if ctx.pending_saves.contains(&fi.file_id) {
+                ctx.state.set_notification("Save already in progress");
+                return;
+            }
+            let Some(ref local_path) = fi.local_path else {
+                return;
+            };
+            ctx.pending_saves.insert(fi.file_id);
+            ctx.dispatcher
+                .dispatch_save_file(fi.file_id, local_path.clone(), fi.file_name.clone());
+            ctx.state.set_notification("Saving file...");
+        }
+        DownloadStatus::NotStarted => {
+            let file_id = fi.file_id;
+            let message_id = msg.id;
+
+            if ctx.active_downloads.contains_key(&file_id) {
+                ctx.pending_saves.insert(file_id);
+                ctx.state.set_notification("Will save after download...");
+                return;
+            }
+
+            tracing::info!(file_id, chat_id, message_id, "download + save triggered");
+            ctx.active_downloads.insert(file_id, (chat_id, message_id));
+            ctx.pending_saves.insert(file_id);
+            ctx.dispatcher.dispatch_download_file(file_id);
+            ctx.state
+                .set_notification("Downloading, will save when done...");
+        }
+        DownloadStatus::Downloading { .. } => {
+            ctx.pending_saves.insert(fi.file_id);
+            ctx.state.set_notification("Will save after download...");
+        }
+    }
+}
+
 pub(super) fn open_message_url<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) -> Result<()> {
     use crate::domain::message::extract_first_url;
 

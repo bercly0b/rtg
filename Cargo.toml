@@ -22,6 +22,7 @@ fs2 = "0.4"
 unicode-width = "0.2"
 arboard = "3"
 open = "5"
+dirs = "6"
 libc = "0.2"
 base64 = "0.22"
 

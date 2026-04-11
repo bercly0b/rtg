@@ -58,6 +58,7 @@ pub(super) struct OrchestratorCtx<'a, D: TaskDispatcher> {
     pub prefetch_in_flight: &'a mut Option<i64>,
     pub min_display_messages: usize,
     pub pending_d: &'a mut bool,
+    pub pending_saves: &'a mut std::collections::HashSet<i32>,
     pub cache_source: &'a Option<Arc<dyn CachedMessagesSource>>,
     pub open_handlers: &'a std::collections::HashMap<String, String>,
     pub opener: &'a dyn crate::infra::contracts::ExternalOpener,
@@ -121,6 +122,8 @@ where
     active_downloads: std::collections::HashMap<i32, (i64, i64)>,
     /// Maximum file size (in bytes) for auto-download.
     max_auto_download_bytes: u64,
+    /// File IDs pending save-to-downloads after download completes.
+    pending_saves: std::collections::HashSet<i32>,
 }
 
 impl<S, O, D> DefaultShellOrchestrator<S, O, D>
@@ -154,6 +157,7 @@ where
             open_handlers: std::collections::HashMap::new(),
             active_downloads: std::collections::HashMap::new(),
             max_auto_download_bytes: 10_000_000,
+            pending_saves: std::collections::HashSet::new(),
         }
     }
 
@@ -201,6 +205,7 @@ where
             open_handlers,
             active_downloads: std::collections::HashMap::new(),
             max_auto_download_bytes,
+            pending_saves: std::collections::HashSet::new(),
         }
     }
 
@@ -226,6 +231,7 @@ where
             cache_source: &self.cache_source,
             open_handlers: &self.open_handlers,
             opener: &self.opener,
+            pending_saves: &mut self.pending_saves,
         }
     }
 

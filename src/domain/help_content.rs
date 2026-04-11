@@ -99,6 +99,10 @@ pub fn messages_hotkeys() -> &'static [HotkeyEntry] {
             action_name: "download_file",
         },
         HotkeyEntry {
+            key_label: "S",
+            action_name: "save_file_to_downloads",
+        },
+        HotkeyEntry {
             key_label: "q",
             action_name: "quit",
         },

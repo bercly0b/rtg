@@ -73,6 +73,10 @@ pub enum BackgroundTaskResult {
     /// Platform default file opener failed (non-zero exit code).
     /// The orchestrator should display the error as a notification.
     OpenFileFailed { stderr: String },
+    /// File was successfully saved to the downloads directory.
+    FileSaved { file_id: i32, file_name: String },
+    /// File save to downloads directory failed.
+    FileSaveFailed { file_id: i32, error: String },
 }
 
 /// Lightweight error type for background task failures.
