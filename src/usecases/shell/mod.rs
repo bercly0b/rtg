@@ -335,6 +335,14 @@ where
                     return Ok(());
                 }
 
+                if self.state.message_info_popup().is_some() {
+                    match key.key.as_str() {
+                        "q" | "esc" | "I" => self.state.close_message_info_popup(),
+                        _ => {}
+                    }
+                    return Ok(());
+                }
+
                 if self.state.help_visible() {
                     match key.key.as_str() {
                         "q" | "?" | "esc" => self.state.hide_help(),

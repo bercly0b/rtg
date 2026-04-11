@@ -7,6 +7,7 @@ use crate::{
         chat_subtitle::{ChatInfoQuery, ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource},
         list_chats::{ListChatsSource, ListChatsSourceError},
         load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
+        message_info::{MessageInfoError, MessageInfoQuery, MessageInfoSource},
         send_message::{MessageSender, SendMessageSourceError},
         send_voice::VoiceNoteSender,
     },
@@ -169,6 +170,18 @@ impl ChatSubtitleSource for TelegramAdapter {
                 Ok(backend.resolve_chat_info(query.chat_id, query.chat_type, query.title.clone()))
             }
             None => Err(ChatSubtitleError::Unavailable),
+        }
+    }
+}
+
+impl MessageInfoSource for TelegramAdapter {
+    fn resolve_message_info(
+        &self,
+        query: &MessageInfoQuery,
+    ) -> Result<crate::domain::message_info_state::MessageInfo, MessageInfoError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => Ok(backend.resolve_message_info(query)),
+            None => Err(MessageInfoError::Unavailable),
         }
     }
 }

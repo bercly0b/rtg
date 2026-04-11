@@ -237,6 +237,34 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 }
             }
         }
+        BackgroundTaskResult::MessageInfoLoaded {
+            chat_id,
+            message_id,
+            result,
+        } => {
+            use crate::domain::message_info_state::MessageInfoPopupState;
+
+            let popup_ids = ctx.state.message_info_popup().and_then(|p| p.ids());
+            if popup_ids == Some((chat_id, message_id)) {
+                match result {
+                    Ok(info) => {
+                        tracing::debug!(chat_id, message_id, "message info resolved for popup");
+                        ctx.state
+                            .set_message_info_loaded(MessageInfoPopupState::Loaded(info));
+                    }
+                    Err(e) => {
+                        tracing::debug!(
+                            chat_id,
+                            message_id,
+                            code = e.code,
+                            "message info resolution failed"
+                        );
+                        ctx.state
+                            .set_message_info_loaded(MessageInfoPopupState::Error);
+                    }
+                }
+            }
+        }
         BackgroundTaskResult::OpenFileFailed { stderr } => {
             let hint = if stderr.is_empty() {
                 "Failed to open file. Configure [open] in ~/.config/rtg/config.toml".to_owned()
