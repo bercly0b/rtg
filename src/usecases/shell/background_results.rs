@@ -246,5 +246,15 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
             tracing::warn!(stderr, "background: open file failed");
             ctx.state.set_notification(&hint);
         }
+        BackgroundTaskResult::FileSaved { file_id, file_name } => {
+            ctx.pending_saves.remove(&file_id);
+            tracing::info!(file_name, "background: file saved to downloads");
+            ctx.state.set_notification(format!("Saved: {file_name}"));
+        }
+        BackgroundTaskResult::FileSaveFailed { file_id, error } => {
+            ctx.pending_saves.remove(&file_id);
+            tracing::warn!(error, "background: file save failed");
+            ctx.state.set_notification(format!("Save failed: {error}"));
+        }
     }
 }

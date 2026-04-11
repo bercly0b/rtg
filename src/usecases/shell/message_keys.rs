@@ -57,6 +57,9 @@ pub(super) fn handle_messages_key<D: TaskDispatcher>(
         "D" => {
             download_selected_message_file(ctx);
         }
+        "S" => {
+            message_actions::save_selected_message_file(ctx);
+        }
         "r" => {
             message_actions::reply_to_selected_message(ctx);
         }
