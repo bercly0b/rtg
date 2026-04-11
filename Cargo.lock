@@ -2072,6 +2072,7 @@ dependencies = [
  "chrono",
  "clap",
  "crossterm 0.29.0",
+ "dirs",
  "fs2",
  "libc",
  "open",

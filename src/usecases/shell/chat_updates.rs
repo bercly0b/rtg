@@ -181,12 +181,22 @@ fn handle_file_update<D: TaskDispatcher>(
             }
         });
 
+    // Auto-save to downloads if this file_id was requested via S hotkey.
+    if let Some(ref path) = new_local_path {
+        if ctx.pending_saves.remove(&file_id) {
+            let file_name = resolve_file_name(ctx, file_id, chat_id, message_id);
+            ctx.dispatcher
+                .dispatch_save_file(file_id, path.clone(), file_name);
+        }
+    }
+
     // Clean up completed or failed/cancelled downloads
     if is_downloading_completed {
         ctx.active_downloads.remove(&file_id);
         tracing::info!(file_id, chat_id, message_id, "file download completed");
     } else if !is_downloading_active {
         ctx.active_downloads.remove(&file_id);
+        ctx.pending_saves.remove(&file_id);
         tracing::warn!(
             file_id,
             chat_id,
@@ -259,4 +269,18 @@ pub(super) fn maybe_refresh_open_chat_messages<D: TaskDispatcher>(
     );
     *ctx.messages_refresh_in_flight = true;
     ctx.dispatcher.dispatch_load_messages(open_id);
+}
+
+fn resolve_file_name<D: TaskDispatcher>(
+    ctx: &mut OrchestratorCtx<'_, D>,
+    _file_id: i32,
+    chat_id: i64,
+    message_id: i64,
+) -> Option<String> {
+    ctx.state.message_cache_mut().get(chat_id).and_then(|msgs| {
+        msgs.iter()
+            .find(|m| m.id == message_id)
+            .and_then(|m| m.file_info.as_ref())
+            .and_then(|fi| fi.file_name.clone())
+    })
 }

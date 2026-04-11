@@ -62,4 +62,6 @@ impl TaskDispatcher for StubTaskDispatcher {
     fn dispatch_chat_info(&self, _query: ChatInfoQuery) {}
 
     fn dispatch_open_file(&self, _cmd_template: String, _file_path: String) {}
+
+    fn dispatch_save_file(&self, _file_id: i32, _local_path: String, _file_name: Option<String>) {}
 }

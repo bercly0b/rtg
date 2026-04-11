@@ -81,6 +81,9 @@ pub trait TaskDispatcher {
     /// Waits for the process to finish; if it exits with a non-zero code,
     /// sends `BackgroundTaskResult::OpenFileFailed` with the captured stderr.
     fn dispatch_open_file(&self, cmd_template: String, file_path: String);
+
+    /// Copies a file to the OS downloads directory in the background.
+    fn dispatch_save_file(&self, file_id: i32, local_path: String, file_name: Option<String>);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -206,6 +209,10 @@ where
 
     fn dispatch_open_file(&self, cmd_template: String, file_path: String) {
         file_ops::dispatch_open_file(&self.result_tx, cmd_template, file_path);
+    }
+
+    fn dispatch_save_file(&self, file_id: i32, local_path: String, file_name: Option<String>) {
+        file_ops::dispatch_save_file(&self.result_tx, file_id, local_path, file_name);
     }
 }
 
