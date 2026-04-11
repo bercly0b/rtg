@@ -17,6 +17,7 @@ use crate::domain::shell_state::ShellState;
 use super::chat_info_popup;
 use super::command_popup;
 use super::help_popup;
+use super::message_info_popup;
 use super::message_input::{render_message_input, reply_preview_height};
 use super::styles;
 
@@ -79,6 +80,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
 
     if let Some(info_state) = state.chat_info_popup() {
         chat_info_popup::render_chat_info_popup(frame, frame.area(), info_state);
+    }
+
+    if let Some(msg_info_state) = state.message_info_popup() {
+        message_info_popup::render_message_info_popup(frame, frame.area(), msg_info_state);
     }
 }
 

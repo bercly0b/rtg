@@ -17,6 +17,7 @@ use super::{
     chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
     list_chats::ListChatsSource,
     load_messages::MessagesSource,
+    message_info::{MessageInfoQuery, MessageInfoSource},
     send_message::MessageSender,
     send_voice::VoiceNoteSender,
 };
@@ -84,6 +85,9 @@ pub trait TaskDispatcher {
 
     /// Copies a file to the OS downloads directory in the background.
     fn dispatch_save_file(&self, file_id: i32, local_path: String, file_name: Option<String>);
+
+    /// Resolves message info (reactions, viewers, read/edit dates) in the background.
+    fn dispatch_message_info(&self, query: MessageInfoQuery);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -97,7 +101,7 @@ where
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
-    S: ChatSubtitleSource + Send + Sync + 'static,
+    S: ChatSubtitleSource + MessageInfoSource + Send + Sync + 'static,
 {
     chats_source: Arc<C>,
     messages_source: Arc<M>,
@@ -113,7 +117,7 @@ where
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
-    S: ChatSubtitleSource + Send + Sync + 'static,
+    S: ChatSubtitleSource + MessageInfoSource + Send + Sync + 'static,
 {
     pub fn new(
         chats_source: Arc<C>,
@@ -140,7 +144,7 @@ where
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
-    S: ChatSubtitleSource + Send + Sync + 'static,
+    S: ChatSubtitleSource + MessageInfoSource + Send + Sync + 'static,
 {
     fn dispatch_chat_list(&self, force: bool) {
         lifecycle::dispatch_chat_list(&self.chats_source, &self.result_tx, force);
@@ -213,6 +217,10 @@ where
 
     fn dispatch_save_file(&self, file_id: i32, local_path: String, file_name: Option<String>) {
         file_ops::dispatch_save_file(&self.result_tx, file_id, local_path, file_name);
+    }
+
+    fn dispatch_message_info(&self, query: MessageInfoQuery) {
+        lifecycle::dispatch_message_info(&self.subtitle_source, &self.result_tx, query);
     }
 }
 

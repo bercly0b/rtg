@@ -95,6 +95,10 @@ pub fn messages_hotkeys() -> &'static [HotkeyEntry] {
             action_name: "record_voice_message",
         },
         HotkeyEntry {
+            key_label: "I",
+            action_name: "show_message_info",
+        },
+        HotkeyEntry {
             key_label: "D",
             action_name: "download_file",
         },

@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 use super::{
     chat::ChatSummary, chat_info_state::ChatInfoPopupState, chat_list_state::ChatListState,
     command_popup_state::CommandPopupState, events::ConnectivityStatus,
-    message_cache::MessageCache, message_input_state::MessageInputState,
-    open_chat_state::OpenChatState,
+    message_cache::MessageCache, message_info_state::MessageInfoPopupState,
+    message_input_state::MessageInputState, open_chat_state::OpenChatState,
 };
 
 const NOTIFICATION_TTL: Duration = Duration::from_secs(3);
@@ -34,6 +34,7 @@ pub struct ShellState {
     command_popup: Option<CommandPopupState>,
     notification: Option<(String, Instant)>,
     chat_info_popup: Option<ChatInfoPopupState>,
+    message_info_popup: Option<MessageInfoPopupState>,
 }
 
 impl Default for ShellState {
@@ -50,6 +51,7 @@ impl Default for ShellState {
             command_popup: None,
             notification: None,
             chat_info_popup: None,
+            message_info_popup: None,
         }
     }
 }
@@ -179,6 +181,25 @@ impl ShellState {
 
     pub fn close_chat_info_popup(&mut self) {
         self.chat_info_popup = None;
+    }
+
+    pub fn message_info_popup(&self) -> Option<&MessageInfoPopupState> {
+        self.message_info_popup.as_ref()
+    }
+
+    pub fn show_message_info_loading(&mut self, chat_id: i64, message_id: i64) {
+        self.message_info_popup = Some(MessageInfoPopupState::Loading {
+            chat_id,
+            message_id,
+        });
+    }
+
+    pub fn set_message_info_loaded(&mut self, state: MessageInfoPopupState) {
+        self.message_info_popup = Some(state);
+    }
+
+    pub fn close_message_info_popup(&mut self) {
+        self.message_info_popup = None;
     }
 
     pub fn message_input(&self) -> &MessageInputState {

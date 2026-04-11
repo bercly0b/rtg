@@ -208,6 +208,114 @@ impl TdLibClient {
         })
     }
 
+    pub fn get_message_properties(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+    ) -> Result<tdlib_rs::types::MessageProperties, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let props = tdlib_rs::functions::get_message_properties(chat_id, message_id, client_id)
+                .await
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })?;
+
+            match props {
+                tdlib_rs::enums::MessageProperties::MessageProperties(p) => Ok(p),
+            }
+        })
+    }
+
+    pub fn get_message_added_reactions(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+    ) -> Result<tdlib_rs::types::AddedReactions, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let reactions = tdlib_rs::functions::get_message_added_reactions(
+                chat_id,
+                message_id,
+                None,
+                String::new(),
+                50,
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })?;
+
+            match reactions {
+                tdlib_rs::enums::AddedReactions::AddedReactions(r) => Ok(r),
+            }
+        })
+    }
+
+    pub fn get_message_viewers(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+    ) -> Result<tdlib_rs::types::MessageViewers, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let viewers = tdlib_rs::functions::get_message_viewers(chat_id, message_id, client_id)
+                .await
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })?;
+
+            match viewers {
+                tdlib_rs::enums::MessageViewers::MessageViewers(v) => Ok(v),
+            }
+        })
+    }
+
+    pub fn get_message_read_date(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+    ) -> Result<tdlib_rs::enums::MessageReadDate, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            tdlib_rs::functions::get_message_read_date(chat_id, message_id, client_id)
+                .await
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })
+        })
+    }
+
+    pub fn get_message(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+    ) -> Result<tdlib_rs::types::Message, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let msg = tdlib_rs::functions::get_message(chat_id, message_id, client_id)
+                .await
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })?;
+
+            match msg {
+                tdlib_rs::enums::Message::Message(m) => Ok(m),
+            }
+        })
+    }
+
     /// Deletes messages from a chat.
     ///
     /// When `revoke` is true, the messages are deleted for all participants

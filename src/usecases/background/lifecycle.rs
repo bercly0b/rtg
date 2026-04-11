@@ -6,6 +6,7 @@ use crate::{
         chat_lifecycle::{ChatLifecycle, ChatReadMarker, FileDownloader, MessageDeleter},
         chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
         list_chats::{list_chats, ListChatsQuery, ListChatsSource},
+        message_info::{MessageInfoQuery, MessageInfoSource},
     },
 };
 
@@ -231,5 +232,41 @@ pub(super) fn dispatch_download_file<L: FileDownloader + Send + Sync + 'static>(
         })
     {
         tracing::error!(error = %error, "failed to spawn download file background thread");
+    }
+}
+
+pub(super) fn dispatch_message_info<S: MessageInfoSource + Send + Sync + 'static>(
+    source: &Arc<S>,
+    tx: &Sender<BackgroundTaskResult>,
+    query: MessageInfoQuery,
+) {
+    let source = Arc::clone(source);
+    let tx = tx.clone();
+    let tx_fallback = tx.clone();
+    let chat_id = query.chat_id;
+    let message_id = query.message_id;
+
+    let spawn_result = std::thread::Builder::new()
+        .name("rtg-bg-msg-info".into())
+        .spawn(move || {
+            tracing::debug!(chat_id, message_id, "background: resolving message info");
+            let result = source
+                .resolve_message_info(&query)
+                .map_err(|_| BackgroundError::new("MESSAGE_INFO_UNAVAILABLE"));
+
+            let _ = tx.send(BackgroundTaskResult::MessageInfoLoaded {
+                chat_id,
+                message_id,
+                result,
+            });
+        });
+
+    if let Err(error) = spawn_result {
+        tracing::error!(error = %error, "failed to spawn message info background thread");
+        let _ = tx_fallback.send(BackgroundTaskResult::MessageInfoLoaded {
+            chat_id,
+            message_id,
+            result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
+        });
     }
 }
