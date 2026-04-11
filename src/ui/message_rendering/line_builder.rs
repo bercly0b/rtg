@@ -205,10 +205,6 @@ fn append_reaction_indicator(lines: &mut [Line<'static>], reaction_count: u32) {
     }
 }
 
-/// Appends file metadata to the line containing the `[Media]` indicator.
-///
-/// Finds the first content line that starts with a media bracket (after indent),
-/// and appends the metadata as a DarkGray span on that same line.
 fn append_file_meta_to_media_line(lines: &mut [Line<'static>], meta: &str) {
     for line in lines.iter_mut() {
         let has_media_bracket = line.spans.iter().any(|span| {
@@ -222,6 +218,13 @@ fn append_file_meta_to_media_line(lines: &mut [Line<'static>], meta: &str) {
             ));
             return;
         }
+    }
+    // Fallback: append to the first content line (for media without bracket labels)
+    if let Some(last_line) = lines.last_mut() {
+        last_line.spans.push(Span::styled(
+            format!(" {}", meta),
+            styles::message_sending_style(),
+        ));
     }
 }
 
