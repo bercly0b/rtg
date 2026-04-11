@@ -262,8 +262,8 @@ pub fn extract_message_text(content: &MessageContent) -> String {
         MessageContent::MessageDocument(d) => d.caption.text.clone(),
         MessageContent::MessageAudio(a) => a.caption.text.clone(),
         MessageContent::MessageAnimation(a) => a.caption.text.clone(),
-        // These types don't have captions or text
         MessageContent::MessageAnimatedEmoji(e) => e.emoji.clone(),
+        // These types don't have captions or text
         MessageContent::MessageVideoNote(_)
         | MessageContent::MessageSticker(_)
         | MessageContent::MessageContact(_)
