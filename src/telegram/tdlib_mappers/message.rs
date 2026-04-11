@@ -1,7 +1,7 @@
 use tdlib_rs::enums::MessageContent;
 use tdlib_rs::types::Message as TdMessage;
 
-use crate::domain::message::{Message, MessageMedia, ReplyInfo};
+use crate::domain::message::{ForwardInfo, Message, MessageMedia, ReplyInfo};
 
 use super::file_info::{extract_call_info, extract_file_info};
 use super::text_links::extract_content_links;
@@ -14,6 +14,7 @@ pub fn map_tdlib_message_to_domain(
     msg: &TdMessage,
     sender_name: String,
     reply_to: Option<ReplyInfo>,
+    forward_info: Option<ForwardInfo>,
 ) -> Message {
     let text = extract_message_text(&msg.content);
     let media = extract_message_media(&msg.content);
@@ -34,6 +35,7 @@ pub fn map_tdlib_message_to_domain(
         file_info,
         call_info,
         reply_to,
+        forward_info,
         reaction_count,
         links,
         is_edited: msg.edit_date > 0,
@@ -119,6 +121,30 @@ pub fn extract_reply_info(
         text,
         is_outgoing,
     })
+}
+
+pub fn extract_forward_info(
+    msg: &TdMessage,
+    resolve_user_name: impl Fn(i64) -> Option<String>,
+    resolve_chat_title: impl Fn(i64) -> Option<String>,
+) -> Option<ForwardInfo> {
+    use tdlib_rs::enums::MessageOrigin;
+
+    let fwd = msg.forward_info.as_ref()?;
+
+    let sender_name = match &fwd.origin {
+        MessageOrigin::User(u) => resolve_user_name(u.sender_user_id)
+            .unwrap_or_else(|| format!("User#{}", u.sender_user_id)),
+        MessageOrigin::Chat(c) => {
+            resolve_chat_title(c.sender_chat_id).unwrap_or_else(|| c.author_signature.clone())
+        }
+        MessageOrigin::HiddenUser(h) => h.sender_name.clone(),
+        MessageOrigin::Channel(ch) => {
+            resolve_chat_title(ch.chat_id).unwrap_or_else(|| ch.author_signature.clone())
+        }
+    };
+
+    Some(ForwardInfo { sender_name })
 }
 
 /// Extracts the media type from a TDLib MessageContent.

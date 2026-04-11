@@ -78,3 +78,16 @@ pub fn reply_sender_style(name: &str, is_outgoing: bool) -> Style {
 pub fn reply_text_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
+
+pub fn forward_bar_style() -> Style {
+    Style::default().fg(Color::LightGreen)
+}
+
+pub fn forward_label_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
+pub fn forward_sender_style(name: &str) -> Style {
+    let color = SENDER_COLOR_PALETTE[name_to_color_index(name)];
+    Style::default().fg(color).add_modifier(Modifier::BOLD)
+}

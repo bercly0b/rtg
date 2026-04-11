@@ -41,7 +41,8 @@ impl TdLibAuthBackend {
             .map(|msg| {
                 let sender_name = self.resolve_message_sender_name(msg);
                 let reply_to = self.resolve_reply_info(msg);
-                tdlib_mappers::map_tdlib_message_to_domain(msg, sender_name, reply_to)
+                let forward_info = self.resolve_forward_info(msg);
+                tdlib_mappers::map_tdlib_message_to_domain(msg, sender_name, reply_to, forward_info)
             })
             .collect();
 
@@ -146,7 +147,8 @@ impl TdLibAuthBackend {
             .map(|msg| {
                 let sender_name = self.resolve_message_sender_name(msg);
                 let reply_to = self.resolve_reply_info(msg);
-                tdlib_mappers::map_tdlib_message_to_domain(msg, sender_name, reply_to)
+                let forward_info = self.resolve_forward_info(msg);
+                tdlib_mappers::map_tdlib_message_to_domain(msg, sender_name, reply_to, forward_info)
             })
             .collect();
 
@@ -210,6 +212,22 @@ impl TdLibAuthBackend {
             },
             |chat_id| cache.get_chat(chat_id).map(|c| c.title.clone()),
             my_user_id,
+        )
+    }
+
+    fn resolve_forward_info(
+        &self,
+        msg: &tdlib_rs::types::Message,
+    ) -> Option<crate::domain::message::ForwardInfo> {
+        let cache = self.client.cache();
+        tdlib_mappers::extract_forward_info(
+            msg,
+            |user_id| {
+                cache
+                    .get_user(user_id)
+                    .map(|u| tdlib_mappers::format_user_name(&u))
+            },
+            |chat_id| cache.get_chat(chat_id).map(|c| c.title.clone()),
         )
     }
 
@@ -323,6 +341,21 @@ fn extract_reply_info_from_cache(
     )
 }
 
+fn extract_forward_info_from_cache(
+    msg: &tdlib_rs::types::Message,
+    cache: &TdLibCache,
+) -> Option<crate::domain::message::ForwardInfo> {
+    tdlib_mappers::extract_forward_info(
+        msg,
+        |user_id| {
+            cache
+                .get_user(user_id)
+                .map(|u| tdlib_mappers::format_user_name(&u))
+        },
+        |chat_id| cache.get_chat(chat_id).map(|c| c.title.clone()),
+    )
+}
+
 /// Maps raw TDLib messages to domain `Message` types.
 ///
 /// Uses the shared TDLib cache for sender name resolution (fast path).
@@ -364,6 +397,7 @@ impl crate::telegram::chat_updates::MessageMapper for TdLibMessageMapper {
             }
         };
         let reply_to = extract_reply_info_from_cache(raw, &self.cache, &self.rt, self.client_id);
-        tdlib_mappers::map_tdlib_message_to_domain(raw, sender_name, reply_to)
+        let forward_info = extract_forward_info_from_cache(raw, &self.cache);
+        tdlib_mappers::map_tdlib_message_to_domain(raw, sender_name, reply_to, forward_info)
     }
 }

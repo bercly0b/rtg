@@ -17,8 +17,8 @@ pub use chat::{map_chat_to_summary, map_chat_type};
 pub use file_info::extract_file_info;
 #[allow(unused_imports)]
 pub use message::{
-    extract_message_media, extract_message_preview, extract_message_text, extract_reply_info,
-    map_tdlib_message_to_domain, sum_reaction_counts,
+    extract_forward_info, extract_message_media, extract_message_preview, extract_message_text,
+    extract_reply_info, map_tdlib_message_to_domain, sum_reaction_counts,
 };
 #[allow(unused_imports)]
 pub use user::{

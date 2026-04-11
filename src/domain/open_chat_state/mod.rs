@@ -277,6 +277,7 @@ impl OpenChatState {
             file_info: None,
             call_info: None,
             reply_to,
+            forward_info: None,
             reaction_count: 0,
             links: Vec::new(),
             is_edited: false,
