@@ -2,6 +2,7 @@ use crate::{
     domain::{
         chat::ChatType,
         open_chat_state::{MessageSource, OpenChatUiState},
+        shell_state::ActivePane,
     },
     usecases::{background::TaskDispatcher, chat_subtitle::ChatSubtitleQuery},
 };
@@ -141,7 +142,18 @@ pub(super) fn close_tdlib_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, 
 }
 
 /// Dispatches a mark-as-read request for all messages currently loaded in the open chat.
+///
+/// Only marks messages when the user is actively viewing the chat
+/// (Messages or MessageInput pane has focus). This prevents incoming
+/// messages from being auto-read while the user is browsing the chat list.
 pub(super) fn mark_open_chat_messages_as_read<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+    if !matches!(
+        ctx.state.active_pane(),
+        ActivePane::Messages | ActivePane::MessageInput
+    ) {
+        return;
+    }
+
     let Some(chat_id) = ctx.state.open_chat().chat_id() else {
         return;
     };
