@@ -56,10 +56,18 @@ impl TdLibClient {
             })?;
 
             match chats {
-                tdlib_rs::enums::Chats::Chats(c) => Ok(GetChatsResult {
-                    chat_ids: c.chat_ids,
-                    all_loaded,
-                }),
+                tdlib_rs::enums::Chats::Chats(c) => {
+                    // `loadChats` 404 means "no more chats on the server", but
+                    // TDLib's local cache may still hold more chats than we
+                    // requested via `getChats(limit)`. Only report all_loaded
+                    // when the cache is also exhausted (returned fewer than
+                    // requested).
+                    let actually_all_loaded = all_loaded && (c.chat_ids.len() as i32) < limit;
+                    Ok(GetChatsResult {
+                        chat_ids: c.chat_ids,
+                        all_loaded: actually_all_loaded,
+                    })
+                }
             }
         })
     }
