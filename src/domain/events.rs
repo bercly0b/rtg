@@ -58,6 +58,13 @@ pub enum BackgroundTaskResult {
         chat_id: i64,
         result: Result<Vec<super::message::Message>, BackgroundError>,
     },
+    /// Message edit operation completed.
+    MessageEdited {
+        chat_id: i64,
+        message_id: i64,
+        original_text: String,
+        result: Result<(), BackgroundError>,
+    },
     /// Voice note send failed; the optimistic pending message should be removed.
     VoiceSendFailed { chat_id: i64 },
     /// Chat subtitle (user status / member count) resolved.

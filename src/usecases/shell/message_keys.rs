@@ -66,6 +66,9 @@ pub(super) fn handle_messages_key<D: TaskDispatcher>(
         "r" => {
             message_actions::reply_to_selected_message(ctx);
         }
+        "e" => {
+            message_actions::edit_selected_message(ctx);
+        }
         _ => {}
     }
     Ok(())

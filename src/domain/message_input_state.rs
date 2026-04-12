@@ -16,6 +16,17 @@ pub struct ReplyContext {
     pub text: String,
 }
 
+/// Context for an in-progress message edit.
+///
+/// Stored while the user is editing a message and consumed when Enter is pressed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditContext {
+    pub chat_id: i64,
+    pub message_id: i64,
+    /// Original text before editing — used to detect "unchanged" submissions.
+    pub original_text: String,
+}
+
 /// State for the message composition input field.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MessageInputState {
@@ -25,6 +36,8 @@ pub struct MessageInputState {
     cursor_position: usize,
     /// Active reply context (set when user presses `r` on a message).
     reply_to: Option<ReplyContext>,
+    /// Active edit context (set when user presses `e` on a message).
+    editing: Option<EditContext>,
 }
 
 impl MessageInputState {
@@ -100,12 +113,13 @@ impl MessageInputState {
         self.cursor_position = self.text.chars().count();
     }
 
-    /// Clears all text, reply context, and resets cursor.
+    /// Clears all text, reply context, edit context, and resets cursor.
     #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.text.clear();
         self.cursor_position = 0;
         self.reply_to = None;
+        self.editing = None;
     }
 
     /// Replaces the current text and moves cursor to the end.
@@ -136,6 +150,24 @@ impl MessageInputState {
     /// Used by the send flow to extract reply_to before clearing input.
     pub fn take_reply_to(&mut self) -> Option<ReplyContext> {
         self.reply_to.take()
+    }
+
+    pub fn editing(&self) -> Option<&EditContext> {
+        self.editing.as_ref()
+    }
+
+    pub fn set_editing(&mut self, ctx: EditContext) {
+        self.reply_to = None;
+        self.set_text(&ctx.original_text);
+        self.editing = Some(ctx);
+    }
+
+    pub fn clear_editing(&mut self) {
+        self.editing = None;
+    }
+
+    pub fn take_editing(&mut self) -> Option<EditContext> {
+        self.editing.take()
     }
 
     /// Converts character index to byte index.

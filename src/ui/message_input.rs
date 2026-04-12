@@ -9,7 +9,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthChar;
 
 use crate::domain::{
-    message_input_state::{MessageInputState, ReplyContext},
+    message_input_state::{EditContext, MessageInputState, ReplyContext},
     shell_state::ActivePane,
 };
 
@@ -21,9 +21,9 @@ const PLACEHOLDER_TEXT: &str = "Press 'i' to type a message...";
 /// Prompt symbol shown before the input text.
 const PROMPT_SYMBOL: &str = "> ";
 
-/// Returns the number of extra lines needed for the reply preview (0 or 1).
+/// Returns the number of extra lines needed for the context preview (0 or 1).
 pub fn reply_preview_height(input_state: &MessageInputState) -> u16 {
-    if input_state.reply_to().is_some() {
+    if input_state.reply_to().is_some() || input_state.editing().is_some() {
         1
     } else {
         0
@@ -41,8 +41,11 @@ pub fn render_message_input(
 
     let mut lines: Vec<Line<'static>> = Vec::new();
 
-    // Reply preview line (if reply context is active)
-    if let Some(reply) = input_state.reply_to() {
+    // Context preview line (reply or editing)
+    if let Some(editing) = input_state.editing() {
+        let effective_width = area.width.saturating_sub(2) as usize;
+        lines.push(build_editing_preview_line(editing, effective_width));
+    } else if let Some(reply) = input_state.reply_to() {
         let effective_width = area.width.saturating_sub(2) as usize; // padding
         lines.push(build_reply_preview_line(reply, effective_width));
     }
@@ -193,6 +196,24 @@ fn build_reply_preview_line(reply: &ReplyContext, available_width: usize) -> Lin
     spans.push(Span::styled(text, styles::reply_text_style()));
 
     Line::from(spans)
+}
+
+fn build_editing_preview_line(editing: &EditContext, available_width: usize) -> Line<'static> {
+    let bar = "│ ";
+    let label = "Editing: ";
+    let prefix_len = bar.chars().count() + label.chars().count();
+    let max_text_width = available_width.saturating_sub(prefix_len);
+    let first_line = editing.original_text.lines().next().unwrap_or("");
+    let text = truncate_with_ellipsis(first_line, max_text_width);
+
+    Line::from(vec![
+        Span::styled(bar.to_owned(), styles::reply_bar_style()),
+        Span::styled(
+            label.to_owned(),
+            styles::reply_sender_style("Editing", false),
+        ),
+        Span::styled(text, styles::reply_text_style()),
+    ])
 }
 
 fn truncate_with_ellipsis(text: &str, max_len: usize) -> String {

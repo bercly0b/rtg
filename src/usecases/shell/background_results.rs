@@ -114,6 +114,34 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 ctx.state.message_input_mut().set_text(&original_text);
             }
         },
+        BackgroundTaskResult::MessageEdited {
+            chat_id,
+            message_id,
+            original_text,
+            result,
+        } => match result {
+            Ok(()) => {
+                tracing::debug!(
+                    chat_id,
+                    message_id,
+                    "background: message edited successfully"
+                );
+            }
+            Err(error) => {
+                tracing::warn!(
+                    chat_id,
+                    message_id,
+                    code = error.code,
+                    "background: edit message failed"
+                );
+                if ctx.state.open_chat().chat_id() == Some(chat_id) {
+                    ctx.state
+                        .open_chat_mut()
+                        .update_message_text(message_id, original_text);
+                }
+                ctx.state.set_notification("Edit failed");
+            }
+        },
         BackgroundTaskResult::MessageSentRefreshCompleted { chat_id, result } => {
             *ctx.messages_refresh_in_flight = false;
 

@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use crate::domain::message::Message;
+use crate::usecases::edit_message::EditMessageSourceError;
 use crate::usecases::load_messages::MessagesSourceError;
 use crate::usecases::send_message::SendMessageSourceError;
 
-use super::error_mapping::{map_messages_error, map_send_message_error};
+use super::error_mapping::{map_edit_message_error, map_messages_error, map_send_message_error};
 use super::TdLibAuthBackend;
 use crate::telegram::tdlib_cache::TdLibCache;
 use crate::telegram::tdlib_client::TdLibClient;
@@ -172,6 +173,25 @@ impl TdLibAuthBackend {
             .map_err(map_send_message_error)?;
 
         tracing::debug!(chat_id, text_len = text.len(), "Message sent via TDLib");
+        Ok(())
+    }
+
+    pub fn edit_message(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        text: &str,
+    ) -> Result<(), EditMessageSourceError> {
+        self.client
+            .edit_message_text(chat_id, message_id, text)
+            .map_err(map_edit_message_error)?;
+
+        tracing::debug!(
+            chat_id,
+            message_id,
+            text_len = text.len(),
+            "Message edited via TDLib"
+        );
         Ok(())
     }
 

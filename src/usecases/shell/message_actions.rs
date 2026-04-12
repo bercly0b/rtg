@@ -128,6 +128,43 @@ pub(super) fn reply_to_selected_message<D: TaskDispatcher>(ctx: &mut Orchestrato
     ctx.state.set_active_pane(ActivePane::MessageInput);
 }
 
+pub(super) fn edit_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+    use crate::domain::{message_input_state::EditContext, shell_state::ActivePane};
+
+    if !ctx.state.open_chat().is_open() {
+        return;
+    }
+
+    let Some(chat_id) = ctx.state.open_chat().chat_id() else {
+        return;
+    };
+
+    let Some(msg) = ctx.state.open_chat().selected_message() else {
+        return;
+    };
+
+    if msg.id == 0 {
+        return;
+    }
+
+    if !msg.is_outgoing {
+        return;
+    }
+
+    if msg.text.is_empty() {
+        return;
+    }
+
+    let edit_context = EditContext {
+        chat_id,
+        message_id: msg.id,
+        original_text: msg.text.clone(),
+    };
+
+    ctx.state.message_input_mut().set_editing(edit_context);
+    ctx.state.set_active_pane(ActivePane::MessageInput);
+}
+
 pub(super) fn save_selected_message_file<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
     use crate::domain::message::DownloadStatus;
 
