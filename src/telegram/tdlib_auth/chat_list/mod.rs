@@ -43,22 +43,23 @@ impl TdLibAuthBackend {
         &self,
         limit: usize,
         force: bool,
-    ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+    ) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError> {
         let limit_i32 = i32::try_from(limit).unwrap_or(i32::MAX);
 
-        let chat_ids = self
+        let result = self
             .client
             .get_chats(limit_i32)
             .map_err(map_list_chats_error)?;
 
-        let requested_count = chat_ids.len();
+        let requested_count = result.chat_ids.len();
         tracing::debug!(
             count = requested_count,
+            all_loaded = result.all_loaded,
             force,
             "Fetched chat IDs from TDLib"
         );
 
-        let summaries = build_summaries_from_ids(&self.client, chat_ids, force);
+        let summaries = build_summaries_from_ids(&self.client, result.chat_ids, force);
 
         if requested_count > 0 && summaries.is_empty() {
             tracing::warn!(
@@ -68,7 +69,12 @@ impl TdLibAuthBackend {
             return Err(ListChatsSourceError::Unavailable);
         }
 
-        Ok(summaries)
+        if requested_count == 0 && !result.all_loaded {
+            tracing::warn!("TDLib returned zero chat IDs without all-loaded signal");
+            return Err(ListChatsSourceError::Unavailable);
+        }
+
+        Ok((summaries, result.all_loaded))
     }
 }
 

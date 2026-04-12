@@ -28,7 +28,8 @@ pub(super) fn dispatch_chat_list_refresh<D: TaskDispatcher>(
     }
 
     *ctx.chat_list_in_flight = true;
-    ctx.dispatcher.dispatch_chat_list(force);
+    let limit = ctx.state.chat_list().total_limit();
+    ctx.dispatcher.dispatch_chat_list(force, limit);
 }
 
 pub(super) fn mark_selected_chat_as_read<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {

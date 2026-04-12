@@ -64,6 +64,7 @@ fn cached_startup_background_result_updates_list() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::ChatListLoaded {
             result: Ok(vec![chat(3, "Gamma"), chat(1, "Alpha"), chat(2, "Beta")]),
+            all_loaded: false,
         },
     ))
     .unwrap();

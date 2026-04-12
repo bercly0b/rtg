@@ -13,7 +13,7 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
     result: BackgroundTaskResult,
 ) {
     match result {
-        BackgroundTaskResult::ChatListLoaded { result } => {
+        BackgroundTaskResult::ChatListLoaded { result, all_loaded } => {
             *ctx.chat_list_in_flight = false;
             let was_pending = std::mem::take(ctx.chat_list_refresh_pending);
             let pending_force = std::mem::take(ctx.chat_list_pending_force);
@@ -28,10 +28,15 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
 
             match result {
                 Ok(chats) => {
-                    tracing::debug!(chat_count = chats.len(), "background: chat list loaded");
+                    tracing::debug!(
+                        chat_count = chats.len(),
+                        all_loaded,
+                        "background: chat list loaded"
+                    );
                     if user_requested {
                         ctx.state.set_notification("Chat list refreshed");
                     }
+                    ctx.state.chat_list_mut().set_all_chats_loaded(all_loaded);
                     ctx.state.chat_list_mut().set_ready(chats);
                 }
                 Err(error) => {

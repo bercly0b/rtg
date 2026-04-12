@@ -16,6 +16,7 @@ pub(super) fn dispatch_chat_list<C: ListChatsSource + Send + Sync + 'static>(
     source: &Arc<C>,
     tx: &Sender<BackgroundTaskResult>,
     force: bool,
+    limit: usize,
 ) {
     let source = Arc::clone(source);
     let tx = tx.clone();
@@ -24,25 +25,31 @@ pub(super) fn dispatch_chat_list<C: ListChatsSource + Send + Sync + 'static>(
     let spawn_result = std::thread::Builder::new()
         .name("rtg-bg-chat-list".into())
         .spawn(move || {
-            tracing::debug!(force, "background: fetching chat list");
-            let query = ListChatsQuery {
-                force,
-                ..ListChatsQuery::default()
-            };
-            let result = list_chats(source.as_ref(), query)
-                .map(|output| output.chats)
-                .map_err(|error| {
+            tracing::debug!(force, limit, "background: fetching chat list");
+            let query = ListChatsQuery { force, limit };
+            let result = list_chats(source.as_ref(), query);
+            match result {
+                Ok(output) => {
+                    let _ = tx.send(BackgroundTaskResult::ChatListLoaded {
+                        result: Ok(output.chats),
+                        all_loaded: output.all_loaded,
+                    });
+                }
+                Err(error) => {
                     tracing::warn!(error = ?error, "background: chat list fetch failed");
-                    BackgroundError::new(map_list_chats_error(&error))
-                });
-
-            let _ = tx.send(BackgroundTaskResult::ChatListLoaded { result });
+                    let _ = tx.send(BackgroundTaskResult::ChatListLoaded {
+                        result: Err(BackgroundError::new(map_list_chats_error(&error))),
+                        all_loaded: false,
+                    });
+                }
+            }
         });
 
     if let Err(error) = spawn_result {
         tracing::error!(error = %error, "failed to spawn chat list background thread");
         let _ = tx_fallback.send(BackgroundTaskResult::ChatListLoaded {
             result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
+            all_loaded: false,
         });
     }
 }
