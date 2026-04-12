@@ -38,6 +38,7 @@ fn integration_smoke_happy_path_startup_load_navigate_and_open_chat() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::ChatListLoaded {
             result: Ok(vec![chat(1, "General"), chat(2, "Backend"), chat(3, "Ops")]),
+            all_loaded: false,
         },
     ))
     .unwrap();
@@ -72,6 +73,7 @@ fn integration_smoke_fallback_error_then_empty_list() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::ChatListLoaded {
             result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
+            all_loaded: false,
         },
     ))
     .unwrap();
@@ -82,7 +84,10 @@ fn integration_smoke_fallback_error_then_empty_list() {
         .unwrap();
     // Empty list result
     o.handle_event(AppEvent::BackgroundTaskCompleted(
-        BackgroundTaskResult::ChatListLoaded { result: Ok(vec![]) },
+        BackgroundTaskResult::ChatListLoaded {
+            result: Ok(vec![]),
+            all_loaded: false,
+        },
     ))
     .unwrap();
 

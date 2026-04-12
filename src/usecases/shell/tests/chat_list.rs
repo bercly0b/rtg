@@ -33,6 +33,7 @@ fn chat_list_loaded_error_sets_error_state() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::ChatListLoaded {
             result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
+            all_loaded: false,
         },
     ))
     .unwrap();
@@ -57,6 +58,7 @@ fn chat_list_reload_preserves_selection_by_current_chat_id() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::ChatListLoaded {
             result: Ok(vec![chat(3, "Ops"), chat(1, "General"), chat(2, "Backend")]),
+            all_loaded: false,
         },
     ))
     .unwrap();
@@ -111,6 +113,7 @@ fn chat_list_reload_cursor_follows_current_selection_not_dispatch_time() {
                 chat(2, "Beta"),
                 chat(3, "Gamma"),
             ]),
+            all_loaded: false,
         },
     ))
     .unwrap();
@@ -140,6 +143,7 @@ fn chat_list_reload_falls_back_when_selected_chat_disappears() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::ChatListLoaded {
             result: Ok(vec![chat(1, "Alpha"), chat(2, "Beta")]),
+            all_loaded: false,
         },
     ))
     .unwrap();
@@ -245,6 +249,7 @@ fn user_refresh_shows_notification_on_failure() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::ChatListLoaded {
             result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
+            all_loaded: false,
         },
     ))
     .unwrap();
@@ -465,6 +470,7 @@ fn pending_flag_cleared_on_error_result_and_re_dispatches() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::ChatListLoaded {
             result: Err(BackgroundError::new("FAIL")),
+            all_loaded: false,
         },
     ))
     .unwrap();
