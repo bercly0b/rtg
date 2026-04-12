@@ -6,6 +6,7 @@ pub mod chat_lifecycle;
 pub mod chat_subtitle;
 pub mod context;
 pub mod contracts;
+pub mod edit_message;
 pub mod guided_auth;
 pub mod list_chats;
 pub mod load_messages;

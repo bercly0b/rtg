@@ -8,10 +8,20 @@ pub(super) fn handle_message_input_key<D: TaskDispatcher>(
 ) {
     match key {
         "esc" => {
+            if ctx.state.message_input().editing().is_some() {
+                ctx.state.message_input_mut().clear();
+            }
             ctx.state.message_input_mut().clear_reply_to();
+            ctx.state.message_input_mut().clear_editing();
             ctx.state.set_active_pane(ActivePane::Messages);
         }
-        "enter" => try_send_message(ctx),
+        "enter" => {
+            if ctx.state.message_input().editing().is_some() {
+                try_edit_message(ctx);
+            } else {
+                try_send_message(ctx);
+            }
+        }
         "backspace" => ctx.state.message_input_mut().delete_char_before(),
         "delete" => ctx.state.message_input_mut().delete_char_at(),
         "left" => ctx.state.message_input_mut().move_cursor_left(),
@@ -26,6 +36,33 @@ pub(super) fn handle_message_input_key<D: TaskDispatcher>(
         }
         _ => {}
     }
+}
+
+fn try_edit_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+    let text = ctx.state.message_input().text().to_string();
+    let trimmed = text.trim();
+
+    if trimmed.is_empty() {
+        return;
+    }
+
+    let edit_ctx = ctx.state.message_input_mut().take_editing().unwrap();
+
+    if trimmed == edit_ctx.original_text.trim() {
+        ctx.state.message_input_mut().clear();
+        ctx.state.set_active_pane(ActivePane::Messages);
+        return;
+    }
+
+    ctx.state.message_input_mut().clear();
+    ctx.state.set_active_pane(ActivePane::Messages);
+
+    ctx.state
+        .open_chat_mut()
+        .update_message_text(edit_ctx.message_id, trimmed.to_owned());
+
+    ctx.dispatcher
+        .dispatch_edit_message(edit_ctx.chat_id, edit_ctx.message_id, text);
 }
 
 fn try_send_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {

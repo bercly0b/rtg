@@ -3,13 +3,16 @@ use std::sync::{mpsc::Sender, Arc};
 use crate::{
     domain::events::{BackgroundError, BackgroundTaskResult},
     usecases::{
+        edit_message::{edit_message, EditMessageCommand, MessageEditor},
         load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
         send_message::{send_message, MessageSender, SendMessageCommand},
         send_voice::VoiceNoteSender,
     },
 };
 
-use super::error_mapping::{map_load_messages_error, map_send_message_error};
+use super::error_mapping::{
+    map_edit_message_error, map_load_messages_error, map_send_message_error,
+};
 
 pub(super) fn dispatch_load_messages<M: MessagesSource + Send + Sync + 'static>(
     source: &Arc<M>,
@@ -93,6 +96,52 @@ pub(super) fn dispatch_send_message<
         tracing::error!(error = %error, "failed to spawn send message background thread");
         let _ = tx_fallback.send(BackgroundTaskResult::MessageSent {
             chat_id,
+            original_text: fallback_text,
+            result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
+        });
+    }
+}
+
+pub(super) fn dispatch_edit_message<ME: MessageEditor + Send + Sync + 'static>(
+    editor: &Arc<ME>,
+    tx: &Sender<BackgroundTaskResult>,
+    chat_id: i64,
+    message_id: i64,
+    text: String,
+) {
+    let editor = Arc::clone(editor);
+    let tx = tx.clone();
+    let tx_fallback = tx.clone();
+    let original_text = text.clone();
+    let fallback_text = original_text.clone();
+
+    let spawn_result = std::thread::Builder::new()
+        .name("rtg-bg-edit-msg".into())
+        .spawn(move || {
+            tracing::debug!(chat_id, message_id, "background: editing message");
+            let command = EditMessageCommand {
+                chat_id,
+                message_id,
+                text,
+            };
+            let result = edit_message(editor.as_ref(), command).map_err(|error| {
+                tracing::warn!(chat_id, message_id, error = ?error, "background: edit message failed");
+                BackgroundError::new(map_edit_message_error(&error))
+            });
+
+            let _ = tx.send(BackgroundTaskResult::MessageEdited {
+                chat_id,
+                message_id,
+                original_text,
+                result,
+            });
+        });
+
+    if let Err(error) = spawn_result {
+        tracing::error!(error = %error, "failed to spawn edit message background thread");
+        let _ = tx_fallback.send(BackgroundTaskResult::MessageEdited {
+            chat_id,
+            message_id,
             original_text: fallback_text,
             result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
         });

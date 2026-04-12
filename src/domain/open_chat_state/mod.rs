@@ -132,6 +132,13 @@ impl OpenChatState {
         }
     }
 
+    pub fn update_message_text(&mut self, message_id: i64, new_text: String) {
+        if let Some(msg) = self.messages.iter_mut().find(|m| m.id == message_id) {
+            msg.text = new_text;
+            msg.is_edited = true;
+        }
+    }
+
     /// Updates the `reaction_count` of a specific message by ID.
     pub fn update_message_reaction_count(&mut self, message_id: i64, reaction_count: u32) {
         if let Some(msg) = self.messages.iter_mut().find(|m| m.id == message_id) {

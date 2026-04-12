@@ -1,5 +1,6 @@
 use crate::usecases::{
-    list_chats::ListChatsError, load_messages::LoadMessagesError, send_message::SendMessageError,
+    edit_message::EditMessageError, list_chats::ListChatsError, load_messages::LoadMessagesError,
+    send_message::SendMessageError,
 };
 
 pub(super) fn map_list_chats_error(error: &ListChatsError) -> &'static str {
@@ -24,5 +25,14 @@ pub(super) fn map_send_message_error(error: &SendMessageError) -> &'static str {
         SendMessageError::Unauthorized => "SEND_UNAUTHORIZED",
         SendMessageError::ChatNotFound => "SEND_CHAT_NOT_FOUND",
         SendMessageError::TemporarilyUnavailable => "SEND_UNAVAILABLE",
+    }
+}
+
+pub(super) fn map_edit_message_error(error: &EditMessageError) -> &'static str {
+    match error {
+        EditMessageError::EmptyMessage => "EDIT_EMPTY_MESSAGE",
+        EditMessageError::Unauthorized => "EDIT_UNAUTHORIZED",
+        EditMessageError::MessageNotFound => "EDIT_MESSAGE_NOT_FOUND",
+        EditMessageError::TemporarilyUnavailable => "EDIT_UNAVAILABLE",
     }
 }

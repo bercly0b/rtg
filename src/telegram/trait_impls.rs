@@ -5,6 +5,7 @@ use crate::{
             ChatLifecycle, ChatLifecycleError, ChatReadMarker, FileDownloader, MessageDeleter,
         },
         chat_subtitle::{ChatInfoQuery, ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource},
+        edit_message::{EditMessageSourceError, MessageEditor},
         list_chats::{ListChatsSource, ListChatsSourceError},
         load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
         message_info::{MessageInfoError, MessageInfoQuery, MessageInfoSource},
@@ -64,6 +65,20 @@ impl MessageSender for TelegramAdapter {
         match self.tdlib_backend.as_ref() {
             Some(backend) => backend.send_message(chat_id, text, reply_to_message_id),
             None => Err(SendMessageSourceError::Unauthorized),
+        }
+    }
+}
+
+impl MessageEditor for TelegramAdapter {
+    fn edit_message(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        text: &str,
+    ) -> Result<(), EditMessageSourceError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.edit_message(chat_id, message_id, text),
+            None => Err(EditMessageSourceError::Unauthorized),
         }
     }
 }

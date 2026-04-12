@@ -208,6 +208,39 @@ impl TdLibClient {
         })
     }
 
+    pub fn edit_message_text(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        text: &str,
+    ) -> Result<(), TdLibError> {
+        let client_id = self.client_id;
+        let text = text.to_owned();
+
+        self.rt.block_on(async {
+            let formatted_text = tdlib_rs::types::FormattedText {
+                text,
+                entities: vec![],
+            };
+
+            let input_content = tdlib_rs::enums::InputMessageContent::InputMessageText(
+                tdlib_rs::types::InputMessageText {
+                    text: formatted_text,
+                    link_preview_options: None,
+                    clear_draft: true,
+                },
+            );
+
+            tdlib_rs::functions::edit_message_text(chat_id, message_id, input_content, client_id)
+                .await
+                .map(|_| ())
+                .map_err(|e| TdLibError::Request {
+                    code: e.code,
+                    message: e.message,
+                })
+        })
+    }
+
     pub fn get_message_properties(
         &self,
         chat_id: i64,

@@ -79,6 +79,10 @@ pub fn messages_hotkeys() -> &'static [HotkeyEntry] {
             action_name: "reply_to_message",
         },
         HotkeyEntry {
+            key_label: "e",
+            action_name: "edit_message",
+        },
+        HotkeyEntry {
             key_label: "y",
             action_name: "copy_message_to_clipboard",
         },

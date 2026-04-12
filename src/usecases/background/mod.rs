@@ -15,6 +15,7 @@ use crate::domain::events::BackgroundTaskResult;
 use super::{
     chat_lifecycle::{ChatLifecycle, ChatReadMarker, FileDownloader, MessageDeleter},
     chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
+    edit_message::MessageEditor,
     list_chats::ListChatsSource,
     load_messages::MessagesSource,
     message_info::{MessageInfoQuery, MessageInfoSource},
@@ -34,6 +35,7 @@ pub trait TaskDispatcher {
     fn dispatch_chat_list(&self, force: bool, limit: usize);
     fn dispatch_load_messages(&self, chat_id: i64);
     fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>);
+    fn dispatch_edit_message(&self, chat_id: i64, message_id: i64, text: String);
 
     /// Informs TDLib that the user has opened a chat (fire-and-forget).
     fn dispatch_open_chat(&self, chat_id: i64);
@@ -99,7 +101,7 @@ pub struct ThreadTaskDispatcher<C, M, MS, L, S>
 where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
-    MS: MessageSender + VoiceNoteSender + Send + Sync + 'static,
+    MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
     S: ChatSubtitleSource + MessageInfoSource + Send + Sync + 'static,
 {
@@ -115,7 +117,7 @@ impl<C, M, MS, L, S> ThreadTaskDispatcher<C, M, MS, L, S>
 where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
-    MS: MessageSender + VoiceNoteSender + Send + Sync + 'static,
+    MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
     S: ChatSubtitleSource + MessageInfoSource + Send + Sync + 'static,
 {
@@ -142,7 +144,7 @@ impl<C, M, MS, L, S> TaskDispatcher for ThreadTaskDispatcher<C, M, MS, L, S>
 where
     C: ListChatsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
-    MS: MessageSender + VoiceNoteSender + Send + Sync + 'static,
+    MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
     S: ChatSubtitleSource + MessageInfoSource + Send + Sync + 'static,
 {
@@ -162,6 +164,16 @@ where
             chat_id,
             text,
             reply_to_message_id,
+        );
+    }
+
+    fn dispatch_edit_message(&self, chat_id: i64, message_id: i64, text: String) {
+        messaging::dispatch_edit_message(
+            &self.message_sender,
+            &self.result_tx,
+            chat_id,
+            message_id,
+            text,
         );
     }
 

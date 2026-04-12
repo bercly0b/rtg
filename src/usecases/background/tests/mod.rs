@@ -42,6 +42,8 @@ impl TaskDispatcher for StubTaskDispatcher {
     ) {
     }
 
+    fn dispatch_edit_message(&self, _chat_id: i64, _message_id: i64, _text: String) {}
+
     fn dispatch_open_chat(&self, _chat_id: i64) {}
 
     fn dispatch_close_chat(&self, _chat_id: i64) {}
