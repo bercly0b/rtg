@@ -1,6 +1,11 @@
 use super::types::{TdLibError, TDLIB_ERROR_ALL_CHATS_LOADED};
 use super::TdLibClient;
 
+pub struct GetChatsResult {
+    pub chat_ids: Vec<i64>,
+    pub all_loaded: bool,
+}
+
 impl TdLibClient {
     /// Gets list of chat IDs from TDLib.
     ///
@@ -9,10 +14,14 @@ impl TdLibClient {
     /// cache via `getChats`. If `loadChats` fails (e.g. no network), we still
     /// try `getChats` to return whatever is available from TDLib's local
     /// SQLite database — this keeps the chat list usable in offline scenarios.
-    pub fn get_chats(&self, limit: i32) -> Result<Vec<i64>, TdLibError> {
+    ///
+    /// `all_loaded` is `true` when TDLib signals there are no more chats to fetch.
+    pub fn get_chats(&self, limit: i32) -> Result<GetChatsResult, TdLibError> {
         let client_id = self.client_id;
 
         self.rt.block_on(async {
+            let mut all_loaded = false;
+
             // Try to load fresh chats from the server. Failures are non-fatal:
             // TDLib's local cache may still have chats from previous sessions.
             if let Err(e) = tdlib_rs::functions::load_chats(
@@ -24,6 +33,7 @@ impl TdLibClient {
             {
                 if e.code == TDLIB_ERROR_ALL_CHATS_LOADED {
                     tracing::debug!("load_chats returned 404: all chats already loaded");
+                    all_loaded = true;
                 } else {
                     tracing::warn!(
                         code = e.code,
@@ -46,7 +56,18 @@ impl TdLibClient {
             })?;
 
             match chats {
-                tdlib_rs::enums::Chats::Chats(c) => Ok(c.chat_ids),
+                tdlib_rs::enums::Chats::Chats(c) => {
+                    // `loadChats` 404 means "no more chats on the server", but
+                    // TDLib's local cache may still hold more chats than we
+                    // requested via `getChats(limit)`. Only report all_loaded
+                    // when the cache is also exhausted (returned fewer than
+                    // requested).
+                    let actually_all_loaded = all_loaded && (c.chat_ids.len() as i32) < limit;
+                    Ok(GetChatsResult {
+                        chat_ids: c.chat_ids,
+                        all_loaded: actually_all_loaded,
+                    })
+                }
             }
         })
     }

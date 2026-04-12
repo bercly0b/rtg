@@ -34,6 +34,7 @@ pub enum BackgroundTaskResult {
     /// Chat list fetch completed.
     ChatListLoaded {
         result: Result<Vec<super::chat::ChatSummary>, BackgroundError>,
+        all_loaded: bool,
     },
     /// Messages fetch for a specific chat completed.
     MessagesLoaded {

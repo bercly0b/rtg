@@ -32,7 +32,7 @@ use super::{
 /// `dispatch_mark_as_read`) are fire-and-forget: errors are logged
 /// but do not produce `BackgroundTaskResult`.
 pub trait TaskDispatcher {
-    fn dispatch_chat_list(&self, force: bool);
+    fn dispatch_chat_list(&self, force: bool, limit: usize);
     fn dispatch_load_messages(&self, chat_id: i64);
     fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>);
     fn dispatch_edit_message(&self, chat_id: i64, message_id: i64, text: String);
@@ -148,8 +148,8 @@ where
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
     S: ChatSubtitleSource + MessageInfoSource + Send + Sync + 'static,
 {
-    fn dispatch_chat_list(&self, force: bool) {
-        lifecycle::dispatch_chat_list(&self.chats_source, &self.result_tx, force);
+    fn dispatch_chat_list(&self, force: bool, limit: usize) {
+        lifecycle::dispatch_chat_list(&self.chats_source, &self.result_tx, force, limit);
     }
 
     fn dispatch_load_messages(&self, chat_id: i64) {

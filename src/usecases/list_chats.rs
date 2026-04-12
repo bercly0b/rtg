@@ -1,7 +1,6 @@
 use crate::domain::chat::ChatSummary;
 
-const DEFAULT_CHAT_PAGE_SIZE: usize = 50;
-const MAX_CHAT_PAGE_SIZE: usize = 200;
+pub const DEFAULT_CHAT_PAGE_SIZE: usize = 50;
 
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +24,6 @@ impl ListChatsQuery {
     fn normalized_limit(&self) -> usize {
         match self.limit {
             0 => DEFAULT_CHAT_PAGE_SIZE,
-            value if value > MAX_CHAT_PAGE_SIZE => MAX_CHAT_PAGE_SIZE,
             value => value,
         }
     }
@@ -35,6 +33,7 @@ impl ListChatsQuery {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListChatsOutput {
     pub chats: Vec<ChatSummary>,
+    pub all_loaded: bool,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -52,7 +51,7 @@ pub trait ListChatsSource {
         &self,
         limit: usize,
         force: bool,
-    ) -> Result<Vec<ChatSummary>, ListChatsSourceError>;
+    ) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError>;
 }
 
 impl<T> ListChatsSource for &T
@@ -63,7 +62,7 @@ where
         &self,
         limit: usize,
         force: bool,
-    ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+    ) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError> {
         (*self).list_chats(limit, force)
     }
 }
@@ -76,7 +75,7 @@ where
         &self,
         limit: usize,
         force: bool,
-    ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+    ) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError> {
         (**self).list_chats(limit, force)
     }
 }
@@ -95,11 +94,11 @@ pub fn list_chats(
     query: ListChatsQuery,
 ) -> Result<ListChatsOutput, ListChatsError> {
     let limit = query.normalized_limit();
-    let chats = source
+    let (chats, all_loaded) = source
         .list_chats(limit, query.force)
         .map_err(map_source_error)?;
 
-    Ok(ListChatsOutput { chats })
+    Ok(ListChatsOutput { chats, all_loaded })
 }
 
 fn map_source_error(error: ListChatsSourceError) -> ListChatsError {
@@ -135,9 +134,9 @@ mod tests {
             &self,
             limit: usize,
             _force: bool,
-        ) -> Result<Vec<ChatSummary>, ListChatsSourceError> {
+        ) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError> {
             *self.captured_limit.lock().expect("limit lock") = Some(limit);
-            self.result.clone()
+            self.result.clone().map(|chats| (chats, false))
         }
     }
 
@@ -177,7 +176,7 @@ mod tests {
     }
 
     #[test]
-    fn caps_limit_to_maximum_boundary() {
+    fn passes_custom_limit_through() {
         let source = StubSource::with_result(Ok(vec![]));
 
         let _ = list_chats(
@@ -191,7 +190,7 @@ mod tests {
 
         assert_eq!(
             *source.captured_limit.lock().expect("limit lock"),
-            Some(200)
+            Some(999)
         );
     }
 

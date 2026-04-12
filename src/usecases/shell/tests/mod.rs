@@ -200,7 +200,7 @@ impl RecordingDispatcher {
 }
 
 impl TaskDispatcher for RecordingDispatcher {
-    fn dispatch_chat_list(&self, force: bool) {
+    fn dispatch_chat_list(&self, force: bool, _limit: usize) {
         *self.dispatched_chat_list_count.borrow_mut() += 1;
         self.dispatched_chat_list_force.borrow_mut().push(force);
     }
@@ -299,7 +299,10 @@ fn make_orchestrator() -> TestOrchestrator {
 fn inject_chat_list(orchestrator: &mut TestOrchestrator, chats: Vec<ChatSummary>) {
     orchestrator
         .handle_event(AppEvent::BackgroundTaskCompleted(
-            BackgroundTaskResult::ChatListLoaded { result: Ok(chats) },
+            BackgroundTaskResult::ChatListLoaded {
+                result: Ok(chats),
+                all_loaded: false,
+            },
         ))
         .unwrap();
 }

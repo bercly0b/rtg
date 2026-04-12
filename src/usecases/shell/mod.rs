@@ -240,6 +240,10 @@ where
             "j" => {
                 self.state.chat_list_mut().select_next();
                 chat_open::maybe_prefetch_selected_chat(&mut self.as_ctx());
+                if self.state.chat_list().needs_more_chats() && !self.chat_list_in_flight {
+                    self.state.chat_list_mut().request_more_chats();
+                    chat_list::dispatch_chat_list_refresh(&mut self.as_ctx(), false);
+                }
             }
             "k" => {
                 self.state.chat_list_mut().select_previous();

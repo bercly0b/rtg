@@ -9,12 +9,18 @@ pub enum ChatListUiState {
     Error,
 }
 
+use crate::usecases::list_chats::DEFAULT_CHAT_PAGE_SIZE;
+
+const LOAD_MORE_OFFSET: usize = 10;
+
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatListState {
     ui_state: ChatListUiState,
     chats: Vec<ChatSummary>,
     selected_index: Option<usize>,
+    all_chats_loaded: bool,
+    total_limit: usize,
 }
 
 impl Default for ChatListState {
@@ -23,6 +29,8 @@ impl Default for ChatListState {
             ui_state: ChatListUiState::Loading,
             chats: Vec::new(),
             selected_index: None,
+            all_chats_loaded: false,
+            total_limit: DEFAULT_CHAT_PAGE_SIZE,
         }
     }
 }
@@ -38,9 +46,12 @@ impl ChatListState {
             return Self::default();
         }
 
+        let total_limit = chats.len().max(DEFAULT_CHAT_PAGE_SIZE);
         Self {
             ui_state: ChatListUiState::Ready,
             selected_index: Some(0),
+            all_chats_loaded: false,
+            total_limit,
             chats,
         }
     }
@@ -64,10 +75,39 @@ impl ChatListState {
         self.selected_index.and_then(|index| self.chats.get(index))
     }
 
+    pub fn all_chats_loaded(&self) -> bool {
+        self.all_chats_loaded
+    }
+
+    pub fn total_limit(&self) -> usize {
+        self.total_limit
+    }
+
+    pub fn needs_more_chats(&self) -> bool {
+        if self.all_chats_loaded {
+            return false;
+        }
+        let Some(index) = self.selected_index else {
+            return false;
+        };
+        let last = self.chats.len().saturating_sub(1);
+        last.saturating_sub(index) < LOAD_MORE_OFFSET
+    }
+
+    pub fn request_more_chats(&mut self) {
+        self.total_limit += DEFAULT_CHAT_PAGE_SIZE;
+    }
+
+    pub fn set_all_chats_loaded(&mut self, all_loaded: bool) {
+        self.all_chats_loaded = all_loaded;
+    }
+
     pub fn set_loading(&mut self) {
         self.ui_state = ChatListUiState::Loading;
         self.chats.clear();
         self.selected_index = None;
+        self.all_chats_loaded = false;
+        self.total_limit = DEFAULT_CHAT_PAGE_SIZE;
     }
 
     pub fn set_ready(&mut self, chats: Vec<ChatSummary>) {
@@ -94,12 +134,14 @@ impl ChatListState {
         self.ui_state = ChatListUiState::Empty;
         self.chats.clear();
         self.selected_index = None;
+        self.all_chats_loaded = true;
     }
 
     pub fn set_error(&mut self) {
         self.ui_state = ChatListUiState::Error;
         self.chats.clear();
         self.selected_index = None;
+        self.all_chats_loaded = false;
     }
 
     pub fn select_next(&mut self) {
@@ -394,5 +436,74 @@ mod tests {
         state.set_ready(vec![chat(1, "Alice Johnson"), chat(2, "Bob Smith")]);
         assert!(state.select_by_query("john"));
         assert_eq!(state.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn needs_more_chats_true_when_near_end() {
+        let chats: Vec<ChatSummary> = (1..=20).map(|i| chat(i, &format!("Chat {i}"))).collect();
+        let mut state = ChatListState::default();
+        state.set_ready(chats);
+
+        for _ in 0..15 {
+            state.select_next();
+        }
+
+        assert!(state.needs_more_chats());
+    }
+
+    #[test]
+    fn needs_more_chats_false_when_far_from_end() {
+        let chats: Vec<ChatSummary> = (1..=50).map(|i| chat(i, &format!("Chat {i}"))).collect();
+        let mut state = ChatListState::default();
+        state.set_ready(chats);
+
+        state.select_next();
+
+        assert!(!state.needs_more_chats());
+    }
+
+    #[test]
+    fn needs_more_chats_false_when_all_loaded() {
+        let chats: Vec<ChatSummary> = (1..=5).map(|i| chat(i, &format!("Chat {i}"))).collect();
+        let mut state = ChatListState::default();
+        state.set_all_chats_loaded(true);
+        state.set_ready(chats);
+
+        for _ in 0..4 {
+            state.select_next();
+        }
+
+        assert!(!state.needs_more_chats());
+    }
+
+    #[test]
+    fn request_more_chats_increases_total_limit() {
+        let mut state = ChatListState::default();
+        assert_eq!(state.total_limit(), 50);
+
+        state.request_more_chats();
+        assert_eq!(state.total_limit(), 100);
+
+        state.request_more_chats();
+        assert_eq!(state.total_limit(), 150);
+    }
+
+    #[test]
+    fn set_loading_resets_pagination_state() {
+        let mut state = ChatListState::default();
+        state.set_all_chats_loaded(true);
+        state.request_more_chats();
+
+        state.set_loading();
+
+        assert!(!state.all_chats_loaded());
+        assert_eq!(state.total_limit(), 50);
+    }
+
+    #[test]
+    fn set_empty_marks_all_loaded() {
+        let mut state = ChatListState::default();
+        state.set_empty();
+        assert!(state.all_chats_loaded());
     }
 }
