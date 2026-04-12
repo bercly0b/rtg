@@ -15,6 +15,7 @@ use ratatui::{
 use crate::domain::shell_state::ShellState;
 
 use super::chat_info_popup;
+use super::chat_search_popup;
 use super::command_popup;
 use super::help_popup;
 use super::message_info_popup;
@@ -84,6 +85,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
 
     if let Some(msg_info_state) = state.message_info_popup() {
         message_info_popup::render_message_info_popup(frame, frame.area(), msg_info_state);
+    }
+
+    if let Some(search_state) = state.chat_search() {
+        chat_search_popup::render_chat_search_popup(frame, frame.area(), search_state);
     }
 }
 

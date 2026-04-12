@@ -252,6 +252,7 @@ where
             }
             "r" => chat_list::mark_selected_chat_as_read(&mut self.as_ctx()),
             "I" => chat_list::show_chat_info_popup(&mut self.as_ctx()),
+            "/" => self.state.open_chat_search(),
             "enter" | "l" => {
                 if self.state.chat_list().selected_chat().is_some() {
                     self.state.set_active_pane(ActivePane::Messages);
@@ -322,6 +323,29 @@ where
                 voice::handle_command_exited(&mut self.as_ctx(), success);
             }
             AppEvent::InputKey(key) => {
+                if self.state.chat_search().is_some() {
+                    match key.key.as_str() {
+                        "esc" | "enter" => self.state.close_chat_search(),
+                        "backspace" => {
+                            let search = self.state.chat_search_mut().unwrap();
+                            search.delete_char_before();
+                            let q = search.query().to_owned();
+                            if !q.is_empty() {
+                                self.state.chat_list_mut().select_by_query(&q);
+                            }
+                        }
+                        k if k.chars().count() == 1 => {
+                            let ch = k.chars().next().unwrap();
+                            let search = self.state.chat_search_mut().unwrap();
+                            search.insert_char(ch);
+                            let q = search.query().to_owned();
+                            self.state.chat_list_mut().select_by_query(&q);
+                        }
+                        _ => {}
+                    }
+                    return Ok(());
+                }
+
                 if self.state.command_popup().is_some() {
                     voice::handle_command_popup_key(&mut self.as_ctx(), &key.key);
                     return Ok(());

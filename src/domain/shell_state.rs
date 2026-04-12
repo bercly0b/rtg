@@ -2,9 +2,10 @@ use std::time::{Duration, Instant};
 
 use super::{
     chat::ChatSummary, chat_info_state::ChatInfoPopupState, chat_list_state::ChatListState,
-    command_popup_state::CommandPopupState, events::ConnectivityStatus,
-    message_cache::MessageCache, message_info_state::MessageInfoPopupState,
-    message_input_state::MessageInputState, open_chat_state::OpenChatState,
+    chat_search_state::ChatSearchState, command_popup_state::CommandPopupState,
+    events::ConnectivityStatus, message_cache::MessageCache,
+    message_info_state::MessageInfoPopupState, message_input_state::MessageInputState,
+    open_chat_state::OpenChatState,
 };
 
 const NOTIFICATION_TTL: Duration = Duration::from_secs(3);
@@ -35,6 +36,7 @@ pub struct ShellState {
     notification: Option<(String, Instant)>,
     chat_info_popup: Option<ChatInfoPopupState>,
     message_info_popup: Option<MessageInfoPopupState>,
+    chat_search: Option<ChatSearchState>,
 }
 
 impl Default for ShellState {
@@ -52,6 +54,7 @@ impl Default for ShellState {
             notification: None,
             chat_info_popup: None,
             message_info_popup: None,
+            chat_search: None,
         }
     }
 }
@@ -200,6 +203,22 @@ impl ShellState {
 
     pub fn close_message_info_popup(&mut self) {
         self.message_info_popup = None;
+    }
+
+    pub fn chat_search(&self) -> Option<&ChatSearchState> {
+        self.chat_search.as_ref()
+    }
+
+    pub fn chat_search_mut(&mut self) -> Option<&mut ChatSearchState> {
+        self.chat_search.as_mut()
+    }
+
+    pub fn open_chat_search(&mut self) {
+        self.chat_search = Some(ChatSearchState::default());
+    }
+
+    pub fn close_chat_search(&mut self) {
+        self.chat_search = None;
     }
 
     pub fn message_input(&self) -> &MessageInputState {

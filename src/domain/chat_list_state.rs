@@ -119,6 +119,23 @@ impl ChatListState {
         self.selected_index = Some(index.saturating_sub(1));
     }
 
+    pub fn select_by_query(&mut self, query: &str) -> bool {
+        if self.chats.is_empty() || query.is_empty() {
+            return false;
+        }
+        let query_lower = query.to_lowercase();
+        let start = self.selected_index.unwrap_or(0);
+        let len = self.chats.len();
+        for offset in 0..len {
+            let idx = (start + offset) % len;
+            if self.chats[idx].title.to_lowercase().contains(&query_lower) {
+                self.selected_index = Some(idx);
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn clear_selected_chat_unread(&mut self) {
         if let Some(index) = self.selected_index {
             if let Some(chat) = self.chats.get_mut(index) {
@@ -322,5 +339,60 @@ mod tests {
     fn clear_selected_chat_unread_noop_without_selection() {
         let mut state = ChatListState::default();
         state.clear_selected_chat_unread(); // should not panic
+    }
+
+    #[test]
+    fn select_by_query_finds_match_forward() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![chat(1, "Alice"), chat(2, "Bob"), chat(3, "Charlie")]);
+        assert!(state.select_by_query("bob"));
+        assert_eq!(state.selected_index(), Some(1));
+    }
+
+    #[test]
+    fn select_by_query_case_insensitive() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![chat(1, "Alice"), chat(2, "Bob")]);
+        assert!(state.select_by_query("BOB"));
+        assert_eq!(state.selected_index(), Some(1));
+    }
+
+    #[test]
+    fn select_by_query_wraps_around() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![chat(1, "Alice"), chat(2, "Bob"), chat(3, "Charlie")]);
+        state.select_next();
+        state.select_next(); // now at Charlie (index 2)
+        assert!(state.select_by_query("alice"));
+        assert_eq!(state.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn select_by_query_no_match_returns_false() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![chat(1, "Alice"), chat(2, "Bob")]);
+        assert!(!state.select_by_query("xyz"));
+        assert_eq!(state.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn select_by_query_empty_query_returns_false() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![chat(1, "Alice")]);
+        assert!(!state.select_by_query(""));
+    }
+
+    #[test]
+    fn select_by_query_empty_list_returns_false() {
+        let mut state = ChatListState::default();
+        assert!(!state.select_by_query("alice"));
+    }
+
+    #[test]
+    fn select_by_query_substring_match() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![chat(1, "Alice Johnson"), chat(2, "Bob Smith")]);
+        assert!(state.select_by_query("john"));
+        assert_eq!(state.selected_index(), Some(0));
     }
 }
