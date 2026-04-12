@@ -7,6 +7,7 @@ use crate::{
     usecases::{
         background::TaskDispatcher,
         chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery},
+        message_info::MessageInfoQuery,
     },
 };
 
@@ -64,4 +65,6 @@ impl TaskDispatcher for StubTaskDispatcher {
     fn dispatch_open_file(&self, _cmd_template: String, _file_path: String) {}
 
     fn dispatch_save_file(&self, _file_id: i32, _local_path: String, _file_name: Option<String>) {}
+
+    fn dispatch_message_info(&self, _query: MessageInfoQuery) {}
 }

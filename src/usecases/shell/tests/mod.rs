@@ -6,6 +6,7 @@ mod help_popup;
 mod lifecycle;
 mod message_actions;
 mod message_cache;
+mod message_info;
 mod message_input;
 mod playback;
 mod voice;
@@ -267,6 +268,10 @@ impl TaskDispatcher for RecordingDispatcher {
     }
 
     fn dispatch_save_file(&self, _file_id: i32, _local_path: String, _file_name: Option<String>) {
+        // Recording: no-op for now
+    }
+
+    fn dispatch_message_info(&self, _query: crate::usecases::message_info::MessageInfoQuery) {
         // Recording: no-op for now
     }
 }

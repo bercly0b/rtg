@@ -9,6 +9,7 @@ pub mod events;
 pub mod help_content;
 pub mod message;
 pub mod message_cache;
+pub mod message_info_state;
 pub mod message_input_state;
 pub mod open_chat_state;
 pub mod open_defaults;

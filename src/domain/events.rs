@@ -70,6 +70,12 @@ pub enum BackgroundTaskResult {
         chat_id: i64,
         result: Result<super::chat_info_state::ChatInfo, BackgroundError>,
     },
+    /// Message info (reactions, viewers, read/edit dates) resolved for the info popup.
+    MessageInfoLoaded {
+        chat_id: i64,
+        message_id: i64,
+        result: Result<super::message_info_state::MessageInfo, BackgroundError>,
+    },
     /// Platform default file opener failed (non-zero exit code).
     /// The orchestrator should display the error as a notification.
     OpenFileFailed { stderr: String },
