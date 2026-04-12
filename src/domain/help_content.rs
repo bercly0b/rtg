@@ -37,6 +37,10 @@ pub fn chat_list_hotkeys() -> &'static [HotkeyEntry] {
             action_name: "show_chat_info",
         },
         HotkeyEntry {
+            key_label: "/",
+            action_name: "search_chats",
+        },
+        HotkeyEntry {
             key_label: "q",
             action_name: "quit",
         },

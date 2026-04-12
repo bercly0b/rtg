@@ -2,6 +2,7 @@
 
 mod chat_info_popup;
 pub(crate) mod chat_message_list;
+mod chat_search_popup;
 mod command_popup;
 mod event_source;
 mod help_popup;
