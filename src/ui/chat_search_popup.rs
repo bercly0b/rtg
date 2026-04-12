@@ -8,19 +8,16 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::domain::chat_search_state::ChatSearchState;
 
-use super::styles;
+use super::{popup_utils, styles};
 
 pub fn render_chat_search_popup(frame: &mut Frame<'_>, area: Rect, state: &ChatSearchState) {
-    let popup_width = (area.width / 2).max(20).min(area.width);
-    let popup_height = 3_u16.min(area.height);
-
-    let x = area.x + (area.width.saturating_sub(popup_width)) / 2;
-    let y = area.y + (area.height.saturating_sub(popup_height)) / 2;
-    let popup_area = Rect::new(x, y, popup_width, popup_height);
+    let centered = popup_utils::centered_rect(area, 50, 70);
+    let popup_area = Rect::new(centered.x, centered.y, centered.width, 3.min(area.height));
 
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
+        .title(" Search ")
         .borders(Borders::ALL)
         .border_style(styles::help_popup_border_style())
         .padding(Padding::horizontal(1));
