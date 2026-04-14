@@ -193,3 +193,27 @@ fn ensure_selected_visible_idempotent_last_item_large_padding() {
     assert_eq!(r1, r2, "first re-call must be stable");
     assert_eq!(r2, r3, "second re-call must be stable");
 }
+
+#[test]
+fn ensure_selected_visible_no_oscillation_message_taller_than_viewport() {
+    // A single message taller than the viewport must not oscillate between
+    // top-aligned and bottom-aligned positions across frames.
+    // Items: [3, 30, 3], viewport = 10, padding = 1
+    // Message 1 (30 lines) cannot fit; once partially visible, offset must stabilize.
+    let items = make_items(&[3, 30, 3]);
+
+    // Start with message 1 top-aligned.
+    let offset = ScrollOffset { item: 1, line: 0 };
+    let r1 = ensure_selected_visible(&items, offset, 1, 10, 1);
+    let r2 = ensure_selected_visible(&items, r1, 1, 10, 1);
+    assert_eq!(
+        r1, r2,
+        "must be stable when message is taller than viewport"
+    );
+
+    // Start with message 1 bottom-aligned.
+    let offset2 = ScrollOffset { item: 1, line: 23 };
+    let r3 = ensure_selected_visible(&items, offset2, 1, 10, 1);
+    let r4 = ensure_selected_visible(&items, r3, 1, 10, 1);
+    assert_eq!(r3, r4, "must be stable from bottom-aligned start");
+}
