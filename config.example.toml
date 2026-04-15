@@ -37,3 +37,32 @@ api_hash = "replace-me"
 # "audio/mpeg" = "mpv --no-video {file_path}"
 # "audio/*" = "mpv {file_path}"
 
+[keys]
+# Override default key bindings. Keys are action names (snake_case),
+# values are key patterns.
+#
+# Key pattern formats:
+#   Single key:    "j", "?", "/"
+#   Ctrl combo:    "Ctrl+C"
+#   Key sequence:  "dd", "gg" (multiple characters = sequence)
+#   Special keys:  "Enter", "Esc", "Backspace", "Delete", "Left", "Right", "Home", "End"
+#
+# Available actions (chat list context):
+#   select_next_chat, select_previous_chat, open_chat, refresh_chat_list,
+#   mark_chat_as_read, show_chat_info, search_chats
+#
+# Available actions (messages context):
+#   scroll_to_next_message, scroll_to_previous_message, back_to_chat_list,
+#   enter_message_input, reply_to_message, edit_message, copy_message_to_clipboard,
+#   delete_message, open_message, open_link_in_browser, record_voice_message,
+#   show_message_info, download_file, save_file_to_downloads
+#
+# Available actions (global):
+#   quit, show_help
+#
+# Examples:
+# select_next_chat = "n"
+# select_previous_chat = "p"
+# delete_message = "xx"
+# quit = "Q"
+

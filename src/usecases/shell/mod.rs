@@ -2,9 +2,9 @@ mod background_results;
 mod chat_list;
 mod chat_open;
 mod chat_updates;
+mod key_dispatch;
 mod message_actions;
 mod message_input;
-mod message_keys;
 mod voice;
 
 use std::sync::Arc;
@@ -15,6 +15,7 @@ use crate::{
     domain::{
         chat_list_state::ChatListUiState,
         events::AppEvent,
+        keymap::{KeyContext, Keymap, ResolveResult},
         message_cache::DEFAULT_MIN_DISPLAY_MESSAGES,
         shell_state::{ActivePane, ShellState},
     },
@@ -57,7 +58,6 @@ pub(super) struct OrchestratorCtx<'a, D: TaskDispatcher> {
     pub tdlib_opened_chat_id: &'a mut Option<i64>,
     pub prefetch_in_flight: &'a mut Option<i64>,
     pub min_display_messages: usize,
-    pub pending_d: &'a mut bool,
     pub pending_saves: &'a mut std::collections::HashSet<i32>,
     pub cache_source: &'a Option<Arc<dyn CachedMessagesSource>>,
     pub open_handlers: &'a std::collections::HashMap<String, String>,
@@ -104,8 +104,7 @@ where
     /// If the cache holds fewer messages, the UI shows Loading instead of a
     /// sparse preview (eliminates the "1 message flash" artifact).
     min_display_messages: usize,
-    /// Vim-style `dd` pending state: `true` after the first `d` press.
-    pending_d: bool,
+    keymap: Keymap,
     /// Handle to a running recording process (voice recording, etc.).
     recording_handle: Option<super::voice_recording::RecordingHandle>,
     /// Path to the currently recorded voice file.
@@ -149,7 +148,7 @@ where
             tdlib_opened_chat_id: None,
             prefetch_in_flight: None,
             min_display_messages: DEFAULT_MIN_DISPLAY_MESSAGES,
-            pending_d: false,
+            keymap: Keymap::default(),
             recording_handle: None,
             recording_file_path: None,
             pending_command_rx: None,
@@ -180,6 +179,7 @@ where
         voice_record_cmd: String,
         open_handlers: std::collections::HashMap<String, String>,
         max_auto_download_bytes: u64,
+        key_overrides: std::collections::HashMap<String, String>,
     ) -> Self {
         let initial_refresh_needed = initial_state.chat_list().ui_state() == ChatListUiState::Ready;
         Self {
@@ -197,7 +197,11 @@ where
             tdlib_opened_chat_id: None,
             prefetch_in_flight: None,
             min_display_messages: min_display_messages.max(1),
-            pending_d: false,
+            keymap: if key_overrides.is_empty() {
+                Keymap::default()
+            } else {
+                Keymap::with_overrides(&key_overrides)
+            },
             recording_handle: None,
             recording_file_path: None,
             pending_command_rx: None,
@@ -227,7 +231,6 @@ where
             tdlib_opened_chat_id: &mut self.tdlib_opened_chat_id,
             prefetch_in_flight: &mut self.prefetch_in_flight,
             min_display_messages: self.min_display_messages,
-            pending_d: &mut self.pending_d,
             cache_source: &self.cache_source,
             open_handlers: &self.open_handlers,
             opener: &self.opener,
@@ -235,42 +238,16 @@ where
         }
     }
 
-    fn handle_chat_list_key(&mut self, key: &str) -> Result<()> {
-        match key {
-            "j" => {
-                self.state.chat_list_mut().select_next();
-                chat_open::maybe_prefetch_selected_chat(&mut self.as_ctx());
-                if self.state.chat_list().needs_more_chats() && !self.chat_list_in_flight {
-                    self.state.chat_list_mut().request_more_chats();
-                    chat_list::dispatch_chat_list_refresh(&mut self.as_ctx(), false);
-                }
-            }
-            "k" => {
-                self.state.chat_list_mut().select_previous();
-                chat_open::maybe_prefetch_selected_chat(&mut self.as_ctx());
-            }
-            "R" => {
-                self.user_requested_chat_refresh = true;
-                self.state.set_notification("Refreshing chat list...");
-                chat_list::dispatch_chat_list_refresh(&mut self.as_ctx(), true);
-            }
-            "r" => chat_list::mark_selected_chat_as_read(&mut self.as_ctx()),
-            "I" => chat_list::show_chat_info_popup(&mut self.as_ctx()),
-            "/" => self.state.open_chat_search(),
-            "enter" | "l" => {
-                if self.state.chat_list().selected_chat().is_some() {
-                    self.state.set_active_pane(ActivePane::Messages);
-                    chat_open::open_selected_chat(&mut self.as_ctx());
-                    self.storage.save_last_action("open_chat")?;
-                }
-            }
-            _ => {}
+    fn handle_chat_list_action(&mut self, action: crate::domain::keymap::Action) -> Result<()> {
+        let save_action = key_dispatch::dispatch_chat_list_action(&mut self.as_ctx(), action)?;
+        if save_action {
+            self.storage.save_last_action("open_chat")?;
         }
         Ok(())
     }
 
-    fn handle_messages_key(&mut self, key: &str) -> Result<()> {
-        message_keys::handle_messages_key(&mut self.as_ctx(), key)
+    fn handle_messages_action(&mut self, action: crate::domain::keymap::Action) -> Result<()> {
+        key_dispatch::dispatch_messages_action(&mut self.as_ctx(), action)
     }
 
     #[cfg(test)]
@@ -296,6 +273,10 @@ where
 
     fn state_mut(&mut self) -> &mut ShellState {
         &mut self.state
+    }
+
+    fn keymap(&self) -> &Keymap {
+        &self.keymap
     }
 
     fn handle_event(&mut self, event: AppEvent) -> Result<()> {
@@ -379,38 +360,24 @@ where
                     return Ok(());
                 }
 
-                if key.key == "?" {
-                    match self.state.active_pane() {
-                        ActivePane::ChatList | ActivePane::Messages => {
-                            self.state.show_help();
-                            return Ok(());
-                        }
-                        ActivePane::MessageInput => {
-                            message_input::handle_message_input_key(&mut self.as_ctx(), "?");
-                            return Ok(());
-                        }
-                    }
-                }
-
-                if key.key == "q" && !key.ctrl {
-                    match self.state.active_pane() {
-                        ActivePane::MessageInput => {
-                            message_input::handle_message_input_key(&mut self.as_ctx(), "q");
-                        }
-                        _ => {
-                            chat_open::close_tdlib_chat(&mut self.as_ctx());
-                            self.state.stop();
-                        }
-                    }
+                if self.state.active_pane() == ActivePane::MessageInput {
+                    message_input::handle_message_input_key(&mut self.as_ctx(), &key.key);
                     return Ok(());
                 }
 
-                match self.state.active_pane() {
-                    ActivePane::ChatList => self.handle_chat_list_key(&key.key)?,
-                    ActivePane::Messages => self.handle_messages_key(&key.key)?,
-                    ActivePane::MessageInput => {
-                        message_input::handle_message_input_key(&mut self.as_ctx(), &key.key);
-                    }
+                let context = match self.state.active_pane() {
+                    ActivePane::ChatList => KeyContext::ChatList,
+                    ActivePane::Messages => KeyContext::Messages,
+                    ActivePane::MessageInput => unreachable!(),
+                };
+
+                match self.keymap.resolve(&key.key, key.ctrl, context) {
+                    ResolveResult::Action(action) => match context {
+                        KeyContext::ChatList => self.handle_chat_list_action(action)?,
+                        KeyContext::Messages => self.handle_messages_action(action)?,
+                        KeyContext::Global => {}
+                    },
+                    ResolveResult::Pending | ResolveResult::Unmatched => {}
                 }
             }
             AppEvent::ConnectivityChanged(status) => {

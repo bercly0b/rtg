@@ -387,6 +387,7 @@ fn make_orchestrator_with_cached_chats(chats: Vec<ChatSummary>) -> TestOrchestra
         crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
         std::collections::HashMap::new(),
         10_000_000,
+        std::collections::HashMap::new(),
     )
 }
 
@@ -405,6 +406,7 @@ fn make_orchestrator_with_cache(
         crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
         std::collections::HashMap::new(),
         10_000_000,
+        std::collections::HashMap::new(),
     )
 }
 
@@ -423,6 +425,7 @@ fn make_orchestrator_with_threshold(
         crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
         std::collections::HashMap::new(),
         10_000_000,
+        std::collections::HashMap::new(),
     )
 }
 
@@ -442,6 +445,7 @@ fn make_orchestrator_with_cache_and_threshold(
         crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
         std::collections::HashMap::new(),
         10_000_000,
+        std::collections::HashMap::new(),
     )
 }
 
