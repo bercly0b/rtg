@@ -184,6 +184,32 @@ impl TdLibClient {
                             });
                         }
 
+                        // Chat action updates (typing indicators)
+                        Update::ChatAction(u) => {
+                            let sender_user_id = match u.sender_id {
+                                tdlib_rs::enums::MessageSender::User(ref s) => s.user_id,
+                                _ => 0,
+                            };
+                            if sender_user_id != 0 {
+                                let is_cancel =
+                                    matches!(u.action, tdlib_rs::enums::ChatAction::Cancel);
+                                let action_label = map_chat_action_label(&u.action);
+                                let sender_name = cache
+                                    .get_user(sender_user_id)
+                                    .map(|user| {
+                                        crate::telegram::tdlib_mappers::format_user_name(&user)
+                                    })
+                                    .unwrap_or_default();
+                                let _ = update_tx.send(TdLibUpdate::ChatAction {
+                                    chat_id: u.chat_id,
+                                    sender_user_id,
+                                    sender_name,
+                                    action_label: action_label.to_owned(),
+                                    is_cancel,
+                                });
+                            }
+                        }
+
                         // Ignore other update types
                         _ => {
                             tracing::trace!("Unhandled TDLib update type");
@@ -198,5 +224,26 @@ impl TdLibClient {
         }
 
         tracing::debug!(client_id, "TDLib update loop finished");
+    }
+}
+
+fn map_chat_action_label(action: &tdlib_rs::enums::ChatAction) -> &'static str {
+    use tdlib_rs::enums::ChatAction;
+    match action {
+        ChatAction::Typing => "typing",
+        ChatAction::RecordingVideo => "recording video",
+        ChatAction::UploadingVideo(_) => "uploading video",
+        ChatAction::RecordingVoiceNote => "recording voice",
+        ChatAction::UploadingVoiceNote(_) => "uploading voice",
+        ChatAction::UploadingPhoto(_) => "uploading photo",
+        ChatAction::UploadingDocument(_) => "uploading document",
+        ChatAction::ChoosingSticker => "choosing sticker",
+        ChatAction::ChoosingLocation => "choosing location",
+        ChatAction::ChoosingContact => "choosing contact",
+        ChatAction::StartPlayingGame => "playing game",
+        ChatAction::RecordingVideoNote => "recording video",
+        ChatAction::UploadingVideoNote(_) => "uploading video",
+        ChatAction::WatchingAnimations(_) => "watching animation",
+        ChatAction::Cancel => "cancel",
     }
 }

@@ -53,6 +53,15 @@ pub enum TdLibUpdate {
     /// User status changed (online/offline).
     UserStatus { user_id: i64 },
 
+    /// A user started or stopped a chat action (typing, recording, etc.).
+    ChatAction {
+        chat_id: i64,
+        sender_user_id: i64,
+        sender_name: String,
+        action_label: String,
+        is_cancel: bool,
+    },
+
     /// Message send succeeded (for sent message confirmation).
     MessageSendSucceeded { chat_id: i64, old_message_id: i64 },
 
@@ -94,6 +103,7 @@ impl TdLibUpdate {
             | TdLibUpdate::MessageSendSucceeded { chat_id, .. }
             | TdLibUpdate::ChatUnreadReactionCount { chat_id }
             | TdLibUpdate::MessageInteractionInfoChanged { chat_id, .. } => Some(*chat_id),
+            TdLibUpdate::ChatAction { chat_id, .. } => Some(*chat_id),
             TdLibUpdate::UserStatus { .. } | TdLibUpdate::FileUpdated { .. } => None,
         }
     }
@@ -113,6 +123,7 @@ impl TdLibUpdate {
             TdLibUpdate::MessageSendSucceeded { .. } => "message_send_succeeded",
             TdLibUpdate::ChatUnreadReactionCount { .. } => "chat_unread_reaction_count",
             TdLibUpdate::MessageInteractionInfoChanged { .. } => "message_interaction_info_changed",
+            TdLibUpdate::ChatAction { .. } => "chat_action",
             TdLibUpdate::FileUpdated { .. } => "file_updated",
         }
     }

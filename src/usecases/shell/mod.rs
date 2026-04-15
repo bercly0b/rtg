@@ -288,6 +288,7 @@ where
                     self.initial_refresh_needed = false;
                     chat_list::dispatch_chat_list_refresh(&mut self.as_ctx(), false);
                 }
+                self.state.open_chat_mut().typing_state_mut().expire_stale();
                 self.storage.save_last_action("tick")?;
             }
             AppEvent::QuitRequested => {
