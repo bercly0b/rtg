@@ -12,7 +12,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::domain::shell_state::ShellState;
+use crate::domain::{keymap::HelpEntry, shell_state::ShellState};
 
 use super::chat_info_popup;
 use super::chat_search_popup;
@@ -22,7 +22,7 @@ use super::message_info_popup;
 use super::message_input::{render_message_input, reply_preview_height};
 use super::styles;
 
-pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
+pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_entries: &[HelpEntry]) {
     let [content_area, status_separator_area, status_area] = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -76,7 +76,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState) {
     }
 
     if state.help_visible() {
-        help_popup::render_help_popup(frame, frame.area(), active_pane);
+        help_popup::render_help_popup(frame, frame.area(), active_pane, help_entries);
     }
 
     if let Some(info_state) = state.chat_info_popup() {

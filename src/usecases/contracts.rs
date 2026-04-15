@@ -4,6 +4,7 @@ use anyhow::Result;
 
 use crate::domain::{
     events::{AppEvent, CommandEvent},
+    keymap::Keymap,
     shell_state::ShellState,
 };
 
@@ -14,6 +15,7 @@ pub trait AppEventSource {
 pub trait ShellOrchestrator {
     fn state(&self) -> &ShellState;
     fn state_mut(&mut self) -> &mut ShellState;
+    fn keymap(&self) -> &Keymap;
     fn handle_event(&mut self, event: AppEvent) -> Result<()>;
 
     /// Takes the pending command event receiver, if a new command was just started.

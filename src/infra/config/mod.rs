@@ -5,5 +5,6 @@ mod loader;
 
 pub use adapter::FileConfigAdapter;
 pub use app_config::{
-    AppConfig, CacheConfig, DownloadConfig, LogConfig, OpenConfig, TelegramConfig, VoiceConfig,
+    AppConfig, CacheConfig, DownloadConfig, KeysConfig, LogConfig, OpenConfig, TelegramConfig,
+    VoiceConfig,
 };
