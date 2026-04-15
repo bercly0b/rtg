@@ -66,8 +66,9 @@ impl TdLibAuthBackend {
         &self,
         chat_id: i64,
         limit: usize,
+        from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError> {
-        self.fetch_messages_paginated(chat_id, limit)
+        self.fetch_messages_paginated(chat_id, limit, from_message_id)
     }
 
     /// Informs TDLib that the user has opened a chat.
@@ -114,11 +115,13 @@ impl TdLibAuthBackend {
         &self,
         chat_id: i64,
         limit: usize,
+        from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError> {
         use crate::telegram::message_pagination::{fetch_paginated, PageResult};
 
         let td_messages = fetch_paginated(
             limit,
+            from_message_id,
             |from_message_id, page_limit| {
                 let batch = self
                     .client

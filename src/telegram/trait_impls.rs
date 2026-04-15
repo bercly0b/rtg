@@ -34,9 +34,10 @@ impl MessagesSource for TelegramAdapter {
         &self,
         chat_id: i64,
         limit: usize,
+        from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError> {
         match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.list_messages(chat_id, limit),
+            Some(backend) => backend.list_messages(chat_id, limit, from_message_id),
             None => Err(MessagesSourceError::Unavailable),
         }
     }

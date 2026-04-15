@@ -48,6 +48,7 @@ pub(super) struct OrchestratorCtx<'a, D: TaskDispatcher> {
     pub chat_list_pending_force: &'a mut bool,
     pub user_requested_chat_refresh: &'a mut bool,
     pub messages_refresh_in_flight: &'a mut bool,
+    pub older_messages_in_flight: &'a mut bool,
     pub active_downloads: &'a mut std::collections::HashMap<i32, (i64, i64)>,
     pub max_auto_download_bytes: u64,
     pub recording_handle: &'a mut Option<super::voice_recording::RecordingHandle>,
@@ -91,6 +92,8 @@ where
     user_requested_chat_refresh: bool,
     /// Guards against dispatching duplicate message refresh requests while one is in-flight.
     messages_refresh_in_flight: bool,
+    /// Guards against dispatching duplicate older-messages pagination requests.
+    older_messages_in_flight: bool,
     /// When `true`, the orchestrator was initialised with cached data and needs
     /// a background refresh on the first Tick to pick up server-side changes.
     initial_refresh_needed: bool,
@@ -144,6 +147,7 @@ where
             chat_list_pending_force: false,
             user_requested_chat_refresh: false,
             messages_refresh_in_flight: false,
+            older_messages_in_flight: false,
             initial_refresh_needed: false,
             tdlib_opened_chat_id: None,
             prefetch_in_flight: None,
@@ -193,6 +197,7 @@ where
             chat_list_pending_force: false,
             user_requested_chat_refresh: false,
             messages_refresh_in_flight: false,
+            older_messages_in_flight: false,
             initial_refresh_needed,
             tdlib_opened_chat_id: None,
             prefetch_in_flight: None,
@@ -222,6 +227,7 @@ where
             chat_list_pending_force: &mut self.chat_list_pending_force,
             user_requested_chat_refresh: &mut self.user_requested_chat_refresh,
             messages_refresh_in_flight: &mut self.messages_refresh_in_flight,
+            older_messages_in_flight: &mut self.older_messages_in_flight,
             active_downloads: &mut self.active_downloads,
             max_auto_download_bytes: self.max_auto_download_bytes,
             recording_handle: &mut self.recording_handle,

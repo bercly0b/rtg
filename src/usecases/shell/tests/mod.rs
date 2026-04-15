@@ -8,6 +8,7 @@ mod message_actions;
 mod message_cache;
 mod message_info;
 mod message_input;
+mod message_pagination;
 mod playback;
 mod voice;
 
@@ -93,6 +94,7 @@ struct RecordingDispatcher {
     dispatched_chat_list_count: RefCell<usize>,
     dispatched_chat_list_force: RefCell<Vec<bool>>,
     dispatched_messages: RefCell<Vec<i64>>,
+    dispatched_older_messages: RefCell<Vec<(i64, i64)>>,
     dispatched_sends: RefCell<Vec<(i64, String, Option<i64>)>>,
     dispatched_open_chats: RefCell<Vec<i64>>,
     dispatched_close_chats: RefCell<Vec<i64>>,
@@ -110,6 +112,7 @@ impl RecordingDispatcher {
             dispatched_chat_list_count: RefCell::new(0),
             dispatched_chat_list_force: RefCell::new(Vec::new()),
             dispatched_messages: RefCell::new(Vec::new()),
+            dispatched_older_messages: RefCell::new(Vec::new()),
             dispatched_sends: RefCell::new(Vec::new()),
             dispatched_open_chats: RefCell::new(Vec::new()),
             dispatched_close_chats: RefCell::new(Vec::new()),
@@ -132,6 +135,14 @@ impl RecordingDispatcher {
 
     fn messages_dispatch_count(&self) -> usize {
         self.dispatched_messages.borrow().len()
+    }
+
+    fn older_messages_dispatch_count(&self) -> usize {
+        self.dispatched_older_messages.borrow().len()
+    }
+
+    fn last_older_messages(&self) -> Option<(i64, i64)> {
+        self.dispatched_older_messages.borrow().last().copied()
     }
 
     fn send_dispatch_count(&self) -> usize {
@@ -207,6 +218,12 @@ impl TaskDispatcher for RecordingDispatcher {
 
     fn dispatch_load_messages(&self, chat_id: i64) {
         self.dispatched_messages.borrow_mut().push(chat_id);
+    }
+
+    fn dispatch_load_older_messages(&self, chat_id: i64, from_message_id: i64) {
+        self.dispatched_older_messages
+            .borrow_mut()
+            .push((chat_id, from_message_id));
     }
 
     fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>) {
