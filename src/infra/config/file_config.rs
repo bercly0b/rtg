@@ -1,7 +1,8 @@
 use serde::Deserialize;
 
 use crate::infra::config::{
-    AppConfig, CacheConfig, DownloadConfig, LogConfig, OpenConfig, TelegramConfig, VoiceConfig,
+    AppConfig, CacheConfig, DownloadConfig, KeysConfig, LogConfig, OpenConfig, TelegramConfig,
+    VoiceConfig,
 };
 
 #[derive(Debug, Deserialize, Default)]
@@ -12,6 +13,7 @@ pub struct FileConfig {
     pub voice: Option<FileVoiceConfig>,
     pub open: Option<FileOpenConfig>,
     pub download: Option<FileDownloadConfig>,
+    pub keys: Option<FileKeysConfig>,
 }
 
 impl FileConfig {
@@ -38,6 +40,10 @@ impl FileConfig {
 
         if let Some(download) = self.download {
             download.merge_into(&mut config.download);
+        }
+
+        if let Some(keys) = self.keys {
+            keys.merge_into(&mut config.keys);
         }
     }
 }
@@ -139,6 +145,20 @@ impl FileDownloadConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct FileKeysConfig {
+    #[serde(flatten)]
+    pub overrides: Option<std::collections::HashMap<String, String>>,
+}
+
+impl FileKeysConfig {
+    fn merge_into(self, config: &mut KeysConfig) {
+        if let Some(overrides) = self.overrides {
+            config.overrides.extend(overrides);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,6 +236,7 @@ level = "warn"
             voice: None,
             open: None,
             download: None,
+            keys: None,
         };
 
         let mut config = AppConfig::default();
@@ -256,6 +277,7 @@ level = "warn"
             }),
             open: None,
             download: None,
+            keys: None,
         };
 
         let mut config = AppConfig::default();
@@ -280,6 +302,7 @@ level = "warn"
             voice: None,
             open: None,
             download: None,
+            keys: None,
         };
 
         let mut config = AppConfig::default();
@@ -349,6 +372,7 @@ record_cmd = "sox -d {file_path}"
             voice: None,
             open: None,
             download: None,
+            keys: None,
         };
         let mut config = AppConfig::default();
         file.merge_into(&mut config);
@@ -387,9 +411,53 @@ max_auto_download_size = "500KB"
             voice: None,
             open: None,
             download: None,
+            keys: None,
         };
         let mut config = AppConfig::default();
         file.merge_into(&mut config);
         assert_eq!(config.download.max_auto_download_size, "10MB");
+    }
+
+    #[test]
+    fn deserialize_keys_section() {
+        let toml = r#"
+[keys]
+select_next_chat = "n"
+delete_message = "xx"
+"#;
+        let config: FileConfig = toml::from_str(toml).unwrap();
+        let keys = config.keys.unwrap();
+        let overrides = keys.overrides.unwrap();
+        assert_eq!(overrides.len(), 2);
+        assert_eq!(overrides.get("select_next_chat").unwrap(), "n");
+        assert_eq!(overrides.get("delete_message").unwrap(), "xx");
+    }
+
+    #[test]
+    fn keys_config_merges_into_app_config() {
+        let toml = r#"
+[keys]
+quit = "Q"
+"#;
+        let file: FileConfig = toml::from_str(toml).unwrap();
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config);
+        assert_eq!(config.keys.overrides.get("quit").unwrap(), "Q");
+    }
+
+    #[test]
+    fn keys_config_none_preserves_empty_default() {
+        let file = FileConfig {
+            logging: None,
+            telegram: None,
+            cache: None,
+            voice: None,
+            open: None,
+            download: None,
+            keys: None,
+        };
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config);
+        assert!(config.keys.overrides.is_empty());
     }
 }

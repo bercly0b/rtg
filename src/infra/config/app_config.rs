@@ -12,6 +12,7 @@ pub struct AppConfig {
     pub voice: VoiceConfig,
     pub open: OpenConfig,
     pub download: DownloadConfig,
+    pub keys: KeysConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -175,6 +176,17 @@ pub fn parse_size(s: &str) -> Option<u64> {
 pub struct OpenConfig {
     #[serde(flatten)]
     pub handlers: std::collections::HashMap<String, String>,
+}
+
+/// Key binding overrides: action_name → key pattern string.
+///
+/// Action names use snake_case matching `Action::display_name()`.
+/// Key patterns support: single keys (`j`), sequences (`dd`),
+/// ctrl combos (`Ctrl+C`), and special keys (`Enter`, `Esc`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct KeysConfig {
+    #[serde(flatten)]
+    pub overrides: std::collections::HashMap<String, String>,
 }
 
 #[cfg(test)]
