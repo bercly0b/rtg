@@ -12,6 +12,7 @@ pub enum Action {
     MarkChatAsRead,
     ShowChatInfo,
     SearchChats,
+    SelectFirstChat,
     // Messages
     ScrollNextMessage,
     ScrollPreviousMessage,
@@ -42,6 +43,7 @@ impl Action {
             Self::MarkChatAsRead => "mark_chat_as_read",
             Self::ShowChatInfo => "show_chat_info",
             Self::SearchChats => "search_chats",
+            Self::SelectFirstChat => "select_first_chat",
             Self::ScrollNextMessage => "scroll_to_next_message",
             Self::ScrollPreviousMessage => "scroll_to_previous_message",
             Self::BackToChatList => "back_to_chat_list",
@@ -70,6 +72,7 @@ impl Action {
             "mark_chat_as_read" => Some(Self::MarkChatAsRead),
             "show_chat_info" => Some(Self::ShowChatInfo),
             "search_chats" => Some(Self::SearchChats),
+            "select_first_chat" => Some(Self::SelectFirstChat),
             "scroll_to_next_message" => Some(Self::ScrollNextMessage),
             "scroll_to_previous_message" => Some(Self::ScrollPreviousMessage),
             "back_to_chat_list" => Some(Self::BackToChatList),
@@ -435,6 +438,11 @@ fn default_bindings() -> Vec<KeyBinding> {
             action: Action::SearchChats,
             context: KeyContext::ChatList,
         },
+        KeyBinding {
+            pattern: KeyPattern::sequence(vec!["g", "g"]),
+            action: Action::SelectFirstChat,
+            context: KeyContext::ChatList,
+        },
         // ── Messages ──
         KeyBinding {
             pattern: KeyPattern::single("j"),
@@ -744,6 +752,7 @@ mod tests {
     fn action_round_trip_name() {
         let actions = [
             Action::SelectNextChat,
+            Action::SelectFirstChat,
             Action::DeleteMessage,
             Action::Quit,
             Action::ShowHelp,
@@ -752,6 +761,28 @@ mod tests {
             let name = action.display_name();
             assert_eq!(Action::from_name(name), Some(action));
         }
+    }
+
+    #[test]
+    fn gg_sequence_resolved_in_chat_list() {
+        let mut km = Keymap::default();
+        assert_eq!(
+            km.resolve("g", false, KeyContext::ChatList),
+            ResolveResult::Pending
+        );
+        assert_eq!(
+            km.resolve("g", false, KeyContext::ChatList),
+            ResolveResult::Action(Action::SelectFirstChat)
+        );
+    }
+
+    #[test]
+    fn gg_sequence_not_in_messages() {
+        let mut km = Keymap::default();
+        assert_eq!(
+            km.resolve("g", false, KeyContext::Messages),
+            ResolveResult::Unmatched
+        );
     }
 
     #[test]

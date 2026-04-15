@@ -153,6 +153,12 @@ impl ChatListState {
         self.selected_index = Some(std::cmp::min(index.saturating_add(1), last_index));
     }
 
+    pub fn select_first(&mut self) {
+        if !self.chats.is_empty() {
+            self.selected_index = Some(0);
+        }
+    }
+
     pub fn select_previous(&mut self) {
         let Some(index) = self.selected_index else {
             return;
@@ -359,6 +365,26 @@ mod tests {
         let mut c = chat(chat_id, title);
         c.unread_count = unread_count;
         c
+    }
+
+    #[test]
+    fn select_first_moves_to_index_zero() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![chat(1, "Alpha"), chat(2, "Beta"), chat(3, "Gamma")]);
+        state.select_next();
+        state.select_next();
+        assert_eq!(state.selected_index(), Some(2));
+
+        state.select_first();
+        assert_eq!(state.selected_index(), Some(0));
+        assert_eq!(state.selected_chat().map(|c| c.chat_id), Some(1));
+    }
+
+    #[test]
+    fn select_first_noop_on_empty_list() {
+        let mut state = ChatListState::default();
+        state.select_first();
+        assert_eq!(state.selected_index(), None);
     }
 
     #[test]
