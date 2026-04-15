@@ -19,6 +19,7 @@ use super::{
     list_chats::ListChatsSource,
     load_messages::MessagesSource,
     message_info::{MessageInfoQuery, MessageInfoSource},
+    message_reactions::{AvailableReactionsQuery, ReactionSource},
     send_message::MessageSender,
     send_voice::VoiceNoteSender,
 };
@@ -91,6 +92,12 @@ pub trait TaskDispatcher {
 
     /// Resolves message info (reactions, viewers, read/edit dates) in the background.
     fn dispatch_message_info(&self, query: MessageInfoQuery);
+
+    /// Loads available reactions for a message in the background.
+    fn dispatch_available_reactions(&self, query: AvailableReactionsQuery);
+
+    /// Adds a reaction to a message (fire-and-forget).
+    fn dispatch_add_reaction(&self, chat_id: i64, message_id: i64, emoji: String);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -104,7 +111,7 @@ where
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
-    S: ChatSubtitleSource + MessageInfoSource + Send + Sync + 'static,
+    S: ChatSubtitleSource + MessageInfoSource + ReactionSource + Send + Sync + 'static,
 {
     chats_source: Arc<C>,
     messages_source: Arc<M>,
@@ -120,7 +127,7 @@ where
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
-    S: ChatSubtitleSource + MessageInfoSource + Send + Sync + 'static,
+    S: ChatSubtitleSource + MessageInfoSource + ReactionSource + Send + Sync + 'static,
 {
     pub fn new(
         chats_source: Arc<C>,
@@ -147,7 +154,7 @@ where
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
-    S: ChatSubtitleSource + MessageInfoSource + Send + Sync + 'static,
+    S: ChatSubtitleSource + MessageInfoSource + ReactionSource + Send + Sync + 'static,
 {
     fn dispatch_chat_list(&self, force: bool, limit: usize) {
         lifecycle::dispatch_chat_list(&self.chats_source, &self.result_tx, force, limit);
@@ -243,6 +250,14 @@ where
 
     fn dispatch_message_info(&self, query: MessageInfoQuery) {
         lifecycle::dispatch_message_info(&self.subtitle_source, &self.result_tx, query);
+    }
+
+    fn dispatch_available_reactions(&self, query: AvailableReactionsQuery) {
+        lifecycle::dispatch_available_reactions(&self.subtitle_source, &self.result_tx, query);
+    }
+
+    fn dispatch_add_reaction(&self, chat_id: i64, message_id: i64, emoji: String) {
+        lifecycle::dispatch_add_reaction(&self.subtitle_source, chat_id, message_id, emoji);
     }
 }
 

@@ -13,6 +13,7 @@ mod chat_list;
 mod error_mapping;
 mod message_details;
 mod messages;
+mod reactions;
 
 use std::time::Duration;
 

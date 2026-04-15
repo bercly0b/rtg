@@ -256,6 +256,43 @@ where
         key_dispatch::dispatch_messages_action(&mut self.as_ctx(), action)
     }
 
+    fn handle_reaction_picker_key(&mut self, key: &str) {
+        use crate::domain::reaction_picker_state::ReactionPickerState;
+
+        match key {
+            "j" => {
+                if let Some(data) = self.state.reaction_picker_mut().and_then(|p| p.data_mut()) {
+                    data.select_next();
+                }
+            }
+            "k" => {
+                if let Some(data) = self.state.reaction_picker_mut().and_then(|p| p.data_mut()) {
+                    data.select_previous();
+                }
+            }
+            "enter" => {
+                let action = self.state.reaction_picker().and_then(|picker| {
+                    if let ReactionPickerState::Ready(data) = picker {
+                        data.selected_emoji()
+                            .map(|e| (data.chat_id, data.message_id, e.to_owned()))
+                    } else {
+                        None
+                    }
+                });
+
+                if let Some((chat_id, message_id, emoji)) = action {
+                    self.dispatcher
+                        .dispatch_add_reaction(chat_id, message_id, emoji);
+                    self.state.close_reaction_picker();
+                }
+            }
+            "esc" | "q" | "R" => {
+                self.state.close_reaction_picker();
+            }
+            _ => {}
+        }
+    }
+
     #[cfg(test)]
     fn send_voice_recording(&mut self) {
         voice::send_voice_recording(&mut self.as_ctx());
@@ -356,6 +393,11 @@ where
                         "q" | "esc" | "I" => self.state.close_message_info_popup(),
                         _ => {}
                     }
+                    return Ok(());
+                }
+
+                if self.state.reaction_picker().is_some() {
+                    self.handle_reaction_picker_key(&key.key);
                     return Ok(());
                 }
 

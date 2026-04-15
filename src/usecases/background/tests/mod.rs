@@ -8,6 +8,7 @@ use crate::{
         background::TaskDispatcher,
         chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery},
         message_info::MessageInfoQuery,
+        message_reactions::AvailableReactionsQuery,
     },
 };
 
@@ -71,4 +72,8 @@ impl TaskDispatcher for StubTaskDispatcher {
     fn dispatch_save_file(&self, _file_id: i32, _local_path: String, _file_name: Option<String>) {}
 
     fn dispatch_message_info(&self, _query: MessageInfoQuery) {}
+
+    fn dispatch_available_reactions(&self, _query: AvailableReactionsQuery) {}
+
+    fn dispatch_add_reaction(&self, _chat_id: i64, _message_id: i64, _emoji: String) {}
 }

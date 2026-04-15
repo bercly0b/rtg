@@ -5,7 +5,7 @@ use super::{
     chat_search_state::ChatSearchState, command_popup_state::CommandPopupState,
     events::ConnectivityStatus, message_cache::MessageCache,
     message_info_state::MessageInfoPopupState, message_input_state::MessageInputState,
-    open_chat_state::OpenChatState,
+    open_chat_state::OpenChatState, reaction_picker_state::ReactionPickerState,
 };
 
 const NOTIFICATION_TTL: Duration = Duration::from_secs(3);
@@ -36,6 +36,7 @@ pub struct ShellState {
     notification: Option<(String, Instant)>,
     chat_info_popup: Option<ChatInfoPopupState>,
     message_info_popup: Option<MessageInfoPopupState>,
+    reaction_picker: Option<ReactionPickerState>,
     chat_search: Option<ChatSearchState>,
 }
 
@@ -54,6 +55,7 @@ impl Default for ShellState {
             notification: None,
             chat_info_popup: None,
             message_info_popup: None,
+            reaction_picker: None,
             chat_search: None,
         }
     }
@@ -203,6 +205,29 @@ impl ShellState {
 
     pub fn close_message_info_popup(&mut self) {
         self.message_info_popup = None;
+    }
+
+    pub fn reaction_picker(&self) -> Option<&ReactionPickerState> {
+        self.reaction_picker.as_ref()
+    }
+
+    pub fn reaction_picker_mut(&mut self) -> Option<&mut ReactionPickerState> {
+        self.reaction_picker.as_mut()
+    }
+
+    pub fn show_reaction_picker_loading(&mut self, chat_id: i64, message_id: i64) {
+        self.reaction_picker = Some(ReactionPickerState::Loading {
+            chat_id,
+            message_id,
+        });
+    }
+
+    pub fn set_reaction_picker(&mut self, state: ReactionPickerState) {
+        self.reaction_picker = Some(state);
+    }
+
+    pub fn close_reaction_picker(&mut self) {
+        self.reaction_picker = None;
     }
 
     pub fn chat_search(&self) -> Option<&ChatSearchState> {

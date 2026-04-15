@@ -7,6 +7,7 @@ use crate::{
         chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
         list_chats::{list_chats, ListChatsQuery, ListChatsSource},
         message_info::{MessageInfoQuery, MessageInfoSource},
+        message_reactions::{AddReactionQuery, AvailableReactionsQuery, ReactionSource},
     },
 };
 
@@ -275,5 +276,71 @@ pub(super) fn dispatch_message_info<S: MessageInfoSource + Send + Sync + 'static
             message_id,
             result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
         });
+    }
+}
+
+pub(super) fn dispatch_available_reactions<S: ReactionSource + Send + Sync + 'static>(
+    source: &Arc<S>,
+    tx: &Sender<BackgroundTaskResult>,
+    query: AvailableReactionsQuery,
+) {
+    let source = Arc::clone(source);
+    let tx = tx.clone();
+    let tx_fallback = tx.clone();
+    let chat_id = query.chat_id;
+    let message_id = query.message_id;
+
+    let spawn_result = std::thread::Builder::new()
+        .name("rtg-bg-reactions".into())
+        .spawn(move || {
+            tracing::debug!(
+                chat_id,
+                message_id,
+                "background: loading available reactions"
+            );
+            let result = source
+                .get_available_reactions(&query)
+                .map_err(|_| BackgroundError::new("REACTIONS_UNAVAILABLE"));
+
+            let _ = tx.send(BackgroundTaskResult::AvailableReactionsLoaded {
+                chat_id,
+                message_id,
+                result,
+            });
+        });
+
+    if let Err(error) = spawn_result {
+        tracing::error!(error = %error, "failed to spawn reactions background thread");
+        let _ = tx_fallback.send(BackgroundTaskResult::AvailableReactionsLoaded {
+            chat_id,
+            message_id,
+            result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
+        });
+    }
+}
+
+pub(super) fn dispatch_add_reaction<S: ReactionSource + Send + Sync + 'static>(
+    source: &Arc<S>,
+    chat_id: i64,
+    message_id: i64,
+    emoji: String,
+) {
+    let source = Arc::clone(source);
+
+    if let Err(error) = std::thread::Builder::new()
+        .name("rtg-bg-add-reaction".into())
+        .spawn(move || {
+            tracing::debug!(chat_id, message_id, ?emoji, "background: adding reaction");
+            let query = AddReactionQuery {
+                chat_id,
+                message_id,
+                emoji,
+            };
+            if let Err(e) = source.add_reaction(&query) {
+                tracing::warn!(chat_id, message_id, error = ?e, "background: add reaction failed");
+            }
+        })
+    {
+        tracing::error!(error = %error, "failed to spawn add reaction background thread");
     }
 }

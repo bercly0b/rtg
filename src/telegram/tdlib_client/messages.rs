@@ -349,6 +349,78 @@ impl TdLibClient {
         })
     }
 
+    pub fn get_message_available_reactions(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+    ) -> Result<tdlib_rs::types::AvailableReactions, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let reactions = tdlib_rs::functions::get_message_available_reactions(
+                chat_id, message_id, 8, client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })?;
+
+            match reactions {
+                tdlib_rs::enums::AvailableReactions::AvailableReactions(r) => Ok(r),
+            }
+        })
+    }
+
+    pub fn add_message_reaction(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        reaction_type: tdlib_rs::enums::ReactionType,
+    ) -> Result<(), TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            tdlib_rs::functions::add_message_reaction(
+                chat_id,
+                message_id,
+                reaction_type,
+                false,
+                true,
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })
+        })
+    }
+
+    #[allow(dead_code)]
+    pub fn remove_message_reaction(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        reaction_type: tdlib_rs::enums::ReactionType,
+    ) -> Result<(), TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            tdlib_rs::functions::remove_message_reaction(
+                chat_id,
+                message_id,
+                reaction_type,
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })
+        })
+    }
+
     /// Deletes messages from a chat.
     ///
     /// When `revoke` is true, the messages are deleted for all participants

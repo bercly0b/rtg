@@ -26,6 +26,7 @@ pub enum Action {
     OpenLink,
     RecordVoice,
     ShowMessageInfo,
+    AddReaction,
     DownloadFile,
     SaveFile,
     // Global
@@ -56,6 +57,7 @@ impl Action {
             Self::OpenLink => "open_link_in_browser",
             Self::RecordVoice => "record_voice_message",
             Self::ShowMessageInfo => "show_message_info",
+            Self::AddReaction => "add_reaction",
             Self::DownloadFile => "download_file",
             Self::SaveFile => "save_file_to_downloads",
             Self::Quit => "quit",
@@ -85,6 +87,7 @@ impl Action {
             "open_link_in_browser" => Some(Self::OpenLink),
             "record_voice_message" => Some(Self::RecordVoice),
             "show_message_info" => Some(Self::ShowMessageInfo),
+            "add_reaction" => Some(Self::AddReaction),
             "download_file" => Some(Self::DownloadFile),
             "save_file_to_downloads" => Some(Self::SaveFile),
             "quit" => Some(Self::Quit),
@@ -517,6 +520,11 @@ fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding {
             pattern: KeyPattern::single("S"),
             action: Action::SaveFile,
+            context: KeyContext::Messages,
+        },
+        KeyBinding {
+            pattern: KeyPattern::single("R"),
+            action: Action::AddReaction,
             context: KeyContext::Messages,
         },
         // ── Global ──
