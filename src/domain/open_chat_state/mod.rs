@@ -1,6 +1,7 @@
 use super::chat::ChatType;
 use super::chat_subtitle::ChatSubtitle;
 use super::message::{Message, MessageStatus, ReplyInfo};
+use super::typing_state::TypingState;
 
 #[cfg(test)]
 mod tests;
@@ -71,6 +72,7 @@ pub struct OpenChatState {
     refreshing: bool,
     /// How the currently displayed messages were obtained.
     message_source: MessageSource,
+    typing_state: TypingState,
 }
 
 impl Default for OpenChatState {
@@ -86,6 +88,7 @@ impl Default for OpenChatState {
             scroll_offset: ScrollOffset::ZERO,
             refreshing: false,
             message_source: MessageSource::None,
+            typing_state: TypingState::default(),
         }
     }
 }
@@ -106,6 +109,14 @@ impl OpenChatState {
 
     pub fn set_chat_subtitle(&mut self, subtitle: ChatSubtitle) {
         self.chat_subtitle = subtitle;
+    }
+
+    pub fn typing_state(&self) -> &TypingState {
+        &self.typing_state
+    }
+
+    pub fn typing_state_mut(&mut self) -> &mut TypingState {
+        &mut self.typing_state
     }
 
     pub fn chat_type(&self) -> ChatType {
@@ -196,6 +207,7 @@ impl OpenChatState {
         self.scroll_offset = ScrollOffset::ZERO;
         self.refreshing = false;
         self.message_source = MessageSource::None;
+        self.typing_state.clear();
     }
 
     /// Transitions to `Ready` with the given messages.
@@ -345,6 +357,7 @@ impl OpenChatState {
         self.scroll_offset = ScrollOffset::ZERO;
         self.refreshing = false;
         self.message_source = MessageSource::None;
+        self.typing_state.clear();
     }
 
     pub fn is_open(&self) -> bool {

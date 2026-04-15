@@ -17,6 +17,7 @@ pub mod open_defaults;
 pub mod open_handler;
 pub mod shell_state;
 pub mod status;
+pub mod typing_state;
 pub mod voice_defaults;
 
 /// Returns the domain module name for smoke checks.

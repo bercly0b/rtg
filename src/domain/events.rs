@@ -134,6 +134,14 @@ pub enum ChatUpdate {
     /// User online/offline status changed.
     /// The orchestrator should update the open chat subtitle if it belongs to this user.
     UserStatusChanged { user_id: i64 },
+    /// A user started or stopped a chat action (typing, recording, etc.).
+    ChatActionChanged {
+        chat_id: i64,
+        sender_user_id: i64,
+        sender_name: String,
+        action_label: String,
+        is_cancel: bool,
+    },
     /// File download progress or completion update from TDLib.
     FileUpdated {
         file_id: i32,

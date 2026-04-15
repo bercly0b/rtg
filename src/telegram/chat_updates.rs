@@ -160,6 +160,19 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
             })
         }
         TdLibUpdate::UserStatus { user_id } => Some(ChatUpdate::UserStatusChanged { user_id }),
+        TdLibUpdate::ChatAction {
+            chat_id,
+            sender_user_id,
+            sender_name,
+            action_label,
+            is_cancel,
+        } => Some(ChatUpdate::ChatActionChanged {
+            chat_id,
+            sender_user_id,
+            sender_name,
+            action_label,
+            is_cancel,
+        }),
     }
 }
 

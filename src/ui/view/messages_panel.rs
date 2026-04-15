@@ -1,6 +1,7 @@
 use ratatui::{
     layout::{Alignment, Rect},
     style::Style,
+    text::{Line, Span},
     widgets::{Block, Padding, Paragraph},
     Frame,
 };
@@ -25,16 +26,14 @@ pub(super) fn render_messages_panel(
     active_pane: ActivePane,
 ) {
     let is_active = active_pane == ActivePane::Messages;
-    let title_style = panel_title_style(is_active);
 
     let open_chat = state.open_chat();
-    let title = open_chat_title(open_chat);
+    let title = open_chat_title(open_chat, is_active);
     let ui_state = open_chat.ui_state();
 
     let block = || {
         Block::new()
             .title(title.clone())
-            .title_style(title_style)
             .title_alignment(Alignment::Center)
             .padding(Padding::horizontal(1))
     };
@@ -101,23 +100,42 @@ pub(super) fn render_messages_panel(
     }
 }
 
-pub(super) fn open_chat_title(open_chat: &crate::domain::open_chat_state::OpenChatState) -> String {
+pub(super) fn open_chat_title(
+    open_chat: &crate::domain::open_chat_state::OpenChatState,
+    is_active: bool,
+) -> Line<'static> {
+    let title_style = panel_title_style(is_active);
+
     if !open_chat.is_open() {
-        return "Messages".to_owned();
+        return Line::from(Span::styled("Messages".to_owned(), title_style));
     }
 
-    let name = open_chat.chat_title();
-    let subtitle = open_chat.chat_subtitle();
-    let now = chrono::Local::now();
+    let name = open_chat.chat_title().to_owned();
 
     if open_chat.is_refreshing() {
-        return format!("{} \u{00b7} updating...", name);
+        return Line::from(Span::styled(
+            format!("{} \u{00b7} updating...", name),
+            title_style,
+        ));
     }
 
+    let typing_label = open_chat.typing_state().format_label(open_chat.chat_type());
+    if !typing_label.is_empty() {
+        return Line::from(vec![
+            Span::styled(format!("{} \u{00b7} ", name), title_style),
+            Span::styled(typing_label, styles::typing_style()),
+        ]);
+    }
+
+    let subtitle = open_chat.chat_subtitle();
+    let now = chrono::Local::now();
     let subtitle_text = subtitle.format(now);
     if subtitle_text.is_empty() {
-        name.to_owned()
+        Line::from(Span::styled(name, title_style))
     } else {
-        format!("{} \u{00b7} {}", name, subtitle_text)
+        Line::from(Span::styled(
+            format!("{} \u{00b7} {}", name, subtitle_text),
+            title_style,
+        ))
     }
 }
