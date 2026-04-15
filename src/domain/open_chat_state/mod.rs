@@ -1,6 +1,7 @@
 use super::chat::ChatType;
 use super::chat_subtitle::ChatSubtitle;
 use super::message::{Message, MessageStatus, ReplyInfo};
+use super::typing_state::TypingState;
 
 #[cfg(test)]
 mod tests;
@@ -71,6 +72,9 @@ pub struct OpenChatState {
     refreshing: bool,
     /// How the currently displayed messages were obtained.
     message_source: MessageSource,
+    typing_state: TypingState,
+    /// Whether all older messages have been loaded (no more history to fetch).
+    all_messages_loaded: bool,
 }
 
 impl Default for OpenChatState {
@@ -86,6 +90,8 @@ impl Default for OpenChatState {
             scroll_offset: ScrollOffset::ZERO,
             refreshing: false,
             message_source: MessageSource::None,
+            typing_state: TypingState::default(),
+            all_messages_loaded: false,
         }
     }
 }
@@ -106,6 +112,14 @@ impl OpenChatState {
 
     pub fn set_chat_subtitle(&mut self, subtitle: ChatSubtitle) {
         self.chat_subtitle = subtitle;
+    }
+
+    pub fn typing_state(&self) -> &TypingState {
+        &self.typing_state
+    }
+
+    pub fn typing_state_mut(&mut self) -> &mut TypingState {
+        &mut self.typing_state
     }
 
     pub fn chat_type(&self) -> ChatType {
@@ -185,6 +199,48 @@ impl OpenChatState {
         self.message_source = source;
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn all_messages_loaded(&self) -> bool {
+        self.all_messages_loaded
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn set_all_messages_loaded(&mut self, loaded: bool) {
+        self.all_messages_loaded = loaded;
+    }
+
+    pub fn needs_more_messages(&self) -> bool {
+        if self.all_messages_loaded || self.messages.is_empty() {
+            return false;
+        }
+        match self.selected_index {
+            Some(idx) => idx < SCROLL_MARGIN,
+            None => false,
+        }
+    }
+
+    pub fn oldest_message_id(&self) -> Option<i64> {
+        self.messages.first().map(|m| m.id)
+    }
+
+    pub fn prepend_older_messages(&mut self, older: Vec<Message>) {
+        if older.is_empty() {
+            self.all_messages_loaded = true;
+            return;
+        }
+        let prepend_count = older.len();
+        let mut combined = older;
+        combined.append(&mut self.messages);
+        self.messages = combined;
+
+        if let Some(idx) = self.selected_index {
+            self.selected_index = Some(idx + prepend_count);
+        }
+        if !self.scroll_offset.is_bottom_sentinel() {
+            self.scroll_offset.item += prepend_count;
+        }
+    }
+
     pub fn set_loading(&mut self, chat_id: i64, chat_title: String, chat_type: ChatType) {
         self.chat_id = Some(chat_id);
         self.chat_title = chat_title;
@@ -196,6 +252,8 @@ impl OpenChatState {
         self.scroll_offset = ScrollOffset::ZERO;
         self.refreshing = false;
         self.message_source = MessageSource::None;
+        self.typing_state.clear();
+        self.all_messages_loaded = false;
     }
 
     /// Transitions to `Ready` with the given messages.
@@ -345,6 +403,8 @@ impl OpenChatState {
         self.scroll_offset = ScrollOffset::ZERO;
         self.refreshing = false;
         self.message_source = MessageSource::None;
+        self.typing_state.clear();
+        self.all_messages_loaded = false;
     }
 
     pub fn is_open(&self) -> bool {

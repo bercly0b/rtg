@@ -34,6 +34,7 @@ use super::{
 pub trait TaskDispatcher {
     fn dispatch_chat_list(&self, force: bool, limit: usize);
     fn dispatch_load_messages(&self, chat_id: i64);
+    fn dispatch_load_older_messages(&self, chat_id: i64, from_message_id: i64);
     fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>);
     fn dispatch_edit_message(&self, chat_id: i64, message_id: i64, text: String);
 
@@ -154,6 +155,15 @@ where
 
     fn dispatch_load_messages(&self, chat_id: i64) {
         messaging::dispatch_load_messages(&self.messages_source, &self.result_tx, chat_id);
+    }
+
+    fn dispatch_load_older_messages(&self, chat_id: i64, from_message_id: i64) {
+        messaging::dispatch_load_older_messages(
+            &self.messages_source,
+            &self.result_tx,
+            chat_id,
+            from_message_id,
+        );
     }
 
     fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>) {

@@ -73,3 +73,10 @@ pub fn notification_style() -> Style {
 pub fn help_hint_style() -> Style {
     Style::default().fg(Color::DarkGray).bg(Color::Black)
 }
+
+/// Style for typing indicator in the chat header.
+pub fn typing_style() -> Style {
+    Style::default()
+        .fg(Color::Blue)
+        .add_modifier(Modifier::BOLD)
+}

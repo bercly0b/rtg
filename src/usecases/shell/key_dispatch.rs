@@ -61,7 +61,10 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
 ) -> Result<()> {
     match action {
         Action::ScrollNextMessage => ctx.state.open_chat_mut().select_next(),
-        Action::ScrollPreviousMessage => ctx.state.open_chat_mut().select_previous(),
+        Action::ScrollPreviousMessage => {
+            ctx.state.open_chat_mut().select_previous();
+            maybe_load_older_messages(ctx);
+        }
         Action::BackToChatList => {
             chat_open::close_tdlib_chat(ctx);
             ctx.state.set_active_pane(ActivePane::ChatList);
@@ -178,4 +181,26 @@ fn download_selected_message_file<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'
     );
     ctx.active_downloads.insert(file_id, (chat_id, message_id));
     ctx.dispatcher.dispatch_download_file(file_id);
+}
+
+fn maybe_load_older_messages<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+    if *ctx.older_messages_in_flight {
+        return;
+    }
+
+    if !ctx.state.open_chat().needs_more_messages() {
+        return;
+    }
+
+    let Some(chat_id) = ctx.state.open_chat().chat_id() else {
+        return;
+    };
+
+    let Some(from_message_id) = ctx.state.open_chat().oldest_message_id() else {
+        return;
+    };
+
+    *ctx.older_messages_in_flight = true;
+    ctx.dispatcher
+        .dispatch_load_older_messages(chat_id, from_message_id);
 }

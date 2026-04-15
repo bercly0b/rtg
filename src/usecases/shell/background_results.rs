@@ -101,6 +101,31 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 }
             }
         }
+        BackgroundTaskResult::OlderMessagesLoaded { chat_id, result } => {
+            *ctx.older_messages_in_flight = false;
+
+            if ctx.state.open_chat().chat_id() != Some(chat_id) {
+                return;
+            }
+
+            match result {
+                Ok(messages) => {
+                    tracing::debug!(
+                        chat_id,
+                        message_count = messages.len(),
+                        "background: older messages loaded"
+                    );
+                    ctx.state.open_chat_mut().prepend_older_messages(messages);
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        chat_id,
+                        code = error.code,
+                        "background: older messages load failed"
+                    );
+                }
+            }
+        }
         BackgroundTaskResult::MessageSent {
             chat_id,
             original_text,

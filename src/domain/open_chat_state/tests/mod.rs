@@ -1,5 +1,6 @@
 mod messages;
 mod navigation;
+mod pagination;
 mod state_transitions;
 
 use super::*;

@@ -40,6 +40,7 @@ pub struct PageResult<M> {
 /// Returns accumulated messages in newest-first order.
 pub fn fetch_paginated<M, F, Id>(
     limit: usize,
+    initial_from_message_id: i64,
     mut fetch_page: F,
     message_id: Id,
 ) -> Result<Vec<M>, MessagesSourceError>
@@ -50,7 +51,7 @@ where
     let target = limit.min(TDLIB_PAGE_SIZE * MAX_PAGINATION_ROUNDS);
     let mut accumulated: Vec<M> = Vec::with_capacity(target);
     let mut seen_ids: HashSet<i64> = HashSet::with_capacity(target);
-    let mut from_message_id: i64 = 0; // 0 = start from the most recent
+    let mut from_message_id: i64 = initial_from_message_id;
 
     for _round in 0..MAX_PAGINATION_ROUNDS {
         let remaining = target.saturating_sub(accumulated.len());
@@ -103,6 +104,7 @@ mod tests {
 
         let result = fetch_paginated(
             5,
+            0,
             |_from_id, _limit| {
                 Ok(PageResult {
                     messages: messages_clone.clone(),
@@ -121,6 +123,7 @@ mod tests {
     fn empty_chat_returns_empty_vec() {
         let result = fetch_paginated(
             50,
+            0,
             |_from_id, _limit| Ok(PageResult { messages: vec![] }),
             |m: &FakeMsg| m.id,
         )
@@ -135,6 +138,7 @@ mod tests {
 
         let result = fetch_paginated(
             5,
+            0,
             |from_id, _limit| {
                 call_count += 1;
                 match call_count {
@@ -175,6 +179,7 @@ mod tests {
 
         let result = fetch_paginated(
             5,
+            0,
             |from_id, _limit| {
                 call_count += 1;
                 match call_count {
@@ -210,6 +215,7 @@ mod tests {
 
         let result = fetch_paginated(
             50,
+            0,
             |_from_id, _limit| {
                 call_count += 1;
                 match call_count {
@@ -237,6 +243,7 @@ mod tests {
 
         let result = fetch_paginated(
             10,
+            0,
             |_from_id, _limit| {
                 call_count += 1;
                 match call_count {
@@ -263,6 +270,7 @@ mod tests {
 
         let result = fetch_paginated(
             10_000, // Way more than available
+            0,
             |_from_id, limit| {
                 call_count += 1;
                 // Always return exactly `limit` to keep pagination going
@@ -285,6 +293,7 @@ mod tests {
     fn propagates_fetch_error() {
         let result = fetch_paginated(
             50,
+            0,
             |_from_id, _limit| -> Result<PageResult<FakeMsg>, MessagesSourceError> {
                 Err(MessagesSourceError::Unavailable)
             },
@@ -300,6 +309,7 @@ mod tests {
 
         let result = fetch_paginated(
             10,
+            0,
             |_from_id, _limit| {
                 call_count += 1;
                 match call_count {
@@ -320,8 +330,36 @@ mod tests {
     }
 
     #[test]
+    fn uses_initial_from_message_id() {
+        let mut call_count = 0;
+
+        let result = fetch_paginated(
+            5,
+            42,
+            |from_id, _limit| {
+                call_count += 1;
+                match call_count {
+                    1 => {
+                        assert_eq!(from_id, 42, "first call should use initial from_message_id");
+                        Ok(PageResult {
+                            messages: fake_msgs(&[41, 40, 39, 38, 37]),
+                        })
+                    }
+                    _ => panic!("unexpected extra call"),
+                }
+            },
+            |m| m.id,
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 5);
+        assert_eq!(result[0].id, 41);
+    }
+
+    #[test]
     fn limit_zero_returns_empty() {
         let result = fetch_paginated(
+            0,
             0,
             |_from_id, _limit| -> Result<PageResult<FakeMsg>, MessagesSourceError> {
                 panic!("should not fetch when limit is 0");

@@ -7,6 +7,7 @@ const MAX_MESSAGES_PAGE_SIZE: usize = 200;
 pub struct LoadMessagesQuery {
     pub chat_id: i64,
     pub limit: usize,
+    pub from_message_id: i64,
 }
 
 impl LoadMessagesQuery {
@@ -14,6 +15,15 @@ impl LoadMessagesQuery {
         Self {
             chat_id,
             limit: DEFAULT_MESSAGES_PAGE_SIZE,
+            from_message_id: 0,
+        }
+    }
+
+    pub fn older_than(chat_id: i64, from_message_id: i64) -> Self {
+        Self {
+            chat_id,
+            limit: DEFAULT_MESSAGES_PAGE_SIZE,
+            from_message_id,
         }
     }
 
@@ -43,6 +53,7 @@ pub trait MessagesSource {
         &self,
         chat_id: i64,
         limit: usize,
+        from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError>;
 }
 
@@ -54,8 +65,9 @@ where
         &self,
         chat_id: i64,
         limit: usize,
+        from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError> {
-        (*self).list_messages(chat_id, limit)
+        (*self).list_messages(chat_id, limit, from_message_id)
     }
 }
 
@@ -67,8 +79,9 @@ where
         &self,
         chat_id: i64,
         limit: usize,
+        from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError> {
-        (**self).list_messages(chat_id, limit)
+        (**self).list_messages(chat_id, limit, from_message_id)
     }
 }
 
@@ -124,7 +137,7 @@ pub fn load_messages(
 ) -> Result<LoadMessagesOutput, LoadMessagesError> {
     let limit = query.normalized_limit();
     let messages = source
-        .list_messages(query.chat_id, limit)
+        .list_messages(query.chat_id, limit, query.from_message_id)
         .map_err(map_source_error)?;
 
     Ok(LoadMessagesOutput { messages })
@@ -146,6 +159,7 @@ mod tests {
         result: Result<Vec<Message>, MessagesSourceError>,
         captured_chat_id: std::sync::Mutex<Option<i64>>,
         captured_limit: std::sync::Mutex<Option<usize>>,
+        captured_from_message_id: std::sync::Mutex<Option<i64>>,
     }
 
     impl StubSource {
@@ -154,6 +168,7 @@ mod tests {
                 result,
                 captured_chat_id: std::sync::Mutex::new(None),
                 captured_limit: std::sync::Mutex::new(None),
+                captured_from_message_id: std::sync::Mutex::new(None),
             }
         }
     }
@@ -163,9 +178,14 @@ mod tests {
             &self,
             chat_id: i64,
             limit: usize,
+            from_message_id: i64,
         ) -> Result<Vec<Message>, MessagesSourceError> {
             *self.captured_chat_id.lock().expect("chat_id lock") = Some(chat_id);
             *self.captured_limit.lock().expect("limit lock") = Some(limit);
+            *self
+                .captured_from_message_id
+                .lock()
+                .expect("from_message_id lock") = Some(from_message_id);
             self.result.clone()
         }
     }
@@ -198,6 +218,7 @@ mod tests {
             LoadMessagesQuery {
                 chat_id: 1,
                 limit: 0,
+                from_message_id: 0,
             },
         )
         .expect("load should succeed");
@@ -214,6 +235,7 @@ mod tests {
             LoadMessagesQuery {
                 chat_id: 1,
                 limit: 999,
+                from_message_id: 0,
             },
         )
         .expect("load should succeed");
@@ -245,6 +267,20 @@ mod tests {
             load_messages(&source, LoadMessagesQuery::new(1)).expect("load should succeed");
 
         assert_eq!(output.messages, messages);
+    }
+
+    #[test]
+    fn passes_from_message_id_to_source() {
+        let source = StubSource::with_result(Ok(vec![]));
+
+        let _ = load_messages(&source, LoadMessagesQuery::older_than(42, 999))
+            .expect("load should succeed");
+
+        assert_eq!(
+            *source.captured_from_message_id.lock().expect("lock"),
+            Some(999)
+        );
+        assert_eq!(*source.captured_chat_id.lock().expect("lock"), Some(42));
     }
 
     #[test]

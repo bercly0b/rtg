@@ -86,6 +86,28 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                 }
                 should_refresh_chat_list = true;
             }
+            ChatUpdate::ChatActionChanged {
+                chat_id,
+                sender_user_id,
+                sender_name,
+                action_label,
+                is_cancel,
+            } => {
+                if ctx.state.open_chat().chat_id() == Some(chat_id) {
+                    if is_cancel {
+                        ctx.state
+                            .open_chat_mut()
+                            .typing_state_mut()
+                            .remove_action(sender_user_id);
+                    } else {
+                        ctx.state.open_chat_mut().typing_state_mut().add_action(
+                            sender_user_id,
+                            sender_name,
+                            action_label,
+                        );
+                    }
+                }
+            }
             ChatUpdate::FileUpdated {
                 file_id,
                 size,
