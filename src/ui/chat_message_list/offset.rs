@@ -67,7 +67,7 @@ pub(super) fn ensure_selected_visible(
     // oscillation (frame N scrolls up for padding_above, frame N+1 scrolls
     // down because selection fell off-screen, repeat).
     if desired_bottom.saturating_sub(desired_top) > viewport_height {
-        if sel_start >= viewport_top && sel_end <= viewport_bottom {
+        if sel_start < viewport_bottom && sel_end > viewport_top {
             return current;
         }
         if sel_start < viewport_top {
