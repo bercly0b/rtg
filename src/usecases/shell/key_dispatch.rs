@@ -24,6 +24,10 @@ pub(super) fn dispatch_chat_list_action<D: TaskDispatcher>(
             ctx.state.chat_list_mut().select_previous();
             chat_open::maybe_prefetch_selected_chat(ctx);
         }
+        Action::SelectFirstChat => {
+            ctx.state.chat_list_mut().select_first();
+            chat_open::maybe_prefetch_selected_chat(ctx);
+        }
         Action::RefreshChatList => {
             *ctx.user_requested_chat_refresh = true;
             ctx.state.set_notification("Refreshing chat list...");
