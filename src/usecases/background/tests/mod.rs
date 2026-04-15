@@ -34,6 +34,8 @@ impl TaskDispatcher for StubTaskDispatcher {
 
     fn dispatch_load_messages(&self, _chat_id: i64) {}
 
+    fn dispatch_load_older_messages(&self, _chat_id: i64, _from_message_id: i64) {}
+
     fn dispatch_send_message(
         &self,
         _chat_id: i64,

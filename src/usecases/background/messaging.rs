@@ -46,6 +46,46 @@ pub(super) fn dispatch_load_messages<M: MessagesSource + Send + Sync + 'static>(
     }
 }
 
+pub(super) fn dispatch_load_older_messages<M: MessagesSource + Send + Sync + 'static>(
+    source: &Arc<M>,
+    tx: &Sender<BackgroundTaskResult>,
+    chat_id: i64,
+    from_message_id: i64,
+) {
+    let source = Arc::clone(source);
+    let tx = tx.clone();
+    let tx_fallback = tx.clone();
+
+    let spawn_result = std::thread::Builder::new()
+        .name("rtg-bg-older-msgs".into())
+        .spawn(move || {
+            tracing::debug!(
+                chat_id,
+                from_message_id,
+                "background: fetching older messages"
+            );
+            let result = load_messages(
+                source.as_ref(),
+                LoadMessagesQuery::older_than(chat_id, from_message_id),
+            )
+            .map(|output| output.messages)
+            .map_err(|error| {
+                tracing::warn!(chat_id, error = ?error, "background: older messages fetch failed");
+                BackgroundError::new(map_load_messages_error(&error))
+            });
+
+            let _ = tx.send(BackgroundTaskResult::OlderMessagesLoaded { chat_id, result });
+        });
+
+    if let Err(error) = spawn_result {
+        tracing::error!(error = %error, "failed to spawn older messages background thread");
+        let _ = tx_fallback.send(BackgroundTaskResult::OlderMessagesLoaded {
+            chat_id,
+            result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
+        });
+    }
+}
+
 pub(super) fn dispatch_send_message<
     MS: MessageSender + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,

@@ -59,6 +59,11 @@ pub enum BackgroundTaskResult {
         chat_id: i64,
         result: Result<Vec<super::message::Message>, BackgroundError>,
     },
+    /// Older messages loaded for scroll-up pagination.
+    OlderMessagesLoaded {
+        chat_id: i64,
+        result: Result<Vec<super::message::Message>, BackgroundError>,
+    },
     /// Message edit operation completed.
     MessageEdited {
         chat_id: i64,
