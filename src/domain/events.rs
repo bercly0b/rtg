@@ -89,6 +89,12 @@ pub enum BackgroundTaskResult {
         message_id: i64,
         result: Result<super::message_info_state::MessageInfo, BackgroundError>,
     },
+    /// Available reactions loaded for the reaction picker popup.
+    AvailableReactionsLoaded {
+        chat_id: i64,
+        message_id: i64,
+        result: Result<Vec<super::reaction_picker_state::AvailableReaction>, BackgroundError>,
+    },
     /// Platform default file opener failed (non-zero exit code).
     /// The orchestrator should display the error as a notification.
     OpenFileFailed { stderr: String },

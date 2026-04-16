@@ -12,6 +12,7 @@ pub mod list_chats;
 pub mod load_messages;
 pub mod logout;
 pub mod message_info;
+pub mod message_reactions;
 pub mod pty;
 pub mod send_message;
 pub mod send_voice;

@@ -98,6 +98,9 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
         Action::ShowMessageInfo => {
             show_message_info_popup(ctx);
         }
+        Action::AddReaction => {
+            show_reaction_picker(ctx);
+        }
         Action::DownloadFile => {
             download_selected_message_file(ctx);
         }
@@ -145,6 +148,31 @@ fn show_message_info_popup<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) 
             message_id,
             is_outgoing,
         });
+}
+
+fn show_reaction_picker<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+    let Some(chat_id) = ctx.state.open_chat().chat_id() else {
+        return;
+    };
+
+    let Some(msg) = ctx.state.open_chat().selected_message() else {
+        return;
+    };
+
+    if msg.id == 0 {
+        return;
+    }
+
+    let message_id = msg.id;
+
+    ctx.state.show_reaction_picker_loading(chat_id, message_id);
+
+    ctx.dispatcher.dispatch_available_reactions(
+        crate::usecases::message_reactions::AvailableReactionsQuery {
+            chat_id,
+            message_id,
+        },
+    );
 }
 
 fn download_selected_message_file<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {

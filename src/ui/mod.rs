@@ -10,6 +10,7 @@ mod message_info_popup;
 mod message_input;
 mod message_rendering;
 mod popup_utils;
+mod reaction_picker_popup;
 pub mod shell;
 mod styles;
 mod terminal;

@@ -9,6 +9,9 @@ use crate::{
         list_chats::{ListChatsSource, ListChatsSourceError},
         load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
         message_info::{MessageInfoError, MessageInfoQuery, MessageInfoSource},
+        message_reactions::{
+            AddReactionQuery, AvailableReactionsQuery, ReactionError, ReactionSource,
+        },
         send_message::{MessageSender, SendMessageSourceError},
         send_voice::VoiceNoteSender,
     },
@@ -198,6 +201,32 @@ impl MessageInfoSource for TelegramAdapter {
         match self.tdlib_backend.as_ref() {
             Some(backend) => Ok(backend.resolve_message_info(query)),
             None => Err(MessageInfoError::Unavailable),
+        }
+    }
+}
+
+impl ReactionSource for TelegramAdapter {
+    fn get_available_reactions(
+        &self,
+        query: &AvailableReactionsQuery,
+    ) -> Result<Vec<crate::domain::reaction_picker_state::AvailableReaction>, ReactionError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.get_available_reactions(query),
+            None => Err(ReactionError::Unavailable),
+        }
+    }
+
+    fn add_reaction(&self, query: &AddReactionQuery) -> Result<(), ReactionError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.add_reaction(query),
+            None => Err(ReactionError::Unavailable),
+        }
+    }
+
+    fn remove_reaction(&self, query: &AddReactionQuery) -> Result<(), ReactionError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.remove_reaction(query),
+            None => Err(ReactionError::Unavailable),
         }
     }
 }

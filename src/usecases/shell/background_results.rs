@@ -323,6 +323,44 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 }
             }
         }
+        BackgroundTaskResult::AvailableReactionsLoaded {
+            chat_id,
+            message_id,
+            result,
+        } => {
+            use crate::domain::reaction_picker_state::{ReactionPickerData, ReactionPickerState};
+
+            let picker_ids = ctx.state.reaction_picker().and_then(|p| p.ids());
+            if picker_ids == Some((chat_id, message_id)) {
+                match result {
+                    Ok(reactions) => {
+                        tracing::debug!(
+                            chat_id,
+                            message_id,
+                            count = reactions.len(),
+                            "available reactions loaded"
+                        );
+                        if reactions.is_empty() {
+                            ctx.state.close_reaction_picker();
+                            ctx.state.set_notification("No reactions available");
+                        } else {
+                            ctx.state.set_reaction_picker(ReactionPickerState::Ready(
+                                ReactionPickerData::new(reactions, chat_id, message_id),
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!(
+                            chat_id,
+                            message_id,
+                            code = e.code,
+                            "available reactions load failed"
+                        );
+                        ctx.state.set_reaction_picker(ReactionPickerState::Error);
+                    }
+                }
+            }
+        }
         BackgroundTaskResult::OpenFileFailed { stderr } => {
             let hint = if stderr.is_empty() {
                 "Failed to open file. Configure [open] in ~/.config/rtg/config.toml".to_owned()

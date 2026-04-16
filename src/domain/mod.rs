@@ -15,6 +15,7 @@ pub mod message_input_state;
 pub mod open_chat_state;
 pub mod open_defaults;
 pub mod open_handler;
+pub mod reaction_picker_state;
 pub mod shell_state;
 pub mod status;
 pub mod typing_state;

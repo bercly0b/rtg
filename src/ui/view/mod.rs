@@ -20,6 +20,7 @@ use super::command_popup;
 use super::help_popup;
 use super::message_info_popup;
 use super::message_input::{render_message_input, reply_preview_height};
+use super::reaction_picker_popup;
 use super::styles;
 
 pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_entries: &[HelpEntry]) {
@@ -85,6 +86,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_entries: &[Hel
 
     if let Some(msg_info_state) = state.message_info_popup() {
         message_info_popup::render_message_info_popup(frame, frame.area(), msg_info_state);
+    }
+
+    if let Some(picker_state) = state.reaction_picker() {
+        reaction_picker_popup::render_reaction_picker(frame, frame.area(), picker_state);
     }
 
     if let Some(search_state) = state.chat_search() {

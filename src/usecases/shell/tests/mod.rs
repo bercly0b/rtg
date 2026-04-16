@@ -10,6 +10,7 @@ mod message_info;
 mod message_input;
 mod message_pagination;
 mod playback;
+mod reaction_picker;
 mod voice;
 
 use std::cell::RefCell;
@@ -293,6 +294,14 @@ impl TaskDispatcher for RecordingDispatcher {
     }
 
     fn dispatch_edit_message(&self, _chat_id: i64, _message_id: i64, _text: String) {}
+
+    fn dispatch_available_reactions(
+        &self,
+        _query: crate::usecases::message_reactions::AvailableReactionsQuery,
+    ) {
+    }
+
+    fn dispatch_add_reaction(&self, _chat_id: i64, _message_id: i64, _emoji: String) {}
 }
 
 // ── Test orchestrator factory ──
