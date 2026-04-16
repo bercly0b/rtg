@@ -52,6 +52,10 @@ fn build_loaded_lines(info: &ChatInfo) -> Vec<Line<'static>> {
 
     lines.push(build_field_line("Status", &info.status_line));
 
+    if let Some(username) = &info.username {
+        lines.push(build_field_line("Username", username));
+    }
+
     if let Some(desc) = &info.description {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
@@ -114,6 +118,7 @@ mod tests {
             title: "Alice".into(),
             chat_type: ChatType::Private,
             status_line: "online".into(),
+            username: None,
             description: None,
         });
         let lines = build_info_lines(&state);
@@ -128,6 +133,7 @@ mod tests {
             title: "Dev Chat".into(),
             chat_type: ChatType::Group,
             status_line: "42 members".into(),
+            username: None,
             description: Some("A developer community".into()),
         });
         let lines = build_info_lines(&state);
@@ -144,11 +150,28 @@ mod tests {
             title: "Chat".into(),
             chat_type: ChatType::Channel,
             status_line: "100 subscribers".into(),
+            username: None,
             description: Some("Line 1\nLine 2\nLine 3".into()),
         });
         let lines = build_info_lines(&state);
         // Status + empty + "Description" label + 3 desc lines + empty + footer
         assert_eq!(lines.len(), 8);
+    }
+
+    #[test]
+    fn loaded_with_username_shows_username_line() {
+        let state = ChatInfoPopupState::Loaded(ChatInfo {
+            title: "Alice".into(),
+            chat_type: ChatType::Private,
+            status_line: "online".into(),
+            username: Some("@alice".into()),
+            description: None,
+        });
+        let lines = build_info_lines(&state);
+        // Status + Username + empty + footer
+        assert_eq!(lines.len(), 4);
+        assert!(lines[1].spans[0].content.contains("Username"));
+        assert!(lines[1].spans[1].content.contains("@alice"));
     }
 
     #[test]

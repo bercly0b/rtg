@@ -390,6 +390,7 @@ mod tests {
             title: "Alice".into(),
             chat_type: ChatType::Private,
             status_line: "online".into(),
+            username: None,
             description: Some("Hello world".into()),
         }));
         match state.chat_info_popup().unwrap() {

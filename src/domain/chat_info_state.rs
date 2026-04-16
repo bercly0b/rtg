@@ -15,6 +15,8 @@ pub struct ChatInfo {
     pub chat_type: ChatType,
     /// Human-readable status: "online", "bot", "42 members", "1000 subscribers", etc.
     pub status_line: String,
+    /// @username for private chats (may be absent).
+    pub username: Option<String>,
     /// User bio or group/channel description (may be absent).
     pub description: Option<String>,
 }
@@ -75,6 +77,7 @@ mod tests {
             title: "Alice".into(),
             chat_type: ChatType::Private,
             status_line: "online".into(),
+            username: None,
             description: None,
         });
         assert_eq!(state.chat_id(), None);
@@ -86,6 +89,7 @@ mod tests {
             title: "Bob".into(),
             chat_type: ChatType::Private,
             status_line: "online".into(),
+            username: None,
             description: None,
         });
         assert_eq!(state.title(), "Bob");
@@ -105,6 +109,7 @@ mod tests {
             title: "Dev Chat".into(),
             chat_type: ChatType::Group,
             status_line: "42 members".into(),
+            username: None,
             description: Some("A developer community".into()),
         };
         assert_eq!(info.description.as_deref(), Some("A developer community"));
@@ -116,6 +121,7 @@ mod tests {
             title: "Alice".into(),
             chat_type: ChatType::Private,
             status_line: "last seen recently".into(),
+            username: None,
             description: None,
         };
         assert!(info.description.is_none());

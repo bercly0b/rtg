@@ -84,6 +84,7 @@ impl TdLibAuthBackend {
                     title,
                     chat_type,
                     status_line: String::new(),
+                    username: None,
                     description: None,
                 };
             }
@@ -109,6 +110,7 @@ impl TdLibAuthBackend {
                 title,
                 chat_type: ChatType::Private,
                 status_line: String::new(),
+                username: None,
                 description: None,
             };
         };
@@ -120,6 +122,7 @@ impl TdLibAuthBackend {
                     title,
                     chat_type: ChatType::Private,
                     status_line: String::new(),
+                    username: None,
                     description: None,
                 };
             }
@@ -132,6 +135,11 @@ impl TdLibAuthBackend {
             let subtitle = tdlib_mappers::map_user_status_to_subtitle(&user.status);
             subtitle.format(Local::now())
         };
+
+        let username = user
+            .usernames
+            .and_then(|u| u.active_usernames.into_iter().next())
+            .map(|u| format!("@{u}"));
 
         let description = self
             .client
@@ -151,6 +159,7 @@ impl TdLibAuthBackend {
             title,
             chat_type: ChatType::Private,
             status_line,
+            username,
             description,
         }
     }
@@ -181,6 +190,7 @@ impl TdLibAuthBackend {
                     title,
                     chat_type: ChatType::Group,
                     status_line: ChatSubtitle::Members(member_count).format(chrono::Local::now()),
+                    username: None,
                     description,
                 }
             }
@@ -202,6 +212,7 @@ impl TdLibAuthBackend {
                     title,
                     chat_type: ChatType::Group,
                     status_line: ChatSubtitle::Members(member_count).format(chrono::Local::now()),
+                    username: None,
                     description,
                 }
             }
@@ -209,6 +220,7 @@ impl TdLibAuthBackend {
                 title,
                 chat_type: ChatType::Group,
                 status_line: String::new(),
+                username: None,
                 description: None,
             },
         }
@@ -240,6 +252,7 @@ impl TdLibAuthBackend {
                 chat_type: ChatType::Channel,
                 status_line: ChatSubtitle::Subscribers(subscriber_count)
                     .format(chrono::Local::now()),
+                username: None,
                 description,
             }
         } else {
@@ -247,6 +260,7 @@ impl TdLibAuthBackend {
                 title,
                 chat_type: ChatType::Channel,
                 status_line: String::new(),
+                username: None,
                 description: None,
             }
         }
