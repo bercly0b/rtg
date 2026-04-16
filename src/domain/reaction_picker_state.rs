@@ -4,6 +4,89 @@ pub struct AvailableReaction {
     pub needs_premium: bool,
 }
 
+impl AvailableReaction {
+    pub fn display_name(&self) -> &str {
+        emoji_name(&self.emoji)
+    }
+}
+
+fn emoji_name(emoji: &str) -> &str {
+    match emoji {
+        "👍" => "Thumbs Up",
+        "👎" => "Thumbs Down",
+        "❤" | "❤️" => "Heart",
+        "🔥" => "Fire",
+        "🥰" => "Love",
+        "👏" => "Clap",
+        "😁" => "Grin",
+        "🤔" => "Thinking",
+        "🤯" => "Mind Blown",
+        "😱" => "Shocked",
+        "🤬" => "Angry",
+        "😢" => "Crying",
+        "🎉" => "Party",
+        "🤩" => "Starstruck",
+        "🤮" => "Vomiting",
+        "💩" => "Poop",
+        "🙏" => "Pray",
+        "👌" => "OK",
+        "🕊" | "🕊️" => "Dove",
+        "🤡" => "Clown",
+        "🥱" => "Yawning",
+        "🥴" => "Woozy",
+        "😍" => "Heart Eyes",
+        "🐳" => "Whale",
+        "❤‍🔥" | "❤️‍🔥" => "Heart on Fire",
+        "🌚" => "New Moon",
+        "🌭" => "Hot Dog",
+        "💯" => "100",
+        "🤣" => "ROFL",
+        "⚡" | "⚡️" => "Lightning",
+        "🍌" => "Banana",
+        "🏆" => "Trophy",
+        "💔" => "Broken Heart",
+        "🤨" => "Raised Brow",
+        "😐" => "Neutral",
+        "🍓" => "Strawberry",
+        "🍾" => "Champagne",
+        "💋" => "Kiss",
+        "🖕" => "Middle Finger",
+        "😈" => "Devil",
+        "😴" => "Sleeping",
+        "😭" => "Sobbing",
+        "🤓" => "Nerd",
+        "👻" => "Ghost",
+        "👨‍💻" => "Technologist",
+        "👀" => "Eyes",
+        "🎃" => "Jack-O-Lantern",
+        "🙈" => "See-No-Evil",
+        "😇" => "Angel",
+        "😨" => "Fearful",
+        "🤝" => "Handshake",
+        "✍" | "✍️" => "Writing",
+        "🤗" => "Hugging",
+        "🫡" => "Salute",
+        "🎅" => "Santa",
+        "🎄" => "Christmas Tree",
+        "☃" | "☃️" => "Snowman",
+        "💅" => "Nail Polish",
+        "🤪" => "Zany",
+        "🗿" => "Moai",
+        "🆒" => "Cool",
+        "💘" => "Cupid",
+        "🙉" => "Hear-No-Evil",
+        "🦄" => "Unicorn",
+        "😘" => "Blowing Kiss",
+        "💊" => "Pill",
+        "🙊" => "Speak-No-Evil",
+        "😎" => "Sunglasses",
+        "👾" => "Alien Monster",
+        "🤷" | "🤷‍♂️" | "🤷‍♀️" => "Shrug",
+        "😡" => "Pouting",
+        _ => "",
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReactionPickerData {
     pub items: Vec<AvailableReaction>,
@@ -23,18 +106,14 @@ impl ReactionPickerData {
     }
 
     pub fn select_next(&mut self) {
-        if !self.items.is_empty() {
-            self.selected_index = (self.selected_index + 1) % self.items.len();
+        if !self.items.is_empty() && self.selected_index + 1 < self.items.len() {
+            self.selected_index += 1;
         }
     }
 
     pub fn select_previous(&mut self) {
-        if !self.items.is_empty() {
-            self.selected_index = if self.selected_index == 0 {
-                self.items.len() - 1
-            } else {
-                self.selected_index - 1
-            };
+        if self.selected_index > 0 {
+            self.selected_index -= 1;
         }
     }
 
@@ -101,20 +180,23 @@ mod tests {
     }
 
     #[test]
-    fn select_next_wraps_around() {
+    fn select_next_stops_at_last() {
         let mut data = ReactionPickerData::new(sample_reactions(), 1, 2);
         data.select_next();
         assert_eq!(data.selected_index, 1);
         data.select_next();
         assert_eq!(data.selected_index, 2);
         data.select_next();
-        assert_eq!(data.selected_index, 0);
+        assert_eq!(data.selected_index, 2);
     }
 
     #[test]
-    fn select_previous_wraps_around() {
+    fn select_previous_stops_at_first() {
         let mut data = ReactionPickerData::new(sample_reactions(), 1, 2);
         data.select_previous();
+        assert_eq!(data.selected_index, 0);
+        data.select_next();
+        data.select_next();
         assert_eq!(data.selected_index, 2);
         data.select_previous();
         assert_eq!(data.selected_index, 1);
@@ -147,5 +229,70 @@ mod tests {
     fn error_state_returns_no_ids() {
         let state = ReactionPickerState::Error;
         assert_eq!(state.ids(), None);
+    }
+
+    #[test]
+    fn data_mut_returns_none_for_loading() {
+        let mut state = ReactionPickerState::Loading {
+            chat_id: 1,
+            message_id: 2,
+        };
+        assert!(state.data_mut().is_none());
+    }
+
+    #[test]
+    fn data_mut_returns_some_for_ready() {
+        let mut state =
+            ReactionPickerState::Ready(ReactionPickerData::new(sample_reactions(), 1, 2));
+        assert!(state.data_mut().is_some());
+        state.data_mut().unwrap().select_next();
+        match &state {
+            ReactionPickerState::Ready(data) => assert_eq!(data.selected_index, 1),
+            _ => panic!("expected Ready"),
+        }
+    }
+
+    #[test]
+    fn display_name_returns_known_names() {
+        let r = AvailableReaction {
+            emoji: "👍".into(),
+            needs_premium: false,
+        };
+        assert_eq!(r.display_name(), "Thumbs Up");
+
+        let r = AvailableReaction {
+            emoji: "❤".into(),
+            needs_premium: false,
+        };
+        assert_eq!(r.display_name(), "Heart");
+
+        let r = AvailableReaction {
+            emoji: "🔥".into(),
+            needs_premium: false,
+        };
+        assert_eq!(r.display_name(), "Fire");
+    }
+
+    #[test]
+    fn display_name_returns_empty_for_unknown() {
+        let r = AvailableReaction {
+            emoji: "🧪".into(),
+            needs_premium: false,
+        };
+        assert_eq!(r.display_name(), "");
+    }
+
+    #[test]
+    fn single_item_navigation_stays_in_place() {
+        let items = vec![AvailableReaction {
+            emoji: "👍".into(),
+            needs_premium: false,
+        }];
+        let mut data = ReactionPickerData::new(items, 1, 2);
+        assert_eq!(data.selected_index, 0);
+        data.select_next();
+        assert_eq!(data.selected_index, 0);
+        data.select_previous();
+        assert_eq!(data.selected_index, 0);
     }
 }

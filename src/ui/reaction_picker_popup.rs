@@ -11,7 +11,7 @@ use crate::domain::reaction_picker_state::ReactionPickerState;
 use super::{popup_utils, styles};
 
 pub fn render_reaction_picker(frame: &mut Frame<'_>, area: Rect, state: &ReactionPickerState) {
-    let popup_area = popup_utils::centered_rect(area, 30, 50);
+    let popup_area = popup_utils::centered_rect(area, 50, 60);
 
     frame.render_widget(Clear, popup_area);
 
@@ -54,13 +54,23 @@ fn build_lines(state: &ReactionPickerState) -> Vec<Line<'static>> {
                     } else {
                         styles::chat_info_popup_value_style()
                     };
-                    Line::from(Span::styled(format!("  {}  ", r.emoji), style))
+                    let name = r.display_name();
+                    let label = if name.is_empty() {
+                        format!("  {}", r.emoji)
+                    } else {
+                        format!("  {}  {}", r.emoji, name)
+                    };
+                    Line::from(Span::styled(label, style))
                 })
                 .collect();
 
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "j/k navigate, Enter select, Esc close",
+                "j/k navigate, Enter select",
+                styles::help_popup_footer_style(),
+            )));
+            lines.push(Line::from(Span::styled(
+                "Press q, Esc or R to close",
                 styles::help_popup_footer_style(),
             )));
             lines
@@ -106,9 +116,14 @@ mod tests {
         ];
         let state = ReactionPickerState::Ready(ReactionPickerData::new(reactions, 1, 2));
         let lines = build_lines(&state);
-        assert_eq!(lines.len(), 4);
+        assert_eq!(lines.len(), 5);
         assert!(lines[0].spans[0].content.contains("👍"));
+        assert!(lines[0].spans[0].content.contains("Thumbs Up"));
         assert!(lines[1].spans[0].content.contains("❤"));
+        assert!(lines[1].spans[0].content.contains("Heart"));
         assert!(lines[3].spans[0].content.contains("j/k navigate"));
+        assert!(lines[4].spans[0]
+            .content
+            .contains("Press q, Esc or R to close"));
     }
 }

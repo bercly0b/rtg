@@ -10,6 +10,7 @@ mod message_info;
 mod message_input;
 mod message_pagination;
 mod playback;
+mod reaction_picker;
 mod voice;
 
 use std::cell::RefCell;

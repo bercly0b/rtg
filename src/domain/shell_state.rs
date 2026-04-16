@@ -534,4 +534,80 @@ mod tests {
             _ => panic!("expected Loaded state"),
         }
     }
+
+    #[test]
+    fn reaction_picker_none_by_default() {
+        let state = ShellState::default();
+        assert!(state.reaction_picker().is_none());
+    }
+
+    #[test]
+    fn show_reaction_picker_loading_creates_picker() {
+        let mut state = ShellState::default();
+        state.show_reaction_picker_loading(1, 42);
+        assert!(state.reaction_picker().is_some());
+        assert_eq!(state.reaction_picker().unwrap().ids(), Some((1, 42)));
+    }
+
+    #[test]
+    fn close_reaction_picker_clears_state() {
+        let mut state = ShellState::default();
+        state.show_reaction_picker_loading(1, 42);
+        state.close_reaction_picker();
+        assert!(state.reaction_picker().is_none());
+    }
+
+    #[test]
+    fn set_reaction_picker_updates_state() {
+        use crate::domain::reaction_picker_state::{
+            AvailableReaction, ReactionPickerData, ReactionPickerState,
+        };
+        let mut state = ShellState::default();
+        state.show_reaction_picker_loading(1, 42);
+        state.set_reaction_picker(ReactionPickerState::Ready(ReactionPickerData::new(
+            vec![AvailableReaction {
+                emoji: "👍".into(),
+                needs_premium: false,
+            }],
+            1,
+            42,
+        )));
+        match state.reaction_picker().unwrap() {
+            ReactionPickerState::Ready(data) => {
+                assert_eq!(data.items.len(), 1);
+            }
+            _ => panic!("expected Ready state"),
+        }
+    }
+
+    #[test]
+    fn reaction_picker_mut_allows_mutation() {
+        use crate::domain::reaction_picker_state::{
+            AvailableReaction, ReactionPickerData, ReactionPickerState,
+        };
+        let mut state = ShellState::default();
+        state.set_reaction_picker(ReactionPickerState::Ready(ReactionPickerData::new(
+            vec![
+                AvailableReaction {
+                    emoji: "👍".into(),
+                    needs_premium: false,
+                },
+                AvailableReaction {
+                    emoji: "❤".into(),
+                    needs_premium: false,
+                },
+            ],
+            1,
+            42,
+        )));
+        if let Some(data) = state.reaction_picker_mut().and_then(|p| p.data_mut()) {
+            data.select_next();
+        }
+        match state.reaction_picker().unwrap() {
+            ReactionPickerState::Ready(data) => {
+                assert_eq!(data.selected_index, 1);
+            }
+            _ => panic!("expected Ready state"),
+        }
+    }
 }
