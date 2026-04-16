@@ -51,33 +51,14 @@ pub(super) fn build_message_lines(
         .collect();
 
     if sender.is_some() {
-        // First message in group: header line (time + sender), then content on separate lines
         let header_line = build_message_header_line(time, show_time, sender, is_outgoing);
         lines.push(header_line);
 
         if let Some(reply) = reply_info {
             lines.push(build_reply_line(reply, indent, content_width));
         }
-
         if let Some(fwd) = forward_info {
             lines.push(build_forward_line(fwd, indent, content_width));
-        }
-
-        let mut content_pos = 0usize;
-        for text_line in content.lines() {
-            let mut seg_offset = 0;
-            for wrapped in wrap_line(text_line, content_width) {
-                let content_spans = build_content_line_spans_linked(
-                    &wrapped,
-                    content_pos + seg_offset,
-                    &link_ranges,
-                );
-                let mut line_spans = vec![Span::raw(indent.to_owned())];
-                line_spans.extend(content_spans);
-                lines.push(Line::from(line_spans));
-                seg_offset += wrapped.len();
-            }
-            content_pos += text_line.len() + 1; // +1 for '\n'
         }
 
         if content.is_empty() {
@@ -85,14 +66,20 @@ pub(super) fn build_message_lines(
                 Span::raw(indent.to_owned()),
                 Span::styled("[Empty message]".to_owned(), styles::message_media_style()),
             ]));
+        } else {
+            build_indented_content_lines(
+                &mut lines,
+                content,
+                0,
+                indent,
+                content_width,
+                &link_ranges,
+            );
         }
     } else {
-        // Grouped message (no sender): time/blank + first line of content on same line
-
         if let Some(reply) = reply_info {
             lines.push(build_reply_line(reply, indent, content_width));
         }
-
         if let Some(fwd) = forward_info {
             lines.push(build_forward_line(fwd, indent, content_width));
         }
@@ -103,63 +90,14 @@ pub(super) fn build_message_lines(
             Span::raw(indent.to_owned())
         };
 
-        let mut content_lines = content.lines();
-        let mut content_pos = 0usize;
-
-        if let Some(first_line) = content_lines.next() {
-            let first_line_wrapped = wrap_line(first_line, content_width);
-            let mut first_iter = first_line_wrapped.iter();
-            let mut seg_offset = 0;
-
-            if let Some(first_wrapped) = first_iter.next() {
-                let mut spans = vec![time_span];
-                spans.extend(build_content_line_spans_linked(
-                    first_wrapped,
-                    content_pos + seg_offset,
-                    &link_ranges,
-                ));
-                lines.push(Line::from(spans));
-                seg_offset += first_wrapped.len();
-
-                for wrapped in first_iter {
-                    let content_spans = build_content_line_spans_linked(
-                        wrapped,
-                        content_pos + seg_offset,
-                        &link_ranges,
-                    );
-                    let mut line_spans = vec![Span::raw(indent.to_owned())];
-                    line_spans.extend(content_spans);
-                    lines.push(Line::from(line_spans));
-                    seg_offset += wrapped.len();
-                }
-            }
-            content_pos += first_line.len() + 1;
-
-            // Remaining lines with indent
-            for text_line in content_lines {
-                let mut seg_offset = 0;
-                for wrapped in wrap_line(text_line, content_width) {
-                    let content_spans = build_content_line_spans_linked(
-                        &wrapped,
-                        content_pos + seg_offset,
-                        &link_ranges,
-                    );
-                    let mut line_spans = vec![Span::raw(indent.to_owned())];
-                    line_spans.extend(content_spans);
-                    lines.push(Line::from(line_spans));
-                    seg_offset += wrapped.len();
-                }
-                content_pos += text_line.len() + 1;
-            }
-        } else {
-            // Empty content
-            let mut spans = vec![time_span];
-            spans.push(Span::styled(
-                "[Empty message]".to_owned(),
-                styles::message_media_style(),
-            ));
-            lines.push(Line::from(spans));
-        }
+        build_grouped_message_lines(
+            &mut lines,
+            content,
+            time_span,
+            indent,
+            content_width,
+            &link_ranges,
+        );
     }
 
     // Append file metadata on the same line as the media label
@@ -190,6 +128,86 @@ pub(super) fn build_message_lines(
     }
 
     lines
+}
+
+fn build_indented_content_lines(
+    lines: &mut Vec<Line<'static>>,
+    content: &str,
+    start_pos: usize,
+    indent: &str,
+    content_width: usize,
+    link_ranges: &[(usize, usize)],
+) {
+    let mut content_pos = start_pos;
+    for text_line in content.lines() {
+        let mut seg_offset = 0;
+        for wrapped in wrap_line(text_line, content_width) {
+            let content_spans =
+                build_content_line_spans_linked(&wrapped, content_pos + seg_offset, link_ranges);
+            let mut line_spans = vec![Span::raw(indent.to_owned())];
+            line_spans.extend(content_spans);
+            lines.push(Line::from(line_spans));
+            seg_offset += wrapped.len();
+        }
+        content_pos += text_line.len() + 1;
+    }
+}
+
+fn build_grouped_message_lines(
+    lines: &mut Vec<Line<'static>>,
+    content: &str,
+    time_span: Span<'static>,
+    indent: &str,
+    content_width: usize,
+    link_ranges: &[(usize, usize)],
+) {
+    let mut content_lines = content.lines();
+
+    if let Some(first_line) = content_lines.next() {
+        let first_line_wrapped = wrap_line(first_line, content_width);
+        let mut first_iter = first_line_wrapped.iter();
+        let mut seg_offset = 0;
+
+        if let Some(first_wrapped) = first_iter.next() {
+            let mut spans = vec![time_span];
+            spans.extend(build_content_line_spans_linked(
+                first_wrapped,
+                seg_offset,
+                link_ranges,
+            ));
+            lines.push(Line::from(spans));
+            seg_offset += first_wrapped.len();
+
+            for wrapped in first_iter {
+                let content_spans =
+                    build_content_line_spans_linked(wrapped, seg_offset, link_ranges);
+                let mut line_spans = vec![Span::raw(indent.to_owned())];
+                line_spans.extend(content_spans);
+                lines.push(Line::from(line_spans));
+                seg_offset += wrapped.len();
+            }
+        }
+
+        let remaining_start = first_line.len() + 1;
+        let remaining = &content[remaining_start.min(content.len())..];
+        if !remaining.is_empty() {
+            build_indented_content_lines(
+                lines,
+                remaining,
+                remaining_start,
+                indent,
+                content_width,
+                link_ranges,
+            );
+        }
+    } else {
+        let mut spans = vec![time_span];
+        spans.push(Span::styled(
+            "[Empty message]".to_owned(),
+            styles::message_media_style(),
+        ));
+        lines.push(Line::from(spans));
+    }
 }
 
 fn append_reaction_indicator(lines: &mut [Line<'static>], reaction_count: u32) {

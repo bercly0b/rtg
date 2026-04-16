@@ -44,7 +44,8 @@ pub(super) fn render_chat_list_panel(
         ChatListUiState::Ready => {
             let chats = chat_list.chats();
             let inner_width = area.width.saturating_sub(2) as usize;
-            let items = build_chat_list_items(chats, inner_width);
+            let layout = ChatListLayout::new(chats);
+            let items = layout.build_items(chats, inner_width);
             let chat_count = chats.len();
 
             let title = format!("Chats ({})", chat_count);
@@ -67,7 +68,7 @@ pub(super) fn render_chat_list_panel(
             let visual_index = if is_active {
                 chat_list
                     .selected_index()
-                    .map(|idx| compute_visual_index(chats, idx))
+                    .map(|idx| layout.visual_index(idx))
             } else {
                 None
             };
@@ -90,38 +91,49 @@ fn render_chat_list_message(frame: &mut Frame<'_>, area: Rect, message: &str, ti
     frame.render_widget(message, area);
 }
 
-pub(super) fn build_chat_list_items(chats: &[ChatSummary], width: usize) -> Vec<ListItem<'static>> {
-    let (pinned, regular): (Vec<_>, Vec<_>) = chats.iter().partition(|c| c.is_pinned);
-
-    let mut items = Vec::new();
-    let has_pinned = !pinned.is_empty();
-
-    if has_pinned {
-        items.push(section_header_item("Pinned"));
-        for chat in &pinned {
-            items.push(ListItem::new(chat_list_item_line(chat, width)));
-        }
-    }
-
-    if !regular.is_empty() || !has_pinned {
-        items.push(section_header_item("All Chats"));
-        for chat in &regular {
-            items.push(ListItem::new(chat_list_item_line(chat, width)));
-        }
-    }
-
-    items
+pub(super) struct ChatListLayout {
+    pub pinned_count: usize,
 }
 
-pub(super) fn compute_visual_index(chats: &[ChatSummary], chat_index: usize) -> usize {
-    let pinned_count = chats.iter().filter(|c| c.is_pinned).count();
-    let has_pinned = pinned_count > 0;
+impl ChatListLayout {
+    pub fn new(chats: &[ChatSummary]) -> Self {
+        let pinned_count = chats.iter().filter(|c| c.is_pinned).count();
+        Self { pinned_count }
+    }
 
-    if chat_index < pinned_count {
-        chat_index + 1
-    } else {
-        let headers = if has_pinned { 2 } else { 1 };
-        chat_index + headers
+    pub fn has_pinned(&self) -> bool {
+        self.pinned_count > 0
+    }
+
+    pub fn build_items(&self, chats: &[ChatSummary], width: usize) -> Vec<ListItem<'static>> {
+        let (pinned, regular): (Vec<_>, Vec<_>) = chats.iter().partition(|c| c.is_pinned);
+
+        let mut items = Vec::new();
+
+        if self.has_pinned() {
+            items.push(section_header_item("Pinned"));
+            for chat in &pinned {
+                items.push(ListItem::new(chat_list_item_line(chat, width)));
+            }
+        }
+
+        if !regular.is_empty() || !self.has_pinned() {
+            items.push(section_header_item("All Chats"));
+            for chat in &regular {
+                items.push(ListItem::new(chat_list_item_line(chat, width)));
+            }
+        }
+
+        items
+    }
+
+    pub fn visual_index(&self, chat_index: usize) -> usize {
+        if chat_index < self.pinned_count {
+            chat_index + 1
+        } else {
+            let headers = if self.has_pinned() { 2 } else { 1 };
+            chat_index + headers
+        }
     }
 }
 
