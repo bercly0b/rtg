@@ -1,4 +1,4 @@
-use crate::domain::reaction_picker_state::AvailableReaction;
+use crate::domain::reaction_picker_state::{is_allowed_reaction, AvailableReaction};
 use crate::usecases::message_reactions::{
     AddReactionQuery, AvailableReactionsQuery, ReactionError,
 };
@@ -25,20 +25,24 @@ impl TdLibAuthBackend {
             .chain(available.recent_reactions.iter())
             .chain(available.popular_reactions.iter())
         {
-            let ar = match &r.r#type {
-                tdlib_rs::enums::ReactionType::Emoji(e) => AvailableReaction {
-                    emoji: e.emoji.clone(),
-                    needs_premium: r.needs_premium,
-                },
+            let emoji = match &r.r#type {
+                tdlib_rs::enums::ReactionType::Emoji(e) => &e.emoji,
                 tdlib_rs::enums::ReactionType::CustomEmoji(_) => continue,
                 tdlib_rs::enums::ReactionType::Paid => continue,
             };
-            if !reactions
-                .iter()
-                .any(|existing: &AvailableReaction| existing.emoji == ar.emoji)
-            {
-                reactions.push(ar);
+            if !is_allowed_reaction(emoji) {
+                continue;
             }
+            if reactions
+                .iter()
+                .any(|existing: &AvailableReaction| existing.emoji == *emoji)
+            {
+                continue;
+            }
+            reactions.push(AvailableReaction {
+                emoji: emoji.clone(),
+                needs_premium: r.needs_premium,
+            });
         }
 
         Ok(reactions)

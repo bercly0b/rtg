@@ -6,85 +6,33 @@ pub struct AvailableReaction {
 
 impl AvailableReaction {
     pub fn display_name(&self) -> &str {
-        emoji_name(&self.emoji)
+        allowed_reaction_name(&self.emoji).unwrap_or("")
     }
 }
 
-fn emoji_name(emoji: &str) -> &str {
-    match emoji {
-        "👍" => "Thumbs Up",
-        "👎" => "Thumbs Down",
-        "❤" | "❤️" => "Heart",
-        "🔥" => "Fire",
-        "🥰" => "Love",
-        "👏" => "Clap",
-        "😁" => "Grin",
-        "🤔" => "Thinking",
-        "🤯" => "Mind Blown",
-        "😱" => "Shocked",
-        "🤬" => "Angry",
-        "😢" => "Crying",
-        "🎉" => "Party",
-        "🤩" => "Starstruck",
-        "🤮" => "Vomiting",
-        "💩" => "Poop",
-        "🙏" => "Pray",
-        "👌" => "OK",
-        "🕊" | "🕊️" => "Dove",
-        "🤡" => "Clown",
-        "🥱" => "Yawning",
-        "🥴" => "Woozy",
-        "😍" => "Heart Eyes",
-        "🐳" => "Whale",
-        "❤‍🔥" | "❤️‍🔥" => "Heart on Fire",
-        "🌚" => "New Moon",
-        "🌭" => "Hot Dog",
-        "💯" => "100",
-        "🤣" => "ROFL",
-        "⚡" | "⚡️" => "Lightning",
-        "🍌" => "Banana",
-        "🏆" => "Trophy",
-        "💔" => "Broken Heart",
-        "🤨" => "Raised Brow",
-        "😐" => "Neutral",
-        "🍓" => "Strawberry",
-        "🍾" => "Champagne",
-        "💋" => "Kiss",
-        "🖕" => "Middle Finger",
-        "😈" => "Devil",
-        "😴" => "Sleeping",
-        "😭" => "Sobbing",
-        "🤓" => "Nerd",
-        "👻" => "Ghost",
-        "👨‍💻" => "Technologist",
-        "👀" => "Eyes",
-        "🎃" => "Jack-O-Lantern",
-        "🙈" => "See-No-Evil",
-        "😇" => "Angel",
-        "😨" => "Fearful",
-        "🤝" => "Handshake",
-        "✍" | "✍️" => "Writing",
-        "🤗" => "Hugging",
-        "🫡" => "Salute",
-        "🎅" => "Santa",
-        "🎄" => "Christmas Tree",
-        "☃" | "☃️" => "Snowman",
-        "💅" => "Nail Polish",
-        "🤪" => "Zany",
-        "🗿" => "Moai",
-        "🆒" => "Cool",
-        "💘" => "Cupid",
-        "🙉" => "Hear-No-Evil",
-        "🦄" => "Unicorn",
-        "😘" => "Blowing Kiss",
-        "💊" => "Pill",
-        "🙊" => "Speak-No-Evil",
-        "😎" => "Sunglasses",
-        "👾" => "Alien Monster",
-        "🤷" | "🤷‍♂️" | "🤷‍♀️" => "Shrug",
-        "😡" => "Pouting",
-        _ => "",
-    }
+const ALLOWED_REACTIONS: &[(&str, &str)] = &[
+    ("👌", "ok"),
+    ("😁", "grin"),
+    ("👍", "thumbs_up"),
+    ("🔥", "fire"),
+    ("❤", "heart"),
+    ("😱", "shocked"),
+    ("🙏", "pray"),
+    ("👀", "eyes"),
+    ("🌚", "new_moon"),
+    ("👎", "thumbs_down"),
+    ("🤔", "thinking"),
+];
+
+pub fn allowed_reaction_name(emoji: &str) -> Option<&'static str> {
+    ALLOWED_REACTIONS
+        .iter()
+        .find(|(e, _)| *e == emoji)
+        .map(|(_, name)| *name)
+}
+
+pub fn is_allowed_reaction(emoji: &str) -> bool {
+    ALLOWED_REACTIONS.iter().any(|(e, _)| *e == emoji)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -253,24 +201,30 @@ mod tests {
     }
 
     #[test]
-    fn display_name_returns_known_names() {
+    fn display_name_returns_snake_case_names() {
         let r = AvailableReaction {
             emoji: "👍".into(),
             needs_premium: false,
         };
-        assert_eq!(r.display_name(), "Thumbs Up");
+        assert_eq!(r.display_name(), "thumbs_up");
 
         let r = AvailableReaction {
             emoji: "❤".into(),
             needs_premium: false,
         };
-        assert_eq!(r.display_name(), "Heart");
+        assert_eq!(r.display_name(), "heart");
 
         let r = AvailableReaction {
             emoji: "🔥".into(),
             needs_premium: false,
         };
-        assert_eq!(r.display_name(), "Fire");
+        assert_eq!(r.display_name(), "fire");
+
+        let r = AvailableReaction {
+            emoji: "👌".into(),
+            needs_premium: false,
+        };
+        assert_eq!(r.display_name(), "ok");
     }
 
     #[test]
@@ -280,6 +234,20 @@ mod tests {
             needs_premium: false,
         };
         assert_eq!(r.display_name(), "");
+    }
+
+    #[test]
+    fn is_allowed_filters_correctly() {
+        assert!(is_allowed_reaction("👍"));
+        assert!(is_allowed_reaction("❤"));
+        assert!(is_allowed_reaction("🤔"));
+        assert!(!is_allowed_reaction("🧪"));
+        assert!(!is_allowed_reaction("🤣"));
+    }
+
+    #[test]
+    fn allowed_reactions_has_exactly_eleven_entries() {
+        assert_eq!(ALLOWED_REACTIONS.len(), 11);
     }
 
     #[test]

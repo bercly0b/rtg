@@ -118,9 +118,9 @@ mod tests {
         let lines = build_lines(&state);
         assert_eq!(lines.len(), 5);
         assert!(lines[0].spans[0].content.contains("👍"));
-        assert!(lines[0].spans[0].content.contains("Thumbs Up"));
+        assert!(lines[0].spans[0].content.contains("thumbs_up"));
         assert!(lines[1].spans[0].content.contains("❤"));
-        assert!(lines[1].spans[0].content.contains("Heart"));
+        assert!(lines[1].spans[0].content.contains("heart"));
         assert!(lines[3].spans[0].content.contains("j/k navigate"));
         assert!(lines[4].spans[0]
             .content
