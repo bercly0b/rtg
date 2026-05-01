@@ -68,12 +68,32 @@ pub fn format_duration(seconds: i32) -> String {
     }
 }
 
+/// Returns the extension of `file_name` (substring after the last `.`),
+/// or `None` if the name has no extension.
+///
+/// Hidden files (`".env"`) and trailing-dot names (`"a."`) are treated as
+/// having no extension.
+pub fn file_extension(file_name: &str) -> Option<&str> {
+    let dot = file_name.rfind('.')?;
+    if dot == 0 || dot + 1 >= file_name.len() {
+        return None;
+    }
+    Some(&file_name[dot + 1..])
+}
+
 /// Builds a metadata display string for a file-bearing message.
 ///
-/// Returns a formatted string like `"download=yes, size=15.5KB, duration=0:03, listened=yes"`
+/// Returns a formatted string like `"name=report.pdf, type=pdf, download=yes, size=15.5KB"`
 /// for rendering alongside the `[Media]` label.
 pub fn build_file_metadata_display(media: super::MessageMedia, info: &FileInfo) -> String {
     let mut parts = Vec::new();
+
+    if let Some(name) = info.file_name.as_deref() {
+        parts.push(format!("name={}", name));
+        if let Some(ext) = file_extension(name) {
+            parts.push(format!("type={}", ext));
+        }
+    }
 
     match info.download_status {
         DownloadStatus::Completed => parts.push("download=yes".to_owned()),

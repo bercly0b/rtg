@@ -36,12 +36,10 @@ pub(super) fn dispatch_chat_list_action<D: TaskDispatcher>(
         Action::MarkChatAsRead => chat_list::mark_selected_chat_as_read(ctx),
         Action::ShowChatInfo => chat_list::show_chat_info_popup(ctx),
         Action::SearchChats => ctx.state.open_chat_search(),
-        Action::OpenChat => {
-            if ctx.state.chat_list().selected_chat().is_some() {
-                ctx.state.set_active_pane(ActivePane::Messages);
-                chat_open::open_selected_chat(ctx);
-                return Ok(true);
-            }
+        Action::OpenChat if ctx.state.chat_list().selected_chat().is_some() => {
+            ctx.state.set_active_pane(ActivePane::Messages);
+            chat_open::open_selected_chat(ctx);
+            return Ok(true);
         }
         Action::Quit => {
             chat_open::close_tdlib_chat(ctx);
@@ -69,10 +67,8 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
             chat_open::close_tdlib_chat(ctx);
             ctx.state.set_active_pane(ActivePane::ChatList);
         }
-        Action::EnterMessageInput => {
-            if ctx.state.open_chat().is_open() {
-                ctx.state.set_active_pane(ActivePane::MessageInput);
-            }
+        Action::EnterMessageInput if ctx.state.open_chat().is_open() => {
+            ctx.state.set_active_pane(ActivePane::MessageInput);
         }
         Action::CopyMessage => {
             if let Some(msg) = ctx.state.open_chat().selected_message() {
@@ -85,15 +81,11 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
             }
         }
         Action::OpenLink => message_actions::open_message_url(ctx)?,
-        Action::OpenMessage => {
-            if ctx.state.open_chat().is_open() {
-                message_actions::open_selected_message(ctx);
-            }
+        Action::OpenMessage if ctx.state.open_chat().is_open() => {
+            message_actions::open_selected_message(ctx);
         }
-        Action::RecordVoice => {
-            if ctx.state.open_chat().is_open() {
-                voice::start_voice_recording(ctx);
-            }
+        Action::RecordVoice if ctx.state.open_chat().is_open() => {
+            voice::start_voice_recording(ctx);
         }
         Action::ShowMessageInfo => {
             show_message_info_popup(ctx);

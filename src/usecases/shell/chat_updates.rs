@@ -157,11 +157,10 @@ fn handle_file_update<D: TaskDispatcher>(
     let new_status = if is_downloading_completed && !local_path.is_empty() {
         DownloadStatus::Completed
     } else if is_downloading_active {
-        let percent = if size > 0 {
-            (downloaded_size * 100 / size).min(99) as u8
-        } else {
-            0
-        };
+        let percent = (downloaded_size * 100)
+            .checked_div(size)
+            .unwrap_or(0)
+            .min(99) as u8;
         DownloadStatus::Downloading {
             progress_percent: percent,
         }
