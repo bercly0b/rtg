@@ -8,7 +8,8 @@ mod tests;
 pub use call_info::{build_call_metadata_display, CallDiscardReason, CallInfo};
 #[allow(unused_imports)]
 pub use file_info::{
-    build_file_metadata_display, format_duration, format_file_size, DownloadStatus, FileInfo,
+    build_file_metadata_display, file_extension, format_duration, format_file_size, DownloadStatus,
+    FileInfo,
 };
 pub use url::{extract_first_url, TextLink};
 
