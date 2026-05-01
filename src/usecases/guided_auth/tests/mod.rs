@@ -7,6 +7,7 @@ use super::*;
 struct FakeTerminal {
     inputs: VecDeque<Option<String>>,
     output: Vec<String>,
+    verbose: bool,
 }
 
 impl FakeTerminal {
@@ -17,11 +18,21 @@ impl FakeTerminal {
                 .map(|item| item.map(|value| value.to_owned()))
                 .collect(),
             output: Vec::new(),
+            verbose: false,
         }
+    }
+
+    fn verbose(mut self) -> Self {
+        self.verbose = true;
+        self
     }
 }
 
 impl AuthTerminal for FakeTerminal {
+    fn is_verbose(&self) -> bool {
+        self.verbose
+    }
+
     fn print_line(&mut self, line: &str) -> std::io::Result<()> {
         self.output.push(line.to_owned());
         Ok(())

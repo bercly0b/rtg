@@ -33,6 +33,11 @@ pub struct TdLibConfig {
     /// TDLib (C++ library) has its own logger that writes to stderr by default,
     /// which corrupts the TUI alternate screen. This redirects it to a file.
     pub log_file: PathBuf,
+    /// When true, raise TDLib's internal log verbosity (info/debug visible
+    /// on stderr and in the log file). When false, suppress all but fatal
+    /// startup logs and keep the log file at warning level. Mapped from the
+    /// app's logging level via `LogConfig::is_verbose()`.
+    pub verbose: bool,
 }
 
 // Custom Debug implementation to redact sensitive api_hash field.
@@ -44,6 +49,7 @@ impl std::fmt::Debug for TdLibConfig {
             .field("database_directory", &self.database_directory)
             .field("files_directory", &self.files_directory)
             .field("log_file", &self.log_file)
+            .field("verbose", &self.verbose)
             .finish()
     }
 }

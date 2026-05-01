@@ -180,8 +180,9 @@ fn build_context_with_factories(
     config_adapter: &dyn ConfigAdapter,
     telegram_factory: &dyn TelegramAdapterFactory,
 ) -> Result<AppContext, AppError> {
-    let mut terminal = StdTerminal;
+    let probe_config = config_adapter.load().map_err(AppError::Other)?;
     let interactive = std::io::stdin().is_terminal();
+    let mut terminal = StdTerminal::new(probe_config.logging.is_verbose());
     build_context_with_factories_inner(config_adapter, telegram_factory, &mut terminal, interactive)
 }
 
@@ -203,7 +204,7 @@ fn build_context_with_factories_inner(
     )?;
 
     let telegram = telegram_factory
-        .from_config(&config.telegram)
+        .from_config(&config.telegram, config.logging.is_verbose())
         .map_err(map_telegram_bootstrap_error)?;
 
     Ok(AppContext::new(config, telegram))
@@ -211,14 +212,22 @@ fn build_context_with_factories_inner(
 
 #[allow(clippy::wrong_self_convention)]
 trait TelegramAdapterFactory {
-    fn from_config(&self, config: &TelegramConfig) -> Result<TelegramAdapter, AuthBackendError>;
+    fn from_config(
+        &self,
+        config: &TelegramConfig,
+        verbose: bool,
+    ) -> Result<TelegramAdapter, AuthBackendError>;
 }
 
 struct RealTelegramAdapterFactory;
 
 impl TelegramAdapterFactory for RealTelegramAdapterFactory {
-    fn from_config(&self, config: &TelegramConfig) -> Result<TelegramAdapter, AuthBackendError> {
-        TelegramAdapter::from_config(config)
+    fn from_config(
+        &self,
+        config: &TelegramConfig,
+        verbose: bool,
+    ) -> Result<TelegramAdapter, AuthBackendError> {
+        TelegramAdapter::from_config(config, verbose)
     }
 }
 

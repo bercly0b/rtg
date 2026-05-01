@@ -52,7 +52,11 @@ struct StubTelegramAdapterFactory {
 }
 
 impl TelegramAdapterFactory for StubTelegramAdapterFactory {
-    fn from_config(&self, _config: &TelegramConfig) -> Result<TelegramAdapter, AuthBackendError> {
+    fn from_config(
+        &self,
+        _config: &TelegramConfig,
+        _verbose: bool,
+    ) -> Result<TelegramAdapter, AuthBackendError> {
         match &self.result {
             Ok(()) => Ok(TelegramAdapter::stub()),
             Err(error) => Err(error.clone()),

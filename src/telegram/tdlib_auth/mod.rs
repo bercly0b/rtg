@@ -52,13 +52,18 @@ impl TdLibAuthBackend {
     /// Creates a new TDLib auth backend.
     ///
     /// This creates the TDLib client and waits for initial authorization state.
-    pub fn new(config: &TelegramConfig, layout: &StorageLayout) -> Result<Self, AuthBackendError> {
+    pub fn new(
+        config: &TelegramConfig,
+        layout: &StorageLayout,
+        verbose: bool,
+    ) -> Result<Self, AuthBackendError> {
         let tdlib_config = TdLibConfig {
             api_id: config.api_id,
             api_hash: config.api_hash.clone(),
             database_directory: layout.tdlib_database_dir(),
             files_directory: layout.tdlib_files_dir(),
             log_file: layout.tdlib_log_file(),
+            verbose,
         };
 
         // Ensure directories exist
