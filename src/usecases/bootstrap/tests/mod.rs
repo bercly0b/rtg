@@ -1,7 +1,7 @@
 mod composition;
 mod context;
 
-use std::sync::mpsc::Sender;
+use std::{cell::RefCell, sync::mpsc::Sender};
 
 use crate::{
     domain::events::ConnectivityStatus,
@@ -20,11 +20,30 @@ use super::{ConnectivityMonitorFactory, TelegramAdapterFactory};
 
 struct FixedConfigAdapter {
     config: AppConfig,
+    saved: RefCell<Option<(i32, String)>>,
+}
+
+impl FixedConfigAdapter {
+    fn new(config: AppConfig) -> Self {
+        Self {
+            config,
+            saved: RefCell::new(None),
+        }
+    }
+
+    fn saved_credentials(&self) -> Option<(i32, String)> {
+        self.saved.borrow().clone()
+    }
 }
 
 impl ConfigAdapter for FixedConfigAdapter {
     fn load(&self) -> anyhow::Result<AppConfig> {
         Ok(self.config.clone())
+    }
+
+    fn save_telegram_credentials(&self, api_id: i32, api_hash: &str) -> anyhow::Result<()> {
+        *self.saved.borrow_mut() = Some((api_id, api_hash.to_owned()));
+        Ok(())
     }
 }
 

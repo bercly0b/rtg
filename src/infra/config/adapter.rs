@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use crate::infra::{
-    config::{loader, AppConfig},
+    config::{loader, writer, AppConfig},
     contracts::ConfigAdapter,
 };
 
@@ -23,5 +23,13 @@ impl FileConfigAdapter {
 impl ConfigAdapter for FileConfigAdapter {
     fn load(&self) -> Result<AppConfig> {
         Ok(loader::load(self.path.as_deref())?)
+    }
+
+    fn save_telegram_credentials(&self, api_id: i32, api_hash: &str) -> Result<()> {
+        Ok(writer::save_telegram_credentials(
+            self.path.as_deref(),
+            api_id,
+            api_hash,
+        )?)
     }
 }
