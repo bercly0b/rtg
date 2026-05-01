@@ -26,7 +26,6 @@ pub trait ReactionSource: Send + Sync {
 
     fn add_reaction(&self, query: &AddReactionQuery) -> Result<(), ReactionError>;
 
-    #[allow(dead_code)]
     fn remove_reaction(&self, query: &AddReactionQuery) -> Result<(), ReactionError>;
 }
 

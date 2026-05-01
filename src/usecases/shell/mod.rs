@@ -273,16 +273,21 @@ where
             "enter" => {
                 let action = self.state.reaction_picker().and_then(|picker| {
                     if let ReactionPickerState::Ready(data) = picker {
-                        data.selected_emoji()
-                            .map(|e| (data.chat_id, data.message_id, e.to_owned()))
+                        data.selected_reaction()
+                            .map(|r| (data.chat_id, data.message_id, r.emoji.clone(), r.is_chosen))
                     } else {
                         None
                     }
                 });
 
-                if let Some((chat_id, message_id, emoji)) = action {
-                    self.dispatcher
-                        .dispatch_add_reaction(chat_id, message_id, emoji);
+                if let Some((chat_id, message_id, emoji, is_chosen)) = action {
+                    if is_chosen {
+                        self.dispatcher
+                            .dispatch_remove_reaction(chat_id, message_id, emoji);
+                    } else {
+                        self.dispatcher
+                            .dispatch_add_reaction(chat_id, message_id, emoji);
+                    }
                     self.state.close_reaction_picker();
                 }
             }

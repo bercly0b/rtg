@@ -18,6 +18,24 @@ impl TdLibAuthBackend {
                 ReactionError::Unavailable
             })?;
 
+        let chosen_emojis = self
+            .client
+            .get_message(query.chat_id, query.message_id)
+            .ok()
+            .and_then(|m| m.interaction_info)
+            .and_then(|info| info.reactions)
+            .map(|r| {
+                r.reactions
+                    .into_iter()
+                    .filter(|mr| mr.is_chosen)
+                    .filter_map(|mr| match mr.r#type {
+                        tdlib_rs::enums::ReactionType::Emoji(e) => Some(e.emoji),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
         let mut reactions = Vec::new();
         for r in available
             .top_reactions
@@ -39,9 +57,11 @@ impl TdLibAuthBackend {
             {
                 continue;
             }
+            let is_chosen = chosen_emojis.iter().any(|e| e == emoji);
             reactions.push(AvailableReaction {
                 emoji: emoji.clone(),
                 needs_premium: r.needs_premium,
+                is_chosen,
             });
         }
 
@@ -62,7 +82,6 @@ impl TdLibAuthBackend {
             })
     }
 
-    #[allow(dead_code)]
     pub fn remove_reaction(&self, query: &AddReactionQuery) -> Result<(), ReactionError> {
         let reaction_type =
             tdlib_rs::enums::ReactionType::Emoji(tdlib_rs::types::ReactionTypeEmoji {

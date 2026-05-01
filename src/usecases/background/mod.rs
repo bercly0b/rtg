@@ -98,6 +98,9 @@ pub trait TaskDispatcher {
 
     /// Adds a reaction to a message (fire-and-forget).
     fn dispatch_add_reaction(&self, chat_id: i64, message_id: i64, emoji: String);
+
+    /// Removes a reaction from a message (fire-and-forget).
+    fn dispatch_remove_reaction(&self, chat_id: i64, message_id: i64, emoji: String);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -258,6 +261,10 @@ where
 
     fn dispatch_add_reaction(&self, chat_id: i64, message_id: i64, emoji: String) {
         lifecycle::dispatch_add_reaction(&self.subtitle_source, chat_id, message_id, emoji);
+    }
+
+    fn dispatch_remove_reaction(&self, chat_id: i64, message_id: i64, emoji: String) {
+        lifecycle::dispatch_remove_reaction(&self.subtitle_source, chat_id, message_id, emoji);
     }
 }
 
