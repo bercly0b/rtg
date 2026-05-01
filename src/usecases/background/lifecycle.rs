@@ -344,3 +344,29 @@ pub(super) fn dispatch_add_reaction<S: ReactionSource + Send + Sync + 'static>(
         tracing::error!(error = %error, "failed to spawn add reaction background thread");
     }
 }
+
+pub(super) fn dispatch_remove_reaction<S: ReactionSource + Send + Sync + 'static>(
+    source: &Arc<S>,
+    chat_id: i64,
+    message_id: i64,
+    emoji: String,
+) {
+    let source = Arc::clone(source);
+
+    if let Err(error) = std::thread::Builder::new()
+        .name("rtg-bg-remove-reaction".into())
+        .spawn(move || {
+            tracing::debug!(chat_id, message_id, ?emoji, "background: removing reaction");
+            let query = AddReactionQuery {
+                chat_id,
+                message_id,
+                emoji,
+            };
+            if let Err(e) = source.remove_reaction(&query) {
+                tracing::warn!(chat_id, message_id, error = ?e, "background: remove reaction failed");
+            }
+        })
+    {
+        tracing::error!(error = %error, "failed to spawn remove reaction background thread");
+    }
+}

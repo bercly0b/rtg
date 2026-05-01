@@ -80,10 +80,12 @@ fn available_reactions_loaded_updates_picker_to_ready() {
                 AvailableReaction {
                     emoji: "👍".into(),
                     needs_premium: false,
+                    is_chosen: false,
                 },
                 AvailableReaction {
                     emoji: "❤".into(),
                     needs_premium: false,
+                    is_chosen: false,
                 },
             ]),
         },
@@ -163,14 +165,17 @@ fn j_k_navigates_in_ready_picker() {
                 AvailableReaction {
                     emoji: "👍".into(),
                     needs_premium: false,
+                    is_chosen: false,
                 },
                 AvailableReaction {
                     emoji: "❤".into(),
                     needs_premium: false,
+                    is_chosen: false,
                 },
                 AvailableReaction {
                     emoji: "🔥".into(),
                     needs_premium: false,
+                    is_chosen: false,
                 },
             ]),
         },
@@ -211,7 +216,7 @@ fn j_k_navigates_in_ready_picker() {
 }
 
 #[test]
-fn enter_selects_reaction_and_closes_picker() {
+fn enter_on_unchosen_reaction_dispatches_add_and_closes_picker() {
     use crate::domain::reaction_picker_state::AvailableReaction;
 
     let mut o =
@@ -227,10 +232,12 @@ fn enter_selects_reaction_and_closes_picker() {
                 AvailableReaction {
                     emoji: "👍".into(),
                     needs_premium: false,
+                    is_chosen: false,
                 },
                 AvailableReaction {
                     emoji: "❤".into(),
                     needs_premium: false,
+                    is_chosen: false,
                 },
             ]),
         },
@@ -244,6 +251,51 @@ fn enter_selects_reaction_and_closes_picker() {
         .unwrap();
 
     assert!(o.state().reaction_picker().is_none());
+    assert_eq!(
+        o.dispatcher.last_add_reaction(),
+        Some((1, 10, "❤".to_owned()))
+    );
+    assert_eq!(o.dispatcher.last_remove_reaction(), None);
+}
+
+#[test]
+fn enter_on_chosen_reaction_dispatches_remove_and_closes_picker() {
+    use crate::domain::reaction_picker_state::AvailableReaction;
+
+    let mut o =
+        orchestrator_in_messages_pane(vec![chat(1, "Alice")], 1, vec![message(10, "hello")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
+        .unwrap();
+
+    o.handle_event(AppEvent::BackgroundTaskCompleted(
+        BackgroundTaskResult::AvailableReactionsLoaded {
+            chat_id: 1,
+            message_id: 10,
+            result: Ok(vec![
+                AvailableReaction {
+                    emoji: "🔥".into(),
+                    needs_premium: false,
+                    is_chosen: true,
+                },
+                AvailableReaction {
+                    emoji: "❤".into(),
+                    needs_premium: false,
+                    is_chosen: false,
+                },
+            ]),
+        },
+    ))
+    .unwrap();
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    assert!(o.state().reaction_picker().is_none());
+    assert_eq!(
+        o.dispatcher.last_remove_reaction(),
+        Some((1, 10, "🔥".to_owned()))
+    );
+    assert_eq!(o.dispatcher.last_add_reaction(), None);
 }
 
 #[test]
@@ -263,6 +315,7 @@ fn stale_reactions_result_ignored() {
             result: Ok(vec![AvailableReaction {
                 emoji: "👍".into(),
                 needs_premium: false,
+                is_chosen: false,
             }]),
         },
     ))

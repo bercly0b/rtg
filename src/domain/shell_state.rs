@@ -569,6 +569,7 @@ mod tests {
             vec![AvailableReaction {
                 emoji: "👍".into(),
                 needs_premium: false,
+                is_chosen: false,
             }],
             1,
             42,
@@ -592,10 +593,12 @@ mod tests {
                 AvailableReaction {
                     emoji: "👍".into(),
                     needs_premium: false,
+                    is_chosen: false,
                 },
                 AvailableReaction {
                     emoji: "❤".into(),
                     needs_premium: false,
+                    is_chosen: false,
                 },
             ],
             1,

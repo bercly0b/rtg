@@ -47,7 +47,9 @@ impl TdLibAuthBackend {
             })
             .collect();
 
-        enrich_same_chat_reply_info(&td_messages, &mut messages);
+        enrich_same_chat_reply_info(&td_messages, &mut messages, |chat_id, message_id| {
+            self.resolve_external_reply_target(chat_id, message_id)
+        });
 
         // TDLib returns newest-first; UI expects chronological (oldest-first)
         messages.reverse();
@@ -156,7 +158,9 @@ impl TdLibAuthBackend {
             })
             .collect();
 
-        enrich_same_chat_reply_info(&td_messages, &mut messages);
+        enrich_same_chat_reply_info(&td_messages, &mut messages, |chat_id, message_id| {
+            self.resolve_external_reply_target(chat_id, message_id)
+        });
 
         // Reverse to get oldest first (UI expects chronological order)
         messages.reverse();
@@ -264,6 +268,43 @@ impl TdLibAuthBackend {
             client_id: self.client.client_id(),
         })
     }
+
+    /// Fetches a reply target message via TDLib `getMessage` and converts it
+    /// into the `(sender_display_name, display_content, is_outgoing)` tuple
+    /// used by `enrich_same_chat_reply_info`.
+    ///
+    /// Used as a fallback when the reply target is not present in the current
+    /// `getChatHistory` batch — TDLib does not populate `MessageReplyTo`
+    /// `content`/`origin` for same-chat replies, so without this lookup the
+    /// UI would render an empty reply preview.
+    fn resolve_external_reply_target(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+    ) -> Option<(String, String, bool)> {
+        if chat_id == 0 || message_id == 0 {
+            return None;
+        }
+        let raw = match self.client.get_message(chat_id, message_id) {
+            Ok(msg) => msg,
+            Err(err) => {
+                tracing::debug!(
+                    chat_id,
+                    message_id,
+                    ?err,
+                    "failed to fetch reply target via getMessage; reply preview will be empty"
+                );
+                return None;
+            }
+        };
+        let sender_name = self.resolve_message_sender_name(&raw);
+        let mapped = tdlib_mappers::map_tdlib_message_to_domain(&raw, sender_name, None, None);
+        Some((
+            reply_sender_name_for_message(&mapped),
+            mapped.display_content(),
+            mapped.is_outgoing,
+        ))
+    }
 }
 
 /// Resolves the sender name for a TDLib message using the cache with
@@ -295,10 +336,20 @@ fn resolve_sender_name(
     }
 }
 
-fn enrich_same_chat_reply_info(
+/// Fills in missing reply preview fields (`sender_name`, `text`, `is_outgoing`)
+/// for messages whose reply target is also in the current batch.
+///
+/// `lookup_external` is invoked when the reply target is **not** in the batch
+/// and the existing reply preview is empty — i.e. the same-chat case where
+/// TDLib leaves `MessageReplyTo` `content`/`origin` unset and expects the
+/// client to resolve the original message itself.
+pub(super) fn enrich_same_chat_reply_info<F>(
     raw_messages: &[tdlib_rs::types::Message],
     messages: &mut [Message],
-) {
+    mut lookup_external: F,
+) where
+    F: FnMut(i64, i64) -> Option<(String, String, bool)>,
+{
     use tdlib_rs::enums::MessageReplyTo;
 
     let by_id: HashMap<i64, (String, String, bool)> = messages
@@ -324,14 +375,22 @@ fn enrich_same_chat_reply_info(
             continue;
         };
 
-        if let Some((sender_name, text, is_outgoing)) = by_id.get(&info.message_id) {
+        let resolved = if let Some(found) = by_id.get(&info.message_id) {
+            Some(found.clone())
+        } else if reply.sender_name.is_empty() && reply.text.is_empty() {
+            lookup_external(info.chat_id, info.message_id)
+        } else {
+            None
+        };
+
+        if let Some((sender_name, text, is_outgoing)) = resolved {
             if reply.sender_name.is_empty() {
-                reply.sender_name = sender_name.clone();
+                reply.sender_name = sender_name;
             }
             if reply.text.is_empty() {
-                reply.text = text.clone();
+                reply.text = text;
             }
-            reply.is_outgoing = *is_outgoing;
+            reply.is_outgoing = is_outgoing;
         }
     }
 }
@@ -390,9 +449,9 @@ struct TdLibMessageMapper {
     client_id: i32,
 }
 
-impl crate::telegram::chat_updates::MessageMapper for TdLibMessageMapper {
-    fn map_message(&self, raw: &tdlib_rs::types::Message) -> Message {
-        let sender_name = match &raw.sender_id {
+impl TdLibMessageMapper {
+    fn resolve_sender_name(&self, sender_id: &tdlib_rs::enums::MessageSender) -> String {
+        match sender_id {
             tdlib_rs::enums::MessageSender::User(u) => {
                 if let Some(user) = self.cache.get_user(u.user_id) {
                     tdlib_mappers::format_user_name(&user)
@@ -418,9 +477,62 @@ impl crate::telegram::chat_updates::MessageMapper for TdLibMessageMapper {
                     "Channel".to_owned()
                 }
             }
+        }
+    }
+
+    /// Fallback lookup for same-chat reply targets that TDLib does not
+    /// populate inline (`MessageReplyTo` `content`/`origin` are `None`).
+    fn fetch_reply_target(&self, chat_id: i64, message_id: i64) -> Option<(String, String, bool)> {
+        if chat_id == 0 || message_id == 0 {
+            return None;
+        }
+        let result = self.rt.block_on(async {
+            tdlib_rs::functions::get_message(chat_id, message_id, self.client_id).await
+        });
+        let raw = match result {
+            Ok(tdlib_rs::enums::Message::Message(m)) => m,
+            Err(err) => {
+                tracing::debug!(
+                    chat_id,
+                    message_id,
+                    ?err,
+                    "failed to fetch reply target via getMessage; reply preview will be empty"
+                );
+                return None;
+            }
         };
+        let sender_name = self.resolve_sender_name(&raw.sender_id);
+        let mapped = tdlib_mappers::map_tdlib_message_to_domain(&raw, sender_name, None, None);
+        Some((
+            reply_sender_name_for_message(&mapped),
+            mapped.display_content(),
+            mapped.is_outgoing,
+        ))
+    }
+}
+
+impl crate::telegram::chat_updates::MessageMapper for TdLibMessageMapper {
+    fn map_message(&self, raw: &tdlib_rs::types::Message) -> Message {
+        let sender_name = self.resolve_sender_name(&raw.sender_id);
         let reply_to = extract_reply_info_from_cache(raw, &self.cache, &self.rt, self.client_id);
         let forward_info = extract_forward_info_from_cache(raw, &self.cache);
-        tdlib_mappers::map_tdlib_message_to_domain(raw, sender_name, reply_to, forward_info)
+        let mut mapped =
+            tdlib_mappers::map_tdlib_message_to_domain(raw, sender_name, reply_to, forward_info);
+
+        if let (Some(reply), Some(tdlib_rs::enums::MessageReplyTo::Message(info))) =
+            (mapped.reply_to.as_mut(), raw.reply_to.as_ref())
+        {
+            if reply.sender_name.is_empty() && reply.text.is_empty() {
+                if let Some((sender_name, text, is_outgoing)) =
+                    self.fetch_reply_target(info.chat_id, info.message_id)
+                {
+                    reply.sender_name = sender_name;
+                    reply.text = text;
+                    reply.is_outgoing = is_outgoing;
+                }
+            }
+        }
+
+        mapped
     }
 }
