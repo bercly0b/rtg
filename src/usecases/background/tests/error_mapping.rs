@@ -64,6 +64,15 @@ fn map_send_message_error_empty() {
 }
 
 #[test]
+fn map_send_message_error_too_long() {
+    use crate::usecases::send_message::SendMessageError;
+    assert_eq!(
+        map_send_message_error(&SendMessageError::MessageTooLong),
+        "SEND_MESSAGE_TOO_LONG"
+    );
+}
+
+#[test]
 fn map_send_message_error_unauthorized() {
     use crate::usecases::send_message::SendMessageError;
     assert_eq!(
