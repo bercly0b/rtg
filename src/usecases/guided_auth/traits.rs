@@ -22,4 +22,10 @@ pub trait AuthTerminal {
     fn print_line(&mut self, line: &str) -> io::Result<()>;
     fn prompt_line(&mut self, prompt: &str) -> io::Result<Option<String>>;
     fn prompt_secret(&mut self, prompt: &str) -> io::Result<Option<String>>;
+
+    /// Returns true when the terminal is in verbose mode (logging level >= debug).
+    /// Diagnostic output gated on verbosity (e.g. status snapshots) checks this.
+    fn is_verbose(&self) -> bool {
+        false
+    }
 }

@@ -14,6 +14,10 @@ impl ConfigAdapter for StubConfigAdapter {
     fn load(&self) -> Result<AppConfig> {
         Ok(AppConfig::default())
     }
+
+    fn save_telegram_credentials(&self, _api_id: i32, _api_hash: &str) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Default)]
