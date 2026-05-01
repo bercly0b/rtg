@@ -197,7 +197,7 @@ fn backend_unavailable_fails_fast_with_actionable_message_and_without_leaks() {
 
 #[test]
 fn status_snapshot_is_printed_for_ui_actions_when_available() {
-    let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]);
+    let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]).verbose();
     let snapshot = crate::domain::status::AuthConnectivityStatus {
         auth: crate::domain::status::AuthStatus::InProgress,
         connectivity: crate::domain::status::ConnectivityHealth::Ok,

@@ -19,11 +19,19 @@ pub(super) fn print_status_snapshot(
         .map(|error| error.code.as_str())
         .unwrap_or("none");
 
-    terminal.print_line(&format!(
+    let line = format!(
         "status[{action}]: auth={} connectivity={} last_error={last_error}",
         snapshot.auth.as_label(),
         snapshot.connectivity.as_label()
-    ))
+    );
+
+    tracing::debug!(target: "rtg::guided_auth", "{line}");
+
+    if terminal.is_verbose() {
+        terminal.print_line(&line)?;
+    }
+
+    Ok(())
 }
 
 pub(super) fn handle_backend_error(

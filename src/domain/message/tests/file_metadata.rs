@@ -116,6 +116,123 @@ fn metadata_display_downloading_progress() {
 }
 
 #[test]
+fn metadata_display_document_with_extension() {
+    let fi = FileInfo {
+        file_id: 5,
+        local_path: Some("/tmp/report.pdf".to_owned()),
+        mime_type: "application/pdf".to_owned(),
+        size: Some(2_500_000),
+        duration: None,
+        file_name: Some("report.pdf".to_owned()),
+        is_listened: false,
+        download_status: DownloadStatus::Completed,
+    };
+    assert_eq!(
+        build_file_metadata_display(MessageMedia::Document, &fi),
+        "name=report.pdf, type=pdf, download=yes, size=2.5MB"
+    );
+}
+
+#[test]
+fn metadata_display_document_without_extension() {
+    let fi = FileInfo {
+        file_id: 6,
+        local_path: None,
+        mime_type: "application/octet-stream".to_owned(),
+        size: Some(500),
+        duration: None,
+        file_name: Some("notes".to_owned()),
+        is_listened: false,
+        download_status: DownloadStatus::NotStarted,
+    };
+    let display = build_file_metadata_display(MessageMedia::Document, &fi);
+    assert!(
+        display.contains("name=notes"),
+        "should contain file name, got: '{}'",
+        display
+    );
+    assert!(
+        !display.contains("type="),
+        "should not contain type for extension-less name, got: '{}'",
+        display
+    );
+    assert!(display.contains("download=no"), "got: '{}'", display);
+    assert!(display.contains("size=500B"), "got: '{}'", display);
+}
+
+#[test]
+fn metadata_display_audio_with_name_and_duration() {
+    let fi = FileInfo {
+        file_id: 7,
+        local_path: Some("/tmp/song.mp3".to_owned()),
+        mime_type: "audio/mpeg".to_owned(),
+        size: Some(4_200_000),
+        duration: Some(185),
+        file_name: Some("song.mp3".to_owned()),
+        is_listened: false,
+        download_status: DownloadStatus::Completed,
+    };
+    assert_eq!(
+        build_file_metadata_display(MessageMedia::Audio, &fi),
+        "name=song.mp3, type=mp3, download=yes, size=4.2MB, duration=3:05"
+    );
+}
+
+#[test]
+fn metadata_display_multi_dot_name_uses_last_segment() {
+    let fi = FileInfo {
+        file_id: 8,
+        local_path: None,
+        mime_type: "application/gzip".to_owned(),
+        size: None,
+        duration: None,
+        file_name: Some("archive.tar.gz".to_owned()),
+        is_listened: false,
+        download_status: DownloadStatus::NotStarted,
+    };
+    let display = build_file_metadata_display(MessageMedia::Document, &fi);
+    assert!(
+        display.contains("name=archive.tar.gz"),
+        "got: '{}'",
+        display
+    );
+    assert!(display.contains("type=gz"), "got: '{}'", display);
+}
+
+// ── file_extension tests ──
+
+#[test]
+fn file_extension_simple() {
+    assert_eq!(file_extension("report.pdf"), Some("pdf"));
+    assert_eq!(file_extension("song.MP3"), Some("MP3"));
+}
+
+#[test]
+fn file_extension_multi_dot_returns_last() {
+    assert_eq!(file_extension("archive.tar.gz"), Some("gz"));
+}
+
+#[test]
+fn file_extension_no_dot() {
+    assert_eq!(file_extension("notes"), None);
+}
+
+#[test]
+fn file_extension_empty_string() {
+    assert_eq!(file_extension(""), None);
+}
+
+#[test]
+fn file_extension_trailing_dot() {
+    assert_eq!(file_extension("a."), None);
+}
+
+#[test]
+fn file_extension_hidden_file() {
+    assert_eq!(file_extension(".env"), None);
+}
+
+#[test]
 fn metadata_display_voice_not_listened() {
     let fi = FileInfo {
         file_id: 4,

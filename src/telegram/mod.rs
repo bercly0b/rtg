@@ -77,7 +77,7 @@ impl TelegramAdapter {
         }
     }
 
-    pub fn from_config(config: &TelegramConfig) -> Result<Self, AuthBackendError> {
+    pub fn from_config(config: &TelegramConfig, verbose: bool) -> Result<Self, AuthBackendError> {
         if !config.is_configured() {
             return Ok(Self::stub());
         }
@@ -87,7 +87,7 @@ impl TelegramAdapter {
             message: format!("failed to resolve storage layout: {error}"),
         })?;
 
-        let backend = TdLibAuthBackend::new(config, &layout)?;
+        let backend = TdLibAuthBackend::new(config, &layout, verbose)?;
         Ok(Self {
             backend_kind: BackendKind::TdLib,
             tdlib_backend: Some(backend),
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn uses_stub_backend_when_config_is_not_set() {
         let adapter =
-            TelegramAdapter::from_config(&TelegramConfig::default()).expect("stub adapter");
+            TelegramAdapter::from_config(&TelegramConfig::default(), false).expect("stub adapter");
         assert!(!adapter.uses_real_backend());
     }
 

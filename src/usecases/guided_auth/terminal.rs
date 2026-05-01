@@ -2,9 +2,22 @@ use std::io;
 
 use super::AuthTerminal;
 
-pub struct StdTerminal;
+#[derive(Default)]
+pub struct StdTerminal {
+    verbose: bool,
+}
+
+impl StdTerminal {
+    pub fn new(verbose: bool) -> Self {
+        Self { verbose }
+    }
+}
 
 impl AuthTerminal for StdTerminal {
+    fn is_verbose(&self) -> bool {
+        self.verbose
+    }
+
     fn print_line(&mut self, line: &str) -> io::Result<()> {
         println!("{line}");
         Ok(())
