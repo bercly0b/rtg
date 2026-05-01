@@ -13,6 +13,7 @@ fn config_stores_all_fields() {
         database_directory: PathBuf::from("/tmp/test_db"),
         files_directory: PathBuf::from("/tmp/test_files"),
         log_file: PathBuf::from("/tmp/test_logs/tdlib.log"),
+        verbose: false,
     };
 
     assert_eq!(config.api_id, 12345);
@@ -46,6 +47,7 @@ fn config_debug_redacts_api_hash() {
         database_directory: PathBuf::from("/tmp/test_db"),
         files_directory: PathBuf::from("/tmp/test_files"),
         log_file: PathBuf::from("/tmp/test_logs/tdlib.log"),
+        verbose: false,
     };
 
     let debug_output = format!("{:?}", config);

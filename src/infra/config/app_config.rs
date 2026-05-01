@@ -26,6 +26,13 @@ fn default_max_log_files() -> usize {
     3
 }
 
+impl LogConfig {
+    pub fn is_verbose(&self) -> bool {
+        let normalized = self.level.trim().to_ascii_lowercase();
+        normalized == "debug" || normalized == "trace"
+    }
+}
+
 impl Default for LogConfig {
     fn default() -> Self {
         Self {
@@ -198,6 +205,28 @@ mod tests {
         let config = LogConfig::default();
         assert_eq!(config.level, "info");
         assert_eq!(config.max_log_files, 3);
+    }
+
+    #[test]
+    fn log_config_is_verbose_for_debug_and_trace() {
+        for level in ["debug", "DEBUG", "Debug", "trace", "TRACE"] {
+            let config = LogConfig {
+                level: level.to_owned(),
+                ..LogConfig::default()
+            };
+            assert!(config.is_verbose(), "level {level} must be verbose");
+        }
+    }
+
+    #[test]
+    fn log_config_is_not_verbose_for_info_warn_error() {
+        for level in ["info", "warn", "error", "INFO"] {
+            let config = LogConfig {
+                level: level.to_owned(),
+                ..LogConfig::default()
+            };
+            assert!(!config.is_verbose(), "level {level} must not be verbose");
+        }
     }
 
     #[test]

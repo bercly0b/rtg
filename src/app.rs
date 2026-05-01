@@ -50,7 +50,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         "starting guided CLI authorization"
                     );
 
-                    let mut terminal = StdTerminal;
+                    let mut terminal = StdTerminal::new(context.config.logging.is_verbose());
                     let telegram_mut = std::sync::Arc::get_mut(&mut context.telegram)
                         .expect("single owner during guided auth");
                     let auth_outcome =

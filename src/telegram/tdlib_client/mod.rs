@@ -7,6 +7,7 @@
 
 mod auth;
 mod chats;
+mod log_setup;
 mod messages;
 mod types;
 mod update_loop;
@@ -52,6 +53,14 @@ impl TdLibClient {
     /// This allocates a new TDLib client ID and spawns a background thread
     /// that continuously calls `tdlib_rs::receive()` to process updates.
     pub fn new(config: TdLibConfig) -> Result<Self, TdLibError> {
+        // Suppress (or expose) TDLib's stderr noise BEFORE creating the
+        // client. `tdlib_rs::functions::set_log_verbosity_level` requires a
+        // client_id and is async — it cannot mute the startup burst that
+        // happens during `create_client`. `td_execute` is the synchronous,
+        // client-less entry point for log configuration.
+        let initial_verbosity = if config.verbose { 5 } else { 0 };
+        log_setup::set_global_verbosity(initial_verbosity);
+
         let client_id = tdlib_rs::create_client();
 
         tracing::info!(
@@ -110,11 +119,16 @@ impl TdLibClient {
             message: format!("failed to redirect TDLib log stream to file: {}", e.message),
         })?;
 
-        // Set TDLib internal log verbosity: 2 = warnings and errors only.
-        rt.block_on(async { tdlib_rs::functions::set_log_verbosity_level(2, client_id).await })
-            .map_err(|e| TdLibError::Init {
-                message: format!("failed to set TDLib log verbosity: {}", e.message),
-            })?;
+        // After the file log stream is in place, set the file logger's
+        // verbosity. Quiet mode keeps it at 2 (warnings + errors); verbose
+        // mode keeps the global level at 5 so the file captures everything.
+        let file_verbosity = if config.verbose { 5 } else { 2 };
+        rt.block_on(async {
+            tdlib_rs::functions::set_log_verbosity_level(file_verbosity, client_id).await
+        })
+        .map_err(|e| TdLibError::Init {
+            message: format!("failed to set TDLib log verbosity: {}", e.message),
+        })?;
 
         tracing::debug!(
             client_id,

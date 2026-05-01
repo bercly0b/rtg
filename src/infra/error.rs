@@ -16,6 +16,18 @@ pub enum AppError {
         #[source]
         source: toml::de::Error,
     },
+    #[error("failed to write config file at {path}: {source}")]
+    ConfigWrite {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to serialize config file at {path}: {source}")]
+    ConfigSerialize {
+        path: PathBuf,
+        #[source]
+        source: toml_edit::TomlError,
+    },
     #[error("invalid configuration [{code}]: {details}")]
     ConfigValidation { code: &'static str, details: String },
     #[error("failed to initialize logging: {0}")]

@@ -35,6 +35,18 @@ Supported platforms for automatic TDLib download:
 - macOS Intel / Apple Silicon
 - Windows x86_64 / arm64
 
+### Linux runtime dependencies
+
+The prebuilt `libtdjson.so` shipped via `download-tdlib` is linked against **libc++** (LLVM C++ runtime), not libstdc++. On a fresh Ubuntu/Debian install these libraries are missing and linking will fail with `libc++.so.1 ... not found` and undefined references in the `std::__1::` namespace.
+
+Install the runtime libraries before building:
+
+```bash
+sudo apt install libc++1 libc++abi1 libunwind8
+```
+
+For other distributions install the equivalent libc++ runtime packages.
+
 For manual TDLib installation or other platforms, see [TDLib build instructions](https://tdlib.github.io/td/build.html).
 
 ## Installation
