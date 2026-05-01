@@ -105,6 +105,8 @@ struct RecordingDispatcher {
     dispatched_deletes: RefCell<Vec<(i64, i64)>>,
     dispatched_voice_sends: RefCell<Vec<(i64, String)>>,
     dispatched_subtitles: RefCell<Vec<ChatSubtitleQuery>>,
+    dispatched_add_reactions: RefCell<Vec<(i64, i64, String)>>,
+    dispatched_remove_reactions: RefCell<Vec<(i64, i64, String)>>,
 }
 
 impl RecordingDispatcher {
@@ -123,6 +125,8 @@ impl RecordingDispatcher {
             dispatched_deletes: RefCell::new(Vec::new()),
             dispatched_voice_sends: RefCell::new(Vec::new()),
             dispatched_subtitles: RefCell::new(Vec::new()),
+            dispatched_add_reactions: RefCell::new(Vec::new()),
+            dispatched_remove_reactions: RefCell::new(Vec::new()),
         }
     }
 
@@ -208,6 +212,14 @@ impl RecordingDispatcher {
 
     fn last_subtitle_query(&self) -> Option<ChatSubtitleQuery> {
         self.dispatched_subtitles.borrow().last().cloned()
+    }
+
+    fn last_add_reaction(&self) -> Option<(i64, i64, String)> {
+        self.dispatched_add_reactions.borrow().last().cloned()
+    }
+
+    fn last_remove_reaction(&self) -> Option<(i64, i64, String)> {
+        self.dispatched_remove_reactions.borrow().last().cloned()
     }
 }
 
@@ -301,7 +313,17 @@ impl TaskDispatcher for RecordingDispatcher {
     ) {
     }
 
-    fn dispatch_add_reaction(&self, _chat_id: i64, _message_id: i64, _emoji: String) {}
+    fn dispatch_add_reaction(&self, chat_id: i64, message_id: i64, emoji: String) {
+        self.dispatched_add_reactions
+            .borrow_mut()
+            .push((chat_id, message_id, emoji));
+    }
+
+    fn dispatch_remove_reaction(&self, chat_id: i64, message_id: i64, emoji: String) {
+        self.dispatched_remove_reactions
+            .borrow_mut()
+            .push((chat_id, message_id, emoji));
+    }
 }
 
 // ── Test orchestrator factory ──

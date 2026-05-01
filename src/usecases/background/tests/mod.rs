@@ -76,4 +76,6 @@ impl TaskDispatcher for StubTaskDispatcher {
     fn dispatch_available_reactions(&self, _query: AvailableReactionsQuery) {}
 
     fn dispatch_add_reaction(&self, _chat_id: i64, _message_id: i64, _emoji: String) {}
+
+    fn dispatch_remove_reaction(&self, _chat_id: i64, _message_id: i64, _emoji: String) {}
 }

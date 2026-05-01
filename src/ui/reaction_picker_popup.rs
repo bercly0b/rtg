@@ -55,10 +55,11 @@ fn build_lines(state: &ReactionPickerState) -> Vec<Line<'static>> {
                         styles::chat_info_popup_value_style()
                     };
                     let name = r.display_name();
+                    let suffix = if r.is_chosen { " +1" } else { "" };
                     let label = if name.is_empty() {
-                        format!("  {}", r.emoji)
+                        format!("  {}{}", r.emoji, suffix)
                     } else {
-                        format!("  {}  {}", r.emoji, name)
+                        format!("  {}  {}{}", r.emoji, name, suffix)
                     };
                     Line::from(Span::styled(label, style))
                 })
@@ -108,10 +109,12 @@ mod tests {
             AvailableReaction {
                 emoji: "👍".into(),
                 needs_premium: false,
+                is_chosen: false,
             },
             AvailableReaction {
                 emoji: "❤".into(),
                 needs_premium: false,
+                is_chosen: false,
             },
         ];
         let state = ReactionPickerState::Ready(ReactionPickerData::new(reactions, 1, 2));
@@ -125,5 +128,41 @@ mod tests {
         assert!(lines[4].spans[0]
             .content
             .contains("Press q, Esc or R to close"));
+    }
+
+    #[test]
+    fn chosen_reaction_renders_plus_one_suffix() {
+        let reactions = vec![
+            AvailableReaction {
+                emoji: "🔥".into(),
+                needs_premium: false,
+                is_chosen: true,
+            },
+            AvailableReaction {
+                emoji: "❤".into(),
+                needs_premium: false,
+                is_chosen: false,
+            },
+        ];
+        let state = ReactionPickerState::Ready(ReactionPickerData::new(reactions, 1, 2));
+        let lines = build_lines(&state);
+        assert!(lines[0].spans[0].content.contains("🔥"));
+        assert!(lines[0].spans[0].content.contains("fire +1"));
+        assert!(lines[1].spans[0].content.contains("❤"));
+        assert!(lines[1].spans[0].content.contains("heart"));
+        assert!(!lines[1].spans[0].content.contains("+1"));
+    }
+
+    #[test]
+    fn chosen_reaction_without_name_renders_plus_one_suffix() {
+        let reactions = vec![AvailableReaction {
+            emoji: "🧪".into(),
+            needs_premium: false,
+            is_chosen: true,
+        }];
+        let state = ReactionPickerState::Ready(ReactionPickerData::new(reactions, 1, 2));
+        let lines = build_lines(&state);
+        assert!(lines[0].spans[0].content.contains("🧪"));
+        assert!(lines[0].spans[0].content.contains("+1"));
     }
 }

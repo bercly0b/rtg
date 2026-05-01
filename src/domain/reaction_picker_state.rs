@@ -2,6 +2,7 @@
 pub struct AvailableReaction {
     pub emoji: String,
     pub needs_premium: bool,
+    pub is_chosen: bool,
 }
 
 impl AvailableReaction {
@@ -65,10 +66,8 @@ impl ReactionPickerData {
         }
     }
 
-    pub fn selected_emoji(&self) -> Option<&str> {
-        self.items
-            .get(self.selected_index)
-            .map(|r| r.emoji.as_str())
+    pub fn selected_reaction(&self) -> Option<&AvailableReaction> {
+        self.items.get(self.selected_index)
     }
 }
 
@@ -108,14 +107,17 @@ mod tests {
             AvailableReaction {
                 emoji: "👍".into(),
                 needs_premium: false,
+                is_chosen: false,
             },
             AvailableReaction {
                 emoji: "👎".into(),
                 needs_premium: false,
+                is_chosen: false,
             },
             AvailableReaction {
                 emoji: "❤".into(),
                 needs_premium: false,
+                is_chosen: false,
             },
         ]
     }
@@ -124,7 +126,10 @@ mod tests {
     fn new_picker_starts_at_index_zero() {
         let data = ReactionPickerData::new(sample_reactions(), 1, 2);
         assert_eq!(data.selected_index, 0);
-        assert_eq!(data.selected_emoji(), Some("👍"));
+        assert_eq!(
+            data.selected_reaction().map(|r| r.emoji.as_str()),
+            Some("👍")
+        );
     }
 
     #[test]
@@ -155,7 +160,7 @@ mod tests {
         let mut data = ReactionPickerData::new(vec![], 1, 2);
         data.select_next();
         data.select_previous();
-        assert_eq!(data.selected_emoji(), None);
+        assert_eq!(data.selected_reaction(), None);
     }
 
     #[test]
@@ -205,24 +210,28 @@ mod tests {
         let r = AvailableReaction {
             emoji: "👍".into(),
             needs_premium: false,
+            is_chosen: false,
         };
         assert_eq!(r.display_name(), "thumbs_up");
 
         let r = AvailableReaction {
             emoji: "❤".into(),
             needs_premium: false,
+            is_chosen: false,
         };
         assert_eq!(r.display_name(), "heart");
 
         let r = AvailableReaction {
             emoji: "🔥".into(),
             needs_premium: false,
+            is_chosen: false,
         };
         assert_eq!(r.display_name(), "fire");
 
         let r = AvailableReaction {
             emoji: "👌".into(),
             needs_premium: false,
+            is_chosen: false,
         };
         assert_eq!(r.display_name(), "ok");
     }
@@ -232,6 +241,7 @@ mod tests {
         let r = AvailableReaction {
             emoji: "🧪".into(),
             needs_premium: false,
+            is_chosen: false,
         };
         assert_eq!(r.display_name(), "");
     }
@@ -251,10 +261,32 @@ mod tests {
     }
 
     #[test]
+    fn selected_reaction_preserves_is_chosen_flag() {
+        let items = vec![
+            AvailableReaction {
+                emoji: "👍".into(),
+                needs_premium: false,
+                is_chosen: false,
+            },
+            AvailableReaction {
+                emoji: "🔥".into(),
+                needs_premium: false,
+                is_chosen: true,
+            },
+        ];
+        let mut data = ReactionPickerData::new(items, 1, 2);
+        assert!(!data.selected_reaction().unwrap().is_chosen);
+        data.select_next();
+        assert!(data.selected_reaction().unwrap().is_chosen);
+        assert_eq!(data.selected_reaction().unwrap().emoji, "🔥");
+    }
+
+    #[test]
     fn single_item_navigation_stays_in_place() {
         let items = vec![AvailableReaction {
             emoji: "👍".into(),
             needs_premium: false,
+            is_chosen: false,
         }];
         let mut data = ReactionPickerData::new(items, 1, 2);
         assert_eq!(data.selected_index, 0);
