@@ -111,11 +111,10 @@ fn build_file_info(file: &tdlib_rs::types::File, meta: FileMetadata) -> FileInfo
         DownloadStatus::Completed
     } else if file.local.is_downloading_active {
         let total = effective_file_size(file);
-        let percent = if total > 0 {
-            ((file.local.downloaded_size as u64) * 100 / total).min(99) as u8
-        } else {
-            0
-        };
+        let percent = ((file.local.downloaded_size as u64) * 100)
+            .checked_div(total)
+            .unwrap_or(0)
+            .min(99) as u8;
         DownloadStatus::Downloading {
             progress_percent: percent,
         }
