@@ -10,7 +10,7 @@ fn select_next_moves_down_in_message_list() {
     assert_eq!(state.selected_index(), Some(2));
 
     // Move to beginning for testing
-    state.selected_index = Some(0);
+    state.set_selected_index_for_test(Some(0));
 
     state.select_next();
     assert_eq!(state.selected_index(), Some(1));
@@ -70,7 +70,7 @@ fn select_next_initializes_to_first_when_no_selection() {
     let mut state = OpenChatState::default();
     state.set_loading(1, "Chat".to_owned(), ChatType::Private);
     state.set_ready(vec![message(1, "A"), message(2, "B")]);
-    state.selected_index = None; // Force no selection
+    state.set_selected_index_for_test(None); // Force no selection
 
     state.select_next();
 
@@ -82,7 +82,7 @@ fn select_previous_initializes_to_last_when_no_selection() {
     let mut state = OpenChatState::default();
     state.set_loading(1, "Chat".to_owned(), ChatType::Private);
     state.set_ready(vec![message(1, "A"), message(2, "B")]);
-    state.selected_index = None; // Force no selection
+    state.set_selected_index_for_test(None); // Force no selection
 
     state.select_previous();
 
@@ -98,7 +98,7 @@ fn scroll_offset_starts_at_zero() {
 #[test]
 fn scroll_offset_resets_on_set_loading() {
     let mut state = OpenChatState::default();
-    state.scroll_offset = ScrollOffset { item: 5, line: 2 };
+    state.set_scroll_offset_for_test(ScrollOffset { item: 5, line: 2 });
 
     state.set_loading(1, "Chat".to_owned(), ChatType::Private);
 
@@ -155,6 +155,64 @@ fn selected_message_returns_none_when_empty() {
     state.set_ready(vec![]);
 
     assert!(state.selected_message().is_none());
+}
+
+#[test]
+fn select_next_returns_true_when_selection_changes() {
+    let mut state = OpenChatState::default();
+    state.set_loading(1, "Chat".to_owned(), ChatType::Private);
+    state.set_ready(vec![message(1, "A"), message(2, "B")]);
+    state.set_selected_index_for_test(Some(0));
+
+    assert!(state.select_next());
+}
+
+#[test]
+fn select_next_returns_false_at_last_message() {
+    let mut state = OpenChatState::default();
+    state.set_loading(1, "Chat".to_owned(), ChatType::Private);
+    state.set_ready(vec![message(1, "A"), message(2, "B")]);
+    // set_ready selects the last message
+    assert_eq!(state.selected_index(), Some(1));
+
+    assert!(!state.select_next());
+}
+
+#[test]
+fn select_next_returns_false_on_empty_messages() {
+    let mut state = OpenChatState::default();
+    state.set_loading(1, "Chat".to_owned(), ChatType::Private);
+    state.set_ready(vec![]);
+
+    assert!(!state.select_next());
+}
+
+#[test]
+fn select_previous_returns_true_when_selection_changes() {
+    let mut state = OpenChatState::default();
+    state.set_loading(1, "Chat".to_owned(), ChatType::Private);
+    state.set_ready(vec![message(1, "A"), message(2, "B")]);
+    // set_ready selects the last message; moving up changes selection
+    assert!(state.select_previous());
+}
+
+#[test]
+fn select_previous_returns_false_at_first_message() {
+    let mut state = OpenChatState::default();
+    state.set_loading(1, "Chat".to_owned(), ChatType::Private);
+    state.set_ready(vec![message(1, "A"), message(2, "B")]);
+    state.set_selected_index_for_test(Some(0));
+
+    assert!(!state.select_previous());
+}
+
+#[test]
+fn select_previous_returns_false_on_empty_messages() {
+    let mut state = OpenChatState::default();
+    state.set_loading(1, "Chat".to_owned(), ChatType::Private);
+    state.set_ready(vec![]);
+
+    assert!(!state.select_previous());
 }
 
 #[test]

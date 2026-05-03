@@ -58,9 +58,17 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
     action: Action,
 ) -> Result<()> {
     match action {
-        Action::ScrollNextMessage => ctx.state.open_chat_mut().select_next(),
+        Action::ScrollNextMessage => {
+            let moved = ctx.state.open_chat_mut().select_next();
+            if !moved && !ctx.state.open_chat().messages().is_empty() {
+                ctx.state.set_notification("End of messages");
+            }
+        }
         Action::ScrollPreviousMessage => {
-            ctx.state.open_chat_mut().select_previous();
+            let moved = ctx.state.open_chat_mut().select_previous();
+            if !moved && !ctx.state.open_chat().messages().is_empty() {
+                ctx.state.set_notification("Beginning of messages");
+            }
             maybe_load_older_messages(ctx);
         }
         Action::BackToChatList => {

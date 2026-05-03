@@ -267,14 +267,14 @@ mod tests {
     }
 
     #[test]
-    fn send_message_returns_unauthorized_when_backend_is_not_configured() {
+    fn send_message_returns_unavailable_when_backend_is_not_configured() {
         let adapter = TelegramAdapter::stub();
 
         let error = adapter
             .send_message(1, "hello", None)
             .expect_err("stub adapter should fail");
 
-        assert_eq!(error, SendMessageSourceError::Unauthorized);
+        assert_eq!(error, SendMessageSourceError::Unavailable);
     }
 
     #[test]

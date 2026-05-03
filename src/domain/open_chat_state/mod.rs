@@ -417,28 +417,48 @@ impl OpenChatState {
     }
 
     /// Selects the next message (moves down in the list).
-    pub fn select_next(&mut self) {
+    ///
+    /// Returns `true` if the selection changed, `false` if the cursor was
+    /// already at the last message or the list is empty.
+    pub fn select_next(&mut self) -> bool {
         if self.messages.is_empty() {
-            return;
+            return false;
         }
 
-        self.selected_index = match self.selected_index {
-            None => Some(0),
-            Some(idx) if idx + 1 < self.messages.len() => Some(idx + 1),
-            Some(idx) => Some(idx), // Already at the last message
+        let (next, moved) = match self.selected_index {
+            None => (Some(0), true),
+            Some(idx) if idx + 1 < self.messages.len() => (Some(idx + 1), true),
+            Some(idx) => (Some(idx), false),
         };
+        self.selected_index = next;
+        moved
     }
 
     /// Selects the previous message (moves up in the list).
-    pub fn select_previous(&mut self) {
+    ///
+    /// Returns `true` if the selection changed, `false` if the cursor was
+    /// already at the first message or the list is empty.
+    pub fn select_previous(&mut self) -> bool {
         if self.messages.is_empty() {
-            return;
+            return false;
         }
 
-        self.selected_index = match self.selected_index {
-            None => Some(self.messages.len() - 1),
-            Some(0) => Some(0), // Already at the first message
-            Some(idx) => Some(idx - 1),
+        let (next, moved) = match self.selected_index {
+            None => (Some(self.messages.len() - 1), true),
+            Some(0) => (Some(0), false),
+            Some(idx) => (Some(idx - 1), true),
         };
+        self.selected_index = next;
+        moved
+    }
+
+    #[cfg(test)]
+    pub fn set_selected_index_for_test(&mut self, idx: Option<usize>) {
+        self.selected_index = idx;
+    }
+
+    #[cfg(test)]
+    pub fn set_scroll_offset_for_test(&mut self, offset: ScrollOffset) {
+        self.scroll_offset = offset;
     }
 }

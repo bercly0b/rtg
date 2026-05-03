@@ -3,6 +3,9 @@
 //! This module provides the `MessageSender` trait and `send_message` function
 //! for sending text messages through the Telegram API.
 
+/// Maximum allowed message length in characters (Telegram protocol limit).
+pub const MAX_MESSAGE_LENGTH: usize = 4096;
+
 /// Command to send a message to a specific chat.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendMessageCommand {
@@ -28,6 +31,8 @@ pub enum SendMessageSourceError {
 pub enum SendMessageError {
     /// Message text is empty after trimming whitespace.
     EmptyMessage,
+    /// Message exceeds the maximum allowed length.
+    MessageTooLong,
     /// User is not authorized to send messages.
     Unauthorized,
     /// Target chat was not found.
@@ -88,6 +93,8 @@ impl<T: MessageSender + ?Sized> MessageSender for std::sync::Arc<T> {
 ///
 /// # Errors
 /// Returns `SendMessageError::EmptyMessage` if text is empty/whitespace.
+/// Returns `SendMessageError::MessageTooLong` if the trimmed text exceeds
+/// `MAX_MESSAGE_LENGTH` characters.
 /// Maps source errors to domain errors for other failure cases.
 pub fn send_message(
     sender: &dyn MessageSender,
@@ -96,6 +103,9 @@ pub fn send_message(
     let text = command.text.trim();
     if text.is_empty() {
         return Err(SendMessageError::EmptyMessage);
+    }
+    if text.chars().count() > MAX_MESSAGE_LENGTH {
+        return Err(SendMessageError::MessageTooLong);
     }
 
     sender
@@ -160,6 +170,59 @@ mod tests {
 
         assert_eq!(result, Err(SendMessageError::EmptyMessage));
         assert!(sender.captured_chat_id.borrow().is_none());
+    }
+
+    #[test]
+    fn rejects_message_exceeding_max_length() {
+        let sender = StubSender::with_result(Ok(()));
+        let too_long: String = "a".repeat(MAX_MESSAGE_LENGTH + 1);
+
+        let result = send_message(
+            &sender,
+            SendMessageCommand {
+                chat_id: 1,
+                text: too_long,
+                reply_to_message_id: None,
+            },
+        );
+
+        assert_eq!(result, Err(SendMessageError::MessageTooLong));
+        assert!(sender.captured_chat_id.borrow().is_none());
+    }
+
+    #[test]
+    fn accepts_message_at_max_length() {
+        let sender = StubSender::with_result(Ok(()));
+        let exact: String = "a".repeat(MAX_MESSAGE_LENGTH);
+
+        let result = send_message(
+            &sender,
+            SendMessageCommand {
+                chat_id: 1,
+                text: exact,
+                reply_to_message_id: None,
+            },
+        );
+
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn message_length_limit_counts_chars_not_bytes() {
+        let sender = StubSender::with_result(Ok(()));
+        // Each emoji is 4 bytes in UTF-8 but counts as 1 char.
+        let text: String = "😀".repeat(MAX_MESSAGE_LENGTH);
+
+        let result = send_message(
+            &sender,
+            SendMessageCommand {
+                chat_id: 1,
+                text,
+                reply_to_message_id: None,
+            },
+        );
+
+        assert_eq!(result, Ok(()));
     }
 
     #[test]

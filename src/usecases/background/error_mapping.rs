@@ -22,6 +22,7 @@ pub(super) fn map_load_messages_error(error: &LoadMessagesError) -> &'static str
 pub(super) fn map_send_message_error(error: &SendMessageError) -> &'static str {
     match error {
         SendMessageError::EmptyMessage => "SEND_EMPTY_MESSAGE",
+        SendMessageError::MessageTooLong => "SEND_MESSAGE_TOO_LONG",
         SendMessageError::Unauthorized => "SEND_UNAUTHORIZED",
         SendMessageError::ChatNotFound => "SEND_CHAT_NOT_FOUND",
         SendMessageError::TemporarilyUnavailable => "SEND_UNAVAILABLE",

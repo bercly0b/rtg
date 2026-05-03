@@ -13,6 +13,9 @@ use super::forward::build_forward_line;
 use super::reply::build_reply_line;
 use super::text_utils::wrap_line;
 
+/// Indentation that aligns content with the message time column.
+const MESSAGE_INDENT: &str = "      ";
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build_message_lines(
     time: &str,
@@ -30,7 +33,7 @@ pub(super) fn build_message_lines(
     is_edited: bool,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    let indent = "      "; // 6 spaces to align with time column
+    let indent = MESSAGE_INDENT;
     let content_width = max_width.saturating_sub(indent.len());
 
     // Compute link byte ranges in content space.
@@ -255,7 +258,7 @@ pub(super) fn build_message_header_line(
     let time_span = if show_time {
         Span::styled(format!("{:>5} ", time), styles::message_time_style())
     } else {
-        Span::raw("      ".to_owned()) // 6 spaces to preserve alignment
+        Span::raw(MESSAGE_INDENT.to_owned())
     };
 
     let mut spans = vec![time_span];

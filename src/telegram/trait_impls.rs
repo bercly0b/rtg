@@ -68,7 +68,7 @@ impl MessageSender for TelegramAdapter {
     ) -> Result<(), SendMessageSourceError> {
         match self.tdlib_backend.as_ref() {
             Some(backend) => backend.send_message(chat_id, text, reply_to_message_id),
-            None => Err(SendMessageSourceError::Unauthorized),
+            None => Err(SendMessageSourceError::Unavailable),
         }
     }
 }
