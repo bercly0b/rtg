@@ -53,6 +53,17 @@ fn status_line_renders_connecting_label() {
 }
 
 #[test]
+fn connecting_label_cycles_through_dot_count_pattern() {
+    assert_eq!(status_line::connecting_label_for_phase(0), "Connecting.");
+    assert_eq!(status_line::connecting_label_for_phase(1), "Connecting..");
+    assert_eq!(status_line::connecting_label_for_phase(2), "Connecting...");
+    assert_eq!(status_line::connecting_label_for_phase(3), "Connecting..");
+    // Cycle wraps so the next frame returns to a single dot.
+    assert_eq!(status_line::connecting_label_for_phase(4), "Connecting.");
+    assert_eq!(status_line::connecting_label_for_phase(7), "Connecting..");
+}
+
+#[test]
 fn status_line_contains_help_hint() {
     let state = ShellState::default();
 

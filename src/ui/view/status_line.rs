@@ -1,3 +1,6 @@
+use std::sync::OnceLock;
+use std::time::Instant;
+
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
@@ -6,12 +9,18 @@ use crate::ui::styles;
 
 use super::text_utils::truncate_to_display_width;
 
+/// Milliseconds spent on each frame of the Connecting dot animation.
+const CONNECTING_FRAME_MS: u128 = 300;
+
 pub(super) fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
     use crate::domain::events::ConnectivityStatus;
 
     let (dot_style, label) = match state.connectivity_status() {
         ConnectivityStatus::Connected => (styles::connectivity_dot_connected(), "Connected"),
-        ConnectivityStatus::Connecting => (styles::connectivity_dot_connecting(), "Connecting"),
+        ConnectivityStatus::Connecting => (
+            styles::connectivity_dot_connecting(),
+            connecting_label_for_phase(current_connecting_phase()),
+        ),
         ConnectivityStatus::Updating => (styles::connectivity_dot_updating(), "Updating"),
         ConnectivityStatus::Disconnected => {
             (styles::connectivity_dot_disconnected(), "Disconnected")
@@ -47,6 +56,25 @@ pub(super) fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
     spans.push(Span::styled(right_text, styles::help_hint_style()));
 
     Line::from(spans)
+}
+
+/// Returns the Connecting label for the given animation phase.
+///
+/// Cycles through 1, 2, 3, 2 trailing dots so the dot count visually
+/// expands and contracts: `.` → `..` → `...` → `..` → (back to `.`).
+pub(super) fn connecting_label_for_phase(phase: u8) -> &'static str {
+    match phase % 4 {
+        0 => "Connecting.",
+        1 => "Connecting..",
+        2 => "Connecting...",
+        _ => "Connecting..",
+    }
+}
+
+fn current_connecting_phase() -> u8 {
+    static START: OnceLock<Instant> = OnceLock::new();
+    let start = START.get_or_init(Instant::now);
+    ((start.elapsed().as_millis() / CONNECTING_FRAME_MS) % 4) as u8
 }
 
 pub(super) fn compute_input_height(text: &str, available_width: u16) -> u16 {
