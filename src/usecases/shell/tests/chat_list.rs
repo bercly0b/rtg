@@ -260,6 +260,64 @@ fn user_refresh_shows_notification_on_failure() {
 }
 
 #[test]
+fn refresh_blocked_when_disconnected_shows_notification_and_skips_dispatch() {
+    let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+    o.handle_event(AppEvent::ConnectivityChanged(
+        ConnectivityStatus::Disconnected,
+    ))
+    .unwrap();
+    let baseline_dispatches = o.dispatcher.chat_list_dispatch_count();
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
+        .unwrap();
+
+    assert_eq!(
+        o.state().active_notification(),
+        Some("Cannot refresh: not connected")
+    );
+    assert_eq!(o.dispatcher.chat_list_dispatch_count(), baseline_dispatches);
+}
+
+#[test]
+fn refresh_blocked_when_connecting_shows_notification_and_skips_dispatch() {
+    let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+    o.handle_event(AppEvent::ConnectivityChanged(
+        ConnectivityStatus::Connecting,
+    ))
+    .unwrap();
+    let baseline_dispatches = o.dispatcher.chat_list_dispatch_count();
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
+        .unwrap();
+
+    assert_eq!(
+        o.state().active_notification(),
+        Some("Cannot refresh: not connected")
+    );
+    assert_eq!(o.dispatcher.chat_list_dispatch_count(), baseline_dispatches);
+}
+
+#[test]
+fn refresh_allowed_during_updating_state() {
+    let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
+    o.handle_event(AppEvent::ConnectivityChanged(ConnectivityStatus::Updating))
+        .unwrap();
+    let baseline_dispatches = o.dispatcher.chat_list_dispatch_count();
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
+        .unwrap();
+
+    assert_eq!(
+        o.state().active_notification(),
+        Some("Refreshing chat list...")
+    );
+    assert_eq!(
+        o.dispatcher.chat_list_dispatch_count(),
+        baseline_dispatches + 1
+    );
+}
+
+#[test]
 fn automatic_refresh_does_not_show_notification() {
     let mut o = make_orchestrator();
     // Initial tick triggers automatic refresh
