@@ -110,7 +110,9 @@ impl StatusTracker {
 fn map_connectivity(status: ConnectivityStatus) -> ConnectivityHealth {
     match status {
         ConnectivityStatus::Connected => ConnectivityHealth::Ok,
-        ConnectivityStatus::Connecting => ConnectivityHealth::Degraded,
+        ConnectivityStatus::Connecting | ConnectivityStatus::Updating => {
+            ConnectivityHealth::Degraded
+        }
         ConnectivityStatus::Disconnected => ConnectivityHealth::Unavailable,
     }
 }
@@ -174,6 +176,12 @@ mod tests {
     fn maps_connectivity_statuses_to_canonical_health() {
         let tracker = StatusTracker::new();
         tracker.on_connectivity_changed(ConnectivityStatus::Connecting);
+        assert_eq!(
+            tracker.snapshot().connectivity,
+            ConnectivityHealth::Degraded
+        );
+
+        tracker.on_connectivity_changed(ConnectivityStatus::Updating);
         assert_eq!(
             tracker.snapshot().connectivity,
             ConnectivityHealth::Degraded

@@ -31,6 +31,28 @@ fn status_line_renders_disconnected_label() {
 }
 
 #[test]
+fn status_line_renders_updating_label() {
+    let mut state = ShellState::default();
+    state.set_connectivity_status(ConnectivityStatus::Updating);
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(text.contains("Updating"));
+}
+
+#[test]
+fn status_line_renders_connecting_label() {
+    let mut state = ShellState::default();
+    state.set_connectivity_status(ConnectivityStatus::Connecting);
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(text.contains("Connecting"));
+}
+
+#[test]
 fn status_line_contains_help_hint() {
     let state = ShellState::default();
 

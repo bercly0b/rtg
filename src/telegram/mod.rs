@@ -104,8 +104,17 @@ impl TelegramAdapter {
         &self,
         status_tx: Sender<ConnectivityStatus>,
     ) -> Result<TelegramConnectivityMonitor, ConnectivityMonitorStartError> {
+        let backend = self
+            .tdlib_backend
+            .as_ref()
+            .ok_or(ConnectivityMonitorStartError::StartupRejected)?;
+
+        let connectivity_rx = backend
+            .take_connectivity_receiver()
+            .ok_or(ConnectivityMonitorStartError::StartupRejected)?;
+
         let tracker = self.status_tracker.clone();
-        TelegramConnectivityMonitor::start(status_tx, move |status| {
+        TelegramConnectivityMonitor::start(connectivity_rx, status_tx, move |status| {
             tracker.on_connectivity_changed(status);
         })
     }

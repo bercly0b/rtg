@@ -317,6 +317,13 @@ impl TdLibAuthBackend {
     ) -> Option<std::sync::mpsc::Receiver<super::tdlib_updates::TdLibUpdate>> {
         self.client.take_update_receiver()
     }
+
+    /// Takes the connectivity status receiver from the underlying TDLib client.
+    pub fn take_connectivity_receiver(
+        &self,
+    ) -> Option<std::sync::mpsc::Receiver<crate::domain::events::ConnectivityStatus>> {
+        self.client.take_connectivity_receiver()
+    }
 }
 
 #[cfg(test)]

@@ -12,6 +12,7 @@ pub(super) fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
     let (dot_style, label) = match state.connectivity_status() {
         ConnectivityStatus::Connected => (styles::connectivity_dot_connected(), "Connected"),
         ConnectivityStatus::Connecting => (styles::connectivity_dot_connecting(), "Connecting"),
+        ConnectivityStatus::Updating => (styles::connectivity_dot_updating(), "Updating"),
         ConnectivityStatus::Disconnected => {
             (styles::connectivity_dot_disconnected(), "Disconnected")
         }

@@ -1,9 +1,10 @@
 use std::sync::mpsc;
 
-use tdlib_rs::enums::{AuthorizationState, Update};
+use tdlib_rs::enums::{AuthorizationState, ConnectionState, Update};
 
 use super::types::{AuthStateUpdate, UPDATE_POLL_INTERVAL};
 use super::TdLibClient;
+use crate::domain::events::ConnectivityStatus;
 use crate::telegram::tdlib_cache::TdLibCache;
 use crate::telegram::tdlib_mappers::sum_reaction_counts;
 use crate::telegram::tdlib_updates::TdLibUpdate;
@@ -28,6 +29,7 @@ impl TdLibClient {
         client_id: i32,
         auth_state_tx: mpsc::Sender<AuthStateUpdate>,
         update_tx: mpsc::Sender<TdLibUpdate>,
+        connectivity_tx: mpsc::Sender<ConnectivityStatus>,
         cache: TdLibCache,
     ) {
         tracing::debug!(client_id, "Starting TDLib update loop");
@@ -40,6 +42,18 @@ impl TdLibClient {
                     }
 
                     match update {
+                        // Connection state updates — drive the connectivity
+                        // status indicator in the UI status bar.
+                        Update::ConnectionState(u) => {
+                            let status = map_connection_state(&u.state);
+                            tracing::debug!(?u.state, ?status, "TDLib connection state changed");
+                            if connectivity_tx.send(status).is_err() {
+                                tracing::debug!(
+                                    "Connectivity receiver dropped, ignoring further state changes"
+                                );
+                            }
+                        }
+
                         // Authorization state updates
                         Update::AuthorizationState(state_update) => {
                             let state = state_update.authorization_state.clone();
@@ -224,6 +238,25 @@ impl TdLibClient {
         }
 
         tracing::debug!(client_id, "TDLib update loop finished");
+    }
+}
+
+/// Maps TDLib's `ConnectionState` to the domain `ConnectivityStatus`.
+///
+/// `WaitingForNetwork` reflects an unavailable device network (Telegram
+/// considers no path even possible), so it is surfaced as `Disconnected`.
+/// `ConnectingToProxy` and `Connecting` both mean a connection attempt is
+/// in flight, including the case where Telegram domains are blocked and
+/// retries keep failing — those map to `Connecting`. `Updating` reflects
+/// catch-up of missed updates, distinct from a steady `Connected` state.
+pub(super) fn map_connection_state(state: &ConnectionState) -> ConnectivityStatus {
+    match state {
+        ConnectionState::WaitingForNetwork => ConnectivityStatus::Disconnected,
+        ConnectionState::ConnectingToProxy | ConnectionState::Connecting => {
+            ConnectivityStatus::Connecting
+        }
+        ConnectionState::Updating => ConnectivityStatus::Updating,
+        ConnectionState::Ready => ConnectivityStatus::Connected,
     }
 }
 
