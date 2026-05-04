@@ -31,9 +31,15 @@ pub fn map_chat_to_summary(
         _ => None,
     };
 
+    let title = if chat.title.trim().is_empty() {
+        "Deleted".to_owned()
+    } else {
+        chat.title.clone()
+    };
+
     ChatSummary {
         chat_id: chat.id,
-        title: chat.title.clone(),
+        title,
         unread_count: chat.unread_count.max(0) as u32,
         last_message_preview,
         last_message_unix_ms,
