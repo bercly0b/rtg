@@ -22,6 +22,7 @@ use std::thread;
 use tokio::runtime::Runtime;
 
 use super::tdlib_updates::TdLibUpdate;
+use crate::domain::events::ConnectivityStatus;
 use types::TDLIB_LOG_MAX_SIZE;
 
 /// TDLib client with managed lifecycle.
@@ -40,6 +41,9 @@ pub struct TdLibClient {
     auth_state_rx: Mutex<mpsc::Receiver<AuthStateUpdate>>,
     /// Receiver for typed TDLib updates. Wrapped in Option to allow taking.
     update_rx: Mutex<Option<mpsc::Receiver<TdLibUpdate>>>,
+    /// Receiver for TDLib connection state updates mapped to domain status.
+    /// Wrapped in Option to allow taking once.
+    connectivity_rx: Mutex<Option<mpsc::Receiver<ConnectivityStatus>>>,
     /// Update loop thread handle. Kept alive for the client's lifetime.
     _update_thread: Option<thread::JoinHandle<()>>,
     is_closed: AtomicBool,
@@ -80,13 +84,14 @@ impl TdLibClient {
 
         let (auth_state_tx, auth_state_rx) = mpsc::channel::<AuthStateUpdate>();
         let (update_tx, update_rx) = mpsc::channel::<TdLibUpdate>();
+        let (connectivity_tx, connectivity_rx) = mpsc::channel::<ConnectivityStatus>();
         let cache = super::tdlib_cache::TdLibCache::new();
 
         // Spawn update receiver thread (fully synchronous, no async runtime needed)
         let update_thread = {
             let cache = cache.clone();
             thread::spawn(move || {
-                Self::run_update_loop(client_id, auth_state_tx, update_tx, cache);
+                Self::run_update_loop(client_id, auth_state_tx, update_tx, connectivity_tx, cache);
             })
         };
 
@@ -142,6 +147,7 @@ impl TdLibClient {
             rt,
             auth_state_rx: Mutex::new(auth_state_rx),
             update_rx: Mutex::new(Some(update_rx)),
+            connectivity_rx: Mutex::new(Some(connectivity_rx)),
             _update_thread: Some(update_thread),
             is_closed: AtomicBool::new(false),
             cache,
@@ -154,6 +160,14 @@ impl TdLibClient {
     /// Used by TelegramChatUpdatesMonitor to receive typed updates.
     pub fn take_update_receiver(&self) -> Option<mpsc::Receiver<TdLibUpdate>> {
         self.update_rx.lock().ok()?.take()
+    }
+
+    /// Takes the connectivity status receiver.
+    ///
+    /// Carries domain `ConnectivityStatus` events derived from TDLib's
+    /// `Update::ConnectionState`. Can only be called once.
+    pub fn take_connectivity_receiver(&self) -> Option<mpsc::Receiver<ConnectivityStatus>> {
+        self.connectivity_rx.lock().ok()?.take()
     }
 
     /// Returns the TDLib client ID for sending requests.

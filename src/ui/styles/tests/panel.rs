@@ -50,6 +50,13 @@ fn connectivity_dot_connecting_is_yellow_on_black() {
 }
 
 #[test]
+fn connectivity_dot_updating_is_cyan_on_black() {
+    let style = connectivity_dot_updating();
+    assert_eq!(style.fg, Some(Color::Cyan));
+    assert_eq!(style.bg, Some(Color::Black));
+}
+
+#[test]
 fn connectivity_dot_disconnected_is_red_on_black() {
     let style = connectivity_dot_disconnected();
     assert_eq!(style.fg, Some(Color::Red));

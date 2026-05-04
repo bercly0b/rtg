@@ -2,7 +2,9 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 
 use super::types::{TdLibConfig, TdLibError, TDLIB_ERROR_ALL_CHATS_LOADED};
+use super::update_loop::map_connection_state;
 use super::TdLibClient;
+use crate::domain::events::ConnectivityStatus;
 use crate::telegram::tdlib_updates::TdLibUpdate;
 
 #[test]
@@ -53,6 +55,32 @@ fn config_debug_redacts_api_hash() {
     let debug_output = format!("{:?}", config);
     assert!(debug_output.contains("[REDACTED]"));
     assert!(!debug_output.contains("secret_hash"));
+}
+
+#[test]
+fn map_connection_state_covers_all_tdlib_variants() {
+    use tdlib_rs::enums::ConnectionState;
+
+    assert_eq!(
+        map_connection_state(&ConnectionState::WaitingForNetwork),
+        ConnectivityStatus::Disconnected
+    );
+    assert_eq!(
+        map_connection_state(&ConnectionState::ConnectingToProxy),
+        ConnectivityStatus::Connecting
+    );
+    assert_eq!(
+        map_connection_state(&ConnectionState::Connecting),
+        ConnectivityStatus::Connecting
+    );
+    assert_eq!(
+        map_connection_state(&ConnectionState::Updating),
+        ConnectivityStatus::Updating
+    );
+    assert_eq!(
+        map_connection_state(&ConnectionState::Ready),
+        ConnectivityStatus::Connected
+    );
 }
 
 #[test]

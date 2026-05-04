@@ -51,6 +51,12 @@ pub fn connectivity_dot_connecting() -> Style {
     Style::default().fg(Color::Yellow).bg(Color::Black)
 }
 
+/// Cyan dot for "Updating" status — a working connection that is still
+/// catching up on missed updates from the server.
+pub fn connectivity_dot_updating() -> Style {
+    Style::default().fg(Color::Cyan).bg(Color::Black)
+}
+
 /// Red dot for "Disconnected" status.
 pub fn connectivity_dot_disconnected() -> Style {
     Style::default().fg(Color::Red).bg(Color::Black)

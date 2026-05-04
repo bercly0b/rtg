@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::{
-    domain::{keymap::Action, shell_state::ActivePane},
+    domain::{events::ConnectivityStatus, keymap::Action, shell_state::ActivePane},
     usecases::background::TaskDispatcher,
 };
 
@@ -28,11 +28,16 @@ pub(super) fn dispatch_chat_list_action<D: TaskDispatcher>(
             ctx.state.chat_list_mut().select_first();
             chat_open::maybe_prefetch_selected_chat(ctx);
         }
-        Action::RefreshChatList => {
-            *ctx.user_requested_chat_refresh = true;
-            ctx.state.set_notification("Refreshing chat list...");
-            chat_list::dispatch_chat_list_refresh(ctx, true);
-        }
+        Action::RefreshChatList => match ctx.state.connectivity_status() {
+            ConnectivityStatus::Connected | ConnectivityStatus::Updating => {
+                *ctx.user_requested_chat_refresh = true;
+                ctx.state.set_notification("Refreshing chat list...");
+                chat_list::dispatch_chat_list_refresh(ctx, true);
+            }
+            ConnectivityStatus::Connecting | ConnectivityStatus::Disconnected => {
+                ctx.state.set_notification("Cannot refresh: not connected");
+            }
+        },
         Action::MarkChatAsRead => chat_list::mark_selected_chat_as_read(ctx),
         Action::ShowChatInfo => chat_list::show_chat_info_popup(ctx),
         Action::SearchChats => ctx.state.open_chat_search(),

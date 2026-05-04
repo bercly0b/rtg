@@ -168,6 +168,7 @@ pub enum ChatUpdate {
 pub enum ConnectivityStatus {
     Connected,
     Connecting,
+    Updating,
     Disconnected,
 }
 
@@ -177,6 +178,7 @@ impl ConnectivityStatus {
         match self {
             Self::Connected => "connected",
             Self::Connecting => "connecting",
+            Self::Updating => "updating",
             Self::Disconnected => "disconnected",
         }
     }

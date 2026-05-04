@@ -340,6 +340,11 @@ fn make_orchestrator() -> TestOrchestrator {
     // Use min threshold of 1 for existing tests — any cached message triggers display.
     // Tests for the threshold itself use make_orchestrator_with_threshold().
     o.min_display_messages = 1;
+    // Default to a connected session so tests exercising server-bound
+    // actions (refresh, send) don't have to inject this themselves. Tests
+    // that need a different connectivity state inject it explicitly.
+    o.handle_event(AppEvent::ConnectivityChanged(ConnectivityStatus::Connected))
+        .expect("connecting test orchestrator should not fail");
     o
 }
 

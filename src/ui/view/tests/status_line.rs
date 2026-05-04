@@ -31,6 +31,39 @@ fn status_line_renders_disconnected_label() {
 }
 
 #[test]
+fn status_line_renders_updating_label() {
+    let mut state = ShellState::default();
+    state.set_connectivity_status(ConnectivityStatus::Updating);
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(text.contains("Updating"));
+}
+
+#[test]
+fn status_line_renders_connecting_label() {
+    let mut state = ShellState::default();
+    state.set_connectivity_status(ConnectivityStatus::Connecting);
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(text.contains("Connecting"));
+}
+
+#[test]
+fn connecting_label_cycles_through_dot_count_pattern() {
+    assert_eq!(status_line::connecting_label_for_phase(0), "Connecting.");
+    assert_eq!(status_line::connecting_label_for_phase(1), "Connecting..");
+    assert_eq!(status_line::connecting_label_for_phase(2), "Connecting...");
+    assert_eq!(status_line::connecting_label_for_phase(3), "Connecting..");
+    // Cycle wraps so the next frame returns to a single dot.
+    assert_eq!(status_line::connecting_label_for_phase(4), "Connecting.");
+    assert_eq!(status_line::connecting_label_for_phase(7), "Connecting..");
+}
+
+#[test]
 fn status_line_contains_help_hint() {
     let state = ShellState::default();
 
