@@ -8,6 +8,12 @@ use crate::telegram::tdlib_mappers::{
 use super::make_test_user;
 
 #[test]
+fn format_user_name_returns_deleted_when_both_names_empty() {
+    let user = make_test_user("", "");
+    assert_eq!(format_user_name(&user), "Deleted");
+}
+
+#[test]
 fn format_user_name_handles_first_name_only() {
     let user = make_test_user("John", "");
     assert_eq!(format_user_name(&user), "John");
