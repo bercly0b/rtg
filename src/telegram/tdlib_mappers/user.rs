@@ -8,10 +8,10 @@ pub fn format_user_name(user: &TdUser) -> String {
     let first = user.first_name.trim();
     let last = user.last_name.trim();
 
-    if last.is_empty() {
-        first.to_owned()
-    } else {
-        format!("{} {}", first, last)
+    match (first.is_empty(), last.is_empty()) {
+        (true, true) => "Deleted".to_owned(),
+        (_, true) => first.to_owned(),
+        _ => format!("{} {}", first, last),
     }
 }
 
