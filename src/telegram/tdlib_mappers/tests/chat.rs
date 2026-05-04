@@ -1,6 +1,14 @@
 use crate::telegram::tdlib_mappers::map_chat_to_summary;
 
 #[test]
+fn chat_summary_uses_deleted_placeholder_when_title_empty() {
+    let td_chat = crate::telegram::tdlib_cache::tests::make_test_chat(1, "");
+
+    let summary = map_chat_to_summary(&td_chat, None, None, false);
+    assert_eq!(summary.title, "Deleted");
+}
+
+#[test]
 fn chat_summary_maps_unread_reaction_count() {
     let mut td_chat = crate::telegram::tdlib_cache::tests::make_test_chat(1, "Test");
     td_chat.unread_reaction_count = 5;

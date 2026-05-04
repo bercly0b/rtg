@@ -3,7 +3,7 @@
 use ratatui::{
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Padding, Paragraph},
+    widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap},
     Frame,
 };
 
@@ -25,7 +25,9 @@ pub fn render_chat_info_popup(frame: &mut Frame<'_>, area: Rect, state: &ChatInf
         .padding(Padding::new(2, 2, 1, 1));
 
     let lines = build_info_lines(state);
-    let paragraph = Paragraph::new(lines).block(block);
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, popup_area);
 }
 
@@ -180,5 +182,43 @@ mod tests {
         assert_eq!(line.spans.len(), 2);
         assert_eq!(line.spans[0].content, "Status: ");
         assert_eq!(line.spans[1].content, "online");
+    }
+
+    #[test]
+    fn long_description_wraps_and_is_fully_visible() {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let backend = TestBackend::new(40, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let state = ChatInfoPopupState::Loaded(ChatInfo {
+            title: "Chat".into(),
+            chat_type: ChatType::Group,
+            status_line: "5 members".into(),
+            username: None,
+            description: Some(
+                "This is a very long description that exceeds the popup width".into(),
+            ),
+        });
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_chat_info_popup(frame, area, &state);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer().clone();
+        let mut rendered = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                rendered.push_str(buffer[(x, y)].symbol());
+            }
+        }
+
+        assert!(
+            rendered.contains("width"),
+            "last word of description should be visible when wrapping is enabled"
+        );
     }
 }
