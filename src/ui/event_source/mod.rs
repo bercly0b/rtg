@@ -73,6 +73,7 @@ pub struct CrosstermEventSource {
     last_emitted_connectivity: Option<ConnectivityStatus>,
     connectivity_streak: u8,
     chat_update_streak: u8,
+    prefer_chat_update: bool,
 }
 
 impl Default for CrosstermEventSource {
@@ -86,6 +87,7 @@ impl Default for CrosstermEventSource {
             last_emitted_connectivity: None,
             connectivity_streak: 0,
             chat_update_streak: 0,
+            prefer_chat_update: true,
         }
     }
 }
@@ -114,6 +116,7 @@ impl CrosstermEventSource {
             last_emitted_connectivity: None,
             connectivity_streak: 0,
             chat_update_streak: 0,
+            prefer_chat_update: true,
         }
     }
 
@@ -164,10 +167,26 @@ impl CrosstermEventSource {
             return Ok(Some(AppEvent::BackgroundTaskCompleted(result)));
         }
 
+        let connectivity_ready = self.connectivity_streak < MAX_CONNECTIVITY_STREAK
+            && self.pending_connectivity.is_some();
+
+        // Round-robin: when connectivity is pending and it's connectivity's turn, emit it first.
+        if connectivity_ready && !self.prefer_chat_update {
+            if let Some(status) = self.pending_connectivity.take() {
+                self.connectivity_streak += 1;
+                self.last_emitted_connectivity = Some(status);
+                self.prefer_chat_update = true;
+                return Ok(Some(AppEvent::ConnectivityChanged(status)));
+            }
+        }
+
         if self.chat_update_streak < MAX_CHAT_UPDATE_STREAK {
             if let Some(updates) = self.chat_updates_source.pending_updates() {
                 self.connectivity_streak = 0;
                 self.chat_update_streak += 1;
+                if connectivity_ready {
+                    self.prefer_chat_update = false;
+                }
                 tracing::debug!(
                     update_count = updates.len(),
                     "event source emitted chat update received"
@@ -180,6 +199,7 @@ impl CrosstermEventSource {
             if let Some(status) = self.pending_connectivity.take() {
                 self.connectivity_streak += 1;
                 self.last_emitted_connectivity = Some(status);
+                self.prefer_chat_update = true;
                 return Ok(Some(AppEvent::ConnectivityChanged(status)));
             }
         }

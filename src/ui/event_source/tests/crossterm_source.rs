@@ -288,3 +288,63 @@ fn does_not_starve_tick_under_bursty_chat_updates() {
         "tick should still be emitted under chat update burst"
     );
 }
+
+#[test]
+fn does_not_starve_input_under_bursty_chat_updates() {
+    let mut source = CrosstermEventSource::with_sources(
+        Box::new(super::super::StubConnectivityStatusSource),
+        Box::new(BurstyChatUpdatesSource),
+        Box::new(StubBackgroundResultSource),
+    );
+    let mut terminal = TestTerminalEventSource::with_polls_and_events(
+        vec![true, true, true, true],
+        vec![
+            Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+            Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+            Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+            Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+        ],
+    );
+
+    for _ in 0..4 {
+        assert_eq!(
+            source
+                .next_event_with_terminal(&mut terminal)
+                .expect("event should be readable"),
+            Some(AppEvent::QuitRequested),
+        );
+    }
+}
+
+#[test]
+fn round_robin_between_chat_updates_and_connectivity_when_both_hot() {
+    let mut source = CrosstermEventSource::with_sources(
+        Box::new(BurstyConnectivitySource::default()),
+        Box::new(BurstyChatUpdatesSource),
+        Box::new(StubBackgroundResultSource),
+    );
+    let mut terminal = TestTerminalEventSource::with_polls(vec![false; 64]);
+
+    let mut produced = Vec::new();
+    for _ in 0..4 {
+        produced.push(
+            source
+                .next_event_with_terminal(&mut terminal)
+                .expect("event should be readable")
+                .expect("test sequence should produce events"),
+        );
+    }
+
+    assert!(
+        produced
+            .iter()
+            .any(|event| matches!(event, AppEvent::ChatUpdateReceived { .. })),
+        "chat updates should be emitted when both sources are hot"
+    );
+    assert!(
+        produced
+            .iter()
+            .any(|event| matches!(event, AppEvent::ConnectivityChanged(_))),
+        "connectivity should not be starved when both sources are hot"
+    );
+}
