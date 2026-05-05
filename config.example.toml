@@ -1,6 +1,4 @@
 # RTG example configuration
-# Copy this file to `~/.config/rtg/config.toml` and adjust values.
-# Do not commit real secrets.
 
 [logging]
 # Tracing level: trace | debug | info | warn | error
@@ -39,26 +37,14 @@ api_hash = "replace-me"
 
 [keys]
 # Override default key bindings. Keys are action names (snake_case),
-# values are key patterns.
+# values are key patterns. Action names are listed in the in-app help
+# menu (press `?`); use them here to remap.
 #
 # Key pattern formats:
 #   Single key:    "j", "?", "/"
 #   Ctrl combo:    "Ctrl+C"
 #   Key sequence:  "dd", "gg" (multiple characters = sequence)
 #   Special keys:  "Enter", "Esc", "Backspace", "Delete", "Left", "Right", "Home", "End"
-#
-# Available actions (chat list context):
-#   select_next_chat, select_previous_chat, open_chat, refresh_chat_list,
-#   mark_chat_as_read, show_chat_info, search_chats
-#
-# Available actions (messages context):
-#   scroll_to_next_message, scroll_to_previous_message, back_to_chat_list,
-#   enter_message_input, reply_to_message, edit_message, copy_message_to_clipboard,
-#   delete_message, open_message, open_link_in_browser, record_voice_message,
-#   show_message_info, download_file, save_file_to_downloads
-#
-# Available actions (global):
-#   quit, show_help
 #
 # Examples:
 # select_next_chat = "n"
