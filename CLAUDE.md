@@ -6,7 +6,7 @@ RTG is a terminal-first Telegram client in Rust (CLI + TUI).
 
 Primary engineering direction: build in a Rust-way / Rust-like style.
 
-Project structure and module layout guide: [docs/project-structure.md](docs/project-structure.md).
+Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Agent instruction principles
 

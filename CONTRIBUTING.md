@@ -59,8 +59,8 @@ RTG keeps clear layer boundaries — please respect them when adding code:
 - `src/infra` — config, logging, storage, opener adapters
 - `src/telegram` — TDLib integration boundary
 
-See [`docs/project-structure.md`](docs/project-structure.md) for the full
-module layout, and [`docs/hotkeys.md`](docs/hotkeys.md) for the keymap
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full
+module layout, and [`docs/HOTKEYS.md`](docs/HOTKEYS.md) for the keymap
 architecture.
 
 ### Testing

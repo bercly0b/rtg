@@ -1,4 +1,6 @@
-# Project Structure — `src/`
+# Architecture
+
+The map of `src/` — layers, dependencies, and where new code belongs.
 
 ## Architectural layers
 
@@ -82,7 +84,9 @@ When adding a new top-level command or changing the startup sequence, start from
 
 ## Module conventions
 
-Code organization rules (LOC limits, decomposition, test extraction) — see [CLAUDE.md](../CLAUDE.md) § Code organization rules.
+Module decomposition, file layout, and test layout — see
+[`MODULE-DECOMPOSITION.md`](MODULE-DECOMPOSITION.md). Engineering style and
+workflow rules live in [`CLAUDE.md`](../CLAUDE.md).
 
 - **Trait ports** live in `usecases/`; implementations in `telegram/` or `infra/`.
 - **Stubs for testing**: every trait used for DI should have a stub/mock (see `infra/stubs.rs`).
