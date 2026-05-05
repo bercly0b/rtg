@@ -132,15 +132,18 @@ fn build_preview_prefix_segments(chat: &ChatSummary) -> Vec<PrefixSegment> {
 }
 
 fn build_outgoing_status_suffix(chat: &ChatSummary) -> Option<(String, Style)> {
-    if chat.outgoing_status.is_outgoing {
-        let (text, style) = if chat.outgoing_status.is_read {
-            (" \u{2713}\u{2713}", styles::outgoing_read_style())
-        } else {
-            (" \u{2713}", styles::outgoing_unread_style())
-        };
-        Some((text.to_owned(), style))
-    } else {
-        None
+    use crate::domain::chat::OutgoingReadStatus;
+
+    match chat.outgoing_status {
+        OutgoingReadStatus::NotOutgoing => None,
+        OutgoingReadStatus::Outgoing { is_read } => {
+            let (text, style) = if is_read {
+                (" \u{2713}\u{2713}", styles::outgoing_read_style())
+            } else {
+                (" \u{2713}", styles::outgoing_unread_style())
+            };
+            Some((text.to_owned(), style))
+        }
     }
 }
 

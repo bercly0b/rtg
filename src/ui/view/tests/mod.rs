@@ -86,10 +86,7 @@ pub(super) fn group_chat_outgoing(
         last_message_sender: sender.map(ToOwned::to_owned),
         is_online: None,
         is_bot: false,
-        outgoing_status: OutgoingReadStatus {
-            is_outgoing: true,
-            is_read,
-        },
+        outgoing_status: OutgoingReadStatus::Outgoing { is_read },
         last_message_id: None,
         unread_reaction_count: 0,
     }
@@ -135,10 +132,7 @@ pub(super) fn private_chat_outgoing(
         last_message_sender: None,
         is_online: None,
         is_bot: false,
-        outgoing_status: OutgoingReadStatus {
-            is_outgoing: true,
-            is_read,
-        },
+        outgoing_status: OutgoingReadStatus::Outgoing { is_read },
         last_message_id: None,
         unread_reaction_count: 0,
     }
@@ -161,10 +155,7 @@ pub(super) fn channel_chat_outgoing(
         last_message_sender: None,
         is_online: None,
         is_bot: false,
-        outgoing_status: OutgoingReadStatus {
-            is_outgoing: true,
-            is_read,
-        },
+        outgoing_status: OutgoingReadStatus::Outgoing { is_read },
         last_message_id: None,
         unread_reaction_count: 0,
     }

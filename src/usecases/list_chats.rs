@@ -114,6 +114,7 @@ fn map_source_error(error: ListChatsSourceError) -> ListChatsError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::chat::{ChatType, OutgoingReadStatus};
 
     struct StubSource {
         result: Result<Vec<ChatSummary>, ListChatsSourceError>,
@@ -141,7 +142,6 @@ mod tests {
     }
 
     fn sample_chat() -> ChatSummary {
-        use crate::domain::chat::{ChatType, OutgoingReadStatus};
         ChatSummary {
             chat_id: 42,
             title: "rtg".to_owned(),

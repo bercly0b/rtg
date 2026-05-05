@@ -21,7 +21,9 @@ pub fn init(config: &LogConfig) -> Result<(), AppError> {
 
     let file_appender = tracing_appender::rolling::daily(&layout.config_dir, LOG_FILE_PREFIX);
     let (non_blocking_writer, guard) = tracing_appender::non_blocking(file_appender);
-    let _ = LOG_GUARD.set(guard);
+    if LOG_GUARD.set(guard).is_err() {
+        tracing::debug!("logging guard already set; subsequent init call ignored");
+    }
 
     let env_filter = build_env_filter(&config.level);
 
