@@ -107,15 +107,6 @@ Commit messages must be written in English.
 - Include tests for new logic when feasible
 - Ensure CI is green before requesting review
 
-### Review anti-loop policy
-
-To avoid endless review cycles:
-
-- Fix **CRITICAL** review findings in the current PR
-- Track **MAJOR/MINOR** follow-ups in
-  [`docs/features/RTG_REVIEW_BACKLOG.md`](docs/features/RTG_REVIEW_BACKLOG.md)
-- Do not expand PR scope with non-critical refactors
-
 ## Reporting issues
 
 When opening an issue, please include:
