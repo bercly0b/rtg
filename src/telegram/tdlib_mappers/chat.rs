@@ -86,22 +86,14 @@ fn extract_last_message_info(
     let preview = extract_message_preview(&msg.content);
     let timestamp_ms = i64::from(msg.date) * 1000;
 
-    // Determine if the last outgoing message was read
-    let is_outgoing = msg.is_outgoing;
-    let is_read = if is_outgoing {
+    let outgoing_status = if msg.is_outgoing {
         // Message is read if its ID is <= last_read_outbox_message_id
-        msg.id <= chat.last_read_outbox_message_id
+        OutgoingReadStatus::Outgoing {
+            is_read: msg.id <= chat.last_read_outbox_message_id,
+        }
     } else {
-        false
+        OutgoingReadStatus::NotOutgoing
     };
 
-    (
-        preview,
-        Some(timestamp_ms),
-        OutgoingReadStatus {
-            is_outgoing,
-            is_read,
-        },
-        Some(msg.id),
-    )
+    (preview, Some(timestamp_ms), outgoing_status, Some(msg.id))
 }

@@ -170,6 +170,35 @@ fn group_chat_emoji_in_title_shows_status_indicator() {
 }
 
 #[test]
+fn channel_does_not_render_sender_prefix() {
+    let c = ChatSummary {
+        chat_id: 1,
+        title: "My Channel".to_owned(),
+        unread_count: 0,
+        last_message_preview: Some("Post".to_owned()),
+        last_message_unix_ms: None,
+        is_pinned: false,
+        chat_type: ChatType::Channel,
+        last_message_sender: Some("Author".to_owned()),
+        is_online: None,
+        is_bot: false,
+        outgoing_status: OutgoingReadStatus::default(),
+        last_message_id: None,
+        unread_reaction_count: 0,
+    };
+
+    let line = chat_list_item::chat_list_item_line(&c, TEST_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(text.contains("Post"));
+    assert!(
+        !text.contains("Author:"),
+        "channel chats must not render sender prefix; got: '{}'",
+        text
+    );
+}
+
+#[test]
 fn channel_outgoing_shows_read_indicator() {
     let line = chat_list_item::chat_list_item_line(
         &channel_chat_outgoing(1, "My Channel", Some("New post"), true),

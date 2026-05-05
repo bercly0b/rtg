@@ -210,9 +210,9 @@ fn resolve_selection_index(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::chat::{ChatType, OutgoingReadStatus};
 
     fn chat(chat_id: i64, title: &str) -> ChatSummary {
-        use crate::domain::chat::{ChatType, OutgoingReadStatus};
         ChatSummary {
             chat_id,
             title: title.to_owned(),

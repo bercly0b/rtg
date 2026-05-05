@@ -12,12 +12,15 @@ pub enum ChatType {
 
 /// Information about the last outgoing message's read status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct OutgoingReadStatus {
-    /// Whether the last message was sent by the current user.
-    pub is_outgoing: bool,
-    /// Whether the last outgoing message was read by the recipient.
-    /// Only meaningful when `is_outgoing` is true.
-    pub is_read: bool,
+pub enum OutgoingReadStatus {
+    /// The last message was not sent by the current user.
+    #[default]
+    NotOutgoing,
+    /// The last message was sent by the current user.
+    Outgoing {
+        /// Whether the message was read by the recipient.
+        is_read: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
