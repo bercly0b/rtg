@@ -11,6 +11,7 @@
 [![Powered by TDLib](https://img.shields.io/badge/powered%20by-TDLib-blue)](https://github.com/tdlib/td)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Quality Gate](https://github.com/bercly0b/rtg/actions/workflows/quality-gate.yml/badge.svg)](https://github.com/bercly0b/rtg/actions/workflows/quality-gate.yml)
+[![Release](https://img.shields.io/github/v/release/bercly0b/rtg)](https://github.com/bercly0b/rtg/releases/latest)
 
 </div>
 
@@ -40,8 +41,36 @@ new features are landing regularly.
 
 ## Installation
 
-> Package-manager distribution (Homebrew, AUR, `cargo install`, prebuilt
-> binaries) is not available yet. **TODO** — track in a future release.
+### Prebuilt binaries
+
+Download the archive for your platform from the
+[latest release](https://github.com/bercly0b/rtg/releases/latest):
+
+| Platform | Archive |
+|---|---|
+| macOS Apple Silicon | `rtg-*-aarch64-apple-darwin.tar.gz` |
+| macOS Intel | `rtg-*-x86_64-apple-darwin.tar.gz` |
+| Linux x86_64 | `rtg-*-x86_64-unknown-linux-gnu.tar.gz` |
+
+Then extract and run the installer:
+
+```bash
+tar xzf rtg-*-<target>.tar.gz
+cd rtg-*-<target>
+./install.sh          # installs to /usr/local — may need sudo on Linux
+```
+
+To install to a custom prefix (e.g. `~/.local`):
+
+```bash
+INSTALL_PREFIX=~/.local ./install.sh
+```
+
+**Linux note:** the bundled TDLib requires the libc++ runtime:
+
+```bash
+sudo apt install libc++1 libc++abi1
+```
 
 ### Build from source
 
@@ -62,15 +91,8 @@ macOS Intel/Apple Silicon, Windows x86_64/arm64. For other platforms see the
 git clone https://github.com/bercly0b/rtg.git
 cd rtg
 cargo build --release
+./target/release/rtg
 ```
-
-### Run
-
-```bash
-cargo run --release
-```
-
-Press `?` for the in-app help overlay.
 
 ## Configuration
 
