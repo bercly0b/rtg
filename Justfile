@@ -38,11 +38,28 @@ coverage-lcov:
 # Usage:  just release 0.2.0
 
 release version:
-    @if [ -n "$(git status --porcelain)" ]; then echo "error: working tree not clean"; exit 1; fi
-    @if [ "$(git rev-parse --abbrev-ref HEAD)" != "main" ]; then echo "error: must be on main branch"; exit 1; fi
-    sed -i.bak 's/^version = ".*"/version = "{{version}}"/' Cargo.toml && rm Cargo.toml.bak
-    cargo check
-    git add Cargo.toml Cargo.lock
-    git commit -m "release: v{{version}}"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "error: working tree not clean" >&2
+        exit 1
+    fi
+    if [ "$(git rev-parse --abbrev-ref HEAD)" != "main" ]; then
+        echo "error: must be on main branch" >&2
+        exit 1
+    fi
+    if git rev-parse "v{{version}}" >/dev/null 2>&1; then
+        echo "error: tag v{{version}} already exists" >&2
+        exit 1
+    fi
+    if grep -q '^version = "{{version}}"' Cargo.toml; then
+        echo "Cargo.toml already at v{{version}} — tagging current HEAD without a bump commit"
+    else
+        sed -i.bak 's/^version = ".*"/version = "{{version}}"/' Cargo.toml
+        rm Cargo.toml.bak
+        cargo check
+        git add Cargo.toml Cargo.lock
+        git commit -m "release: v{{version}}"
+    fi
     git tag "v{{version}}"
     git push origin main "v{{version}}"
