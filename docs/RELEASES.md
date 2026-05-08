@@ -8,10 +8,11 @@ A release is triggered by pushing a `v*` git tag (e.g. `v0.2.0`). The
 [`release.yml`](../.github/workflows/release.yml) workflow then:
 
 1. **Verifies** that `Cargo.toml` version matches the tag (fails the run otherwise).
-2. **Builds** `rtg` in `--release` mode for three targets:
+2. **Builds** `rtg` in `--release` mode for four targets:
    - `aarch64-apple-darwin` (macOS Apple Silicon)
-   - `x86_64-apple-darwin` (macOS Intel)
+   - `x86_64-apple-darwin` (macOS Intel, cross-compiled from the ARM runner)
    - `x86_64-unknown-linux-gnu` (Linux x86_64)
+   - `aarch64-unknown-linux-gnu` (Linux ARM64 — Raspberry Pi, AWS Graviton, Apple Silicon Linux VMs)
 3. **Fixes the rpath** so the binary finds `libtdjson` next to itself
    (`@executable_path/../lib` on macOS, `$ORIGIN/../lib` on Linux).
 4. **Packages** each target into `rtg-<version>-<target>.tar.gz` containing:

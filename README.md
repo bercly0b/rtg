@@ -51,6 +51,7 @@ Download the archive for your platform from the
 | macOS Apple Silicon | `rtg-*-aarch64-apple-darwin.tar.gz` |
 | macOS Intel | `rtg-*-x86_64-apple-darwin.tar.gz` |
 | Linux x86_64 | `rtg-*-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux aarch64 | `rtg-*-aarch64-unknown-linux-gnu.tar.gz` |
 
 Then extract and run the installer:
 
