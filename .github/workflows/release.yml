@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+
+jobs:
+  verify:
+    name: Verify version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository checkout
+        uses: actions/checkout@v4
+
+      - name: Check Cargo.toml matches tag
+        run: |
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Version mismatch: Cargo.toml=$CARGO_VERSION, tag=$TAG_VERSION"
+            exit 1
+          fi
+          echo "Version $TAG_VERSION verified"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: verify
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          - target: x86_64-apple-darwin
+            runner: macos-13
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+
+    steps:
+      - name: Repository checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libc++-dev libc++abi-dev patchelf
+
+      - name: Rust env bootstrap
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Fix rpath (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          BIN="target/${{ matrix.target }}/release/rtg"
+          for rpath in $(otool -l "$BIN" | awk '/cmd LC_RPATH/{f=1} f && /^[[:space:]]+path /{print $2; f=0}'); do
+            install_name_tool -delete_rpath "$rpath" "$BIN" 2>/dev/null || true
+          done
+          install_name_tool -add_rpath "@executable_path/../lib" "$BIN"
+
+      - name: Fix rpath (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          patchelf --set-rpath '$ORIGIN/../lib' "target/${{ matrix.target }}/release/rtg"
+
+      - name: Package archive
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARCHIVE="rtg-${VERSION}-${{ matrix.target }}"
+          mkdir -p "$ARCHIVE/bin" "$ARCHIVE/lib"
+
+          cp "target/${{ matrix.target }}/release/rtg" "$ARCHIVE/bin/rtg"
+          chmod +x "$ARCHIVE/bin/rtg"
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            TDLIB=$(find "target/${{ matrix.target }}/release/build" -name "libtdjson.[0-9]*.dylib" | head -1)
+          else
+            TDLIB=$(find "target/${{ matrix.target }}/release/build" -name "libtdjson.so.[0-9]*" | head -1)
+          fi
+          cp "$TDLIB" "$ARCHIVE/lib/"
+
+          cp install.sh "$ARCHIVE/install.sh"
+          chmod +x "$ARCHIVE/install.sh"
+
+          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: "*.tar.gz"
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum *.tar.gz > SHA256SUMS
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.tar.gz
+            artifacts/SHA256SUMS
+          generate_release_notes: true
