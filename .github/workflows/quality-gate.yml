@@ -10,7 +10,7 @@ jobs:
 
     steps:
       - name: Repository checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install TDLib runtime dependencies
         run: |
@@ -44,7 +44,7 @@ jobs:
 
     steps:
       - name: Repository checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install TDLib runtime dependencies
         run: |
