@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Repository checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Check Cargo.toml matches tag
         run: |
@@ -34,13 +34,13 @@ jobs:
           - target: aarch64-apple-darwin
             runner: macos-latest
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-latest
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-22.04
 
     steps:
       - name: Repository checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux'
