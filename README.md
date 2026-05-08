@@ -43,23 +43,31 @@ new features are landing regularly.
 
 ### Prebuilt binaries
 
-Download the archive for your platform from the
+Pick the archive for your platform from the
 [latest release](https://github.com/bercly0b/rtg/releases/latest):
 
 | Platform | Archive |
 |---|---|
-| macOS Apple Silicon | `rtg-*-aarch64-apple-darwin.tar.gz` |
-| macOS Intel | `rtg-*-x86_64-apple-darwin.tar.gz` |
-| Linux x86_64 | `rtg-*-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux aarch64 | `rtg-*-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS Apple Silicon | `rtg-<version>-aarch64-apple-darwin.tar.gz` |
+| macOS Intel | `rtg-<version>-x86_64-apple-darwin.tar.gz` |
+| Linux x86_64 | `rtg-<version>-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux aarch64 | `rtg-<version>-aarch64-unknown-linux-gnu.tar.gz` |
 
-Then extract and run the installer:
+Download, extract, and install — full example for macOS Apple Silicon at v0.1.0:
 
 ```bash
-tar xzf rtg-*-<target>.tar.gz
-cd rtg-*-<target>
+VERSION=0.1.0
+TARGET=aarch64-apple-darwin
+curl -L "https://github.com/bercly0b/rtg/releases/download/v${VERSION}/rtg-${VERSION}-${TARGET}.tar.gz" \
+  | tar xz
+cd "rtg-${VERSION}-${TARGET}"
 ./install.sh          # installs to /usr/local — may need sudo on Linux
 ```
+
+Just substitute `VERSION` and `TARGET` for your platform. You can also
+download the archive manually from the
+[releases page](https://github.com/bercly0b/rtg/releases) and run
+`./install.sh` from the extracted directory.
 
 To install to a custom prefix (e.g. `~/.local`):
 
