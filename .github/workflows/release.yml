@@ -98,7 +98,7 @@ jobs:
           tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.target }}
           path: "*.tar.gz"
@@ -112,7 +112,7 @@ jobs:
 
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: artifacts
           merge-multiple: true
@@ -123,7 +123,7 @@ jobs:
           sha256sum *.tar.gz > SHA256SUMS
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             artifacts/*.tar.gz
