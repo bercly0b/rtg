@@ -48,15 +48,16 @@ Download the archive for your platform from the
 
 | Platform | Archive |
 |---|---|
-| macOS Apple Silicon | `rtg-*-aarch64-apple-darwin.tar.gz` |
-| macOS Intel | `rtg-*-x86_64-apple-darwin.tar.gz` |
-| Linux x86_64 | `rtg-*-x86_64-unknown-linux-gnu.tar.gz` |
+| macOS Apple Silicon | `rtg-<version>-aarch64-apple-darwin.tar.gz` |
+| macOS Intel | `rtg-<version>-x86_64-apple-darwin.tar.gz` |
+| Linux x86_64 | `rtg-<version>-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux aarch64 | `rtg-<version>-aarch64-unknown-linux-gnu.tar.gz` |
 
 Then extract and run the installer:
 
 ```bash
-tar xzf rtg-*-<target>.tar.gz
-cd rtg-*-<target>
+tar xzf rtg-<version>-<target>.tar.gz
+cd rtg-<version>-<target>
 ./install.sh          # installs to /usr/local — may need sudo on Linux
 ```
 
