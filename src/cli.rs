@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
-#[command(name = "rtg", about = "Rust Telegram client (CLI + TUI)")]
+#[command(name = "rtg", version, about = "Rust Telegram client (CLI + TUI)")]
 pub struct Cli {
     /// Path to config file (default: ~/.config/rtg/config.toml)
     #[arg(short, long, global = true)]
@@ -58,5 +58,14 @@ mod tests {
         let cli = Cli::parse_from(["rtg", "logout"]);
 
         assert!(matches!(cli.command_or_default(), Command::Logout));
+    }
+
+    #[test]
+    fn cli_exposes_version_from_cargo_pkg_version() {
+        use clap::CommandFactory;
+
+        let cmd = Cli::command();
+
+        assert_eq!(cmd.get_version(), Some(env!("CARGO_PKG_VERSION")));
     }
 }
