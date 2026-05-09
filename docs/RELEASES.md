@@ -44,38 +44,6 @@ The recipe:
 Then watch the run in [Actions](https://github.com/bercly0b/rtg/actions). A
 full release takes ~10–15 minutes.
 
-## Caveats
-
-### Branch protection on `main`
-
-The recipe pushes directly to `main` (`git push origin main v0.2.0`). If
-`main` has push protection without an admin bypass, the push fails.
-
-**Fix:** in `Settings → Rules → Rulesets`, edit the `main` ruleset and add
-`Repository admin` to the **Bypass list**. The same role is already on the
-bypass list for the `v*` tag ruleset; this just mirrors it for the branch.
-
-### First release / version already matches
-
-The recipe assumes a version bump, so it always creates a `release: vX.Y.Z`
-commit. On the very first release the `Cargo.toml` version usually already
-matches the tag — `sed` produces no diff, `git commit` fails on
-"nothing to commit", and the recipe stops before tagging.
-
-**Workaround:** tag and push the existing `main` HEAD manually:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-This skips the bump commit entirely and only pushes the tag (so branch
-protection on `main` does not apply — only the tag ruleset). CI picks it up
-the same way.
-
-This is one-shot — every subsequent release bumps from a different starting
-version, and `just release` works as designed.
-
 ## Who can release
 
 Tag creation is restricted via a **tag ruleset** (`Settings → Rules → Rulesets`)
