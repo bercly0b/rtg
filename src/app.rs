@@ -3,12 +3,14 @@ use anyhow::Result;
 use crate::{
     cli::{Cli, Command},
     domain, infra,
+    infra::storage_layout::StorageLayout,
     telegram::{self, TelegramAdapter},
     ui,
     usecases::{
         self, bootstrap,
         guided_auth::{run_guided_auth, GuidedAuthOutcome, RetryPolicy, StdTerminal},
         logout::logout_and_reset,
+        startup::{acquire_instance_lock, InstanceLockGuard},
     },
 };
 
@@ -24,6 +26,12 @@ pub fn run(cli: Cli) -> Result<()> {
         "module boundaries loaded"
     );
 
+    // Acquire the single-instance lock before any TDLib initialization so a
+    // second instance fails with a clear "another rtg instance is already
+    // running" error instead of a low-level TDLib binlog lock failure mapped
+    // to AUTH_BACKEND_UNAVAILABLE.
+    let _instance_lock: InstanceLockGuard = acquire_runtime_lock()?;
+
     match cli.command_or_default() {
         Command::Run => {
             let mut context = bootstrap::bootstrap(cli.config.as_deref())?;
@@ -31,7 +39,7 @@ pub fn run(cli: Cli) -> Result<()> {
             let startup = {
                 let telegram_mut = std::sync::Arc::get_mut(&mut context.telegram)
                     .expect("single owner during startup planning");
-                usecases::startup::plan_startup(telegram_mut)?
+                usecases::startup::plan_startup(telegram_mut)
             };
 
             match startup.state {
@@ -81,6 +89,12 @@ pub fn run(cli: Cli) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn acquire_runtime_lock() -> Result<InstanceLockGuard> {
+    let layout = StorageLayout::resolve()?;
+    layout.ensure_dirs()?;
+    acquire_instance_lock(layout.instance_lock_file()).map_err(Into::into)
 }
 
 fn build_logout_telegram(config_path: Option<&std::path::Path>) -> TelegramAdapter {
@@ -187,5 +201,67 @@ mod tests {
         }
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn run_returns_instance_busy_when_another_instance_holds_the_lock() {
+        let _guard = env_lock();
+
+        let root = env::temp_dir().join(format!(
+            "rtg-app-instance-busy-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock should be valid")
+                .as_nanos()
+        ));
+        let xdg = root.join("xdg");
+        fs::create_dir_all(&xdg).expect("xdg dir should be creatable");
+
+        let old_xdg = env::var_os("XDG_CONFIG_HOME");
+        // SAFETY: env is guarded by process-wide test mutex.
+        unsafe { env::set_var("XDG_CONFIG_HOME", &xdg) };
+
+        let layout = crate::infra::storage_layout::StorageLayout::resolve().expect("layout");
+        layout.ensure_dirs().expect("layout dirs should be created");
+
+        // Simulate another running rtg by holding the advisory lock here.
+        let held_lock = acquire_instance_lock(layout.instance_lock_file())
+            .expect("first lock should be acquirable in a fresh tempdir");
+
+        // Telegram config left unconfigured; bootstrap would otherwise route to
+        // stub/guided-auth. We expect the early lock check to fail before
+        // reaching bootstrap at all.
+        let config_path = root.join("config.toml");
+        fs::write(&config_path, "").expect("empty config fixture should be writable");
+
+        let cli = Cli {
+            config: Some(config_path),
+            command: Some(crate::cli::Command::Run),
+        };
+
+        let result = run(cli);
+
+        match old_xdg {
+            Some(value) => {
+                // SAFETY: restoring env while guard is held.
+                unsafe { env::set_var("XDG_CONFIG_HOME", value) }
+            }
+            None => {
+                // SAFETY: restoring env while guard is held.
+                unsafe { env::remove_var("XDG_CONFIG_HOME") }
+            }
+        }
+
+        drop(held_lock);
+        let _ = fs::remove_dir_all(root);
+
+        let err = result.expect_err("second instance must fail while lock is held");
+        let app_err = err
+            .downcast_ref::<crate::infra::error::AppError>()
+            .expect("expected AppError::InstanceBusy, got non-AppError");
+        assert!(
+            matches!(app_err, crate::infra::error::AppError::InstanceBusy { .. }),
+            "expected InstanceBusy, got: {app_err:?}"
+        );
     }
 }

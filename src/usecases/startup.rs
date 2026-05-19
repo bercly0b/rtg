@@ -6,9 +6,7 @@ use std::{
 use fs2::FileExt;
 
 use crate::{
-    infra::{error::AppError, storage_layout::StorageLayout},
-    telegram::TelegramAdapter,
-    usecases::guided_auth::AuthBackendError,
+    infra::error::AppError, telegram::TelegramAdapter, usecases::guided_auth::AuthBackendError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,30 +50,12 @@ pub struct InstanceLockGuard {
 
 pub struct StartupPlan {
     pub state: StartupFlowState,
-    _layout: StorageLayout,
-    _lock_guard: InstanceLockGuard,
 }
 
-pub fn plan_startup(telegram: &mut TelegramAdapter) -> Result<StartupPlan, AppError> {
-    let layout = StorageLayout::resolve()?;
-    plan_startup_with(telegram, &layout)
-}
-
-fn plan_startup_with(
-    telegram: &mut TelegramAdapter,
-    layout: &StorageLayout,
-) -> Result<StartupPlan, AppError> {
-    layout.ensure_dirs()?;
-
-    let lock_guard = acquire_instance_lock(layout.instance_lock_file())?;
-
-    let state = evaluate_session_state(telegram);
-
-    Ok(StartupPlan {
-        state,
-        _layout: layout.clone(),
-        _lock_guard: lock_guard,
-    })
+pub fn plan_startup(telegram: &mut TelegramAdapter) -> StartupPlan {
+    StartupPlan {
+        state: evaluate_session_state(telegram),
+    }
 }
 
 /// Determines startup flow based on TDLib authorization state.
@@ -124,7 +104,7 @@ fn map_auth_check_error(error: &AuthBackendError) -> String {
     }
 }
 
-fn acquire_instance_lock(path: PathBuf) -> Result<InstanceLockGuard, AppError> {
+pub(crate) fn acquire_instance_lock(path: PathBuf) -> Result<InstanceLockGuard, AppError> {
     let file = OpenOptions::new()
         .write(true)
         .create(true)
@@ -149,7 +129,10 @@ fn acquire_instance_lock(path: PathBuf) -> Result<InstanceLockGuard, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{test_support::env_lock, usecases::logout::logout_and_reset};
+    use crate::{
+        infra::storage_layout::StorageLayout, test_support::env_lock,
+        usecases::logout::logout_and_reset,
+    };
     use std::{
         env,
         fs::{self},
@@ -169,7 +152,6 @@ mod tests {
         }
     }
 
-    /// Creates a fake TDLib session by populating the database directory.
     fn write_tdlib_session(layout: &StorageLayout) {
         let db_dir = layout.tdlib_database_dir();
         fs::create_dir_all(&db_dir).expect("tdlib db dir should be creatable");
@@ -179,30 +161,10 @@ mod tests {
 
     #[test]
     fn stub_adapter_routes_to_guided_auth() {
-        let layout = make_layout();
         let mut adapter = TelegramAdapter::stub();
 
-        let plan = plan_startup_with(&mut adapter, &layout).expect("startup plan");
+        let plan = plan_startup(&mut adapter);
 
-        assert_eq!(
-            plan.state,
-            StartupFlowState::GuidedAuth {
-                reason: GuidedAuthReason::Missing
-            }
-        );
-    }
-
-    #[test]
-    fn stub_adapter_routes_to_guided_auth_even_with_tdlib_files_on_disk() {
-        let layout = make_layout();
-        layout.ensure_dirs().expect("dirs should be created");
-        write_tdlib_session(&layout);
-        let mut adapter = TelegramAdapter::stub();
-
-        let plan = plan_startup_with(&mut adapter, &layout).expect("startup plan");
-
-        // Even though TDLib database files exist, the stub adapter is not
-        // authorized — so we must route to guided auth, not TUI.
         assert_eq!(
             plan.state,
             StartupFlowState::GuidedAuth {
@@ -227,10 +189,9 @@ mod tests {
 
     #[test]
     fn authorized_adapter_routes_to_tui() {
-        let layout = make_layout();
         let mut adapter = TelegramAdapter::stub_authorized();
 
-        let plan = plan_startup_with(&mut adapter, &layout).expect("startup plan");
+        let plan = plan_startup(&mut adapter);
 
         assert_eq!(plan.state, StartupFlowState::LaunchTui);
     }
@@ -278,7 +239,7 @@ mod tests {
             crate::domain::status::ConnectivityHealth::Unavailable
         );
 
-        let plan = plan_startup_with(&mut adapter, &layout).expect("startup plan");
+        let plan = plan_startup(&mut adapter);
         assert_eq!(
             plan.state,
             StartupFlowState::GuidedAuth {
@@ -301,25 +262,17 @@ mod tests {
     }
 
     #[test]
-    fn stale_lock_file_on_disk_does_not_block_startup() {
+    fn stale_lock_file_on_disk_does_not_block_lock_acquisition() {
         let layout = make_layout();
         layout.ensure_dirs().expect("dirs should be created");
 
-        // Simulate a stale lock file left behind by a crashed process.
-        // With advisory locking, the file exists but no flock is held.
+        // Stale lock file left by a crashed process: file exists, no flock held.
         fs::write(layout.instance_lock_file(), b"").expect("stale lock file should be writable");
         assert!(layout.instance_lock_file().exists());
 
-        let mut adapter = TelegramAdapter::stub();
-        let plan = plan_startup_with(&mut adapter, &layout)
-            .expect("startup should succeed despite stale lock file on disk");
-
-        assert_eq!(
-            plan.state,
-            StartupFlowState::GuidedAuth {
-                reason: GuidedAuthReason::Missing
-            }
-        );
+        let guard = acquire_instance_lock(layout.instance_lock_file())
+            .expect("should acquire despite stale lock file");
+        drop(guard);
     }
 
     #[test]
