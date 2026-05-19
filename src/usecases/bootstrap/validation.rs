@@ -16,7 +16,7 @@ pub(super) fn map_telegram_bootstrap_error(error: AuthBackendError) -> AppError 
     AppError::ConfigValidation {
         code: "TELEGRAM_BOOTSTRAP_FAILED",
         details: format!(
-            "telegram client initialization failed [{backend_code}]; check telegram.api_id, telegram.api_hash, and network access"
+            "telegram client initialization failed [{backend_code}]; see rtg.log and tdlib.log in the config directory for details"
         ),
     }
 }
