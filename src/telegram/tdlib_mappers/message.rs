@@ -172,7 +172,35 @@ pub fn extract_message_media(content: &MessageContent) -> MessageMedia {
                 MessageMedia::Call
             }
         }
-        // Service messages and other types
+        // Service messages — no media, text is extracted separately
+        MessageContent::MessageChatAddMembers(_)
+        | MessageContent::MessageChatJoinByLink
+        | MessageContent::MessageChatJoinByRequest
+        | MessageContent::MessageChatDeleteMember(_)
+        | MessageContent::MessageChatChangeTitle(_)
+        | MessageContent::MessageChatChangePhoto(_)
+        | MessageContent::MessageChatDeletePhoto
+        | MessageContent::MessagePinMessage(_)
+        | MessageContent::MessageBasicGroupChatCreate(_)
+        | MessageContent::MessageSupergroupChatCreate(_)
+        | MessageContent::MessageChatUpgradeTo(_)
+        | MessageContent::MessageChatUpgradeFrom(_)
+        | MessageContent::MessageChatOwnerLeft(_)
+        | MessageContent::MessageChatOwnerChanged(_)
+        | MessageContent::MessageChatSetBackground(_)
+        | MessageContent::MessageChatSetTheme(_)
+        | MessageContent::MessageChatSetMessageAutoDeleteTime(_)
+        | MessageContent::MessageChatBoost(_)
+        | MessageContent::MessageScreenshotTaken
+        | MessageContent::MessageCustomServiceAction(_)
+        | MessageContent::MessageVideoChatScheduled(_)
+        | MessageContent::MessageVideoChatStarted(_)
+        | MessageContent::MessageVideoChatEnded(_)
+        | MessageContent::MessageInviteVideoChatParticipants(_)
+        | MessageContent::MessageForumTopicCreated(_)
+        | MessageContent::MessageForumTopicEdited(_)
+        | MessageContent::MessageForumTopicIsClosedToggled(_)
+        | MessageContent::MessageForumTopicIsHiddenToggled(_) => MessageMedia::None,
         _ => MessageMedia::Other,
     }
 }
@@ -257,6 +285,57 @@ pub fn extract_message_preview(content: &MessageContent) -> Option<String> {
         MessageContent::MessageChatChangePhoto(_) => Some("[Photo changed]".to_owned()),
         MessageContent::MessageChatDeletePhoto => Some("[Photo removed]".to_owned()),
         MessageContent::MessagePinMessage(_) => Some("[Message pinned]".to_owned()),
+        MessageContent::MessageBasicGroupChatCreate(c) => {
+            Some(format!("[Group \"{}\" created]", c.title))
+        }
+        MessageContent::MessageSupergroupChatCreate(c) => {
+            Some(format!("[Group \"{}\" created]", c.title))
+        }
+        MessageContent::MessageChatUpgradeTo(_) => {
+            Some("[Group upgraded to supergroup]".to_owned())
+        }
+        MessageContent::MessageChatUpgradeFrom(_) => {
+            Some("[Group upgraded from basic group]".to_owned())
+        }
+        MessageContent::MessageChatOwnerLeft(_) => Some("[Owner left]".to_owned()),
+        MessageContent::MessageChatOwnerChanged(_) => Some("[Owner changed]".to_owned()),
+        MessageContent::MessageChatSetBackground(_) => Some("[Background changed]".to_owned()),
+        MessageContent::MessageChatSetTheme(t) => match &t.theme {
+            Some(_) => Some("[Theme changed]".to_owned()),
+            None => Some("[Theme removed]".to_owned()),
+        },
+        MessageContent::MessageChatSetMessageAutoDeleteTime(_) => {
+            Some("[Auto-delete timer changed]".to_owned())
+        }
+        MessageContent::MessageChatBoost(_) => Some("[Chat boosted]".to_owned()),
+        MessageContent::MessageScreenshotTaken => Some("[Screenshot taken]".to_owned()),
+        MessageContent::MessageCustomServiceAction(a) => Some(a.text.clone()),
+        MessageContent::MessageVideoChatScheduled(_) => Some("[Video chat scheduled]".to_owned()),
+        MessageContent::MessageVideoChatStarted(_) => Some("[Video chat started]".to_owned()),
+        MessageContent::MessageVideoChatEnded(_) => Some("[Video chat ended]".to_owned()),
+        MessageContent::MessageInviteVideoChatParticipants(_) => {
+            Some("[Participants invited to video chat]".to_owned())
+        }
+        MessageContent::MessageForumTopicCreated(t) => {
+            Some(format!("[Topic \"{}\" created]", t.name))
+        }
+        MessageContent::MessageForumTopicEdited(t) => {
+            Some(format!("[Topic edited to \"{}\"]", t.name))
+        }
+        MessageContent::MessageForumTopicIsClosedToggled(t) => {
+            if t.is_closed {
+                Some("[Topic closed]".to_owned())
+            } else {
+                Some("[Topic reopened]".to_owned())
+            }
+        }
+        MessageContent::MessageForumTopicIsHiddenToggled(t) => {
+            if t.is_hidden {
+                Some("[Topic hidden]".to_owned())
+            } else {
+                Some("[Topic shown]".to_owned())
+            }
+        }
         _ => Some("[Message]".to_owned()),
     };
 
@@ -278,7 +357,7 @@ pub(super) fn normalize_preview_text(text: &str) -> Option<String> {
 ///
 /// For text messages, returns the message text.
 /// For media messages with captions, returns the caption.
-/// For service messages, returns an empty string.
+/// For service messages, returns a human-readable description.
 pub fn extract_message_text(content: &MessageContent) -> String {
     match content {
         MessageContent::MessageText(t) => t.text.text.clone(),
@@ -296,7 +375,64 @@ pub fn extract_message_text(content: &MessageContent) -> String {
         | MessageContent::MessageLocation(_)
         | MessageContent::MessageVenue(_)
         | MessageContent::MessagePoll(_) => String::new(),
-        // Service messages and other types
+        // Service messages
+        MessageContent::MessageChatAddMembers(_) => "Members added".to_owned(),
+        MessageContent::MessageChatJoinByLink => "Joined via link".to_owned(),
+        MessageContent::MessageChatJoinByRequest => "Joined by request".to_owned(),
+        MessageContent::MessageChatDeleteMember(_) => "Member removed".to_owned(),
+        MessageContent::MessageChatChangeTitle(t) => {
+            format!("Title changed to \"{}\"", t.title)
+        }
+        MessageContent::MessageChatChangePhoto(_) => "Photo changed".to_owned(),
+        MessageContent::MessageChatDeletePhoto => "Photo removed".to_owned(),
+        MessageContent::MessagePinMessage(_) => "Message pinned".to_owned(),
+        MessageContent::MessageBasicGroupChatCreate(c) => {
+            format!("Group \"{}\" created", c.title)
+        }
+        MessageContent::MessageSupergroupChatCreate(c) => {
+            format!("Group \"{}\" created", c.title)
+        }
+        MessageContent::MessageChatUpgradeTo(_) => "Group upgraded to supergroup".to_owned(),
+        MessageContent::MessageChatUpgradeFrom(_) => "Group upgraded from basic group".to_owned(),
+        MessageContent::MessageChatOwnerLeft(_) => "Owner left".to_owned(),
+        MessageContent::MessageChatOwnerChanged(_) => "Owner changed".to_owned(),
+        MessageContent::MessageChatSetBackground(_) => "Background changed".to_owned(),
+        MessageContent::MessageChatSetTheme(t) => match &t.theme {
+            Some(_) => "Theme changed".to_owned(),
+            None => "Theme removed".to_owned(),
+        },
+        MessageContent::MessageChatSetMessageAutoDeleteTime(_) => {
+            "Auto-delete timer changed".to_owned()
+        }
+        MessageContent::MessageChatBoost(_) => "Chat boosted".to_owned(),
+        MessageContent::MessageScreenshotTaken => "Screenshot taken".to_owned(),
+        MessageContent::MessageCustomServiceAction(a) => a.text.clone(),
+        MessageContent::MessageVideoChatScheduled(_) => "Video chat scheduled".to_owned(),
+        MessageContent::MessageVideoChatStarted(_) => "Video chat started".to_owned(),
+        MessageContent::MessageVideoChatEnded(_) => "Video chat ended".to_owned(),
+        MessageContent::MessageInviteVideoChatParticipants(_) => {
+            "Participants invited to video chat".to_owned()
+        }
+        MessageContent::MessageForumTopicCreated(t) => {
+            format!("Topic \"{}\" created", t.name)
+        }
+        MessageContent::MessageForumTopicEdited(t) => {
+            format!("Topic edited to \"{}\"", t.name)
+        }
+        MessageContent::MessageForumTopicIsClosedToggled(t) => {
+            if t.is_closed {
+                "Topic closed".to_owned()
+            } else {
+                "Topic reopened".to_owned()
+            }
+        }
+        MessageContent::MessageForumTopicIsHiddenToggled(t) => {
+            if t.is_hidden {
+                "Topic hidden".to_owned()
+            } else {
+                "Topic shown".to_owned()
+            }
+        }
         _ => String::new(),
     }
 }

@@ -380,3 +380,86 @@ fn extract_forward_info_chat_falls_back_to_signature() {
     let fwd = result.expect("should have forward_info");
     assert_eq!(fwd.sender_name, "Chat Sig");
 }
+
+// ── service message tests ──
+
+#[test]
+fn service_message_chat_add_members_displays_text() {
+    let content = MessageContent::MessageChatAddMembers(tdlib_rs::types::MessageChatAddMembers {
+        member_user_ids: vec![1, 2],
+    });
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(extract_message_text(&content), "Members added");
+}
+
+#[test]
+fn service_message_chat_change_title_displays_text() {
+    let content = MessageContent::MessageChatChangeTitle(tdlib_rs::types::MessageChatChangeTitle {
+        title: "New Title".to_owned(),
+    });
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(
+        extract_message_text(&content),
+        "Title changed to \"New Title\""
+    );
+}
+
+#[test]
+fn service_message_chat_change_photo_displays_text() {
+    let content = MessageContent::MessageChatChangePhoto(tdlib_rs::types::MessageChatChangePhoto {
+        photo: tdlib_rs::types::ChatPhoto {
+            id: 0,
+            added_date: 0,
+            minithumbnail: None,
+            sizes: vec![],
+            animation: None,
+            small_animation: None,
+            sticker: None,
+        },
+    });
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(extract_message_text(&content), "Photo changed");
+}
+
+#[test]
+fn service_message_join_by_link_displays_text() {
+    let content = MessageContent::MessageChatJoinByLink;
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(extract_message_text(&content), "Joined via link");
+}
+
+#[test]
+fn service_message_pin_displays_text() {
+    let content =
+        MessageContent::MessagePinMessage(tdlib_rs::types::MessagePinMessage { message_id: 42 });
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(extract_message_text(&content), "Message pinned");
+}
+
+#[test]
+fn service_message_delete_photo_displays_text() {
+    let content = MessageContent::MessageChatDeletePhoto;
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(extract_message_text(&content), "Photo removed");
+}
+
+#[test]
+fn service_message_screenshot_taken_displays_text() {
+    let content = MessageContent::MessageScreenshotTaken;
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(extract_message_text(&content), "Screenshot taken");
+}
+
+#[test]
+fn service_message_mapped_to_domain_shows_text_not_media() {
+    let mut td_msg = make_test_message(1, "", false);
+    td_msg.content =
+        MessageContent::MessageChatAddMembers(tdlib_rs::types::MessageChatAddMembers {
+            member_user_ids: vec![1],
+        });
+
+    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None);
+    assert_eq!(msg.media, MessageMedia::None);
+    assert_eq!(msg.text, "Members added");
+    assert_eq!(msg.display_content(), "Members added");
+}
