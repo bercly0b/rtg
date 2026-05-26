@@ -10,7 +10,6 @@
 [![Built with ratatui](https://img.shields.io/badge/built%20with-ratatui-success)](https://github.com/ratatui/ratatui)
 [![Powered by TDLib](https://img.shields.io/badge/powered%20by-TDLib-blue)](https://github.com/tdlib/td)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Quality Gate](https://github.com/bercly0b/rtg/actions/workflows/quality-gate.yml/badge.svg)](https://github.com/bercly0b/rtg/actions/workflows/quality-gate.yml)
 [![Release](https://img.shields.io/github/v/release/bercly0b/rtg)](https://github.com/bercly0b/rtg/releases/latest)
 
 </div>
@@ -23,8 +22,9 @@ silence.
 The project is in early development — the core chat experience is in place and
 new features are landing regularly.
 
-<!-- TODO: replace with a real screenshot / demo gif -->
-![RTG screenshot placeholder](https://placehold.co/800x450?text=RTG+screenshot+coming+soon)
+<p align="center">
+  <img src="docs/assets/readme-demo.gif" alt="RTG demo" width="800">
+</p>
 
 ## Features
 
