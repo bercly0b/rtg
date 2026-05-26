@@ -88,7 +88,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
                 file_meta: None,
                 reply_info: None,
                 forward_info: None,
-                reaction_count: 0,
+                reaction_count: message.reaction_count,
                 links: Vec::new(),
                 is_edited: false,
                 is_service: true,
@@ -200,7 +200,7 @@ pub fn element_to_text(
             file_meta: _,
             reply_info: _,
             forward_info: _,
-            reaction_count: _,
+            reaction_count,
             links: _,
             is_edited: _,
             is_service: true,
@@ -209,8 +209,16 @@ pub fn element_to_text(
                 Some(name) => format!("{} {}", name, content),
                 None => content.clone(),
             };
-            let line = Line::from(vec![Span::styled(text, styles::service_message_style())])
-                .alignment(Alignment::Center);
+            let mut spans = vec![Span::styled(text, styles::service_message_style())];
+            if *reaction_count > 0 {
+                let badge = if *reaction_count == 1 {
+                    " [♡]".to_owned()
+                } else {
+                    format!(" [♡×{}]", reaction_count)
+                };
+                spans.push(Span::styled(badge, styles::message_reaction_style()));
+            }
+            let line = Line::from(spans).alignment(Alignment::Center);
             ratatui::text::Text::from(vec![line])
         }
         MessageListElement::Message {
