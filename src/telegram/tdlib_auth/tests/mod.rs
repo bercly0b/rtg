@@ -191,6 +191,7 @@ mod reply_enrichment {
             reaction_count: 0,
             links: Vec::new(),
             is_edited: false,
+            is_service: false,
         }
     }
 
@@ -320,6 +321,7 @@ fn reply_sender_name_for_outgoing_message_is_you() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        is_service: false,
     };
 
     assert_eq!(reply_sender_name_for_message(&message), "You");

@@ -31,6 +31,7 @@ pub(super) fn build_message_lines(
     links: &[TextLink],
     max_width: usize,
     is_edited: bool,
+    is_service: bool,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let indent = MESSAGE_INDENT;
@@ -77,6 +78,7 @@ pub(super) fn build_message_lines(
                 indent,
                 content_width,
                 &link_ranges,
+                is_service,
             );
         }
     } else {
@@ -100,6 +102,7 @@ pub(super) fn build_message_lines(
             indent,
             content_width,
             &link_ranges,
+            is_service,
         );
     }
 
@@ -140,13 +143,18 @@ fn build_indented_content_lines(
     indent: &str,
     content_width: usize,
     link_ranges: &[(usize, usize)],
+    is_service: bool,
 ) {
     let mut content_pos = start_pos;
     for text_line in content.lines() {
         let mut seg_offset = 0;
         for wrapped in wrap_line(text_line, content_width) {
-            let content_spans =
-                build_content_line_spans_linked(&wrapped, content_pos + seg_offset, link_ranges);
+            let content_spans = build_content_line_spans_linked(
+                &wrapped,
+                content_pos + seg_offset,
+                link_ranges,
+                is_service,
+            );
             let mut line_spans = vec![Span::raw(indent.to_owned())];
             line_spans.extend(content_spans);
             lines.push(Line::from(line_spans));
@@ -163,6 +171,7 @@ fn build_grouped_message_lines(
     indent: &str,
     content_width: usize,
     link_ranges: &[(usize, usize)],
+    is_service: bool,
 ) {
     let mut content_lines = content.lines();
 
@@ -177,13 +186,14 @@ fn build_grouped_message_lines(
                 first_wrapped,
                 seg_offset,
                 link_ranges,
+                is_service,
             ));
             lines.push(Line::from(spans));
             seg_offset += first_wrapped.len();
 
             for wrapped in first_iter {
                 let content_spans =
-                    build_content_line_spans_linked(wrapped, seg_offset, link_ranges);
+                    build_content_line_spans_linked(wrapped, seg_offset, link_ranges, is_service);
                 let mut line_spans = vec![Span::raw(indent.to_owned())];
                 line_spans.extend(content_spans);
                 lines.push(Line::from(line_spans));
@@ -201,6 +211,7 @@ fn build_grouped_message_lines(
                 indent,
                 content_width,
                 link_ranges,
+                is_service,
             );
         }
     } else {

@@ -61,6 +61,11 @@ pub fn message_reaction_style() -> Style {
     Style::default().fg(Color::LightRed)
 }
 
+/// Style for service/system message text (member added, photo changed, etc.).
+pub fn service_message_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
 /// Style for the reply bar character (`|`).
 pub fn reply_bar_style() -> Style {
     Style::default().fg(Color::LightBlue)

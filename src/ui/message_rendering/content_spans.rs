@@ -14,7 +14,14 @@ pub(super) fn build_content_line_spans_linked(
     text: &str,
     content_offset: usize,
     link_ranges: &[(usize, usize)],
+    is_service: bool,
 ) -> Vec<Span<'static>> {
+    let text_style = if is_service {
+        styles::service_message_style()
+    } else {
+        styles::message_text_style()
+    };
+
     // Check if text starts with a media indicator like [Photo], [Voice], etc.
     if text.starts_with('[') {
         if let Some(end_bracket) = text.find(']') {
@@ -30,7 +37,7 @@ pub(super) fn build_content_line_spans_linked(
                 return vec![
                     Span::styled(media_part.to_owned(), styles::message_media_style()),
                     Span::raw(" ".to_owned()),
-                    Span::styled(rest.to_owned(), styles::message_text_style()),
+                    Span::styled(rest.to_owned(), text_style),
                 ];
             }
         }
@@ -60,7 +67,7 @@ pub(super) fn build_content_line_spans_linked(
         if overlap_start > pos {
             spans.push(Span::styled(
                 text[pos..overlap_start].to_owned(),
-                styles::message_text_style(),
+                text_style,
             ));
         }
         // Link text (underlined)
@@ -75,14 +82,11 @@ pub(super) fn build_content_line_spans_linked(
 
     // Remaining text after all links
     if pos < text.len() {
-        spans.push(Span::styled(
-            text[pos..].to_owned(),
-            styles::message_text_style(),
-        ));
+        spans.push(Span::styled(text[pos..].to_owned(), text_style));
     }
 
     if spans.is_empty() {
-        spans.push(Span::styled(text.to_owned(), styles::message_text_style()));
+        spans.push(Span::styled(text.to_owned(), text_style));
     }
 
     spans

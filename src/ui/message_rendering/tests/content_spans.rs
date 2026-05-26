@@ -4,9 +4,17 @@ use crate::ui::styles;
 use ratatui::style::Modifier;
 use ratatui::text::Span;
 
+fn build_content_line_spans_linked_test(
+    text: &str,
+    content_offset: usize,
+    link_ranges: &[(usize, usize)],
+) -> Vec<Span<'static>> {
+    build_content_line_spans_linked(text, content_offset, link_ranges, false)
+}
+
 #[test]
 fn spans_linked_plain_text_no_links() {
-    let spans = build_content_line_spans_linked("Hello world", 0, &[]);
+    let spans = build_content_line_spans_linked_test("Hello world", 0, &[]);
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].content.as_ref(), "Hello world");
     assert!(!spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
@@ -14,7 +22,7 @@ fn spans_linked_plain_text_no_links() {
 
 #[test]
 fn spans_linked_full_text_is_link() {
-    let spans = build_content_line_spans_linked("Click here!", 0, &[(0, 11)]);
+    let spans = build_content_line_spans_linked_test("Click here!", 0, &[(0, 11)]);
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].content.as_ref(), "Click here!");
     assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
@@ -23,7 +31,7 @@ fn spans_linked_full_text_is_link() {
 #[test]
 fn spans_linked_link_in_middle() {
     let text = "Hello link world";
-    let spans = build_content_line_spans_linked(text, 0, &[(6, 10)]);
+    let spans = build_content_line_spans_linked_test(text, 0, &[(6, 10)]);
     assert_eq!(spans.len(), 3);
     assert_eq!(spans[0].content.as_ref(), "Hello ");
     assert!(!spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
@@ -35,7 +43,7 @@ fn spans_linked_link_in_middle() {
 
 #[test]
 fn spans_linked_with_content_offset() {
-    let spans = build_content_line_spans_linked("link rest", 10, &[(10, 14)]);
+    let spans = build_content_line_spans_linked_test("link rest", 10, &[(10, 14)]);
     assert_eq!(spans.len(), 2);
     assert_eq!(spans[0].content.as_ref(), "link");
     assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
@@ -44,7 +52,7 @@ fn spans_linked_with_content_offset() {
 
 #[test]
 fn spans_linked_non_overlapping_link_ignored() {
-    let spans = build_content_line_spans_linked("Hello", 0, &[(100, 110)]);
+    let spans = build_content_line_spans_linked_test("Hello", 0, &[(100, 110)]);
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].content.as_ref(), "Hello");
     assert!(!spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
@@ -52,7 +60,7 @@ fn spans_linked_non_overlapping_link_ignored() {
 
 #[test]
 fn spans_linked_media_indicator_not_underlined() {
-    let spans = build_content_line_spans_linked("[Photo]", 0, &[(0, 7)]);
+    let spans = build_content_line_spans_linked_test("[Photo]", 0, &[(0, 7)]);
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].content.as_ref(), "[Photo]");
     assert_eq!(spans[0].style, styles::message_media_style());
@@ -60,7 +68,7 @@ fn spans_linked_media_indicator_not_underlined() {
 
 #[test]
 fn spans_linked_multiple_links() {
-    let spans = build_content_line_spans_linked("aa bb cc", 0, &[(0, 2), (6, 8)]);
+    let spans = build_content_line_spans_linked_test("aa bb cc", 0, &[(0, 2), (6, 8)]);
     assert_eq!(spans.len(), 3);
     assert_eq!(spans[0].content.as_ref(), "aa");
     assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
@@ -96,6 +104,7 @@ fn message_with_text_url_entity_renders_underlined() {
             url: "https://example.com".to_owned(),
         }],
         is_edited: false,
+        is_service: false,
     }];
 
     let elements = build_message_list_elements(&messages);

@@ -206,6 +206,7 @@ mod tests {
             reaction_count: 0,
             links: Vec::new(),
             is_edited: false,
+            is_service: false,
         }
     }
 

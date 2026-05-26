@@ -181,6 +181,7 @@ fn l_on_document_with_custom_handler_opens_playback_popup() {
             reaction_count: 0,
             links: Vec::new(),
             is_edited: false,
+            is_service: false,
         }],
     );
     o.open_handlers
@@ -227,6 +228,7 @@ fn l_on_sticker_is_ignored() {
             reaction_count: 0,
             links: Vec::new(),
             is_edited: false,
+            is_service: false,
         }],
     );
 

@@ -346,6 +346,7 @@ impl OpenChatState {
             reaction_count: 0,
             links: Vec::new(),
             is_edited: false,
+            is_service: false,
         };
         self.messages.push(pending);
         self.selected_index = Some(self.messages.len() - 1);

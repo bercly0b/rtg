@@ -22,6 +22,7 @@ fn sending_status_on_same_line_as_content() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        is_service: false,
     }];
 
     let elements = build_message_list_elements(&messages);
@@ -67,6 +68,7 @@ fn delivered_message_has_no_sending_indicator() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        is_service: false,
     }];
 
     let elements = build_message_list_elements(&messages);
@@ -100,6 +102,7 @@ fn edited_message_shows_edited_indicator() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: true,
+        is_service: false,
     }];
 
     let elements = build_message_list_elements(&messages);
@@ -134,6 +137,7 @@ fn non_edited_message_has_no_edited_indicator() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        is_service: false,
     }];
 
     let elements = build_message_list_elements(&messages);
@@ -167,6 +171,7 @@ fn edited_indicator_on_same_line_as_content() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: true,
+        is_service: false,
     }];
 
     let elements = build_message_list_elements(&messages);
@@ -289,6 +294,7 @@ fn voice_message_shows_file_metadata() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        is_service: false,
     }];
 
     let elements = build_message_list_elements(&messages);
@@ -345,6 +351,7 @@ fn document_message_shows_file_name_and_extension() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        is_service: false,
     }];
 
     let elements = build_message_list_elements(&messages);
@@ -411,6 +418,7 @@ fn document_without_extension_does_not_break_layout() {
             reaction_count: 0,
             links: Vec::new(),
             is_edited: false,
+            is_service: false,
         }
     }
 
@@ -473,6 +481,7 @@ fn message_with_multiple_reactions_shows_count() {
         reaction_count: 3,
         links: Vec::new(),
         is_edited: false,
+        is_service: false,
     }];
 
     let elements = build_message_list_elements(&messages);
@@ -503,6 +512,7 @@ fn message_with_single_reaction_shows_heart_without_count() {
         reaction_count: 1,
         links: Vec::new(),
         is_edited: false,
+        is_service: false,
     }];
 
     let elements = build_message_list_elements(&messages);
@@ -515,4 +525,36 @@ fn message_with_single_reaction_shows_heart_without_count() {
 
     assert!(all_text.contains("[♡]"));
     assert!(!all_text.contains("[♡×1]"));
+}
+
+#[test]
+fn service_message_renders_with_gray_style() {
+    let messages = vec![Message {
+        id: 1,
+        sender_name: "Alice".to_owned(),
+        text: "added Bob".to_owned(),
+        timestamp_ms: FEB_14_2026_10AM,
+        is_outgoing: false,
+        media: MessageMedia::None,
+        status: MessageStatus::Delivered,
+        file_info: None,
+        call_info: None,
+        reply_to: None,
+        forward_info: None,
+        reaction_count: 0,
+        links: Vec::new(),
+        is_edited: false,
+        is_service: true,
+    }];
+
+    let elements = build_message_list_elements(&messages);
+    let msg_text = element_to_text(&elements[1], 80);
+
+    let content_line = &msg_text.lines[1];
+    let text_span = content_line
+        .spans
+        .iter()
+        .find(|s| s.content.as_ref() == "added Bob")
+        .expect("should have service text span");
+    assert_eq!(text_span.style, crate::ui::styles::service_message_style());
 }

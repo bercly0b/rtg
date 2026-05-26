@@ -48,6 +48,8 @@ pub enum MessageListElement {
         links: Vec<TextLink>,
         /// Whether the message has been edited.
         is_edited: bool,
+        /// Whether this is a service/system message.
+        is_service: bool,
     },
 }
 
@@ -112,6 +114,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             reaction_count: message.reaction_count,
             links: message.links.clone(),
             is_edited: message.is_edited,
+            is_service: message.is_service,
         });
 
         prev_date = Some(msg_date);
@@ -176,6 +179,7 @@ pub fn element_to_text(
             reaction_count,
             links,
             is_edited,
+            is_service,
         } => {
             let lines = build_message_lines(
                 time,
@@ -191,6 +195,7 @@ pub fn element_to_text(
                 links,
                 max_width,
                 *is_edited,
+                *is_service,
             );
             ratatui::text::Text::from(lines)
         }
