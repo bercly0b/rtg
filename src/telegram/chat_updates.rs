@@ -243,7 +243,7 @@ pub struct StubMessageMapper;
 impl MessageMapper for StubMessageMapper {
     fn map_message(&self, raw: &tdlib_rs::types::Message) -> Message {
         use super::tdlib_mappers;
-        let text = tdlib_mappers::extract_message_text(&raw.content);
+        let text = tdlib_mappers::extract_message_text(&raw.content, |_| None);
         let media = tdlib_mappers::extract_message_media(&raw.content);
         let file_info = tdlib_mappers::extract_file_info(&raw.content);
         Message {
@@ -261,6 +261,7 @@ impl MessageMapper for StubMessageMapper {
             reaction_count: 0,
             links: Vec::new(),
             is_edited: raw.edit_date > 0,
+            is_service: false,
         }
     }
 }

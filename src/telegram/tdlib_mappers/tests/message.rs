@@ -111,7 +111,7 @@ fn extract_message_text_returns_text_from_message_text() {
         link_preview: None,
         link_preview_options: None,
     });
-    assert_eq!(extract_message_text(&content), "Hello, world!");
+    assert_eq!(extract_message_text(&content, |_| None), "Hello, world!");
 }
 
 #[test]
@@ -130,13 +130,16 @@ fn extract_message_text_returns_caption_from_photo() {
         has_spoiler: false,
         is_secret: false,
     });
-    assert_eq!(extract_message_text(&content), "Photo caption");
+    assert_eq!(extract_message_text(&content, |_| None), "Photo caption");
 }
 
 #[test]
 fn map_tdlib_message_to_domain_creates_correct_message() {
     let td_message = make_test_message(123, "Hello from TDLib", false);
-    let message = map_tdlib_message_to_domain(&td_message, "John Doe".to_owned(), None, None);
+    let message =
+        map_tdlib_message_to_domain(&td_message, "John Doe".to_owned(), None, None, |_: i64| {
+            None
+        });
 
     assert_eq!(message.id, 123);
     assert_eq!(message.sender_name, "John Doe");
@@ -148,7 +151,8 @@ fn map_tdlib_message_to_domain_creates_correct_message() {
 #[test]
 fn map_tdlib_message_to_domain_handles_outgoing() {
     let td_message = make_test_message(456, "My message", true);
-    let message = map_tdlib_message_to_domain(&td_message, "Me".to_owned(), None, None);
+    let message =
+        map_tdlib_message_to_domain(&td_message, "Me".to_owned(), None, None, |_: i64| None);
 
     assert!(message.is_outgoing);
 }
@@ -171,7 +175,7 @@ fn map_tdlib_message_includes_file_info() {
         is_listened: false,
     });
 
-    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None);
+    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None, |_: i64| None);
     assert_eq!(msg.media, MessageMedia::Voice);
     let fi = msg.file_info.expect("voice message should have file_info");
     assert_eq!(fi.file_id, 7);
@@ -183,7 +187,7 @@ fn map_tdlib_message_includes_file_info() {
 #[test]
 fn message_without_interaction_info_has_zero_reactions() {
     let td_msg = make_test_message(1, "Hello", false);
-    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None);
+    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None, |_: i64| None);
     assert_eq!(msg.reaction_count, 0);
 }
 
@@ -225,7 +229,7 @@ fn message_with_reactions_sums_total_counts() {
         }),
     });
 
-    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None);
+    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None, |_: i64| None);
     assert_eq!(msg.reaction_count, 3);
 }
 
@@ -379,4 +383,129 @@ fn extract_forward_info_chat_falls_back_to_signature() {
     let result = extract_forward_info(&td_msg, |_| None, |_| None);
     let fwd = result.expect("should have forward_info");
     assert_eq!(fwd.sender_name, "Chat Sig");
+}
+
+// ── service message tests ──
+
+#[test]
+fn service_message_chat_add_members_displays_text() {
+    let content = MessageContent::MessageChatAddMembers(tdlib_rs::types::MessageChatAddMembers {
+        member_user_ids: vec![1, 2],
+    });
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(
+        extract_message_text(&content, |_| None),
+        "added User#1, User#2"
+    );
+}
+
+#[test]
+fn service_message_chat_change_title_displays_text() {
+    let content = MessageContent::MessageChatChangeTitle(tdlib_rs::types::MessageChatChangeTitle {
+        title: "New Title".to_owned(),
+    });
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(
+        extract_message_text(&content, |_| None),
+        "changed title to \"New Title\""
+    );
+}
+
+#[test]
+fn service_message_chat_change_photo_displays_text() {
+    let content = MessageContent::MessageChatChangePhoto(tdlib_rs::types::MessageChatChangePhoto {
+        photo: tdlib_rs::types::ChatPhoto {
+            id: 0,
+            added_date: 0,
+            minithumbnail: None,
+            sizes: vec![],
+            animation: None,
+            small_animation: None,
+            sticker: None,
+        },
+    });
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(
+        extract_message_text(&content, |_| None),
+        "changed group photo"
+    );
+}
+
+#[test]
+fn service_message_join_by_link_displays_text() {
+    let content = MessageContent::MessageChatJoinByLink;
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(extract_message_text(&content, |_| None), "joined via link");
+}
+
+#[test]
+fn service_message_pin_displays_text() {
+    let content =
+        MessageContent::MessagePinMessage(tdlib_rs::types::MessagePinMessage { message_id: 42 });
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(extract_message_text(&content, |_| None), "pinned a message");
+}
+
+#[test]
+fn service_message_delete_photo_displays_text() {
+    let content = MessageContent::MessageChatDeletePhoto;
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(
+        extract_message_text(&content, |_| None),
+        "removed group photo"
+    );
+}
+
+#[test]
+fn service_message_screenshot_taken_displays_text() {
+    let content = MessageContent::MessageScreenshotTaken;
+    assert_eq!(extract_message_media(&content), MessageMedia::None);
+    assert_eq!(
+        extract_message_text(&content, |_| None),
+        "took a screenshot"
+    );
+}
+
+#[test]
+fn service_message_mapped_to_domain_shows_text_not_media() {
+    let mut td_msg = make_test_message(1, "", false);
+    td_msg.content =
+        MessageContent::MessageChatAddMembers(tdlib_rs::types::MessageChatAddMembers {
+            member_user_ids: vec![1],
+        });
+
+    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None, |_: i64| None);
+    assert_eq!(msg.media, MessageMedia::None);
+    assert_eq!(msg.text, "added User#1");
+    assert_eq!(msg.display_content(), "added User#1");
+    assert!(msg.is_service);
+}
+
+#[test]
+fn service_message_add_members_resolves_names() {
+    let content = MessageContent::MessageChatAddMembers(tdlib_rs::types::MessageChatAddMembers {
+        member_user_ids: vec![10, 20],
+    });
+    let text = extract_message_text(&content, |id| match id {
+        10 => Some("Alice".to_owned()),
+        20 => Some("Bob".to_owned()),
+        _ => None,
+    });
+    assert_eq!(text, "added Alice, Bob");
+}
+
+#[test]
+fn service_message_delete_member_resolves_name() {
+    let content =
+        MessageContent::MessageChatDeleteMember(tdlib_rs::types::MessageChatDeleteMember {
+            user_id: 42,
+        });
+    let text = extract_message_text(&content, |id| {
+        if id == 42 {
+            Some("Charlie".to_owned())
+        } else {
+            None
+        }
+    });
+    assert_eq!(text, "removed Charlie");
 }

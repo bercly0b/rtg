@@ -107,6 +107,8 @@ pub struct Message {
     pub links: Vec<TextLink>,
     /// Whether the message has been edited after sending.
     pub is_edited: bool,
+    /// Whether this is a service/system message (member added, photo changed, etc.).
+    pub is_service: bool,
 }
 
 impl Message {

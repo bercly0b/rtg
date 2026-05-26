@@ -37,13 +37,26 @@ impl TdLibAuthBackend {
             "fetched cached messages from TDLib"
         );
 
+        let cache = self.client.cache();
+        let resolve_user = |user_id: i64| {
+            cache
+                .get_user(user_id)
+                .map(|u| tdlib_mappers::format_user_name(&u))
+        };
+
         let mut messages: Vec<Message> = td_messages
             .iter()
             .map(|msg| {
                 let sender_name = self.resolve_message_sender_name(msg);
                 let reply_to = self.resolve_reply_info(msg);
                 let forward_info = self.resolve_forward_info(msg);
-                tdlib_mappers::map_tdlib_message_to_domain(msg, sender_name, reply_to, forward_info)
+                tdlib_mappers::map_tdlib_message_to_domain(
+                    msg,
+                    sender_name,
+                    reply_to,
+                    forward_info,
+                    resolve_user,
+                )
             })
             .collect();
 
@@ -148,13 +161,26 @@ impl TdLibAuthBackend {
         );
 
         // Convert to domain messages (accumulated is newest-first)
+        let cache = self.client.cache();
+        let resolve_user = |user_id: i64| {
+            cache
+                .get_user(user_id)
+                .map(|u| tdlib_mappers::format_user_name(&u))
+        };
+
         let mut messages: Vec<Message> = td_messages
             .iter()
             .map(|msg| {
                 let sender_name = self.resolve_message_sender_name(msg);
                 let reply_to = self.resolve_reply_info(msg);
                 let forward_info = self.resolve_forward_info(msg);
-                tdlib_mappers::map_tdlib_message_to_domain(msg, sender_name, reply_to, forward_info)
+                tdlib_mappers::map_tdlib_message_to_domain(
+                    msg,
+                    sender_name,
+                    reply_to,
+                    forward_info,
+                    resolve_user,
+                )
             })
             .collect();
 
@@ -298,7 +324,13 @@ impl TdLibAuthBackend {
             }
         };
         let sender_name = self.resolve_message_sender_name(&raw);
-        let mapped = tdlib_mappers::map_tdlib_message_to_domain(&raw, sender_name, None, None);
+        let cache = self.client.cache();
+        let mapped =
+            tdlib_mappers::map_tdlib_message_to_domain(&raw, sender_name, None, None, |user_id| {
+                cache
+                    .get_user(user_id)
+                    .map(|u| tdlib_mappers::format_user_name(&u))
+            });
         Some((
             reply_sender_name_for_message(&mapped),
             mapped.display_content(),
@@ -502,7 +534,13 @@ impl TdLibMessageMapper {
             }
         };
         let sender_name = self.resolve_sender_name(&raw.sender_id);
-        let mapped = tdlib_mappers::map_tdlib_message_to_domain(&raw, sender_name, None, None);
+        let cache = &self.cache;
+        let mapped =
+            tdlib_mappers::map_tdlib_message_to_domain(&raw, sender_name, None, None, |user_id| {
+                cache
+                    .get_user(user_id)
+                    .map(|u| tdlib_mappers::format_user_name(&u))
+            });
         Some((
             reply_sender_name_for_message(&mapped),
             mapped.display_content(),
@@ -516,8 +554,18 @@ impl crate::telegram::chat_updates::MessageMapper for TdLibMessageMapper {
         let sender_name = self.resolve_sender_name(&raw.sender_id);
         let reply_to = extract_reply_info_from_cache(raw, &self.cache, &self.rt, self.client_id);
         let forward_info = extract_forward_info_from_cache(raw, &self.cache);
-        let mut mapped =
-            tdlib_mappers::map_tdlib_message_to_domain(raw, sender_name, reply_to, forward_info);
+        let cache = &self.cache;
+        let mut mapped = tdlib_mappers::map_tdlib_message_to_domain(
+            raw,
+            sender_name,
+            reply_to,
+            forward_info,
+            |user_id| {
+                cache
+                    .get_user(user_id)
+                    .map(|u| tdlib_mappers::format_user_name(&u))
+            },
+        );
 
         if let (Some(reply), Some(tdlib_rs::enums::MessageReplyTo::Message(info))) =
             (mapped.reply_to.as_mut(), raw.reply_to.as_ref())

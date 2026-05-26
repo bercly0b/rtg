@@ -17,7 +17,9 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::domain::message::{ForwardInfo, Message, MessageStatus, ReplyInfo, TextLink};
+use crate::domain::message::{
+    ForwardInfo, Message, MessageMedia, MessageStatus, ReplyInfo, TextLink,
+};
 
 use super::styles;
 
@@ -48,6 +50,8 @@ pub enum MessageListElement {
         links: Vec<TextLink>,
         /// Whether the message has been edited.
         is_edited: bool,
+        /// Whether this is a service/system message.
+        is_service: bool,
     },
 }
 
@@ -73,6 +77,28 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
         let sender_name = effective_sender_name(message);
         let time = format_time(message.timestamp_ms);
 
+        if message.is_service {
+            elements.push(MessageListElement::Message {
+                time: time.clone(),
+                show_time: true,
+                sender: Some(sender_name.to_owned()),
+                is_outgoing: message.is_outgoing,
+                content: message.display_content(),
+                status: message.status,
+                file_meta: None,
+                reply_info: None,
+                forward_info: None,
+                reaction_count: message.reaction_count,
+                links: Vec::new(),
+                is_edited: false,
+                is_service: true,
+            });
+            prev_sender = None;
+            prev_time = None;
+            prev_date = Some(msg_date);
+            continue;
+        }
+
         // Show sender only if different from previous message
         let show_sender = prev_sender != Some(sender_name);
         let sender = if show_sender {
@@ -90,7 +116,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
                 ci,
                 message.is_outgoing,
             ))
-        } else if message.media == crate::domain::message::MessageMedia::Sticker {
+        } else if message.media == MessageMedia::Sticker {
             Some("Sticker".to_owned())
         } else {
             message
@@ -112,6 +138,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             reaction_count: message.reaction_count,
             links: message.links.clone(),
             is_edited: message.is_edited,
+            is_service: false,
         });
 
         prev_date = Some(msg_date);
@@ -164,6 +191,37 @@ pub fn element_to_text(
             ratatui::text::Text::from(vec![Line::default(), line, Line::default()])
         }
         MessageListElement::Message {
+            time: _,
+            show_time: _,
+            sender,
+            is_outgoing: _,
+            content,
+            status: _,
+            file_meta: _,
+            reply_info: _,
+            forward_info: _,
+            reaction_count,
+            links: _,
+            is_edited: _,
+            is_service: true,
+        } => {
+            let text = match sender.as_deref() {
+                Some(name) => format!("{} {}", name, content),
+                None => content.clone(),
+            };
+            let mut spans = vec![Span::styled(text, styles::service_message_style())];
+            if *reaction_count > 0 {
+                let badge = if *reaction_count == 1 {
+                    " [♡]".to_owned()
+                } else {
+                    format!(" [♡×{}]", reaction_count)
+                };
+                spans.push(Span::styled(badge, styles::message_reaction_style()));
+            }
+            let line = Line::from(spans).alignment(Alignment::Center);
+            ratatui::text::Text::from(vec![line])
+        }
+        MessageListElement::Message {
             time,
             show_time,
             sender,
@@ -176,6 +234,7 @@ pub fn element_to_text(
             reaction_count,
             links,
             is_edited,
+            is_service: _,
         } => {
             let lines = build_message_lines(
                 time,
@@ -191,6 +250,7 @@ pub fn element_to_text(
                 links,
                 max_width,
                 *is_edited,
+                false,
             );
             ratatui::text::Text::from(lines)
         }

@@ -22,6 +22,7 @@ fn msg(id: i64, text: &str) -> Message {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        is_service: false,
     }
 }
 
@@ -41,5 +42,6 @@ fn msg_with_ts(id: i64, text: &str, timestamp_ms: i64) -> Message {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        is_service: false,
     }
 }
