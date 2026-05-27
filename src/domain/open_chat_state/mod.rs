@@ -439,6 +439,17 @@ impl OpenChatState {
     ///
     /// Returns `true` if the selection changed, `false` if the cursor was
     /// already at the first message or the list is empty.
+    pub fn select_last(&mut self) -> bool {
+        if self.messages.is_empty() {
+            return false;
+        }
+
+        let last = self.messages.len() - 1;
+        let moved = self.selected_index != Some(last);
+        self.selected_index = Some(last);
+        moved
+    }
+
     pub fn select_previous(&mut self) -> bool {
         if self.messages.is_empty() {
             return false;

@@ -29,6 +29,7 @@ pub enum Action {
     AddReaction,
     DownloadFile,
     SaveFile,
+    ScrollToLastMessage,
     // Global
     Quit,
     ShowHelp,
@@ -60,6 +61,7 @@ impl Action {
             Self::AddReaction => "add_reaction",
             Self::DownloadFile => "download_file",
             Self::SaveFile => "save_file_to_downloads",
+            Self::ScrollToLastMessage => "scroll_to_last_message",
             Self::Quit => "quit",
             Self::ShowHelp => "show_help",
         }
@@ -90,6 +92,7 @@ impl Action {
             "add_reaction" => Some(Self::AddReaction),
             "download_file" => Some(Self::DownloadFile),
             "save_file_to_downloads" => Some(Self::SaveFile),
+            "scroll_to_last_message" => Some(Self::ScrollToLastMessage),
             "quit" => Some(Self::Quit),
             "show_help" => Some(Self::ShowHelp),
             _ => None,
@@ -448,6 +451,11 @@ fn default_bindings() -> Vec<KeyBinding> {
         },
         // ── Messages ──
         KeyBinding {
+            pattern: KeyPattern::single("G"),
+            action: Action::ScrollToLastMessage,
+            context: KeyContext::Messages,
+        },
+        KeyBinding {
             pattern: KeyPattern::single("j"),
             action: Action::ScrollNextMessage,
             context: KeyContext::Messages,
@@ -790,6 +798,15 @@ mod tests {
         assert_eq!(
             km.resolve("g", false, KeyContext::Messages),
             ResolveResult::Unmatched
+        );
+    }
+
+    #[test]
+    fn shift_g_scrolls_to_last_message() {
+        let mut km = Keymap::default();
+        assert_eq!(
+            km.resolve("G", false, KeyContext::Messages),
+            ResolveResult::Action(Action::ScrollToLastMessage)
         );
     }
 
