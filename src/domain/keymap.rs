@@ -29,7 +29,7 @@ pub enum Action {
     AddReaction,
     DownloadFile,
     SaveFile,
-    ScrollToFirstMessage,
+    ScrollToLastMessage,
     // Global
     Quit,
     ShowHelp,
@@ -61,7 +61,7 @@ impl Action {
             Self::AddReaction => "add_reaction",
             Self::DownloadFile => "download_file",
             Self::SaveFile => "save_file_to_downloads",
-            Self::ScrollToFirstMessage => "scroll_to_first_message",
+            Self::ScrollToLastMessage => "scroll_to_last_message",
             Self::Quit => "quit",
             Self::ShowHelp => "show_help",
         }
@@ -92,7 +92,7 @@ impl Action {
             "add_reaction" => Some(Self::AddReaction),
             "download_file" => Some(Self::DownloadFile),
             "save_file_to_downloads" => Some(Self::SaveFile),
-            "scroll_to_first_message" => Some(Self::ScrollToFirstMessage),
+            "scroll_to_last_message" => Some(Self::ScrollToLastMessage),
             "quit" => Some(Self::Quit),
             "show_help" => Some(Self::ShowHelp),
             _ => None,
@@ -451,8 +451,8 @@ fn default_bindings() -> Vec<KeyBinding> {
         },
         // ── Messages ──
         KeyBinding {
-            pattern: KeyPattern::sequence(vec!["g", "g"]),
-            action: Action::ScrollToFirstMessage,
+            pattern: KeyPattern::single("G"),
+            action: Action::ScrollToLastMessage,
             context: KeyContext::Messages,
         },
         KeyBinding {
@@ -793,15 +793,20 @@ mod tests {
     }
 
     #[test]
-    fn gg_sequence_resolved_in_messages() {
+    fn gg_sequence_not_in_messages() {
         let mut km = Keymap::default();
         assert_eq!(
             km.resolve("g", false, KeyContext::Messages),
-            ResolveResult::Pending
+            ResolveResult::Unmatched
         );
+    }
+
+    #[test]
+    fn shift_g_scrolls_to_last_message() {
+        let mut km = Keymap::default();
         assert_eq!(
-            km.resolve("g", false, KeyContext::Messages),
-            ResolveResult::Action(Action::ScrollToFirstMessage)
+            km.resolve("G", false, KeyContext::Messages),
+            ResolveResult::Action(Action::ScrollToLastMessage)
         );
     }
 

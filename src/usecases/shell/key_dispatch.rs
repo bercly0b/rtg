@@ -76,9 +76,8 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
             }
             maybe_load_older_messages(ctx);
         }
-        Action::ScrollToFirstMessage => {
-            ctx.state.open_chat_mut().select_first();
-            maybe_load_older_messages(ctx);
+        Action::ScrollToLastMessage => {
+            ctx.state.open_chat_mut().select_last();
         }
         Action::BackToChatList => {
             chat_open::close_tdlib_chat(ctx);

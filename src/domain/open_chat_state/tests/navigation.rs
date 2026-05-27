@@ -216,6 +216,38 @@ fn select_previous_returns_false_on_empty_messages() {
 }
 
 #[test]
+fn select_last_jumps_to_last_message() {
+    let mut state = OpenChatState::default();
+    state.set_loading(1, "Chat".to_owned(), ChatType::Private);
+    state.set_ready(vec![message(1, "A"), message(2, "B"), message(3, "C")]);
+    state.set_selected_index_for_test(Some(0));
+
+    assert!(state.select_last());
+    assert_eq!(state.selected_index(), Some(2));
+}
+
+#[test]
+fn select_last_returns_false_when_already_at_last() {
+    let mut state = OpenChatState::default();
+    state.set_loading(1, "Chat".to_owned(), ChatType::Private);
+    state.set_ready(vec![message(1, "A"), message(2, "B")]);
+    // set_ready selects the last message
+    assert_eq!(state.selected_index(), Some(1));
+
+    assert!(!state.select_last());
+    assert_eq!(state.selected_index(), Some(1));
+}
+
+#[test]
+fn select_last_returns_false_on_empty_messages() {
+    let mut state = OpenChatState::default();
+    state.set_loading(1, "Chat".to_owned(), ChatType::Private);
+    state.set_ready(vec![]);
+
+    assert!(!state.select_last());
+}
+
+#[test]
 fn selected_message_follows_navigation() {
     let mut state = OpenChatState::default();
     state.set_loading(1, "Chat".to_owned(), ChatType::Private);
