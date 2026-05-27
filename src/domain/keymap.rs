@@ -29,6 +29,7 @@ pub enum Action {
     AddReaction,
     DownloadFile,
     SaveFile,
+    ScrollToFirstMessage,
     // Global
     Quit,
     ShowHelp,
@@ -60,6 +61,7 @@ impl Action {
             Self::AddReaction => "add_reaction",
             Self::DownloadFile => "download_file",
             Self::SaveFile => "save_file_to_downloads",
+            Self::ScrollToFirstMessage => "scroll_to_first_message",
             Self::Quit => "quit",
             Self::ShowHelp => "show_help",
         }
@@ -90,6 +92,7 @@ impl Action {
             "add_reaction" => Some(Self::AddReaction),
             "download_file" => Some(Self::DownloadFile),
             "save_file_to_downloads" => Some(Self::SaveFile),
+            "scroll_to_first_message" => Some(Self::ScrollToFirstMessage),
             "quit" => Some(Self::Quit),
             "show_help" => Some(Self::ShowHelp),
             _ => None,
@@ -448,6 +451,11 @@ fn default_bindings() -> Vec<KeyBinding> {
         },
         // ── Messages ──
         KeyBinding {
+            pattern: KeyPattern::sequence(vec!["g", "g"]),
+            action: Action::ScrollToFirstMessage,
+            context: KeyContext::Messages,
+        },
+        KeyBinding {
             pattern: KeyPattern::single("j"),
             action: Action::ScrollNextMessage,
             context: KeyContext::Messages,
@@ -785,11 +793,15 @@ mod tests {
     }
 
     #[test]
-    fn gg_sequence_not_in_messages() {
+    fn gg_sequence_resolved_in_messages() {
         let mut km = Keymap::default();
         assert_eq!(
             km.resolve("g", false, KeyContext::Messages),
-            ResolveResult::Unmatched
+            ResolveResult::Pending
+        );
+        assert_eq!(
+            km.resolve("g", false, KeyContext::Messages),
+            ResolveResult::Action(Action::ScrollToFirstMessage)
         );
     }
 
