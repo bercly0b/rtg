@@ -289,7 +289,8 @@ pub(super) fn maybe_refresh_open_chat_messages<D: TaskDispatcher>(
         "refreshing open chat messages from update"
     );
     *ctx.messages_refresh_in_flight = true;
-    ctx.dispatcher.dispatch_load_messages(open_id);
+    let topic_id = ctx.state.open_chat().topic_id();
+    ctx.dispatcher.dispatch_load_messages(open_id, topic_id);
 }
 
 fn resolve_file_name<D: TaskDispatcher>(

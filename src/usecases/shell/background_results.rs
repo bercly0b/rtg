@@ -56,6 +56,41 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 super::chat_list::dispatch_chat_list_refresh(ctx, pending_force);
             }
         }
+        BackgroundTaskResult::ForumTopicsLoaded { chat_id, result } => {
+            let Some(forum_list) = ctx.state.forum_topic_list_mut() else {
+                tracing::debug!(
+                    chat_id,
+                    "background: forum topics result with no open forum"
+                );
+                return;
+            };
+            if forum_list.parent_chat_id() != chat_id {
+                tracing::debug!(
+                    chat_id,
+                    open_forum = forum_list.parent_chat_id(),
+                    "background: discarding stale forum topics result"
+                );
+                return;
+            }
+            match result {
+                Ok(topics) => {
+                    tracing::debug!(
+                        chat_id,
+                        count = topics.len(),
+                        "background: forum topics loaded"
+                    );
+                    forum_list.set_ready(topics);
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        chat_id,
+                        code = error.code,
+                        "background: forum topics load failed"
+                    );
+                    forum_list.set_error();
+                }
+            }
+        }
         BackgroundTaskResult::MessagesLoaded { chat_id, result } => {
             *ctx.messages_refresh_in_flight = false;
 

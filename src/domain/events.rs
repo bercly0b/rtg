@@ -36,6 +36,11 @@ pub enum BackgroundTaskResult {
         result: Result<Vec<super::chat::ChatSummary>, BackgroundError>,
         all_loaded: bool,
     },
+    /// Forum topic list fetch completed for a specific forum chat.
+    ForumTopicsLoaded {
+        chat_id: i64,
+        result: Result<Vec<super::forum_topic::ForumTopicSummary>, BackgroundError>,
+    },
     /// Messages fetch for a specific chat completed.
     MessagesLoaded {
         chat_id: i64,

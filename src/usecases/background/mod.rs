@@ -17,6 +17,7 @@ use super::{
     chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
     edit_message::MessageEditor,
     list_chats::ListChatsSource,
+    list_forum_topics::ForumTopicsSource,
     load_messages::MessagesSource,
     message_info::{MessageInfoQuery, MessageInfoSource},
     message_reactions::{AvailableReactionsQuery, ReactionSource},
@@ -34,8 +35,18 @@ use super::{
 /// but do not produce `BackgroundTaskResult`.
 pub trait TaskDispatcher {
     fn dispatch_chat_list(&self, force: bool, limit: usize);
-    fn dispatch_load_messages(&self, chat_id: i64);
-    fn dispatch_load_older_messages(&self, chat_id: i64, from_message_id: i64);
+    /// Fetches the topic list for a forum supergroup chat in the background.
+    #[allow(dead_code)]
+    fn dispatch_load_forum_topics(&self, chat_id: i64);
+    /// Loads messages for a chat, or for a specific forum topic when
+    /// `topic_id` is `Some`.
+    fn dispatch_load_messages(&self, chat_id: i64, topic_id: Option<i32>);
+    fn dispatch_load_older_messages(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        from_message_id: i64,
+    );
     fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>);
     fn dispatch_edit_message(&self, chat_id: i64, message_id: i64, text: String);
 
@@ -56,7 +67,8 @@ pub trait TaskDispatcher {
 
     /// Prefetches messages for a chat the user is hovering in the chat list.
     /// Results go into `MessageCache` only (not `OpenChatState`).
-    fn dispatch_prefetch_messages(&self, chat_id: i64);
+    /// `topic_id` scopes the prefetch to a forum topic when `Some`.
+    fn dispatch_prefetch_messages(&self, chat_id: i64, topic_id: Option<i32>);
 
     /// Deletes a message from a chat (fire-and-forget).
     ///
@@ -110,7 +122,7 @@ pub trait TaskDispatcher {
 /// then sends the result through the shared channel.
 pub struct ThreadTaskDispatcher<C, M, MS, L, S>
 where
-    C: ListChatsSource + Send + Sync + 'static,
+    C: ListChatsSource + ForumTopicsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
@@ -126,7 +138,7 @@ where
 
 impl<C, M, MS, L, S> ThreadTaskDispatcher<C, M, MS, L, S>
 where
-    C: ListChatsSource + Send + Sync + 'static,
+    C: ListChatsSource + ForumTopicsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
@@ -153,7 +165,7 @@ where
 
 impl<C, M, MS, L, S> TaskDispatcher for ThreadTaskDispatcher<C, M, MS, L, S>
 where
-    C: ListChatsSource + Send + Sync + 'static,
+    C: ListChatsSource + ForumTopicsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
@@ -163,15 +175,30 @@ where
         lifecycle::dispatch_chat_list(&self.chats_source, &self.result_tx, force, limit);
     }
 
-    fn dispatch_load_messages(&self, chat_id: i64) {
-        messaging::dispatch_load_messages(&self.messages_source, &self.result_tx, chat_id);
+    fn dispatch_load_forum_topics(&self, chat_id: i64) {
+        lifecycle::dispatch_load_forum_topics(&self.chats_source, &self.result_tx, chat_id);
     }
 
-    fn dispatch_load_older_messages(&self, chat_id: i64, from_message_id: i64) {
+    fn dispatch_load_messages(&self, chat_id: i64, topic_id: Option<i32>) {
+        messaging::dispatch_load_messages(
+            &self.messages_source,
+            &self.result_tx,
+            chat_id,
+            topic_id,
+        );
+    }
+
+    fn dispatch_load_older_messages(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        from_message_id: i64,
+    ) {
         messaging::dispatch_load_older_messages(
             &self.messages_source,
             &self.result_tx,
             chat_id,
+            topic_id,
             from_message_id,
         );
     }
@@ -213,8 +240,13 @@ where
         lifecycle::dispatch_mark_chat_as_read(&self.lifecycle, chat_id, last_message_id);
     }
 
-    fn dispatch_prefetch_messages(&self, chat_id: i64) {
-        messaging::dispatch_prefetch_messages(&self.messages_source, &self.result_tx, chat_id);
+    fn dispatch_prefetch_messages(&self, chat_id: i64, topic_id: Option<i32>) {
+        messaging::dispatch_prefetch_messages(
+            &self.messages_source,
+            &self.result_tx,
+            chat_id,
+            topic_id,
+        );
     }
 
     fn dispatch_delete_message(&self, chat_id: i64, message_id: i64) {

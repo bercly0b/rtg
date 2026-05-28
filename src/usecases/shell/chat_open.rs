@@ -84,7 +84,8 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
 
     // Dispatch a full background load (pagination).
     *ctx.messages_refresh_in_flight = true;
-    ctx.dispatcher.dispatch_load_messages(chat_id);
+    let topic_id = ctx.state.open_chat().topic_id();
+    ctx.dispatcher.dispatch_load_messages(chat_id, topic_id);
 
     // Dispatch subtitle resolution (user status / member count).
     ctx.dispatcher
@@ -113,7 +114,8 @@ pub(super) fn maybe_prefetch_selected_chat<D: TaskDispatcher>(ctx: &mut Orchestr
 
     tracing::debug!(chat_id, "prefetching messages for highlighted chat");
     *ctx.prefetch_in_flight = Some(chat_id);
-    ctx.dispatcher.dispatch_prefetch_messages(chat_id);
+    // Prefetch from the chat-list hover; never scoped to a forum topic.
+    ctx.dispatcher.dispatch_prefetch_messages(chat_id, None);
 }
 
 /// Closes the currently TDLib-opened chat if it differs from `next_chat_id`.

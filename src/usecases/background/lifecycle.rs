@@ -6,12 +6,13 @@ use crate::{
         chat_lifecycle::{ChatLifecycle, ChatReadMarker, FileDownloader, MessageDeleter},
         chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
         list_chats::{list_chats, ListChatsQuery, ListChatsSource},
+        list_forum_topics::{list_forum_topics, ForumTopicsSource, ListForumTopicsQuery},
         message_info::{MessageInfoQuery, MessageInfoSource},
         message_reactions::{AddReactionQuery, AvailableReactionsQuery, ReactionSource},
     },
 };
 
-use super::error_mapping::map_list_chats_error;
+use super::error_mapping::{map_list_chats_error, map_list_forum_topics_error};
 
 pub(super) fn dispatch_chat_list<C: ListChatsSource + Send + Sync + 'static>(
     source: &Arc<C>,
@@ -51,6 +52,48 @@ pub(super) fn dispatch_chat_list<C: ListChatsSource + Send + Sync + 'static>(
         let _ = tx_fallback.send(BackgroundTaskResult::ChatListLoaded {
             result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
             all_loaded: false,
+        });
+    }
+}
+
+#[allow(dead_code)]
+pub(super) fn dispatch_load_forum_topics<C: ForumTopicsSource + Send + Sync + 'static>(
+    source: &Arc<C>,
+    tx: &Sender<BackgroundTaskResult>,
+    chat_id: i64,
+) {
+    let source = Arc::clone(source);
+    let tx = tx.clone();
+    let tx_fallback = tx.clone();
+
+    let spawn_result = std::thread::Builder::new()
+        .name("rtg-bg-forum-topics".into())
+        .spawn(move || {
+            tracing::debug!(chat_id, "background: fetching forum topics");
+            let query = ListForumTopicsQuery::new(chat_id);
+            let result = list_forum_topics(source.as_ref(), query);
+            match result {
+                Ok(output) => {
+                    let _ = tx.send(BackgroundTaskResult::ForumTopicsLoaded {
+                        chat_id,
+                        result: Ok(output.topics),
+                    });
+                }
+                Err(error) => {
+                    tracing::warn!(chat_id, error = ?error, "background: forum topics fetch failed");
+                    let _ = tx.send(BackgroundTaskResult::ForumTopicsLoaded {
+                        chat_id,
+                        result: Err(BackgroundError::new(map_list_forum_topics_error(&error))),
+                    });
+                }
+            }
+        });
+
+    if let Err(error) = spawn_result {
+        tracing::error!(error = %error, "failed to spawn forum topics background thread");
+        let _ = tx_fallback.send(BackgroundTaskResult::ForumTopicsLoaded {
+            chat_id,
+            result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
         });
     }
 }

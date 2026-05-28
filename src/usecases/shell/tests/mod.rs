@@ -96,14 +96,15 @@ fn message(id: i64, text: &str) -> Message {
 struct RecordingDispatcher {
     dispatched_chat_list_count: RefCell<usize>,
     dispatched_chat_list_force: RefCell<Vec<bool>>,
-    dispatched_messages: RefCell<Vec<i64>>,
-    dispatched_older_messages: RefCell<Vec<(i64, i64)>>,
+    dispatched_messages: RefCell<Vec<(i64, Option<i32>)>>,
+    dispatched_older_messages: RefCell<Vec<(i64, Option<i32>, i64)>>,
     dispatched_sends: RefCell<Vec<(i64, String, Option<i64>)>>,
     dispatched_open_chats: RefCell<Vec<i64>>,
     dispatched_close_chats: RefCell<Vec<i64>>,
     dispatched_mark_as_read: RefCell<Vec<(i64, Vec<i64>)>>,
     dispatched_mark_chat_as_read: RefCell<Vec<(i64, i64)>>,
-    dispatched_prefetches: RefCell<Vec<i64>>,
+    dispatched_prefetches: RefCell<Vec<(i64, Option<i32>)>>,
+    dispatched_forum_topics: RefCell<Vec<i64>>,
     dispatched_deletes: RefCell<Vec<(i64, i64)>>,
     dispatched_voice_sends: RefCell<Vec<(i64, String)>>,
     dispatched_subtitles: RefCell<Vec<ChatSubtitleQuery>>,
@@ -124,6 +125,7 @@ impl RecordingDispatcher {
             dispatched_mark_as_read: RefCell::new(Vec::new()),
             dispatched_mark_chat_as_read: RefCell::new(Vec::new()),
             dispatched_prefetches: RefCell::new(Vec::new()),
+            dispatched_forum_topics: RefCell::new(Vec::new()),
             dispatched_deletes: RefCell::new(Vec::new()),
             dispatched_voice_sends: RefCell::new(Vec::new()),
             dispatched_subtitles: RefCell::new(Vec::new()),
@@ -149,7 +151,30 @@ impl RecordingDispatcher {
     }
 
     fn last_older_messages(&self) -> Option<(i64, i64)> {
+        self.dispatched_older_messages
+            .borrow()
+            .last()
+            .map(|(chat_id, _, from)| (*chat_id, *from))
+    }
+
+    #[allow(dead_code)]
+    fn last_older_messages_full(&self) -> Option<(i64, Option<i32>, i64)> {
         self.dispatched_older_messages.borrow().last().copied()
+    }
+
+    #[allow(dead_code)]
+    fn last_load_messages(&self) -> Option<(i64, Option<i32>)> {
+        self.dispatched_messages.borrow().last().copied()
+    }
+
+    #[allow(dead_code)]
+    fn last_forum_topics_chat_id(&self) -> Option<i64> {
+        self.dispatched_forum_topics.borrow().last().copied()
+    }
+
+    #[allow(dead_code)]
+    fn forum_topics_dispatch_count(&self) -> usize {
+        self.dispatched_forum_topics.borrow().len()
     }
 
     fn send_dispatch_count(&self) -> usize {
@@ -189,7 +214,10 @@ impl RecordingDispatcher {
     }
 
     fn last_prefetch_chat_id(&self) -> Option<i64> {
-        self.dispatched_prefetches.borrow().last().copied()
+        self.dispatched_prefetches
+            .borrow()
+            .last()
+            .map(|(chat_id, _)| *chat_id)
     }
 
     fn delete_dispatch_count(&self) -> usize {
@@ -231,14 +259,25 @@ impl TaskDispatcher for RecordingDispatcher {
         self.dispatched_chat_list_force.borrow_mut().push(force);
     }
 
-    fn dispatch_load_messages(&self, chat_id: i64) {
-        self.dispatched_messages.borrow_mut().push(chat_id);
+    fn dispatch_load_forum_topics(&self, chat_id: i64) {
+        self.dispatched_forum_topics.borrow_mut().push(chat_id);
     }
 
-    fn dispatch_load_older_messages(&self, chat_id: i64, from_message_id: i64) {
+    fn dispatch_load_messages(&self, chat_id: i64, topic_id: Option<i32>) {
+        self.dispatched_messages
+            .borrow_mut()
+            .push((chat_id, topic_id));
+    }
+
+    fn dispatch_load_older_messages(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        from_message_id: i64,
+    ) {
         self.dispatched_older_messages
             .borrow_mut()
-            .push((chat_id, from_message_id));
+            .push((chat_id, topic_id, from_message_id));
     }
 
     fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>) {
@@ -267,8 +306,10 @@ impl TaskDispatcher for RecordingDispatcher {
             .push((chat_id, last_message_id));
     }
 
-    fn dispatch_prefetch_messages(&self, chat_id: i64) {
-        self.dispatched_prefetches.borrow_mut().push(chat_id);
+    fn dispatch_prefetch_messages(&self, chat_id: i64, topic_id: Option<i32>) {
+        self.dispatched_prefetches
+            .borrow_mut()
+            .push((chat_id, topic_id));
     }
 
     fn dispatch_delete_message(&self, chat_id: i64, message_id: i64) {

@@ -237,6 +237,7 @@ fn maybe_load_older_messages<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>
     };
 
     *ctx.older_messages_in_flight = true;
+    let topic_id = ctx.state.open_chat().topic_id();
     ctx.dispatcher
-        .dispatch_load_older_messages(chat_id, from_message_id);
+        .dispatch_load_older_messages(chat_id, topic_id, from_message_id);
 }

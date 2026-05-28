@@ -33,9 +33,17 @@ impl StubTaskDispatcher {
 impl TaskDispatcher for StubTaskDispatcher {
     fn dispatch_chat_list(&self, _force: bool, _limit: usize) {}
 
-    fn dispatch_load_messages(&self, _chat_id: i64) {}
+    fn dispatch_load_forum_topics(&self, _chat_id: i64) {}
 
-    fn dispatch_load_older_messages(&self, _chat_id: i64, _from_message_id: i64) {}
+    fn dispatch_load_messages(&self, _chat_id: i64, _topic_id: Option<i32>) {}
+
+    fn dispatch_load_older_messages(
+        &self,
+        _chat_id: i64,
+        _topic_id: Option<i32>,
+        _from_message_id: i64,
+    ) {
+    }
 
     fn dispatch_send_message(
         &self,
@@ -55,7 +63,7 @@ impl TaskDispatcher for StubTaskDispatcher {
 
     fn dispatch_mark_chat_as_read(&self, _chat_id: i64, _last_message_id: i64) {}
 
-    fn dispatch_prefetch_messages(&self, _chat_id: i64) {}
+    fn dispatch_prefetch_messages(&self, _chat_id: i64, _topic_id: Option<i32>) {}
 
     fn dispatch_delete_message(&self, _chat_id: i64, _message_id: i64) {}
 

@@ -18,6 +18,7 @@ pub(super) fn dispatch_load_messages<M: MessagesSource + Send + Sync + 'static>(
     source: &Arc<M>,
     tx: &Sender<BackgroundTaskResult>,
     chat_id: i64,
+    topic_id: Option<i32>,
 ) {
     let source = Arc::clone(source);
     let tx = tx.clone();
@@ -26,8 +27,12 @@ pub(super) fn dispatch_load_messages<M: MessagesSource + Send + Sync + 'static>(
     let spawn_result = std::thread::Builder::new()
         .name("rtg-bg-messages".into())
         .spawn(move || {
-            tracing::debug!(chat_id, "background: fetching messages");
-            let result = load_messages(source.as_ref(), LoadMessagesQuery::new(chat_id))
+            tracing::debug!(chat_id, ?topic_id, "background: fetching messages");
+            let query = match topic_id {
+                Some(tid) => LoadMessagesQuery::for_topic(chat_id, tid),
+                None => LoadMessagesQuery::new(chat_id),
+            };
+            let result = load_messages(source.as_ref(), query)
                 .map(|output| output.messages)
                 .map_err(|error| {
                     tracing::warn!(chat_id, error = ?error, "background: messages fetch failed");
@@ -50,6 +55,7 @@ pub(super) fn dispatch_load_older_messages<M: MessagesSource + Send + Sync + 'st
     source: &Arc<M>,
     tx: &Sender<BackgroundTaskResult>,
     chat_id: i64,
+    topic_id: Option<i32>,
     from_message_id: i64,
 ) {
     let source = Arc::clone(source);
@@ -61,18 +67,20 @@ pub(super) fn dispatch_load_older_messages<M: MessagesSource + Send + Sync + 'st
         .spawn(move || {
             tracing::debug!(
                 chat_id,
+                ?topic_id,
                 from_message_id,
                 "background: fetching older messages"
             );
-            let result = load_messages(
-                source.as_ref(),
-                LoadMessagesQuery::older_than(chat_id, from_message_id),
-            )
-            .map(|output| output.messages)
-            .map_err(|error| {
-                tracing::warn!(chat_id, error = ?error, "background: older messages fetch failed");
-                BackgroundError::new(map_load_messages_error(&error))
-            });
+            let query = match topic_id {
+                Some(tid) => LoadMessagesQuery::older_than_in_topic(chat_id, tid, from_message_id),
+                None => LoadMessagesQuery::older_than(chat_id, from_message_id),
+            };
+            let result = load_messages(source.as_ref(), query)
+                .map(|output| output.messages)
+                .map_err(|error| {
+                    tracing::warn!(chat_id, error = ?error, "background: older messages fetch failed");
+                    BackgroundError::new(map_load_messages_error(&error))
+                });
 
             let _ = tx.send(BackgroundTaskResult::OlderMessagesLoaded { chat_id, result });
         });
@@ -192,6 +200,7 @@ pub(super) fn dispatch_prefetch_messages<M: MessagesSource + Send + Sync + 'stat
     source: &Arc<M>,
     tx: &Sender<BackgroundTaskResult>,
     chat_id: i64,
+    topic_id: Option<i32>,
 ) {
     let source = Arc::clone(source);
     let tx = tx.clone();
@@ -200,8 +209,12 @@ pub(super) fn dispatch_prefetch_messages<M: MessagesSource + Send + Sync + 'stat
     let spawn_result = std::thread::Builder::new()
         .name("rtg-bg-prefetch".into())
         .spawn(move || {
-            tracing::debug!(chat_id, "background: prefetching messages");
-            let result = load_messages(source.as_ref(), LoadMessagesQuery::new(chat_id))
+            tracing::debug!(chat_id, ?topic_id, "background: prefetching messages");
+            let query = match topic_id {
+                Some(tid) => LoadMessagesQuery::for_topic(chat_id, tid),
+                None => LoadMessagesQuery::new(chat_id),
+            };
+            let result = load_messages(source.as_ref(), query)
                 .map(|output| output.messages)
                 .map_err(|error| {
                     tracing::warn!(chat_id, error = ?error, "background: prefetch failed");
