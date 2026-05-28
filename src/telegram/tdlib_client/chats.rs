@@ -72,6 +72,40 @@ impl TdLibClient {
         })
     }
 
+    /// Gets the first page of forum topics for a forum supergroup chat.
+    ///
+    /// Up to `limit` topics, ordered by TDLib's `order` (highest first).
+    /// Pagination via `next_offset_*` fields is intentionally not exposed —
+    /// callers are expected to request a large enough page (v1: 100).
+    pub fn get_forum_topics(
+        &self,
+        chat_id: i64,
+        limit: i32,
+    ) -> Result<Vec<tdlib_rs::types::ForumTopic>, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let topics = tdlib_rs::functions::get_forum_topics(
+                chat_id,
+                String::new(), // query (empty = all topics)
+                0,             // offset_date
+                0,             // offset_message_id
+                0,             // offset_forum_topic_id
+                limit,
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })?;
+
+            match topics {
+                tdlib_rs::enums::ForumTopics::ForumTopics(t) => Ok(t.topics),
+            }
+        })
+    }
+
     /// Gets full chat information by ID.
     pub fn get_chat(&self, chat_id: i64) -> Result<tdlib_rs::types::Chat, TdLibError> {
         let client_id = self.client_id;
@@ -195,16 +229,26 @@ impl TdLibClient {
     /// The chat should be opened via [`open_chat`](Self::open_chat) before
     /// calling this method for `force_read: false` to work correctly.
     ///
-    /// Uses `MessageSource::ChatHistory` as the source since messages
-    /// are viewed from chat history in the TUI.
-    pub fn view_messages(&self, chat_id: i64, message_ids: Vec<i64>) -> Result<(), TdLibError> {
+    /// When `topic_id` is `None`, uses `MessageSource::ChatHistory`; for
+    /// forum topics, uses `MessageSource::ForumTopicHistory`.
+    pub fn view_messages(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        message_ids: Vec<i64>,
+    ) -> Result<(), TdLibError> {
         let client_id = self.client_id;
+        let source = if topic_id.is_some() {
+            tdlib_rs::enums::MessageSource::ForumTopicHistory
+        } else {
+            tdlib_rs::enums::MessageSource::ChatHistory
+        };
 
         self.rt.block_on(async {
             tdlib_rs::functions::view_messages(
                 chat_id,
                 message_ids,
-                Some(tdlib_rs::enums::MessageSource::ChatHistory),
+                Some(source),
                 false, // force_read: false — rely on proper openChat/closeChat lifecycle
                 client_id,
             )

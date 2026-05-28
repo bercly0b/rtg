@@ -104,13 +104,17 @@ impl TdLibAuthBackend {
     }
 
     /// Marks the given messages as viewed/read in a chat.
+    ///
+    /// When `topic_id` is `Some`, TDLib is told the messages were viewed
+    /// from a forum topic history rather than the plain chat history.
     pub fn view_messages(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         message_ids: Vec<i64>,
     ) -> Result<(), MessagesSourceError> {
         self.client
-            .view_messages(chat_id, message_ids)
+            .view_messages(chat_id, topic_id, message_ids)
             .map_err(map_messages_error)
     }
 
@@ -194,18 +198,24 @@ impl TdLibAuthBackend {
         Ok(messages)
     }
 
-    /// Sends a text message to a chat.
+    /// Sends a text message to a chat or forum topic.
     pub fn send_message(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         text: &str,
         reply_to_message_id: Option<i64>,
     ) -> Result<(), SendMessageSourceError> {
         self.client
-            .send_message(chat_id, text, reply_to_message_id)
+            .send_message(chat_id, topic_id, text, reply_to_message_id)
             .map_err(map_send_message_error)?;
 
-        tracing::debug!(chat_id, text_len = text.len(), "Message sent via TDLib");
+        tracing::debug!(
+            chat_id,
+            topic_id = ?topic_id,
+            text_len = text.len(),
+            "Message sent via TDLib"
+        );
         Ok(())
     }
 
@@ -228,19 +238,26 @@ impl TdLibAuthBackend {
         Ok(())
     }
 
-    /// Sends a voice note to a chat.
+    /// Sends a voice note to a chat or forum topic.
     pub fn send_voice_note(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         file_path: &str,
         duration: i32,
         waveform: &str,
     ) -> Result<(), SendMessageSourceError> {
         self.client
-            .send_voice_note(chat_id, file_path, duration, waveform)
+            .send_voice_note(chat_id, topic_id, file_path, duration, waveform)
             .map_err(map_send_message_error)?;
 
-        tracing::debug!(chat_id, file_path, duration, "Voice note sent via TDLib");
+        tracing::debug!(
+            chat_id,
+            topic_id = ?topic_id,
+            file_path,
+            duration,
+            "Voice note sent via TDLib"
+        );
         Ok(())
     }
 
