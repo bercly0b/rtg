@@ -5,6 +5,7 @@
 
 mod chat;
 mod file_info;
+mod forum_topic;
 mod message;
 mod text_links;
 mod user;
@@ -15,6 +16,8 @@ mod user;
 pub use chat::{map_chat_to_summary, map_chat_type};
 #[allow(unused_imports)]
 pub use file_info::extract_file_info;
+#[allow(unused_imports)]
+pub use forum_topic::map_forum_topic_to_summary;
 #[allow(unused_imports)]
 pub use message::{
     extract_forward_info, extract_message_media, extract_message_preview, extract_message_text,

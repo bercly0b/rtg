@@ -1,5 +1,6 @@
 mod chat;
 mod file_info;
+mod forum_topic;
 mod message;
 mod text_links;
 mod user;

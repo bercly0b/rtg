@@ -1,6 +1,7 @@
 use crate::usecases::edit_message::EditMessageSourceError;
 use crate::usecases::guided_auth::AuthBackendError;
 use crate::usecases::list_chats::ListChatsSourceError;
+use crate::usecases::list_forum_topics::ListForumTopicsSourceError;
 use crate::usecases::load_messages::MessagesSourceError;
 use crate::usecases::send_message::SendMessageSourceError;
 
@@ -145,6 +146,24 @@ pub(super) fn map_messages_error(error: TdLibError) -> MessagesSourceError {
     }
 
     MessagesSourceError::Unavailable
+}
+
+/// Maps TDLib error to ListForumTopicsSourceError.
+pub(super) fn map_forum_topics_error(error: TdLibError) -> ListForumTopicsSourceError {
+    let msg = match &error {
+        TdLibError::Request { message, .. } => message.to_ascii_lowercase(),
+        _ => String::new(),
+    };
+
+    if msg.contains("unauthorized") || msg.contains("auth") {
+        return ListForumTopicsSourceError::Unauthorized;
+    }
+
+    if msg.contains("chat") && msg.contains("not found") {
+        return ListForumTopicsSourceError::ChatNotFound;
+    }
+
+    ListForumTopicsSourceError::Unavailable
 }
 
 /// Maps TDLib error to SendMessageSourceError.

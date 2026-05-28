@@ -7,6 +7,7 @@ use crate::{
         chat_subtitle::{ChatInfoQuery, ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource},
         edit_message::{EditMessageSourceError, MessageEditor},
         list_chats::{ListChatsSource, ListChatsSourceError},
+        list_forum_topics::{ForumTopicsSource, ListForumTopicsSourceError},
         load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
         message_info::{MessageInfoError, MessageInfoQuery, MessageInfoSource},
         message_reactions::{
@@ -28,6 +29,20 @@ impl ListChatsSource for TelegramAdapter {
         match self.tdlib_backend.as_ref() {
             Some(backend) => backend.list_chat_summaries(limit, force),
             None => Err(ListChatsSourceError::Unavailable),
+        }
+    }
+}
+
+impl ForumTopicsSource for TelegramAdapter {
+    fn list_forum_topics(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<crate::domain::forum_topic::ForumTopicSummary>, ListForumTopicsSourceError>
+    {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.list_forum_topic_summaries(chat_id, limit),
+            None => Err(ListForumTopicsSourceError::Unavailable),
         }
     }
 }

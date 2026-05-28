@@ -11,6 +11,7 @@
 mod chat_details;
 mod chat_list;
 mod error_mapping;
+mod forum;
 mod message_details;
 mod messages;
 mod reactions;
