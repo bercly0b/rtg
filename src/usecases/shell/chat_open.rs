@@ -175,7 +175,9 @@ pub(super) fn mark_open_chat_messages_as_read<D: TaskDispatcher>(ctx: &mut Orche
     }
 
     let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
-    ctx.dispatcher.dispatch_mark_as_read(chat_id, message_ids);
+    let topic_id = ctx.state.open_chat().topic_id();
+    ctx.dispatcher
+        .dispatch_mark_as_read(chat_id, topic_id, message_ids);
 }
 
 /// Attempts to synchronously load cached messages for instant display.

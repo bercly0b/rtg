@@ -47,7 +47,13 @@ pub trait TaskDispatcher {
         topic_id: Option<i32>,
         from_message_id: i64,
     );
-    fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>);
+    fn dispatch_send_message(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        text: String,
+        reply_to_message_id: Option<i64>,
+    );
     fn dispatch_edit_message(&self, chat_id: i64, message_id: i64, text: String);
 
     /// Informs TDLib that the user has opened a chat (fire-and-forget).
@@ -56,8 +62,8 @@ pub trait TaskDispatcher {
     /// Informs TDLib that the user has closed a chat (fire-and-forget).
     fn dispatch_close_chat(&self, chat_id: i64);
 
-    /// Marks messages as read in a chat (fire-and-forget).
-    fn dispatch_mark_as_read(&self, chat_id: i64, message_ids: Vec<i64>);
+    /// Marks messages as read in a chat or forum topic (fire-and-forget).
+    fn dispatch_mark_as_read(&self, chat_id: i64, topic_id: Option<i32>, message_ids: Vec<i64>);
 
     /// Marks a chat as read from the chat list (fire-and-forget).
     ///
@@ -79,11 +85,11 @@ pub trait TaskDispatcher {
     /// Resolves the chat subtitle (user status, member count, etc.) in the background.
     fn dispatch_chat_subtitle(&self, query: ChatSubtitleQuery);
 
-    /// Sends a recorded voice note to a chat (fire-and-forget for now).
+    /// Sends a recorded voice note to a chat or forum topic.
     ///
     /// Extracts audio duration via ffprobe, generates a waveform stub,
     /// and calls the Telegram API.
-    fn dispatch_send_voice(&self, chat_id: i64, file_path: String);
+    fn dispatch_send_voice(&self, chat_id: i64, topic_id: Option<i32>, file_path: String);
 
     /// Triggers a file download in TDLib (fire-and-forget).
     ///
@@ -203,12 +209,19 @@ where
         );
     }
 
-    fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>) {
+    fn dispatch_send_message(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        text: String,
+        reply_to_message_id: Option<i64>,
+    ) {
         messaging::dispatch_send_message(
             &self.message_sender,
             &self.messages_source,
             &self.result_tx,
             chat_id,
+            topic_id,
             text,
             reply_to_message_id,
         );
@@ -232,8 +245,8 @@ where
         lifecycle::dispatch_close_chat(&self.lifecycle, chat_id);
     }
 
-    fn dispatch_mark_as_read(&self, chat_id: i64, message_ids: Vec<i64>) {
-        lifecycle::dispatch_mark_as_read(&self.lifecycle, chat_id, message_ids);
+    fn dispatch_mark_as_read(&self, chat_id: i64, topic_id: Option<i32>, message_ids: Vec<i64>) {
+        lifecycle::dispatch_mark_as_read(&self.lifecycle, chat_id, topic_id, message_ids);
     }
 
     fn dispatch_mark_chat_as_read(&self, chat_id: i64, last_message_id: i64) {
@@ -257,12 +270,13 @@ where
         lifecycle::dispatch_chat_subtitle(&self.subtitle_source, &self.result_tx, query);
     }
 
-    fn dispatch_send_voice(&self, chat_id: i64, file_path: String) {
+    fn dispatch_send_voice(&self, chat_id: i64, topic_id: Option<i32>, file_path: String) {
         messaging::dispatch_send_voice(
             &self.message_sender,
             &self.messages_source,
             &self.result_tx,
             chat_id,
+            topic_id,
             file_path,
         );
     }

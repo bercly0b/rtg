@@ -169,6 +169,51 @@ fn background_forum_topics_result_dropped_for_stale_chat() {
 }
 
 #[test]
+fn sending_a_text_message_inside_a_topic_carries_topic_id() {
+    let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_forum_topics(&mut o, 100, vec![topic(100, 7, "Backend", 1000)]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    // Enter the message input and type a message.
+    o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+        .unwrap();
+    for c in "hi".chars() {
+        o.handle_event(AppEvent::InputKey(KeyInput::new(c.to_string(), false)))
+            .unwrap();
+    }
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    assert_eq!(
+        o.dispatcher.last_send_full(),
+        Some((100, Some(7), "hi".to_owned(), None))
+    );
+}
+
+#[test]
+fn mark_as_read_in_a_topic_carries_topic_id() {
+    let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_forum_topics(&mut o, 100, vec![topic(100, 7, "Backend", 1000)]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    // Background load returns messages, which triggers mark-as-read.
+    inject_messages(&mut o, 100, vec![message(101, "first")]);
+
+    let last = o
+        .dispatcher
+        .last_mark_as_read_full()
+        .expect("mark dispatched");
+    assert_eq!(last.0, 100);
+    assert_eq!(last.1, Some(7));
+    assert_eq!(last.2, vec![101]);
+}
+
+#[test]
 fn opening_non_forum_chat_uses_default_flow() {
     let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
 

@@ -99,15 +99,15 @@ struct RecordingDispatcher {
     dispatched_chat_list_force: RefCell<Vec<bool>>,
     dispatched_messages: RefCell<Vec<(i64, Option<i32>)>>,
     dispatched_older_messages: RefCell<Vec<(i64, Option<i32>, i64)>>,
-    dispatched_sends: RefCell<Vec<(i64, String, Option<i64>)>>,
+    dispatched_sends: RefCell<Vec<(i64, Option<i32>, String, Option<i64>)>>,
     dispatched_open_chats: RefCell<Vec<i64>>,
     dispatched_close_chats: RefCell<Vec<i64>>,
-    dispatched_mark_as_read: RefCell<Vec<(i64, Vec<i64>)>>,
+    dispatched_mark_as_read: RefCell<Vec<(i64, Option<i32>, Vec<i64>)>>,
     dispatched_mark_chat_as_read: RefCell<Vec<(i64, i64)>>,
     dispatched_prefetches: RefCell<Vec<(i64, Option<i32>)>>,
     dispatched_forum_topics: RefCell<Vec<i64>>,
     dispatched_deletes: RefCell<Vec<(i64, i64)>>,
-    dispatched_voice_sends: RefCell<Vec<(i64, String)>>,
+    dispatched_voice_sends: RefCell<Vec<(i64, Option<i32>, String)>>,
     dispatched_subtitles: RefCell<Vec<ChatSubtitleQuery>>,
     dispatched_add_reactions: RefCell<Vec<(i64, i64, String)>>,
     dispatched_remove_reactions: RefCell<Vec<(i64, i64, String)>>,
@@ -183,6 +183,14 @@ impl RecordingDispatcher {
     }
 
     fn last_send(&self) -> Option<(i64, String, Option<i64>)> {
+        self.dispatched_sends
+            .borrow()
+            .last()
+            .map(|(c, _, t, r)| (*c, t.clone(), *r))
+    }
+
+    #[allow(dead_code)]
+    fn last_send_full(&self) -> Option<(i64, Option<i32>, String, Option<i64>)> {
         self.dispatched_sends.borrow().last().cloned()
     }
 
@@ -199,6 +207,14 @@ impl RecordingDispatcher {
     }
 
     fn last_mark_as_read(&self) -> Option<(i64, Vec<i64>)> {
+        self.dispatched_mark_as_read
+            .borrow()
+            .last()
+            .map(|(c, _, ids)| (*c, ids.clone()))
+    }
+
+    #[allow(dead_code)]
+    fn last_mark_as_read_full(&self) -> Option<(i64, Option<i32>, Vec<i64>)> {
         self.dispatched_mark_as_read.borrow().last().cloned()
     }
 
@@ -234,6 +250,14 @@ impl RecordingDispatcher {
     }
 
     fn last_voice_send(&self) -> Option<(i64, String)> {
+        self.dispatched_voice_sends
+            .borrow()
+            .last()
+            .map(|(c, _, f)| (*c, f.clone()))
+    }
+
+    #[allow(dead_code)]
+    fn last_voice_send_full(&self) -> Option<(i64, Option<i32>, String)> {
         self.dispatched_voice_sends.borrow().last().cloned()
     }
 
@@ -281,10 +305,16 @@ impl TaskDispatcher for RecordingDispatcher {
             .push((chat_id, topic_id, from_message_id));
     }
 
-    fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>) {
+    fn dispatch_send_message(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        text: String,
+        reply_to_message_id: Option<i64>,
+    ) {
         self.dispatched_sends
             .borrow_mut()
-            .push((chat_id, text, reply_to_message_id));
+            .push((chat_id, topic_id, text, reply_to_message_id));
     }
 
     fn dispatch_open_chat(&self, chat_id: i64) {
@@ -295,10 +325,10 @@ impl TaskDispatcher for RecordingDispatcher {
         self.dispatched_close_chats.borrow_mut().push(chat_id);
     }
 
-    fn dispatch_mark_as_read(&self, chat_id: i64, message_ids: Vec<i64>) {
+    fn dispatch_mark_as_read(&self, chat_id: i64, topic_id: Option<i32>, message_ids: Vec<i64>) {
         self.dispatched_mark_as_read
             .borrow_mut()
-            .push((chat_id, message_ids));
+            .push((chat_id, topic_id, message_ids));
     }
 
     fn dispatch_mark_chat_as_read(&self, chat_id: i64, last_message_id: i64) {
@@ -323,10 +353,10 @@ impl TaskDispatcher for RecordingDispatcher {
         self.dispatched_subtitles.borrow_mut().push(query);
     }
 
-    fn dispatch_send_voice(&self, chat_id: i64, file_path: String) {
+    fn dispatch_send_voice(&self, chat_id: i64, topic_id: Option<i32>, file_path: String) {
         self.dispatched_voice_sends
             .borrow_mut()
-            .push((chat_id, file_path));
+            .push((chat_id, topic_id, file_path));
     }
 
     fn dispatch_download_file(&self, _file_id: i32) {

@@ -48,6 +48,7 @@ impl TaskDispatcher for StubTaskDispatcher {
     fn dispatch_send_message(
         &self,
         _chat_id: i64,
+        _topic_id: Option<i32>,
         _text: String,
         _reply_to_message_id: Option<i64>,
     ) {
@@ -59,7 +60,8 @@ impl TaskDispatcher for StubTaskDispatcher {
 
     fn dispatch_close_chat(&self, _chat_id: i64) {}
 
-    fn dispatch_mark_as_read(&self, _chat_id: i64, _message_ids: Vec<i64>) {}
+    fn dispatch_mark_as_read(&self, _chat_id: i64, _topic_id: Option<i32>, _message_ids: Vec<i64>) {
+    }
 
     fn dispatch_mark_chat_as_read(&self, _chat_id: i64, _last_message_id: i64) {}
 
@@ -69,7 +71,7 @@ impl TaskDispatcher for StubTaskDispatcher {
 
     fn dispatch_chat_subtitle(&self, _query: ChatSubtitleQuery) {}
 
-    fn dispatch_send_voice(&self, _chat_id: i64, _file_path: String) {}
+    fn dispatch_send_voice(&self, _chat_id: i64, _topic_id: Option<i32>, _file_path: String) {}
 
     fn dispatch_download_file(&self, _file_id: i32) {}
 

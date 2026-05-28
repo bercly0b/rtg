@@ -79,11 +79,12 @@ impl MessageSender for TelegramAdapter {
     fn send_message(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         text: &str,
         reply_to_message_id: Option<i64>,
     ) -> Result<(), SendMessageSourceError> {
         match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.send_message(chat_id, None, text, reply_to_message_id),
+            Some(backend) => backend.send_message(chat_id, topic_id, text, reply_to_message_id),
             None => Err(SendMessageSourceError::Unavailable),
         }
     }
@@ -107,12 +108,15 @@ impl VoiceNoteSender for TelegramAdapter {
     fn send_voice_note(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         file_path: &str,
         duration: i32,
         waveform: &str,
     ) -> Result<(), SendMessageSourceError> {
         match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.send_voice_note(chat_id, None, file_path, duration, waveform),
+            Some(backend) => {
+                backend.send_voice_note(chat_id, topic_id, file_path, duration, waveform)
+            }
             None => Err(SendMessageSourceError::Unauthorized),
         }
     }
@@ -156,11 +160,12 @@ impl ChatReadMarker for TelegramAdapter {
     fn mark_messages_read(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         message_ids: Vec<i64>,
     ) -> Result<(), ChatLifecycleError> {
         match self.tdlib_backend.as_ref() {
             Some(backend) => backend
-                .view_messages(chat_id, None, message_ids)
+                .view_messages(chat_id, topic_id, message_ids)
                 .map_err(|e| {
                     tracing::debug!(chat_id, error = ?e, "view_messages mapped to lifecycle error");
                     ChatLifecycleError::Unavailable

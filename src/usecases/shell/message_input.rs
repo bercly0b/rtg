@@ -96,6 +96,7 @@ fn try_send_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
         crate::domain::message::MessageMedia::None,
         pending_reply_info,
     );
+    let topic_id = ctx.state.open_chat().topic_id();
     ctx.dispatcher
-        .dispatch_send_message(chat_id, text.clone(), reply_to_message_id);
+        .dispatch_send_message(chat_id, topic_id, text.clone(), reply_to_message_id);
 }

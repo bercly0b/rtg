@@ -6,10 +6,12 @@
 /// Maximum allowed message length in characters (Telegram protocol limit).
 pub const MAX_MESSAGE_LENGTH: usize = 4096;
 
-/// Command to send a message to a specific chat.
+/// Command to send a message to a specific chat or forum topic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendMessageCommand {
     pub chat_id: i64,
+    /// If set, the message is sent into the given forum topic.
+    pub topic_id: Option<i32>,
     pub text: String,
     /// If set, the message is a reply to this message ID.
     pub reply_to_message_id: Option<i64>,
@@ -43,18 +45,11 @@ pub enum SendMessageError {
 
 /// Trait for sending messages to chats.
 pub trait MessageSender {
-    /// Sends a text message to the specified chat.
-    ///
-    /// # Arguments
-    /// * `chat_id` - The ID of the chat to send the message to
-    /// * `text` - The message text to send
-    /// * `reply_to_message_id` - Optional message ID to reply to
-    ///
-    /// # Errors
-    /// Returns `SendMessageSourceError` if the message could not be sent.
+    /// Sends a text message to the specified chat or forum topic.
     fn send_message(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         text: &str,
         reply_to_message_id: Option<i64>,
     ) -> Result<(), SendMessageSourceError>;
@@ -64,10 +59,11 @@ impl<T: MessageSender + ?Sized> MessageSender for &T {
     fn send_message(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         text: &str,
         reply_to_message_id: Option<i64>,
     ) -> Result<(), SendMessageSourceError> {
-        (*self).send_message(chat_id, text, reply_to_message_id)
+        (*self).send_message(chat_id, topic_id, text, reply_to_message_id)
     }
 }
 
@@ -75,10 +71,11 @@ impl<T: MessageSender + ?Sized> MessageSender for std::sync::Arc<T> {
     fn send_message(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         text: &str,
         reply_to_message_id: Option<i64>,
     ) -> Result<(), SendMessageSourceError> {
-        (**self).send_message(chat_id, text, reply_to_message_id)
+        (**self).send_message(chat_id, topic_id, text, reply_to_message_id)
     }
 }
 
@@ -109,7 +106,12 @@ pub fn send_message(
     }
 
     sender
-        .send_message(command.chat_id, text, command.reply_to_message_id)
+        .send_message(
+            command.chat_id,
+            command.topic_id,
+            text,
+            command.reply_to_message_id,
+        )
         .map_err(map_source_error)
 }
 
@@ -146,6 +148,7 @@ mod tests {
         fn send_message(
             &self,
             chat_id: i64,
+            _topic_id: Option<i32>,
             text: &str,
             _reply_to_message_id: Option<i64>,
         ) -> Result<(), SendMessageSourceError> {
@@ -163,6 +166,7 @@ mod tests {
             &sender,
             SendMessageCommand {
                 chat_id: 1,
+                topic_id: None,
                 text: String::new(),
                 reply_to_message_id: None,
             },
@@ -181,6 +185,7 @@ mod tests {
             &sender,
             SendMessageCommand {
                 chat_id: 1,
+                topic_id: None,
                 text: too_long,
                 reply_to_message_id: None,
             },
@@ -199,6 +204,7 @@ mod tests {
             &sender,
             SendMessageCommand {
                 chat_id: 1,
+                topic_id: None,
                 text: exact,
                 reply_to_message_id: None,
             },
@@ -217,6 +223,7 @@ mod tests {
             &sender,
             SendMessageCommand {
                 chat_id: 1,
+                topic_id: None,
                 text,
                 reply_to_message_id: None,
             },
@@ -233,6 +240,7 @@ mod tests {
             &sender,
             SendMessageCommand {
                 chat_id: 1,
+                topic_id: None,
                 text: "   \n\t  ".to_owned(),
                 reply_to_message_id: None,
             },
@@ -249,6 +257,7 @@ mod tests {
             &sender,
             SendMessageCommand {
                 chat_id: 42,
+                topic_id: None,
                 text: "  hello world  ".to_owned(),
                 reply_to_message_id: None,
             },
@@ -268,6 +277,7 @@ mod tests {
             &sender,
             SendMessageCommand {
                 chat_id: 123,
+                topic_id: None,
                 text: "test".to_owned(),
                 reply_to_message_id: None,
             },
@@ -284,6 +294,7 @@ mod tests {
             &sender,
             SendMessageCommand {
                 chat_id: 1,
+                topic_id: None,
                 text: "hello".to_owned(),
                 reply_to_message_id: None,
             },
@@ -300,6 +311,7 @@ mod tests {
             &sender,
             SendMessageCommand {
                 chat_id: 1,
+                topic_id: None,
                 text: "hello".to_owned(),
                 reply_to_message_id: None,
             },
@@ -316,6 +328,7 @@ mod tests {
             &sender,
             SendMessageCommand {
                 chat_id: 1,
+                topic_id: None,
                 text: "hello".to_owned(),
                 reply_to_message_id: None,
             },
@@ -332,6 +345,7 @@ mod tests {
             &sender,
             SendMessageCommand {
                 chat_id: 1,
+                topic_id: None,
                 text: "hello".to_owned(),
                 reply_to_message_id: None,
             },

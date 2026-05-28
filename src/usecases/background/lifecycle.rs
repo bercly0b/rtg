@@ -139,6 +139,7 @@ pub(super) fn dispatch_close_chat<L: ChatLifecycle + Send + Sync + 'static>(
 pub(super) fn dispatch_mark_as_read<L: ChatReadMarker + Send + Sync + 'static>(
     lifecycle: &Arc<L>,
     chat_id: i64,
+    topic_id: Option<i32>,
     message_ids: Vec<i64>,
 ) {
     let lifecycle = Arc::clone(lifecycle);
@@ -148,10 +149,11 @@ pub(super) fn dispatch_mark_as_read<L: ChatReadMarker + Send + Sync + 'static>(
         .spawn(move || {
             tracing::debug!(
                 chat_id,
+                ?topic_id,
                 message_count = message_ids.len(),
                 "background: marking messages as read"
             );
-            if let Err(e) = lifecycle.mark_messages_read(chat_id, message_ids) {
+            if let Err(e) = lifecycle.mark_messages_read(chat_id, topic_id, message_ids) {
                 tracing::warn!(chat_id, error = ?e, "background: viewMessages failed");
             }
         })
@@ -177,7 +179,7 @@ pub(super) fn dispatch_mark_chat_as_read<
                 tracing::warn!(chat_id, error = ?e, "background: openChat failed during mark-chat-read");
                 return;
             }
-            if let Err(e) = lifecycle.mark_messages_read(chat_id, vec![last_message_id]) {
+            if let Err(e) = lifecycle.mark_messages_read(chat_id, None, vec![last_message_id]) {
                 tracing::warn!(chat_id, error = ?e, "background: viewMessages failed during mark-chat-read");
             }
             if let Err(e) = lifecycle.close_chat(chat_id) {
