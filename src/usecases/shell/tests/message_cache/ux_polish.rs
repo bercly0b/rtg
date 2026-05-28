@@ -135,6 +135,7 @@ fn message_sent_refresh_clears_refreshing_and_sets_live() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessageSentRefreshCompleted {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![message(1, "Hello"), message(2, "New msg")]),
         },
     ))
@@ -178,6 +179,7 @@ fn background_load_error_clears_refreshing() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Err(BackgroundError::new("MESSAGES_UNAVAILABLE")),
         },
     ))

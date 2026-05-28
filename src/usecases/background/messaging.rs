@@ -39,13 +39,18 @@ pub(super) fn dispatch_load_messages<M: MessagesSource + Send + Sync + 'static>(
                     BackgroundError::new(map_load_messages_error(&error))
                 });
 
-            let _ = tx.send(BackgroundTaskResult::MessagesLoaded { chat_id, result });
+            let _ = tx.send(BackgroundTaskResult::MessagesLoaded {
+                chat_id,
+                topic_id,
+                result,
+            });
         });
 
     if let Err(error) = spawn_result {
         tracing::error!(error = %error, "failed to spawn messages background thread");
         let _ = tx_fallback.send(BackgroundTaskResult::MessagesLoaded {
             chat_id,
+            topic_id,
             result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
         });
     }
@@ -82,13 +87,18 @@ pub(super) fn dispatch_load_older_messages<M: MessagesSource + Send + Sync + 'st
                     BackgroundError::new(map_load_messages_error(&error))
                 });
 
-            let _ = tx.send(BackgroundTaskResult::OlderMessagesLoaded { chat_id, result });
+            let _ = tx.send(BackgroundTaskResult::OlderMessagesLoaded {
+                chat_id,
+                topic_id,
+                result,
+            });
         });
 
     if let Err(error) = spawn_result {
         tracing::error!(error = %error, "failed to spawn older messages background thread");
         let _ = tx_fallback.send(BackgroundTaskResult::OlderMessagesLoaded {
             chat_id,
+            topic_id,
             result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
         });
     }
@@ -319,6 +329,7 @@ fn refresh_messages_after_send<M: MessagesSource>(
 
     let _ = tx.send(BackgroundTaskResult::MessageSentRefreshCompleted {
         chat_id,
+        topic_id,
         result: refresh_result,
     });
 }

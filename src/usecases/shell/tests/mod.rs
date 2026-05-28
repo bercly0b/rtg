@@ -488,11 +488,32 @@ fn topic(
 }
 
 /// Helper: inject messages as if a background load completed for given chat.
+///
+/// Defaults `topic_id` to the currently open topic for this chat (if any) so
+/// that tests which open a forum topic and then inject can stay terse. Use
+/// [`inject_topic_messages`] when you need to target a specific topic
+/// explicitly (e.g. to simulate a stale result from another topic).
 fn inject_messages(orchestrator: &mut TestOrchestrator, chat_id: i64, messages: Vec<Message>) {
+    let topic_id = if orchestrator.state().open_chat().chat_id() == Some(chat_id) {
+        orchestrator.state().open_chat().topic_id()
+    } else {
+        None
+    };
+    inject_topic_messages(orchestrator, chat_id, topic_id, messages);
+}
+
+/// Helper: inject a topic-scoped (or chat-scoped) messages background result.
+fn inject_topic_messages(
+    orchestrator: &mut TestOrchestrator,
+    chat_id: i64,
+    topic_id: Option<i32>,
+    messages: Vec<Message>,
+) {
     orchestrator
         .handle_event(AppEvent::BackgroundTaskCompleted(
             BackgroundTaskResult::MessagesLoaded {
                 chat_id,
+                topic_id,
                 result: Ok(messages),
             },
         ))

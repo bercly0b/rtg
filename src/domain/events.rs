@@ -41,9 +41,12 @@ pub enum BackgroundTaskResult {
         chat_id: i64,
         result: Result<Vec<super::forum_topic::ForumTopicSummary>, BackgroundError>,
     },
-    /// Messages fetch for a specific chat completed.
+    /// Messages fetch for a specific chat completed. `topic_id` mirrors the
+    /// request scope so handlers can drop results from a topic the user is
+    /// no longer viewing.
     MessagesLoaded {
         chat_id: i64,
+        topic_id: Option<i32>,
         result: Result<Vec<super::message::Message>, BackgroundError>,
     },
     /// Message send operation completed; `chat_id` identifies the target chat,
@@ -56,6 +59,7 @@ pub enum BackgroundTaskResult {
     /// Messages refresh after a successful send completed.
     MessageSentRefreshCompleted {
         chat_id: i64,
+        topic_id: Option<i32>,
         result: Result<Vec<super::message::Message>, BackgroundError>,
     },
     /// Background prefetch of messages for a chat the user is hovering.
@@ -67,6 +71,7 @@ pub enum BackgroundTaskResult {
     /// Older messages loaded for scroll-up pagination.
     OlderMessagesLoaded {
         chat_id: i64,
+        topic_id: Option<i32>,
         result: Result<Vec<super::message::Message>, BackgroundError>,
     },
     /// Message edit operation completed.

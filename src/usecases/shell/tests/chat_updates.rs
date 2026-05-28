@@ -97,6 +97,7 @@ fn messages_load_error_does_not_dispatch_mark_as_read() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Err(BackgroundError::new("MESSAGES_UNAVAILABLE")),
         },
     ))

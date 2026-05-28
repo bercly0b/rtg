@@ -270,3 +270,152 @@ fn opening_non_forum_chat_uses_default_flow() {
     assert!(o.state().open_chat().topic_id().is_none());
     assert_eq!(o.dispatcher.last_load_messages(), Some((1, None)));
 }
+
+// ── Race-condition regressions: stale background results from a topic the
+// user already left must not bleed into the currently displayed topic. All
+// three result variants share `chat_id` across all topics of the same forum,
+// so the per-topic guard is the only thing keeping them isolated.
+
+#[test]
+fn stale_messages_from_previous_topic_are_discarded() {
+    let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_forum_topics(
+        &mut o,
+        100,
+        vec![topic(100, 1, "Alpha", 1000), topic(100, 2, "Beta", 500)],
+    );
+
+    // Open topic 1, then return to the topic list and open topic 2.
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    assert_eq!(o.state().open_chat().topic_id(), Some(1));
+    o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    assert_eq!(o.state().open_chat().topic_id(), Some(2));
+
+    // Topic 1's load result arrives late, after the user moved to topic 2.
+    inject_topic_messages(
+        &mut o,
+        100,
+        Some(1),
+        vec![message(11, "stale from topic 1")],
+    );
+
+    // Topic 2 hasn't received its own data yet — it must stay Loading rather
+    // than render topic 1's stale messages.
+    assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
+}
+
+#[test]
+fn stale_older_messages_from_previous_topic_are_discarded() {
+    use crate::domain::events::BackgroundTaskResult;
+
+    let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_forum_topics(
+        &mut o,
+        100,
+        vec![topic(100, 1, "Alpha", 1000), topic(100, 2, "Beta", 500)],
+    );
+
+    // Open topic 1, populate it, then move to topic 2 and populate it too.
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_topic_messages(&mut o, 100, Some(1), vec![message(10, "old t1")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_topic_messages(&mut o, 100, Some(2), vec![message(20, "current t2")]);
+    let messages_before = o.state().open_chat().messages().to_vec();
+
+    // Topic 1's late OlderMessagesLoaded result arrives.
+    o.handle_event(AppEvent::BackgroundTaskCompleted(
+        BackgroundTaskResult::OlderMessagesLoaded {
+            chat_id: 100,
+            topic_id: Some(1),
+            result: Ok(vec![message(1, "stale older from topic 1")]),
+        },
+    ))
+    .unwrap();
+
+    // Topic 2's messages must be untouched.
+    assert_eq!(o.state().open_chat().messages().to_vec(), messages_before);
+}
+
+#[test]
+fn stale_post_send_refresh_from_previous_topic_is_discarded() {
+    use crate::domain::events::BackgroundTaskResult;
+
+    let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_forum_topics(
+        &mut o,
+        100,
+        vec![topic(100, 1, "Alpha", 1000), topic(100, 2, "Beta", 500)],
+    );
+
+    // Open topic 1, populate it, then move to topic 2 and populate it.
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_topic_messages(&mut o, 100, Some(1), vec![message(10, "old t1")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_topic_messages(&mut o, 100, Some(2), vec![message(20, "current t2")]);
+    let messages_before = o.state().open_chat().messages().to_vec();
+
+    // Refresh-after-send for topic 1 arrives late.
+    o.handle_event(AppEvent::BackgroundTaskCompleted(
+        BackgroundTaskResult::MessageSentRefreshCompleted {
+            chat_id: 100,
+            topic_id: Some(1),
+            result: Ok(vec![message(11, "stale refresh from topic 1")]),
+        },
+    ))
+    .unwrap();
+
+    // Topic 2 must keep its own messages.
+    assert_eq!(o.state().open_chat().messages().to_vec(), messages_before);
+}
+
+#[test]
+fn chat_scoped_result_is_discarded_when_topic_is_open() {
+    use crate::domain::events::BackgroundTaskResult;
+
+    let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_forum_topics(&mut o, 100, vec![topic(100, 7, "Backend", 1000)]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_topic_messages(&mut o, 100, Some(7), vec![message(70, "topic 7 only")]);
+    let messages_before = o.state().open_chat().messages().to_vec();
+
+    // A chat-scoped (topic_id=None) result arrives — could be from a previous
+    // non-forum view of the same chat or a stray background path. The handler
+    // must reject it.
+    o.handle_event(AppEvent::BackgroundTaskCompleted(
+        BackgroundTaskResult::MessagesLoaded {
+            chat_id: 100,
+            topic_id: None,
+            result: Ok(vec![message(99, "chat-wide stale")]),
+        },
+    ))
+    .unwrap();
+
+    assert_eq!(o.state().open_chat().messages().to_vec(), messages_before);
+}

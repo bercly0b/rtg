@@ -216,6 +216,7 @@ fn message_sent_refresh_updates_messages() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessageSentRefreshCompleted {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![message(1, "Hello"), message(2, "Hi")]),
         },
     ))

@@ -35,6 +35,7 @@ fn stale_messages_result_still_cached() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![message(10, "cached even though stale")]),
         },
     ))
@@ -120,6 +121,7 @@ fn cache_updated_on_message_sent_refresh() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessageSentRefreshCompleted {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![message(1, "Hello"), message(2, "My new message")]),
         },
     ))
@@ -142,6 +144,7 @@ fn cache_not_populated_on_load_error() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Err(BackgroundError::new("NETWORK_ERROR")),
         },
     ))

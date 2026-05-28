@@ -91,19 +91,31 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 }
             }
         }
-        BackgroundTaskResult::MessagesLoaded { chat_id, result } => {
+        BackgroundTaskResult::MessagesLoaded {
+            chat_id,
+            topic_id,
+            result,
+        } => {
             *ctx.messages_refresh_in_flight = false;
 
-            // Always cache successful results, even if the user navigated away.
-            if let Ok(ref messages) = result {
-                ctx.state
-                    .message_cache_mut()
-                    .put(chat_id, messages.clone(), true);
+            // Cache only chat-scoped results — the per-chat MessageCache cannot
+            // express topic scope, so writing topic history under chat_id would
+            // poison reads for the parent chat.
+            if topic_id.is_none() {
+                if let Ok(ref messages) = result {
+                    ctx.state
+                        .message_cache_mut()
+                        .put(chat_id, messages.clone(), true);
+                }
             }
 
-            if ctx.state.open_chat().chat_id() != Some(chat_id) {
+            if ctx.state.open_chat().chat_id() != Some(chat_id)
+                || ctx.state.open_chat().topic_id() != topic_id
+            {
                 tracing::debug!(
                     chat_id,
+                    ?topic_id,
+                    open_topic_id = ?ctx.state.open_chat().topic_id(),
                     "background: discarding stale messages result (user navigated away)"
                 );
                 return;
@@ -136,10 +148,16 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 }
             }
         }
-        BackgroundTaskResult::OlderMessagesLoaded { chat_id, result } => {
+        BackgroundTaskResult::OlderMessagesLoaded {
+            chat_id,
+            topic_id,
+            result,
+        } => {
             *ctx.older_messages_in_flight = false;
 
-            if ctx.state.open_chat().chat_id() != Some(chat_id) {
+            if ctx.state.open_chat().chat_id() != Some(chat_id)
+                || ctx.state.open_chat().topic_id() != topic_id
+            {
                 return;
             }
 
@@ -207,16 +225,26 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 ctx.state.set_notification("Edit failed");
             }
         },
-        BackgroundTaskResult::MessageSentRefreshCompleted { chat_id, result } => {
+        BackgroundTaskResult::MessageSentRefreshCompleted {
+            chat_id,
+            topic_id,
+            result,
+        } => {
             *ctx.messages_refresh_in_flight = false;
 
-            if let Ok(ref messages) = result {
-                ctx.state
-                    .message_cache_mut()
-                    .put(chat_id, messages.clone(), true);
+            // Same caching rule as MessagesLoaded — topic-scoped refresh results
+            // must not leak into the per-chat cache.
+            if topic_id.is_none() {
+                if let Ok(ref messages) = result {
+                    ctx.state
+                        .message_cache_mut()
+                        .put(chat_id, messages.clone(), true);
+                }
             }
 
-            if ctx.state.open_chat().chat_id() != Some(chat_id) {
+            if ctx.state.open_chat().chat_id() != Some(chat_id)
+                || ctx.state.open_chat().topic_id() != topic_id
+            {
                 return;
             }
 
