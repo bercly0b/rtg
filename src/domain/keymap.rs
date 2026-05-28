@@ -19,6 +19,7 @@ pub enum Action {
     SelectFirstTopic,
     OpenForumTopic,
     BackFromForum,
+    ReloadForumTopics,
     // Messages
     ScrollNextMessage,
     ScrollPreviousMessage,
@@ -57,6 +58,7 @@ impl Action {
             Self::SelectFirstTopic => "select_first_topic",
             Self::OpenForumTopic => "open_forum_topic",
             Self::BackFromForum => "back_from_forum",
+            Self::ReloadForumTopics => "reload_forum_topics",
             Self::ScrollNextMessage => "scroll_to_next_message",
             Self::ScrollPreviousMessage => "scroll_to_previous_message",
             Self::BackToChatList => "back_to_chat_list",
@@ -93,6 +95,7 @@ impl Action {
             "select_first_topic" => Some(Self::SelectFirstTopic),
             "open_forum_topic" => Some(Self::OpenForumTopic),
             "back_from_forum" => Some(Self::BackFromForum),
+            "reload_forum_topics" => Some(Self::ReloadForumTopics),
             "scroll_to_next_message" => Some(Self::ScrollNextMessage),
             "scroll_to_previous_message" => Some(Self::ScrollPreviousMessage),
             "back_to_chat_list" => Some(Self::BackToChatList),
@@ -495,6 +498,11 @@ fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding {
             pattern: KeyPattern::sequence(vec!["g", "g"]),
             action: Action::SelectFirstTopic,
+            context: KeyContext::ForumTopicList,
+        },
+        KeyBinding {
+            pattern: KeyPattern::single("R"),
+            action: Action::ReloadForumTopics,
             context: KeyContext::ForumTopicList,
         },
         // ── Messages ──
@@ -958,5 +966,14 @@ mod tests {
         assert!(entries.iter().any(|e| e.action_name == "select_next_topic"));
         assert!(entries.iter().any(|e| e.action_name == "open_forum_topic"));
         assert!(entries.iter().any(|e| e.action_name == "back_from_forum"));
+    }
+
+    #[test]
+    fn reload_forum_topics_resolves_in_forum_context() {
+        let mut km = Keymap::default();
+        assert_eq!(
+            km.resolve("R", false, KeyContext::ForumTopicList),
+            ResolveResult::Action(Action::ReloadForumTopics)
+        );
     }
 }

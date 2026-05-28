@@ -28,8 +28,7 @@ pub(super) fn enter_forum<D: TaskDispatcher>(
     *ctx.tdlib_opened_chat_id = Some(chat_id);
 
     ctx.state.enter_forum(chat_id, chat_title);
-    // dispatch_chat_list_action sets ActivePane::Messages before calling us;
-    // for forums we keep the left panel focused — it now renders topics.
+    // Forum chats keep the left pane active — it now renders topics.
     ctx.state.set_active_pane(ActivePane::ChatList);
     ctx.dispatcher.dispatch_load_forum_topics(chat_id);
 }
@@ -99,4 +98,17 @@ pub(super) fn back_to_topic_list<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
     tracing::debug!("returning from topic to topic list");
     ctx.state.open_chat_mut().clear();
     ctx.state.set_active_pane(ActivePane::ChatList);
+}
+
+/// Re-dispatches the topic list load and flips the panel back to Loading.
+///
+/// Bound to `R` in `KeyContext::ForumTopicList` so the user can recover from
+/// a transient load failure without leaving the forum.
+pub(super) fn reload_topics<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+    let Some(list) = ctx.state.forum_topic_list_mut() else {
+        return;
+    };
+    let chat_id = list.parent_chat_id();
+    list.set_loading();
+    ctx.dispatcher.dispatch_load_forum_topics(chat_id);
 }

@@ -83,6 +83,22 @@ impl TdLibCache {
         inner.supergroups.get(&supergroup_id).cloned()
     }
 
+    /// Finds the chat_id of the cached chat backed by this supergroup, if any.
+    ///
+    /// Used to refresh chat metadata in the UI when a supergroup property
+    /// (e.g. `is_forum`) toggles via `UpdateSupergroup`.
+    pub fn find_chat_id_by_supergroup_id(&self, supergroup_id: i64) -> Option<i64> {
+        let inner = self.inner.read().expect("cache read lock poisoned");
+        inner.chats.iter().find_map(|(id, chat)| {
+            if let tdlib_rs::enums::ChatType::Supergroup(sg) = &chat.r#type {
+                if sg.supergroup_id == supergroup_id {
+                    return Some(*id);
+                }
+            }
+            None
+        })
+    }
+
     /// Updates the last message and positions for a cached chat.
     ///
     /// If the chat is not in the cache, this is a no-op.

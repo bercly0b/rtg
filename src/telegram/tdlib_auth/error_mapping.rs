@@ -163,6 +163,17 @@ pub(super) fn map_forum_topics_error(error: TdLibError) -> ListForumTopicsSource
         return ListForumTopicsSourceError::ChatNotFound;
     }
 
+    // TDLib returns "The chat is not a forum" / "The supergroup must be a
+    // forum" / "CHANNEL_FORUM_MISSING" when our cached `is_forum` flag is
+    // stale. Surface this as a hard data error so the UI shows an error
+    // state instead of looping in Loading.
+    if msg.contains("not a forum")
+        || msg.contains("must be a forum")
+        || msg.contains("forum_missing")
+    {
+        return ListForumTopicsSourceError::InvalidData;
+    }
+
     ListForumTopicsSourceError::Unavailable
 }
 
@@ -199,4 +210,52 @@ pub(super) fn map_edit_message_error(error: TdLibError) -> EditMessageSourceErro
     }
 
     EditMessageSourceError::Unavailable
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(code: i32, message: &str) -> TdLibError {
+        TdLibError::Request {
+            code,
+            message: message.to_owned(),
+        }
+    }
+
+    #[test]
+    fn forum_topics_error_chat_not_found_is_mapped() {
+        let err = request(400, "Chat not found");
+        assert_eq!(
+            map_forum_topics_error(err),
+            ListForumTopicsSourceError::ChatNotFound
+        );
+    }
+
+    #[test]
+    fn forum_topics_error_not_a_forum_is_invalid_data() {
+        let err = request(400, "The chat is not a forum");
+        assert_eq!(
+            map_forum_topics_error(err),
+            ListForumTopicsSourceError::InvalidData
+        );
+    }
+
+    #[test]
+    fn forum_topics_error_must_be_a_forum_is_invalid_data() {
+        let err = request(400, "The supergroup must be a forum");
+        assert_eq!(
+            map_forum_topics_error(err),
+            ListForumTopicsSourceError::InvalidData
+        );
+    }
+
+    #[test]
+    fn forum_topics_error_unknown_falls_back_to_unavailable() {
+        let err = request(500, "Internal Server Error");
+        assert_eq!(
+            map_forum_topics_error(err),
+            ListForumTopicsSourceError::Unavailable
+        );
+    }
 }

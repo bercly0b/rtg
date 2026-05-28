@@ -27,6 +27,9 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
         return;
     }
 
+    // Non-forum chats focus the messages pane.
+    ctx.state.set_active_pane(ActivePane::Messages);
+
     // Cancel any in-flight prefetch — the user explicitly opened a chat.
     *ctx.prefetch_in_flight = None;
 

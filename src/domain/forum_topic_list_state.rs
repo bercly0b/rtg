@@ -94,6 +94,12 @@ impl ForumTopicListState {
         self.selected_index = None;
     }
 
+    pub fn set_loading(&mut self) {
+        self.ui_state = ForumTopicListUiState::Loading;
+        self.topics.clear();
+        self.selected_index = None;
+    }
+
     pub fn select_next(&mut self) {
         let Some(index) = self.selected_index else {
             return;

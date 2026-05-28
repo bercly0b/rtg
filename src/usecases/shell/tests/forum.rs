@@ -393,6 +393,25 @@ fn stale_post_send_refresh_from_previous_topic_is_discarded() {
 }
 
 #[test]
+fn reload_topics_redispatches_load_from_error_state() {
+    let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_forum_topics_error(&mut o, 100);
+
+    let list = o.state().forum_topic_list().unwrap();
+    assert_eq!(list.ui_state(), ForumTopicListUiState::Error);
+    let before = o.dispatcher.forum_topics_dispatch_count();
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
+        .unwrap();
+
+    let list = o.state().forum_topic_list().unwrap();
+    assert_eq!(list.ui_state(), ForumTopicListUiState::Loading);
+    assert_eq!(o.dispatcher.forum_topics_dispatch_count(), before + 1);
+}
+
+#[test]
 fn chat_scoped_result_is_discarded_when_topic_is_open() {
     use crate::domain::events::BackgroundTaskResult;
 

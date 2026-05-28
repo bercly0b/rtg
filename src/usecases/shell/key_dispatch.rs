@@ -42,7 +42,10 @@ pub(super) fn dispatch_chat_list_action<D: TaskDispatcher>(
         Action::ShowChatInfo => chat_list::show_chat_info_popup(ctx),
         Action::SearchChats => ctx.state.open_chat_search(),
         Action::OpenChat if ctx.state.chat_list().selected_chat().is_some() => {
-            ctx.state.set_active_pane(ActivePane::Messages);
+            // Pane management lives inside open_selected_chat — forum chats
+            // need the ChatList pane to stay active, regular chats switch to
+            // Messages. Setting it here first would briefly show the wrong
+            // pane for forum chats.
             chat_open::open_selected_chat(ctx);
             return Ok(true);
         }
@@ -80,10 +83,14 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
             ctx.state.open_chat_mut().select_last();
         }
         Action::BackToChatList => {
-            // If a forum topic is open, `h` returns to the topic list panel
-            // without closing the parent chat — we're still inside the forum.
-            if ctx.state.open_chat().topic_id().is_some() && ctx.state.forum_topic_list().is_some()
-            {
+            // A topic-open state implies an active forum_topic_list panel —
+            // they're installed and dropped together. If a topic is open, `h`
+            // returns to the topic list without closing the parent chat.
+            if ctx.state.open_chat().topic_id().is_some() {
+                debug_assert!(
+                    ctx.state.forum_topic_list().is_some(),
+                    "topic_id set without forum_topic_list panel — invariant broken"
+                );
                 forum::back_to_topic_list(ctx);
             } else {
                 chat_open::close_tdlib_chat(ctx);
@@ -274,6 +281,9 @@ pub(super) fn dispatch_forum_topic_list_action<D: TaskDispatcher>(
         }
         Action::BackFromForum => {
             forum::leave_forum(ctx);
+        }
+        Action::ReloadForumTopics => {
+            forum::reload_topics(ctx);
         }
         Action::Quit => {
             chat_open::close_tdlib_chat(ctx);

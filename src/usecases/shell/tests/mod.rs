@@ -454,6 +454,21 @@ fn inject_forum_topics(
         .unwrap();
 }
 
+/// Helper: inject a failed forum topics load (transient error).
+#[allow(dead_code)]
+fn inject_forum_topics_error(orchestrator: &mut TestOrchestrator, chat_id: i64) {
+    orchestrator
+        .handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::ForumTopicsLoaded {
+                chat_id,
+                result: Err(crate::domain::events::BackgroundError::new(
+                    "FORUM_TOPICS_UNAVAILABLE",
+                )),
+            },
+        ))
+        .unwrap();
+}
+
 /// Helper: build a ChatSummary that's a forum supergroup.
 #[allow(dead_code)]
 fn forum_chat(chat_id: i64, title: &str) -> ChatSummary {
