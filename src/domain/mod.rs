@@ -7,6 +7,8 @@ pub mod chat_search_state;
 pub mod chat_subtitle;
 pub mod command_popup_state;
 pub mod events;
+pub mod forum_topic;
+pub mod forum_topic_list_state;
 pub mod keymap;
 pub mod message;
 pub mod message_cache;
