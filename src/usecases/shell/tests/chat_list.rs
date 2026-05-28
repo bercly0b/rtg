@@ -382,6 +382,7 @@ fn chat_with_unread(
         outgoing_status: OutgoingReadStatus::default(),
         last_message_id: last_msg_id,
         unread_reaction_count: 0,
+        is_forum: false,
     }
 }
 

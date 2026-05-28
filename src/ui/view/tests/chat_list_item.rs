@@ -185,6 +185,7 @@ fn channel_does_not_render_sender_prefix() {
         outgoing_status: OutgoingReadStatus::default(),
         last_message_id: None,
         unread_reaction_count: 0,
+        is_forum: false,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, TEST_WIDTH);
@@ -302,6 +303,7 @@ fn chat_with_unread_and_online_shows_both() {
         outgoing_status: OutgoingReadStatus::default(),
         last_message_id: None,
         unread_reaction_count: 0,
+        is_forum: false,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, 70);
@@ -327,6 +329,7 @@ fn bot_chat_online_does_not_show_online_indicator() {
         outgoing_status: OutgoingReadStatus::default(),
         last_message_id: None,
         unread_reaction_count: 0,
+        is_forum: false,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, 70);
@@ -356,6 +359,7 @@ fn chat_with_unread_reactions_shows_heart_badge() {
         outgoing_status: OutgoingReadStatus::default(),
         last_message_id: None,
         unread_reaction_count: 2,
+        is_forum: false,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, 70);
@@ -395,6 +399,7 @@ fn chat_with_reactions_and_unread_shows_both_badges() {
         outgoing_status: OutgoingReadStatus::default(),
         last_message_id: None,
         unread_reaction_count: 1,
+        is_forum: false,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, 80);

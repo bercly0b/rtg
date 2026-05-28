@@ -458,6 +458,52 @@ fn make_group_chat(id: i64, title: &str) -> Chat {
     chat
 }
 
+fn make_supergroup_chat(chat_id: i64, supergroup_id: i64, title: &str) -> Chat {
+    let mut chat = make_test_chat(chat_id, title);
+    chat.r#type = tdlib_rs::enums::ChatType::Supergroup(tdlib_rs::types::ChatTypeSupergroup {
+        supergroup_id,
+        is_channel: false,
+    });
+    chat
+}
+
+#[test]
+fn supergroup_chat_carries_is_forum_from_cache() {
+    use crate::telegram::tdlib_cache::tests::make_test_supergroup;
+
+    let chat = make_supergroup_chat(10, 100, "Topics");
+    let resolver = FakeResolver::new().with_cached_chat(chat);
+    resolver
+        .cache
+        .upsert_supergroup(make_test_supergroup(100, true));
+
+    let summaries = build_summaries_from_ids(&resolver, vec![10], NO_FORCE);
+
+    assert_eq!(summaries.len(), 1);
+    assert!(summaries[0].is_forum);
+}
+
+#[test]
+fn supergroup_chat_is_forum_defaults_false_when_supergroup_missing() {
+    let chat = make_supergroup_chat(10, 100, "No cache");
+    let resolver = FakeResolver::new().with_cached_chat(chat);
+
+    let summaries = build_summaries_from_ids(&resolver, vec![10], NO_FORCE);
+
+    assert_eq!(summaries.len(), 1);
+    assert!(!summaries[0].is_forum);
+}
+
+#[test]
+fn non_supergroup_chat_is_never_forum() {
+    let resolver = FakeResolver::new().with_cached_chat(make_group_chat(11, "Plain group"));
+
+    let summaries = build_summaries_from_ids(&resolver, vec![11], NO_FORCE);
+
+    assert_eq!(summaries.len(), 1);
+    assert!(!summaries[0].is_forum);
+}
+
 fn make_message_from_user(user_id: i64) -> tdlib_rs::types::Message {
     tdlib_rs::types::Message {
         id: 1000,

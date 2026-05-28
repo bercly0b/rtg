@@ -9,11 +9,17 @@ use super::extract_message_preview;
 ///
 /// This requires the full `Chat` object from TDLib. For sender name resolution
 /// in group chats, an optional user lookup function can be provided.
+///
+/// `is_forum` must be supplied by the caller — TDLib stores this flag on the
+/// associated `Supergroup`, not on the chat itself, so the caller is expected
+/// to look it up via `TdLibCache::get_supergroup` for supergroup chats and
+/// pass `false` otherwise.
 pub fn map_chat_to_summary(
     chat: &TdChat,
     sender_name: Option<String>,
     is_sender_online: Option<bool>,
     is_bot: bool,
+    is_forum: bool,
 ) -> ChatSummary {
     let chat_type = map_chat_type(&chat.r#type);
     let is_pinned = chat
@@ -54,6 +60,7 @@ pub fn map_chat_to_summary(
         outgoing_status,
         last_message_id,
         unread_reaction_count: chat.unread_reaction_count.max(0) as u32,
+        is_forum,
     }
 }
 

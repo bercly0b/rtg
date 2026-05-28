@@ -256,6 +256,7 @@ fn group_chat(chat_id: i64, title: &str) -> ChatSummary {
         outgoing_status: OutgoingReadStatus::default(),
         last_message_id: None,
         unread_reaction_count: 0,
+        is_forum: false,
     }
 }
 

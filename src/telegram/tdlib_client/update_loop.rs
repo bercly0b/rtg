@@ -88,6 +88,9 @@ impl TdLibClient {
                         Update::User(u) => {
                             cache.upsert_user(u.user);
                         }
+                        Update::Supergroup(u) => {
+                            cache.upsert_supergroup(u.supergroup);
+                        }
 
                         // TDLib option updates (e.g. "my_id" for current user)
                         Update::Option(u) => {
