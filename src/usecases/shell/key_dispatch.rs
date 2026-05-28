@@ -5,7 +5,7 @@ use crate::{
     usecases::background::TaskDispatcher,
 };
 
-use super::{chat_list, chat_open, message_actions, voice, OrchestratorCtx};
+use super::{chat_list, chat_open, forum, message_actions, voice, OrchestratorCtx};
 
 pub(super) fn dispatch_chat_list_action<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
@@ -80,8 +80,15 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
             ctx.state.open_chat_mut().select_last();
         }
         Action::BackToChatList => {
-            chat_open::close_tdlib_chat(ctx);
-            ctx.state.set_active_pane(ActivePane::ChatList);
+            // If a forum topic is open, `h` returns to the topic list panel
+            // without closing the parent chat — we're still inside the forum.
+            if ctx.state.open_chat().topic_id().is_some() && ctx.state.forum_topic_list().is_some()
+            {
+                forum::back_to_topic_list(ctx);
+            } else {
+                chat_open::close_tdlib_chat(ctx);
+                ctx.state.set_active_pane(ActivePane::ChatList);
+            }
         }
         Action::EnterMessageInput if ctx.state.open_chat().is_open() => {
             ctx.state.set_active_pane(ActivePane::MessageInput);
@@ -240,4 +247,42 @@ fn maybe_load_older_messages<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>
     let topic_id = ctx.state.open_chat().topic_id();
     ctx.dispatcher
         .dispatch_load_older_messages(chat_id, topic_id, from_message_id);
+}
+
+pub(super) fn dispatch_forum_topic_list_action<D: TaskDispatcher>(
+    ctx: &mut OrchestratorCtx<'_, D>,
+    action: Action,
+) -> Result<()> {
+    match action {
+        Action::SelectNextTopic => {
+            if let Some(list) = ctx.state.forum_topic_list_mut() {
+                list.select_next();
+            }
+        }
+        Action::SelectPreviousTopic => {
+            if let Some(list) = ctx.state.forum_topic_list_mut() {
+                list.select_previous();
+            }
+        }
+        Action::SelectFirstTopic => {
+            if let Some(list) = ctx.state.forum_topic_list_mut() {
+                list.select_first();
+            }
+        }
+        Action::OpenForumTopic => {
+            forum::open_selected_topic(ctx);
+        }
+        Action::BackFromForum => {
+            forum::leave_forum(ctx);
+        }
+        Action::Quit => {
+            chat_open::close_tdlib_chat(ctx);
+            ctx.state.stop();
+        }
+        Action::ShowHelp => {
+            ctx.state.show_help();
+        }
+        _ => {}
+    }
+    Ok(())
 }

@@ -2,6 +2,7 @@ mod chat_info;
 mod chat_list;
 mod chat_open;
 mod chat_updates;
+mod forum;
 mod help_popup;
 mod lifecycle;
 mod message_actions;
@@ -401,6 +402,56 @@ fn inject_chat_list(orchestrator: &mut TestOrchestrator, chats: Vec<ChatSummary>
             },
         ))
         .unwrap();
+}
+
+/// Helper: inject forum topic list as if a background load completed.
+#[allow(dead_code)]
+fn inject_forum_topics(
+    orchestrator: &mut TestOrchestrator,
+    chat_id: i64,
+    topics: Vec<crate::domain::forum_topic::ForumTopicSummary>,
+) {
+    orchestrator
+        .handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::ForumTopicsLoaded {
+                chat_id,
+                result: Ok(topics),
+            },
+        ))
+        .unwrap();
+}
+
+/// Helper: build a ChatSummary that's a forum supergroup.
+#[allow(dead_code)]
+fn forum_chat(chat_id: i64, title: &str) -> ChatSummary {
+    let mut c = chat(chat_id, title);
+    c.is_forum = true;
+    c.chat_type = crate::domain::chat::ChatType::Group;
+    c
+}
+
+/// Helper: build a ForumTopicSummary for tests.
+#[allow(dead_code)]
+fn topic(
+    chat_id: i64,
+    topic_id: i32,
+    name: &str,
+    order: i64,
+) -> crate::domain::forum_topic::ForumTopicSummary {
+    crate::domain::forum_topic::ForumTopicSummary {
+        chat_id,
+        topic_id,
+        name: name.to_owned(),
+        is_general: false,
+        is_closed: false,
+        is_hidden: false,
+        is_pinned: false,
+        unread_count: 0,
+        last_message_preview: None,
+        last_message_unix_ms: None,
+        last_message_id: None,
+        order,
+    }
 }
 
 /// Helper: inject messages as if a background load completed for given chat.

@@ -2,6 +2,7 @@ mod background_results;
 mod chat_list;
 mod chat_open;
 mod chat_updates;
+mod forum;
 mod key_dispatch;
 mod message_actions;
 mod message_input;
@@ -256,6 +257,13 @@ where
         key_dispatch::dispatch_messages_action(&mut self.as_ctx(), action)
     }
 
+    fn handle_forum_topic_list_action(
+        &mut self,
+        action: crate::domain::keymap::Action,
+    ) -> Result<()> {
+        key_dispatch::dispatch_forum_topic_list_action(&mut self.as_ctx(), action)
+    }
+
     fn handle_reaction_picker_key(&mut self, key: &str) {
         use crate::domain::reaction_picker_state::ReactionPickerState;
 
@@ -420,6 +428,9 @@ where
                 }
 
                 let context = match self.state.active_pane() {
+                    ActivePane::ChatList if self.state.forum_topic_list().is_some() => {
+                        KeyContext::ForumTopicList
+                    }
                     ActivePane::ChatList => KeyContext::ChatList,
                     ActivePane::Messages => KeyContext::Messages,
                     ActivePane::MessageInput => unreachable!(),
@@ -429,8 +440,7 @@ where
                     ResolveResult::Action(action) => match context {
                         KeyContext::ChatList => self.handle_chat_list_action(action)?,
                         KeyContext::ForumTopicList => {
-                            // Wired in the forum-orchestrator step.
-                            let _ = action;
+                            self.handle_forum_topic_list_action(action)?
                         }
                         KeyContext::Messages => self.handle_messages_action(action)?,
                         KeyContext::Global => {}

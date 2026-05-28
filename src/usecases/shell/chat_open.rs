@@ -17,6 +17,15 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
     let chat_id = selected.chat_id;
     let chat_title = selected.title.clone();
     let chat_type = selected.chat_type;
+    let is_forum = selected.is_forum;
+
+    // Forum chats route into the topic-list panel rather than directly into
+    // the messages view. The active pane stays ChatList (left panel just
+    // renders topics instead of chats) — see ui/view/chat_list.rs.
+    if is_forum {
+        super::forum::enter_forum(ctx, chat_id, chat_title);
+        return;
+    }
 
     // Cancel any in-flight prefetch — the user explicitly opened a chat.
     *ctx.prefetch_in_flight = None;
