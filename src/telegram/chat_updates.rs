@@ -173,6 +173,10 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
             action_label,
             is_cancel,
         }),
+        TdLibUpdate::ForumTopicInfoChanged { chat_id, topic_id }
+        | TdLibUpdate::ForumTopicChanged { chat_id, topic_id } => {
+            Some(ChatUpdate::ForumTopicChanged { chat_id, topic_id })
+        }
     }
 }
 

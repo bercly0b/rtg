@@ -36,7 +36,6 @@ use super::{
 pub trait TaskDispatcher {
     fn dispatch_chat_list(&self, force: bool, limit: usize);
     /// Fetches the topic list for a forum supergroup chat in the background.
-    #[allow(dead_code)]
     fn dispatch_load_forum_topics(&self, chat_id: i64);
     /// Loads messages for a chat, or for a specific forum topic when
     /// `topic_id` is `Some`.

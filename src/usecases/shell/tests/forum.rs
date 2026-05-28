@@ -214,6 +214,49 @@ fn mark_as_read_in_a_topic_carries_topic_id() {
 }
 
 #[test]
+fn forum_topic_update_for_open_forum_redispatches_topic_load() {
+    use crate::domain::events::ChatUpdate;
+
+    let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_forum_topics(&mut o, 100, vec![topic(100, 7, "Backend", 1000)]);
+    let before = o.dispatcher.forum_topics_dispatch_count();
+
+    o.handle_event(AppEvent::ChatUpdateReceived {
+        updates: vec![ChatUpdate::ForumTopicChanged {
+            chat_id: 100,
+            topic_id: 7,
+        }],
+    })
+    .unwrap();
+
+    assert_eq!(o.dispatcher.forum_topics_dispatch_count(), before + 1);
+}
+
+#[test]
+fn forum_topic_update_for_other_forum_does_not_redispatch() {
+    use crate::domain::events::ChatUpdate;
+
+    let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    inject_forum_topics(&mut o, 100, vec![topic(100, 7, "Backend", 1000)]);
+    let before = o.dispatcher.forum_topics_dispatch_count();
+
+    // Update for a different chat.
+    o.handle_event(AppEvent::ChatUpdateReceived {
+        updates: vec![ChatUpdate::ForumTopicChanged {
+            chat_id: 999,
+            topic_id: 1,
+        }],
+    })
+    .unwrap();
+
+    assert_eq!(o.dispatcher.forum_topics_dispatch_count(), before);
+}
+
+#[test]
 fn opening_non_forum_chat_uses_default_flow() {
     let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
 

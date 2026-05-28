@@ -167,6 +167,9 @@ pub enum ChatUpdate {
         is_downloading_completed: bool,
         downloaded_size: u64,
     },
+    /// A forum topic's metadata or unread state changed. The orchestrator
+    /// should refresh the topic list when this matches the open forum.
+    ForumTopicChanged { chat_id: i64, topic_id: i32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

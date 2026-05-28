@@ -126,6 +126,16 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                     downloaded_size,
                 );
             }
+            ChatUpdate::ForumTopicChanged {
+                chat_id,
+                topic_id: _,
+            } => {
+                // Only act when the user is browsing this very forum — there's
+                // no point refreshing topics the user can't see right now.
+                if ctx.state.forum_topic_list().map(|f| f.parent_chat_id()) == Some(chat_id) {
+                    ctx.dispatcher.dispatch_load_forum_topics(chat_id);
+                }
+            }
         }
     }
 

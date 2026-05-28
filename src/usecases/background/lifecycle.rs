@@ -56,7 +56,6 @@ pub(super) fn dispatch_chat_list<C: ListChatsSource + Send + Sync + 'static>(
     }
 }
 
-#[allow(dead_code)]
 pub(super) fn dispatch_load_forum_topics<C: ForumTopicsSource + Send + Sync + 'static>(
     source: &Arc<C>,
     tx: &Sender<BackgroundTaskResult>,

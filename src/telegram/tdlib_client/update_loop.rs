@@ -188,6 +188,20 @@ impl TdLibClient {
                             );
                         }
 
+                        // Forum topic updates
+                        Update::ForumTopicInfo(u) => {
+                            let _ = update_tx.send(TdLibUpdate::ForumTopicInfoChanged {
+                                chat_id: u.info.chat_id,
+                                topic_id: u.info.forum_topic_id,
+                            });
+                        }
+                        Update::ForumTopic(u) => {
+                            let _ = update_tx.send(TdLibUpdate::ForumTopicChanged {
+                                chat_id: u.chat_id,
+                                topic_id: u.forum_topic_id,
+                            });
+                        }
+
                         // File download progress updates
                         Update::File(u) => {
                             let _ = update_tx.send(TdLibUpdate::FileUpdated {

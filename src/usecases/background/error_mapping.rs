@@ -12,7 +12,6 @@ pub(super) fn map_list_chats_error(error: &ListChatsError) -> &'static str {
     }
 }
 
-#[allow(dead_code)]
 pub(super) fn map_list_forum_topics_error(error: &ListForumTopicsError) -> &'static str {
     match error {
         ListForumTopicsError::Unauthorized => "FORUM_TOPICS_UNAUTHORIZED",
