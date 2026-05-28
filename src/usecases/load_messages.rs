@@ -6,6 +6,10 @@ const MAX_MESSAGES_PAGE_SIZE: usize = 200;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadMessagesQuery {
     pub chat_id: i64,
+    /// When `Some`, restricts the load to the history of a specific forum
+    /// topic inside `chat_id` (TDLib `getForumTopicHistory`). `None` loads
+    /// the regular chat history (TDLib `getChatHistory`).
+    pub topic_id: Option<i32>,
     pub limit: usize,
     pub from_message_id: i64,
 }
@@ -14,6 +18,18 @@ impl LoadMessagesQuery {
     pub fn new(chat_id: i64) -> Self {
         Self {
             chat_id,
+            topic_id: None,
+            limit: DEFAULT_MESSAGES_PAGE_SIZE,
+            from_message_id: 0,
+        }
+    }
+
+    /// Builds a query scoped to a forum topic inside `chat_id`.
+    #[allow(dead_code)]
+    pub fn for_topic(chat_id: i64, topic_id: i32) -> Self {
+        Self {
+            chat_id,
+            topic_id: Some(topic_id),
             limit: DEFAULT_MESSAGES_PAGE_SIZE,
             from_message_id: 0,
         }
@@ -22,6 +38,18 @@ impl LoadMessagesQuery {
     pub fn older_than(chat_id: i64, from_message_id: i64) -> Self {
         Self {
             chat_id,
+            topic_id: None,
+            limit: DEFAULT_MESSAGES_PAGE_SIZE,
+            from_message_id,
+        }
+    }
+
+    /// Like [`older_than`](Self::older_than) but scoped to a forum topic.
+    #[allow(dead_code)]
+    pub fn older_than_in_topic(chat_id: i64, topic_id: i32, from_message_id: i64) -> Self {
+        Self {
+            chat_id,
+            topic_id: Some(topic_id),
             limit: DEFAULT_MESSAGES_PAGE_SIZE,
             from_message_id,
         }
@@ -49,9 +77,13 @@ pub enum MessagesSourceError {
 }
 
 pub trait MessagesSource {
+    /// Lists messages from a chat or, when `topic_id` is `Some`, from a
+    /// specific forum topic inside that chat. Returns messages in
+    /// chronological order (oldest first).
     fn list_messages(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         limit: usize,
         from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError>;
@@ -64,10 +96,11 @@ where
     fn list_messages(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         limit: usize,
         from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError> {
-        (*self).list_messages(chat_id, limit, from_message_id)
+        (*self).list_messages(chat_id, topic_id, limit, from_message_id)
     }
 }
 
@@ -78,10 +111,11 @@ where
     fn list_messages(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         limit: usize,
         from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError> {
-        (**self).list_messages(chat_id, limit, from_message_id)
+        (**self).list_messages(chat_id, topic_id, limit, from_message_id)
     }
 }
 
@@ -137,7 +171,7 @@ pub fn load_messages(
 ) -> Result<LoadMessagesOutput, LoadMessagesError> {
     let limit = query.normalized_limit();
     let messages = source
-        .list_messages(query.chat_id, limit, query.from_message_id)
+        .list_messages(query.chat_id, query.topic_id, limit, query.from_message_id)
         .map_err(map_source_error)?;
 
     Ok(LoadMessagesOutput { messages })
@@ -158,6 +192,7 @@ mod tests {
     struct StubSource {
         result: Result<Vec<Message>, MessagesSourceError>,
         captured_chat_id: std::sync::Mutex<Option<i64>>,
+        captured_topic_id: std::sync::Mutex<Option<Option<i32>>>,
         captured_limit: std::sync::Mutex<Option<usize>>,
         captured_from_message_id: std::sync::Mutex<Option<i64>>,
     }
@@ -167,6 +202,7 @@ mod tests {
             Self {
                 result,
                 captured_chat_id: std::sync::Mutex::new(None),
+                captured_topic_id: std::sync::Mutex::new(None),
                 captured_limit: std::sync::Mutex::new(None),
                 captured_from_message_id: std::sync::Mutex::new(None),
             }
@@ -177,10 +213,12 @@ mod tests {
         fn list_messages(
             &self,
             chat_id: i64,
+            topic_id: Option<i32>,
             limit: usize,
             from_message_id: i64,
         ) -> Result<Vec<Message>, MessagesSourceError> {
             *self.captured_chat_id.lock().expect("chat_id lock") = Some(chat_id);
+            *self.captured_topic_id.lock().expect("topic_id lock") = Some(topic_id);
             *self.captured_limit.lock().expect("limit lock") = Some(limit);
             *self
                 .captured_from_message_id
@@ -218,6 +256,7 @@ mod tests {
             &source,
             LoadMessagesQuery {
                 chat_id: 1,
+                topic_id: None,
                 limit: 0,
                 from_message_id: 0,
             },
@@ -235,6 +274,7 @@ mod tests {
             &source,
             LoadMessagesQuery {
                 chat_id: 1,
+                topic_id: None,
                 limit: 999,
                 from_message_id: 0,
             },
@@ -282,6 +322,46 @@ mod tests {
             Some(999)
         );
         assert_eq!(*source.captured_chat_id.lock().expect("lock"), Some(42));
+    }
+
+    #[test]
+    fn default_query_carries_no_topic_id() {
+        let source = StubSource::with_result(Ok(vec![]));
+
+        let _ = load_messages(&source, LoadMessagesQuery::new(1)).expect("load should succeed");
+
+        assert_eq!(*source.captured_topic_id.lock().expect("lock"), Some(None));
+    }
+
+    #[test]
+    fn for_topic_query_passes_topic_id_through() {
+        let source = StubSource::with_result(Ok(vec![]));
+
+        let _ = load_messages(&source, LoadMessagesQuery::for_topic(42, 7))
+            .expect("load should succeed");
+
+        assert_eq!(
+            *source.captured_topic_id.lock().expect("lock"),
+            Some(Some(7))
+        );
+        assert_eq!(*source.captured_chat_id.lock().expect("lock"), Some(42));
+    }
+
+    #[test]
+    fn older_than_in_topic_carries_both_topic_and_from() {
+        let source = StubSource::with_result(Ok(vec![]));
+
+        let _ = load_messages(&source, LoadMessagesQuery::older_than_in_topic(42, 7, 999))
+            .expect("load should succeed");
+
+        assert_eq!(
+            *source.captured_topic_id.lock().expect("lock"),
+            Some(Some(7))
+        );
+        assert_eq!(
+            *source.captured_from_message_id.lock().expect("lock"),
+            Some(999)
+        );
     }
 
     #[test]

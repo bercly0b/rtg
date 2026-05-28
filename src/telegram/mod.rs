@@ -269,7 +269,7 @@ mod tests {
         let adapter = TelegramAdapter::stub();
 
         let error = adapter
-            .list_messages(1, 20, 0)
+            .list_messages(1, None, 20, 0)
             .expect_err("stub adapter should fail");
 
         assert_eq!(error, MessagesSourceError::Unavailable);

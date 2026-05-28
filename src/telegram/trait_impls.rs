@@ -51,11 +51,12 @@ impl MessagesSource for TelegramAdapter {
     fn list_messages(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         limit: usize,
         from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError> {
         match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.list_messages(chat_id, limit, from_message_id),
+            Some(backend) => backend.list_messages(chat_id, topic_id, limit, from_message_id),
             None => Err(MessagesSourceError::Unavailable),
         }
     }

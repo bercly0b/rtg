@@ -70,20 +70,22 @@ impl TdLibAuthBackend {
         Ok(messages)
     }
 
-    /// Lists messages from a chat.
+    /// Lists messages from a chat or, when `topic_id` is `Some`, from a
+    /// specific forum topic inside the chat.
     ///
     /// Returns messages in chronological order (oldest first).
     ///
     /// **Note:** The caller is responsible for the TDLib `openChat`/`closeChat`
     /// lifecycle. This method only fetches messages via paginated
-    /// `getChatHistory` calls.
+    /// `getChatHistory` / `getForumTopicHistory` calls.
     pub fn list_messages(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         limit: usize,
         from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError> {
-        self.fetch_messages_paginated(chat_id, limit, from_message_id)
+        self.fetch_messages_paginated(chat_id, topic_id, limit, from_message_id)
     }
 
     /// Informs TDLib that the user has opened a chat.
@@ -129,10 +131,12 @@ impl TdLibAuthBackend {
             .map_err(map_messages_error)
     }
 
-    /// Fetches up to `limit` messages using paginated `getChatHistory` calls.
+    /// Fetches up to `limit` messages using paginated `getChatHistory` or
+    /// `getForumTopicHistory` calls (depending on `topic_id`).
     fn fetch_messages_paginated(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         limit: usize,
         from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError> {
@@ -142,15 +146,22 @@ impl TdLibAuthBackend {
             limit,
             from_message_id,
             |from_message_id, page_limit| {
-                let batch = self
-                    .client
-                    .get_chat_history(chat_id, from_message_id, 0, page_limit)
-                    .map_err(map_messages_error)?;
+                let batch = match topic_id {
+                    Some(tid) => self
+                        .client
+                        .get_forum_topic_history(chat_id, tid, from_message_id, 0, page_limit)
+                        .map_err(map_messages_error)?,
+                    None => self
+                        .client
+                        .get_chat_history(chat_id, from_message_id, 0, page_limit)
+                        .map_err(map_messages_error)?,
+                };
 
                 tracing::debug!(
                     chat_id,
+                    topic_id = ?topic_id,
                     batch_len = batch.len(),
-                    "getChatHistory page fetched"
+                    "message history page fetched"
                 );
 
                 Ok(PageResult { messages: batch })
