@@ -428,6 +428,10 @@ where
                 match self.keymap.resolve(&key.key, key.ctrl, context) {
                     ResolveResult::Action(action) => match context {
                         KeyContext::ChatList => self.handle_chat_list_action(action)?,
+                        KeyContext::ForumTopicList => {
+                            // Wired in the forum-orchestrator step.
+                            let _ = action;
+                        }
                         KeyContext::Messages => self.handle_messages_action(action)?,
                         KeyContext::Global => {}
                     },
