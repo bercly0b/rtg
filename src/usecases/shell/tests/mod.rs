@@ -93,16 +93,19 @@ fn message(id: i64, text: &str) -> Message {
 
 // ── Recording task dispatcher for tests ──
 
+type SendRecord = (i64, Option<i32>, String, Option<i64>);
+type MarkAsReadRecord = (i64, Option<i32>, Vec<i64>);
+
 /// Records what the orchestrator dispatched and allows inspection.
 struct RecordingDispatcher {
     dispatched_chat_list_count: RefCell<usize>,
     dispatched_chat_list_force: RefCell<Vec<bool>>,
     dispatched_messages: RefCell<Vec<(i64, Option<i32>)>>,
     dispatched_older_messages: RefCell<Vec<(i64, Option<i32>, i64)>>,
-    dispatched_sends: RefCell<Vec<(i64, Option<i32>, String, Option<i64>)>>,
+    dispatched_sends: RefCell<Vec<SendRecord>>,
     dispatched_open_chats: RefCell<Vec<i64>>,
     dispatched_close_chats: RefCell<Vec<i64>>,
-    dispatched_mark_as_read: RefCell<Vec<(i64, Option<i32>, Vec<i64>)>>,
+    dispatched_mark_as_read: RefCell<Vec<MarkAsReadRecord>>,
     dispatched_mark_chat_as_read: RefCell<Vec<(i64, i64)>>,
     dispatched_prefetches: RefCell<Vec<(i64, Option<i32>)>>,
     dispatched_forum_topics: RefCell<Vec<i64>>,
