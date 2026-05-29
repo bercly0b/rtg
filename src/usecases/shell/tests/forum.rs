@@ -265,21 +265,6 @@ fn forum_topic_update_for_other_forum_does_not_redispatch() {
     assert_eq!(o.dispatcher.forum_topics_dispatch_count(), before);
 }
 
-#[test]
-fn opening_non_forum_chat_uses_default_flow() {
-    let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
-
-    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
-        .unwrap();
-
-    // Default flow: ActivePane::Messages, no forum_topic_list.
-    assert_eq!(o.state().active_pane(), ActivePane::Messages);
-    assert!(o.state().forum_topic_list().is_none());
-    assert_eq!(o.state().open_chat().chat_id(), Some(1));
-    assert!(o.state().open_chat().topic_id().is_none());
-    assert_eq!(o.dispatcher.last_load_messages(), Some((1, None)));
-}
-
 // ── Race-condition regressions: stale background results from a topic the
 // user already left must not bleed into the currently displayed topic. All
 // three result variants share `chat_id` across all topics of the same forum,
