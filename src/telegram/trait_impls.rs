@@ -7,6 +7,7 @@ use crate::{
         chat_subtitle::{ChatInfoQuery, ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource},
         edit_message::{EditMessageSourceError, MessageEditor},
         list_chats::{ListChatsSource, ListChatsSourceError},
+        list_forum_topics::{ForumTopicsSource, ListForumTopicsSourceError},
         load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
         message_info::{MessageInfoError, MessageInfoQuery, MessageInfoSource},
         message_reactions::{
@@ -32,15 +33,30 @@ impl ListChatsSource for TelegramAdapter {
     }
 }
 
+impl ForumTopicsSource for TelegramAdapter {
+    fn list_forum_topics(
+        &self,
+        chat_id: i64,
+        limit: usize,
+    ) -> Result<Vec<crate::domain::forum_topic::ForumTopicSummary>, ListForumTopicsSourceError>
+    {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.list_forum_topic_summaries(chat_id, limit),
+            None => Err(ListForumTopicsSourceError::Unavailable),
+        }
+    }
+}
+
 impl MessagesSource for TelegramAdapter {
     fn list_messages(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         limit: usize,
         from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError> {
         match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.list_messages(chat_id, limit, from_message_id),
+            Some(backend) => backend.list_messages(chat_id, topic_id, limit, from_message_id),
             None => Err(MessagesSourceError::Unavailable),
         }
     }
@@ -63,11 +79,12 @@ impl MessageSender for TelegramAdapter {
     fn send_message(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         text: &str,
         reply_to_message_id: Option<i64>,
     ) -> Result<(), SendMessageSourceError> {
         match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.send_message(chat_id, text, reply_to_message_id),
+            Some(backend) => backend.send_message(chat_id, topic_id, text, reply_to_message_id),
             None => Err(SendMessageSourceError::Unavailable),
         }
     }
@@ -91,12 +108,15 @@ impl VoiceNoteSender for TelegramAdapter {
     fn send_voice_note(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         file_path: &str,
         duration: i32,
         waveform: &str,
     ) -> Result<(), SendMessageSourceError> {
         match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.send_voice_note(chat_id, file_path, duration, waveform),
+            Some(backend) => {
+                backend.send_voice_note(chat_id, topic_id, file_path, duration, waveform)
+            }
             None => Err(SendMessageSourceError::Unauthorized),
         }
     }
@@ -140,13 +160,16 @@ impl ChatReadMarker for TelegramAdapter {
     fn mark_messages_read(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         message_ids: Vec<i64>,
     ) -> Result<(), ChatLifecycleError> {
         match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.view_messages(chat_id, message_ids).map_err(|e| {
-                tracing::debug!(chat_id, error = ?e, "view_messages mapped to lifecycle error");
-                ChatLifecycleError::Unavailable
-            }),
+            Some(backend) => backend
+                .view_messages(chat_id, topic_id, message_ids)
+                .map_err(|e| {
+                    tracing::debug!(chat_id, error = ?e, "view_messages mapped to lifecycle error");
+                    ChatLifecycleError::Unavailable
+                }),
             None => Err(ChatLifecycleError::Unavailable),
         }
     }

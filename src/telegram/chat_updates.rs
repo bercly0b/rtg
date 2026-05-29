@@ -124,7 +124,8 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
         | TdLibUpdate::ChatReadInbox { chat_id }
         | TdLibUpdate::ChatReadOutbox { chat_id }
         | TdLibUpdate::MessageSendSucceeded { chat_id, .. }
-        | TdLibUpdate::ChatUnreadReactionCount { chat_id } => {
+        | TdLibUpdate::ChatUnreadReactionCount { chat_id }
+        | TdLibUpdate::SupergroupMetadataChanged { chat_id } => {
             Some(ChatUpdate::ChatMetadataChanged { chat_id })
         }
         TdLibUpdate::MessageInteractionInfoChanged {
@@ -173,6 +174,10 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
             action_label,
             is_cancel,
         }),
+        TdLibUpdate::ForumTopicInfoChanged { chat_id, topic_id }
+        | TdLibUpdate::ForumTopicChanged { chat_id, topic_id } => {
+            Some(ChatUpdate::ForumTopicChanged { chat_id, topic_id })
+        }
     }
 }
 

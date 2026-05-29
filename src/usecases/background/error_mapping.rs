@@ -1,5 +1,6 @@
 use crate::usecases::{
-    edit_message::EditMessageError, list_chats::ListChatsError, load_messages::LoadMessagesError,
+    edit_message::EditMessageError, list_chats::ListChatsError,
+    list_forum_topics::ListForumTopicsError, load_messages::LoadMessagesError,
     send_message::SendMessageError,
 };
 
@@ -8,6 +9,15 @@ pub(super) fn map_list_chats_error(error: &ListChatsError) -> &'static str {
         ListChatsError::Unauthorized => "CHAT_LIST_UNAUTHORIZED",
         ListChatsError::TemporarilyUnavailable => "CHAT_LIST_UNAVAILABLE",
         ListChatsError::DataContractViolation => "CHAT_LIST_DATA_ERROR",
+    }
+}
+
+pub(super) fn map_list_forum_topics_error(error: &ListForumTopicsError) -> &'static str {
+    match error {
+        ListForumTopicsError::Unauthorized => "FORUM_TOPICS_UNAUTHORIZED",
+        ListForumTopicsError::TemporarilyUnavailable => "FORUM_TOPICS_UNAVAILABLE",
+        ListForumTopicsError::ChatNotFound => "FORUM_TOPICS_CHAT_NOT_FOUND",
+        ListForumTopicsError::DataContractViolation => "FORUM_TOPICS_DATA_ERROR",
     }
 }
 

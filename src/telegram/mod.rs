@@ -269,7 +269,7 @@ mod tests {
         let adapter = TelegramAdapter::stub();
 
         let error = adapter
-            .list_messages(1, 20, 0)
+            .list_messages(1, None, 20, 0)
             .expect_err("stub adapter should fail");
 
         assert_eq!(error, MessagesSourceError::Unavailable);
@@ -280,7 +280,7 @@ mod tests {
         let adapter = TelegramAdapter::stub();
 
         let error = adapter
-            .send_message(1, "hello", None)
+            .send_message(1, None, "hello", None)
             .expect_err("stub adapter should fail");
 
         assert_eq!(error, SendMessageSourceError::Unavailable);
@@ -309,7 +309,7 @@ mod tests {
         let adapter = TelegramAdapter::stub();
 
         let error = adapter
-            .mark_messages_read(1, vec![1, 2, 3])
+            .mark_messages_read(1, None, vec![1, 2, 3])
             .expect_err("stub adapter should fail");
 
         assert_eq!(error, ChatLifecycleError::Unavailable);

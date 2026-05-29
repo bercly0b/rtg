@@ -124,12 +124,14 @@ pub(super) fn build_summaries_from_ids(
             }
         };
 
-        let (sender_name, is_online, is_bot) = resolve_chat_metadata(resolver, &chat, cache);
+        let (sender_name, is_online, is_bot, is_forum) =
+            resolve_chat_metadata(resolver, &chat, cache);
         let summary = crate::telegram::tdlib_mappers::map_chat_to_summary(
             &chat,
             sender_name,
             is_online,
             is_bot,
+            is_forum,
         );
         summaries.push(summary);
     }
@@ -137,18 +139,30 @@ pub(super) fn build_summaries_from_ids(
     summaries
 }
 
-/// Resolves additional metadata for a chat (sender name, online status).
+/// Resolves additional metadata for a chat (sender name, online status, forum flag).
 ///
 /// Uses the cache for user lookups. Falls back to `get_user` on miss.
+/// `is_forum` is read from the cached `Supergroup` — TDLib guarantees that
+/// `updateSupergroup` arrives before the supergroup ID surfaces in any
+/// response, so for supergroup chats the cache lookup is race-free. Missing
+/// supergroup data defaults to `false`.
 fn resolve_chat_metadata(
     resolver: &dyn ChatDataResolver,
     chat: &Chat,
     cache: &TdLibCache,
-) -> (Option<String>, Option<bool>, bool) {
+) -> (Option<String>, Option<bool>, bool, bool) {
     use crate::domain::chat::ChatType;
     use crate::telegram::tdlib_mappers;
 
     let chat_type = tdlib_mappers::map_chat_type(&chat.r#type);
+
+    let is_forum = match &chat.r#type {
+        tdlib_rs::enums::ChatType::Supergroup(sg) => cache
+            .get_supergroup(sg.supergroup_id)
+            .map(|s| s.is_forum)
+            .unwrap_or(false),
+        _ => false,
+    };
 
     let (is_online, is_bot) = if matches!(chat_type, ChatType::Private) {
         if let Some(user_id) = tdlib_mappers::get_private_chat_user_id(&chat.r#type) {
@@ -176,7 +190,7 @@ fn resolve_chat_metadata(
         None
     };
 
-    (sender_name, is_online, is_bot)
+    (sender_name, is_online, is_bot, is_forum)
 }
 
 /// Resolves a user from cache, falling back to TDLib on miss.

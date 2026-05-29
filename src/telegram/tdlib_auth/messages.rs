@@ -70,20 +70,22 @@ impl TdLibAuthBackend {
         Ok(messages)
     }
 
-    /// Lists messages from a chat.
+    /// Lists messages from a chat or, when `topic_id` is `Some`, from a
+    /// specific forum topic inside the chat.
     ///
     /// Returns messages in chronological order (oldest first).
     ///
     /// **Note:** The caller is responsible for the TDLib `openChat`/`closeChat`
     /// lifecycle. This method only fetches messages via paginated
-    /// `getChatHistory` calls.
+    /// `getChatHistory` / `getForumTopicHistory` calls.
     pub fn list_messages(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         limit: usize,
         from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError> {
-        self.fetch_messages_paginated(chat_id, limit, from_message_id)
+        self.fetch_messages_paginated(chat_id, topic_id, limit, from_message_id)
     }
 
     /// Informs TDLib that the user has opened a chat.
@@ -104,13 +106,17 @@ impl TdLibAuthBackend {
     }
 
     /// Marks the given messages as viewed/read in a chat.
+    ///
+    /// When `topic_id` is `Some`, TDLib is told the messages were viewed
+    /// from a forum topic history rather than the plain chat history.
     pub fn view_messages(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         message_ids: Vec<i64>,
     ) -> Result<(), MessagesSourceError> {
         self.client
-            .view_messages(chat_id, message_ids)
+            .view_messages(chat_id, topic_id, message_ids)
             .map_err(map_messages_error)
     }
 
@@ -125,10 +131,12 @@ impl TdLibAuthBackend {
             .map_err(map_messages_error)
     }
 
-    /// Fetches up to `limit` messages using paginated `getChatHistory` calls.
+    /// Fetches up to `limit` messages using paginated `getChatHistory` or
+    /// `getForumTopicHistory` calls (depending on `topic_id`).
     fn fetch_messages_paginated(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         limit: usize,
         from_message_id: i64,
     ) -> Result<Vec<Message>, MessagesSourceError> {
@@ -138,15 +146,22 @@ impl TdLibAuthBackend {
             limit,
             from_message_id,
             |from_message_id, page_limit| {
-                let batch = self
-                    .client
-                    .get_chat_history(chat_id, from_message_id, 0, page_limit)
-                    .map_err(map_messages_error)?;
+                let batch = match topic_id {
+                    Some(tid) => self
+                        .client
+                        .get_forum_topic_history(chat_id, tid, from_message_id, 0, page_limit)
+                        .map_err(map_messages_error)?,
+                    None => self
+                        .client
+                        .get_chat_history(chat_id, from_message_id, 0, page_limit)
+                        .map_err(map_messages_error)?,
+                };
 
                 tracing::debug!(
                     chat_id,
+                    topic_id = ?topic_id,
                     batch_len = batch.len(),
-                    "getChatHistory page fetched"
+                    "message history page fetched"
                 );
 
                 Ok(PageResult { messages: batch })
@@ -194,18 +209,24 @@ impl TdLibAuthBackend {
         Ok(messages)
     }
 
-    /// Sends a text message to a chat.
+    /// Sends a text message to a chat or forum topic.
     pub fn send_message(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         text: &str,
         reply_to_message_id: Option<i64>,
     ) -> Result<(), SendMessageSourceError> {
         self.client
-            .send_message(chat_id, text, reply_to_message_id)
+            .send_message(chat_id, topic_id, text, reply_to_message_id)
             .map_err(map_send_message_error)?;
 
-        tracing::debug!(chat_id, text_len = text.len(), "Message sent via TDLib");
+        tracing::debug!(
+            chat_id,
+            topic_id = ?topic_id,
+            text_len = text.len(),
+            "Message sent via TDLib"
+        );
         Ok(())
     }
 
@@ -228,19 +249,26 @@ impl TdLibAuthBackend {
         Ok(())
     }
 
-    /// Sends a voice note to a chat.
+    /// Sends a voice note to a chat or forum topic.
     pub fn send_voice_note(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         file_path: &str,
         duration: i32,
         waveform: &str,
     ) -> Result<(), SendMessageSourceError> {
         self.client
-            .send_voice_note(chat_id, file_path, duration, waveform)
+            .send_voice_note(chat_id, topic_id, file_path, duration, waveform)
             .map_err(map_send_message_error)?;
 
-        tracing::debug!(chat_id, file_path, duration, "Voice note sent via TDLib");
+        tracing::debug!(
+            chat_id,
+            topic_id = ?topic_id,
+            file_path,
+            duration,
+            "Voice note sent via TDLib"
+        );
         Ok(())
     }
 

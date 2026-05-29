@@ -36,9 +36,17 @@ pub enum BackgroundTaskResult {
         result: Result<Vec<super::chat::ChatSummary>, BackgroundError>,
         all_loaded: bool,
     },
-    /// Messages fetch for a specific chat completed.
+    /// Forum topic list fetch completed for a specific forum chat.
+    ForumTopicsLoaded {
+        chat_id: i64,
+        result: Result<Vec<super::forum_topic::ForumTopicSummary>, BackgroundError>,
+    },
+    /// Messages fetch for a specific chat completed. `topic_id` mirrors the
+    /// request scope so handlers can drop results from a topic the user is
+    /// no longer viewing.
     MessagesLoaded {
         chat_id: i64,
+        topic_id: Option<i32>,
         result: Result<Vec<super::message::Message>, BackgroundError>,
     },
     /// Message send operation completed; `chat_id` identifies the target chat,
@@ -51,6 +59,7 @@ pub enum BackgroundTaskResult {
     /// Messages refresh after a successful send completed.
     MessageSentRefreshCompleted {
         chat_id: i64,
+        topic_id: Option<i32>,
         result: Result<Vec<super::message::Message>, BackgroundError>,
     },
     /// Background prefetch of messages for a chat the user is hovering.
@@ -62,6 +71,7 @@ pub enum BackgroundTaskResult {
     /// Older messages loaded for scroll-up pagination.
     OlderMessagesLoaded {
         chat_id: i64,
+        topic_id: Option<i32>,
         result: Result<Vec<super::message::Message>, BackgroundError>,
     },
     /// Message edit operation completed.
@@ -162,6 +172,9 @@ pub enum ChatUpdate {
         is_downloading_completed: bool,
         downloaded_size: u64,
     },
+    /// A forum topic's metadata or unread state changed. The orchestrator
+    /// should refresh the topic list when this matches the open forum.
+    ForumTopicChanged { chat_id: i64, topic_id: i32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -291,6 +291,7 @@ fn voice_send_success_replaces_pending_with_real_message() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessageSentRefreshCompleted {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![message(10, "hi"), voice_msg]),
         },
     ))

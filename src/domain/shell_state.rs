@@ -3,9 +3,10 @@ use std::time::{Duration, Instant};
 use super::{
     chat::ChatSummary, chat_info_state::ChatInfoPopupState, chat_list_state::ChatListState,
     chat_search_state::ChatSearchState, command_popup_state::CommandPopupState,
-    events::ConnectivityStatus, message_cache::MessageCache,
-    message_info_state::MessageInfoPopupState, message_input_state::MessageInputState,
-    open_chat_state::OpenChatState, reaction_picker_state::ReactionPickerState,
+    events::ConnectivityStatus, forum_topic_list_state::ForumTopicListState,
+    message_cache::MessageCache, message_info_state::MessageInfoPopupState,
+    message_input_state::MessageInputState, open_chat_state::OpenChatState,
+    reaction_picker_state::ReactionPickerState,
 };
 
 const NOTIFICATION_TTL: Duration = Duration::from_secs(3);
@@ -27,6 +28,13 @@ pub struct ShellState {
     running: bool,
     connectivity_status: ConnectivityStatus,
     chat_list: ChatListState,
+    /// Topic list for the forum chat the user is currently browsing.
+    ///
+    /// `None` means the root chat list is shown in the left panel. When
+    /// `Some`, the root `chat_list` stays intact (selection, pagination,
+    /// chats) — leaving the forum (`leave_forum`) simply drops this field
+    /// and the root list reappears unchanged.
+    forum_topic_list: Option<ForumTopicListState>,
     open_chat: OpenChatState,
     message_cache: MessageCache,
     message_input: MessageInputState,
@@ -46,6 +54,7 @@ impl Default for ShellState {
             running: true,
             connectivity_status: ConnectivityStatus::Connecting,
             chat_list: ChatListState::default(),
+            forum_topic_list: None,
             open_chat: OpenChatState::default(),
             message_cache: MessageCache::default(),
             message_input: MessageInputState::default(),
@@ -113,8 +122,52 @@ impl ShellState {
         &mut self.chat_list
     }
 
+    /// Returns the active forum topic list, if any. `None` means the root
+    /// chat list is shown.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn forum_topic_list(&self) -> Option<&ForumTopicListState> {
+        self.forum_topic_list.as_ref()
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn forum_topic_list_mut(&mut self) -> Option<&mut ForumTopicListState> {
+        self.forum_topic_list.as_mut()
+    }
+
+    /// Installs the topic-list panel for a forum chat in `Loading` state.
+    ///
+    /// Does not touch `chat_list` — the root list keeps its selection and
+    /// pagination so the user returns to the same view on `leave_forum`.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn enter_forum(&mut self, parent_chat_id: i64, parent_chat_title: impl Into<String>) {
+        self.forum_topic_list = Some(ForumTopicListState::loading(
+            parent_chat_id,
+            parent_chat_title.into(),
+        ));
+    }
+
+    /// Drops the topic-list panel. The root chat list is untouched.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn leave_forum(&mut self) {
+        self.forum_topic_list = None;
+    }
+
     pub fn open_chat(&self) -> &OpenChatState {
         &self.open_chat
+    }
+
+    /// True when a forum topic is open and the cached topic summary marks it
+    /// as closed. Used to gate the message input — admins can still post but
+    /// we don't surface that capability in the TUI yet, so any open of input
+    /// is treated as read-only.
+    pub fn open_topic_is_closed(&self) -> bool {
+        let Some(topic_id) = self.open_chat.topic_id() else {
+            return false;
+        };
+        self.forum_topic_list
+            .as_ref()
+            .and_then(|list| list.find_topic(topic_id))
+            .is_some_and(|t| t.is_closed)
     }
 
     pub fn open_chat_mut(&mut self) -> &mut OpenChatState {
@@ -295,6 +348,7 @@ mod tests {
             outgoing_status: OutgoingReadStatus::default(),
             last_message_id: None,
             unread_reaction_count: 0,
+            is_forum: false,
         }
     }
 
@@ -613,5 +667,103 @@ mod tests {
             }
             _ => panic!("expected Ready state"),
         }
+    }
+
+    #[test]
+    fn forum_topic_list_none_by_default() {
+        let state = ShellState::default();
+        assert!(state.forum_topic_list().is_none());
+    }
+
+    #[test]
+    fn enter_forum_installs_loading_topic_list() {
+        let mut state = ShellState::default();
+        state.enter_forum(100, "Topics");
+
+        let list = state.forum_topic_list().expect("topic list should exist");
+        assert_eq!(list.parent_chat_id(), 100);
+        assert_eq!(list.parent_chat_title(), "Topics");
+        assert_eq!(
+            list.ui_state(),
+            crate::domain::forum_topic_list_state::ForumTopicListUiState::Loading
+        );
+    }
+
+    #[test]
+    fn enter_forum_preserves_root_chat_list_state() {
+        let chats = vec![chat(1, "Alice"), chat(2, "Bob")];
+        let mut state = ShellState::with_initial_chat_list(chats.clone());
+        state.chat_list_mut().select_next();
+        let prior_selection = state.chat_list().selected_chat().map(|c| c.chat_id);
+
+        state.enter_forum(100, "Forum");
+
+        assert_eq!(state.chat_list().chats(), chats.as_slice());
+        assert_eq!(
+            state.chat_list().selected_chat().map(|c| c.chat_id),
+            prior_selection
+        );
+    }
+
+    #[test]
+    fn leave_forum_clears_topic_list_without_touching_root_chat_list() {
+        let chats = vec![chat(1, "Alice"), chat(2, "Bob")];
+        let mut state = ShellState::with_initial_chat_list(chats.clone());
+        state.chat_list_mut().select_next();
+        let prior_selection = state.chat_list().selected_chat().map(|c| c.chat_id);
+        state.enter_forum(100, "Forum");
+
+        state.leave_forum();
+
+        assert!(state.forum_topic_list().is_none());
+        assert_eq!(state.chat_list().chats(), chats.as_slice());
+        assert_eq!(
+            state.chat_list().selected_chat().map(|c| c.chat_id),
+            prior_selection
+        );
+    }
+
+    #[test]
+    fn open_topic_is_closed_returns_false_when_no_topic_open() {
+        let state = ShellState::default();
+        assert!(!state.open_topic_is_closed());
+    }
+
+    #[test]
+    fn open_topic_is_closed_reflects_topic_summary_flag() {
+        use crate::domain::forum_topic::ForumTopicSummary;
+        let mut closed = ForumTopicSummary {
+            chat_id: 100,
+            topic_id: 7,
+            name: "Backend".to_owned(),
+            is_general: false,
+            is_closed: true,
+            is_hidden: false,
+            is_pinned: false,
+            unread_count: 0,
+            last_message_preview: None,
+            last_message_unix_ms: None,
+            last_message_id: None,
+            order: 0,
+        };
+
+        let mut state = ShellState::default();
+        state.enter_forum(100, "Forum");
+        state
+            .forum_topic_list_mut()
+            .unwrap()
+            .set_ready(vec![closed.clone()]);
+        state
+            .open_chat_mut()
+            .set_loading_with_topic(100, Some(7), "x".to_owned(), ChatType::Group);
+
+        assert!(state.open_topic_is_closed());
+
+        closed.is_closed = false;
+        state
+            .forum_topic_list_mut()
+            .unwrap()
+            .set_ready(vec![closed]);
+        assert!(!state.open_topic_is_closed());
     }
 }

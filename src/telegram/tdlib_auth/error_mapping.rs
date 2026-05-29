@@ -1,6 +1,7 @@
 use crate::usecases::edit_message::EditMessageSourceError;
 use crate::usecases::guided_auth::AuthBackendError;
 use crate::usecases::list_chats::ListChatsSourceError;
+use crate::usecases::list_forum_topics::ListForumTopicsSourceError;
 use crate::usecases::load_messages::MessagesSourceError;
 use crate::usecases::send_message::SendMessageSourceError;
 
@@ -147,6 +148,35 @@ pub(super) fn map_messages_error(error: TdLibError) -> MessagesSourceError {
     MessagesSourceError::Unavailable
 }
 
+/// Maps TDLib error to ListForumTopicsSourceError.
+pub(super) fn map_forum_topics_error(error: TdLibError) -> ListForumTopicsSourceError {
+    let msg = match &error {
+        TdLibError::Request { message, .. } => message.to_ascii_lowercase(),
+        _ => String::new(),
+    };
+
+    if msg.contains("unauthorized") || msg.contains("auth") {
+        return ListForumTopicsSourceError::Unauthorized;
+    }
+
+    if msg.contains("chat") && msg.contains("not found") {
+        return ListForumTopicsSourceError::ChatNotFound;
+    }
+
+    // TDLib returns "The chat is not a forum" / "The supergroup must be a
+    // forum" / "CHANNEL_FORUM_MISSING" when our cached `is_forum` flag is
+    // stale. Surface this as a hard data error so the UI shows an error
+    // state instead of looping in Loading.
+    if msg.contains("not a forum")
+        || msg.contains("must be a forum")
+        || msg.contains("forum_missing")
+    {
+        return ListForumTopicsSourceError::InvalidData;
+    }
+
+    ListForumTopicsSourceError::Unavailable
+}
+
 /// Maps TDLib error to SendMessageSourceError.
 pub(super) fn map_send_message_error(error: TdLibError) -> SendMessageSourceError {
     let msg = match &error {
@@ -180,4 +210,52 @@ pub(super) fn map_edit_message_error(error: TdLibError) -> EditMessageSourceErro
     }
 
     EditMessageSourceError::Unavailable
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(code: i32, message: &str) -> TdLibError {
+        TdLibError::Request {
+            code,
+            message: message.to_owned(),
+        }
+    }
+
+    #[test]
+    fn forum_topics_error_chat_not_found_is_mapped() {
+        let err = request(400, "Chat not found");
+        assert_eq!(
+            map_forum_topics_error(err),
+            ListForumTopicsSourceError::ChatNotFound
+        );
+    }
+
+    #[test]
+    fn forum_topics_error_not_a_forum_is_invalid_data() {
+        let err = request(400, "The chat is not a forum");
+        assert_eq!(
+            map_forum_topics_error(err),
+            ListForumTopicsSourceError::InvalidData
+        );
+    }
+
+    #[test]
+    fn forum_topics_error_must_be_a_forum_is_invalid_data() {
+        let err = request(400, "The supergroup must be a forum");
+        assert_eq!(
+            map_forum_topics_error(err),
+            ListForumTopicsSourceError::InvalidData
+        );
+    }
+
+    #[test]
+    fn forum_topics_error_unknown_falls_back_to_unavailable() {
+        let err = request(500, "Internal Server Error");
+        assert_eq!(
+            map_forum_topics_error(err),
+            ListForumTopicsSourceError::Unavailable
+        );
+    }
 }

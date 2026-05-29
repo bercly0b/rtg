@@ -196,6 +196,7 @@ fn background_messages_on_cached_ready_chat_uses_update_messages() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![
                 message(8, "Older"),
                 message(9, "Old"),
@@ -223,6 +224,7 @@ fn background_messages_on_loading_chat_uses_set_ready() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![message(1, "A"), message(2, "B")]),
         },
     ))

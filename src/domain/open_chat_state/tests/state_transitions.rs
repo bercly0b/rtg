@@ -128,3 +128,41 @@ fn clear_resets_to_empty() {
     assert!(!state.is_refreshing());
     assert_eq!(state.message_source(), MessageSource::None);
 }
+
+#[test]
+fn default_state_has_no_topic_id() {
+    let state = OpenChatState::default();
+    assert_eq!(state.topic_id(), None);
+}
+
+#[test]
+fn set_loading_clears_topic_id() {
+    let mut state = OpenChatState::default();
+    state.set_loading_with_topic(1, Some(77), "Forum".to_owned(), ChatType::Group);
+
+    state.set_loading(2, "Plain".to_owned(), ChatType::Private);
+
+    assert_eq!(state.topic_id(), None);
+}
+
+#[test]
+fn set_loading_with_topic_stores_topic_id() {
+    let mut state = OpenChatState::default();
+
+    state.set_loading_with_topic(1, Some(77), "Forum > Topic".to_owned(), ChatType::Group);
+
+    assert_eq!(state.chat_id(), Some(1));
+    assert_eq!(state.topic_id(), Some(77));
+    assert_eq!(state.chat_title(), "Forum > Topic");
+    assert_eq!(state.ui_state(), OpenChatUiState::Loading);
+}
+
+#[test]
+fn clear_resets_topic_id() {
+    let mut state = OpenChatState::default();
+    state.set_loading_with_topic(1, Some(77), "Forum".to_owned(), ChatType::Group);
+
+    state.clear();
+
+    assert_eq!(state.topic_id(), None);
+}

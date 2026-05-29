@@ -2,6 +2,7 @@ mod chat_info;
 mod chat_list;
 mod chat_open;
 mod chat_updates;
+mod forum;
 mod help_popup;
 mod lifecycle;
 mod message_actions;
@@ -66,6 +67,7 @@ fn chat(chat_id: i64, title: &str) -> ChatSummary {
         outgoing_status: OutgoingReadStatus::default(),
         last_message_id: None,
         unread_reaction_count: 0,
+        is_forum: false,
     }
 }
 
@@ -91,20 +93,24 @@ fn message(id: i64, text: &str) -> Message {
 
 // ── Recording task dispatcher for tests ──
 
+type SendRecord = (i64, Option<i32>, String, Option<i64>);
+type MarkAsReadRecord = (i64, Option<i32>, Vec<i64>);
+
 /// Records what the orchestrator dispatched and allows inspection.
 struct RecordingDispatcher {
     dispatched_chat_list_count: RefCell<usize>,
     dispatched_chat_list_force: RefCell<Vec<bool>>,
-    dispatched_messages: RefCell<Vec<i64>>,
-    dispatched_older_messages: RefCell<Vec<(i64, i64)>>,
-    dispatched_sends: RefCell<Vec<(i64, String, Option<i64>)>>,
+    dispatched_messages: RefCell<Vec<(i64, Option<i32>)>>,
+    dispatched_older_messages: RefCell<Vec<(i64, Option<i32>, i64)>>,
+    dispatched_sends: RefCell<Vec<SendRecord>>,
     dispatched_open_chats: RefCell<Vec<i64>>,
     dispatched_close_chats: RefCell<Vec<i64>>,
-    dispatched_mark_as_read: RefCell<Vec<(i64, Vec<i64>)>>,
+    dispatched_mark_as_read: RefCell<Vec<MarkAsReadRecord>>,
     dispatched_mark_chat_as_read: RefCell<Vec<(i64, i64)>>,
-    dispatched_prefetches: RefCell<Vec<i64>>,
+    dispatched_prefetches: RefCell<Vec<(i64, Option<i32>)>>,
+    dispatched_forum_topics: RefCell<Vec<i64>>,
     dispatched_deletes: RefCell<Vec<(i64, i64)>>,
-    dispatched_voice_sends: RefCell<Vec<(i64, String)>>,
+    dispatched_voice_sends: RefCell<Vec<(i64, Option<i32>, String)>>,
     dispatched_subtitles: RefCell<Vec<ChatSubtitleQuery>>,
     dispatched_add_reactions: RefCell<Vec<(i64, i64, String)>>,
     dispatched_remove_reactions: RefCell<Vec<(i64, i64, String)>>,
@@ -123,6 +129,7 @@ impl RecordingDispatcher {
             dispatched_mark_as_read: RefCell::new(Vec::new()),
             dispatched_mark_chat_as_read: RefCell::new(Vec::new()),
             dispatched_prefetches: RefCell::new(Vec::new()),
+            dispatched_forum_topics: RefCell::new(Vec::new()),
             dispatched_deletes: RefCell::new(Vec::new()),
             dispatched_voice_sends: RefCell::new(Vec::new()),
             dispatched_subtitles: RefCell::new(Vec::new()),
@@ -148,7 +155,30 @@ impl RecordingDispatcher {
     }
 
     fn last_older_messages(&self) -> Option<(i64, i64)> {
+        self.dispatched_older_messages
+            .borrow()
+            .last()
+            .map(|(chat_id, _, from)| (*chat_id, *from))
+    }
+
+    #[allow(dead_code)]
+    fn last_older_messages_full(&self) -> Option<(i64, Option<i32>, i64)> {
         self.dispatched_older_messages.borrow().last().copied()
+    }
+
+    #[allow(dead_code)]
+    fn last_load_messages(&self) -> Option<(i64, Option<i32>)> {
+        self.dispatched_messages.borrow().last().copied()
+    }
+
+    #[allow(dead_code)]
+    fn last_forum_topics_chat_id(&self) -> Option<i64> {
+        self.dispatched_forum_topics.borrow().last().copied()
+    }
+
+    #[allow(dead_code)]
+    fn forum_topics_dispatch_count(&self) -> usize {
+        self.dispatched_forum_topics.borrow().len()
     }
 
     fn send_dispatch_count(&self) -> usize {
@@ -156,6 +186,14 @@ impl RecordingDispatcher {
     }
 
     fn last_send(&self) -> Option<(i64, String, Option<i64>)> {
+        self.dispatched_sends
+            .borrow()
+            .last()
+            .map(|(c, _, t, r)| (*c, t.clone(), *r))
+    }
+
+    #[allow(dead_code)]
+    fn last_send_full(&self) -> Option<(i64, Option<i32>, String, Option<i64>)> {
         self.dispatched_sends.borrow().last().cloned()
     }
 
@@ -172,6 +210,14 @@ impl RecordingDispatcher {
     }
 
     fn last_mark_as_read(&self) -> Option<(i64, Vec<i64>)> {
+        self.dispatched_mark_as_read
+            .borrow()
+            .last()
+            .map(|(c, _, ids)| (*c, ids.clone()))
+    }
+
+    #[allow(dead_code)]
+    fn last_mark_as_read_full(&self) -> Option<(i64, Option<i32>, Vec<i64>)> {
         self.dispatched_mark_as_read.borrow().last().cloned()
     }
 
@@ -188,7 +234,10 @@ impl RecordingDispatcher {
     }
 
     fn last_prefetch_chat_id(&self) -> Option<i64> {
-        self.dispatched_prefetches.borrow().last().copied()
+        self.dispatched_prefetches
+            .borrow()
+            .last()
+            .map(|(chat_id, _)| *chat_id)
     }
 
     fn delete_dispatch_count(&self) -> usize {
@@ -204,6 +253,14 @@ impl RecordingDispatcher {
     }
 
     fn last_voice_send(&self) -> Option<(i64, String)> {
+        self.dispatched_voice_sends
+            .borrow()
+            .last()
+            .map(|(c, _, f)| (*c, f.clone()))
+    }
+
+    #[allow(dead_code)]
+    fn last_voice_send_full(&self) -> Option<(i64, Option<i32>, String)> {
         self.dispatched_voice_sends.borrow().last().cloned()
     }
 
@@ -230,20 +287,37 @@ impl TaskDispatcher for RecordingDispatcher {
         self.dispatched_chat_list_force.borrow_mut().push(force);
     }
 
-    fn dispatch_load_messages(&self, chat_id: i64) {
-        self.dispatched_messages.borrow_mut().push(chat_id);
+    fn dispatch_load_forum_topics(&self, chat_id: i64) {
+        self.dispatched_forum_topics.borrow_mut().push(chat_id);
     }
 
-    fn dispatch_load_older_messages(&self, chat_id: i64, from_message_id: i64) {
+    fn dispatch_load_messages(&self, chat_id: i64, topic_id: Option<i32>) {
+        self.dispatched_messages
+            .borrow_mut()
+            .push((chat_id, topic_id));
+    }
+
+    fn dispatch_load_older_messages(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        from_message_id: i64,
+    ) {
         self.dispatched_older_messages
             .borrow_mut()
-            .push((chat_id, from_message_id));
+            .push((chat_id, topic_id, from_message_id));
     }
 
-    fn dispatch_send_message(&self, chat_id: i64, text: String, reply_to_message_id: Option<i64>) {
+    fn dispatch_send_message(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        text: String,
+        reply_to_message_id: Option<i64>,
+    ) {
         self.dispatched_sends
             .borrow_mut()
-            .push((chat_id, text, reply_to_message_id));
+            .push((chat_id, topic_id, text, reply_to_message_id));
     }
 
     fn dispatch_open_chat(&self, chat_id: i64) {
@@ -254,10 +328,10 @@ impl TaskDispatcher for RecordingDispatcher {
         self.dispatched_close_chats.borrow_mut().push(chat_id);
     }
 
-    fn dispatch_mark_as_read(&self, chat_id: i64, message_ids: Vec<i64>) {
+    fn dispatch_mark_as_read(&self, chat_id: i64, topic_id: Option<i32>, message_ids: Vec<i64>) {
         self.dispatched_mark_as_read
             .borrow_mut()
-            .push((chat_id, message_ids));
+            .push((chat_id, topic_id, message_ids));
     }
 
     fn dispatch_mark_chat_as_read(&self, chat_id: i64, last_message_id: i64) {
@@ -266,8 +340,10 @@ impl TaskDispatcher for RecordingDispatcher {
             .push((chat_id, last_message_id));
     }
 
-    fn dispatch_prefetch_messages(&self, chat_id: i64) {
-        self.dispatched_prefetches.borrow_mut().push(chat_id);
+    fn dispatch_prefetch_messages(&self, chat_id: i64, topic_id: Option<i32>) {
+        self.dispatched_prefetches
+            .borrow_mut()
+            .push((chat_id, topic_id));
     }
 
     fn dispatch_delete_message(&self, chat_id: i64, message_id: i64) {
@@ -280,10 +356,10 @@ impl TaskDispatcher for RecordingDispatcher {
         self.dispatched_subtitles.borrow_mut().push(query);
     }
 
-    fn dispatch_send_voice(&self, chat_id: i64, file_path: String) {
+    fn dispatch_send_voice(&self, chat_id: i64, topic_id: Option<i32>, file_path: String) {
         self.dispatched_voice_sends
             .borrow_mut()
-            .push((chat_id, file_path));
+            .push((chat_id, topic_id, file_path));
     }
 
     fn dispatch_download_file(&self, _file_id: i32) {
@@ -361,12 +437,98 @@ fn inject_chat_list(orchestrator: &mut TestOrchestrator, chats: Vec<ChatSummary>
         .unwrap();
 }
 
+/// Helper: inject forum topic list as if a background load completed.
+#[allow(dead_code)]
+fn inject_forum_topics(
+    orchestrator: &mut TestOrchestrator,
+    chat_id: i64,
+    topics: Vec<crate::domain::forum_topic::ForumTopicSummary>,
+) {
+    orchestrator
+        .handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::ForumTopicsLoaded {
+                chat_id,
+                result: Ok(topics),
+            },
+        ))
+        .unwrap();
+}
+
+/// Helper: inject a failed forum topics load (transient error).
+#[allow(dead_code)]
+fn inject_forum_topics_error(orchestrator: &mut TestOrchestrator, chat_id: i64) {
+    orchestrator
+        .handle_event(AppEvent::BackgroundTaskCompleted(
+            BackgroundTaskResult::ForumTopicsLoaded {
+                chat_id,
+                result: Err(crate::domain::events::BackgroundError::new(
+                    "FORUM_TOPICS_UNAVAILABLE",
+                )),
+            },
+        ))
+        .unwrap();
+}
+
+/// Helper: build a ChatSummary that's a forum supergroup.
+#[allow(dead_code)]
+fn forum_chat(chat_id: i64, title: &str) -> ChatSummary {
+    let mut c = chat(chat_id, title);
+    c.is_forum = true;
+    c.chat_type = crate::domain::chat::ChatType::Group;
+    c
+}
+
+/// Helper: build a ForumTopicSummary for tests.
+#[allow(dead_code)]
+fn topic(
+    chat_id: i64,
+    topic_id: i32,
+    name: &str,
+    order: i64,
+) -> crate::domain::forum_topic::ForumTopicSummary {
+    crate::domain::forum_topic::ForumTopicSummary {
+        chat_id,
+        topic_id,
+        name: name.to_owned(),
+        is_general: false,
+        is_closed: false,
+        is_hidden: false,
+        is_pinned: false,
+        unread_count: 0,
+        last_message_preview: None,
+        last_message_unix_ms: None,
+        last_message_id: None,
+        order,
+    }
+}
+
 /// Helper: inject messages as if a background load completed for given chat.
+///
+/// Defaults `topic_id` to the currently open topic for this chat (if any) so
+/// that tests which open a forum topic and then inject can stay terse. Use
+/// [`inject_topic_messages`] when you need to target a specific topic
+/// explicitly (e.g. to simulate a stale result from another topic).
 fn inject_messages(orchestrator: &mut TestOrchestrator, chat_id: i64, messages: Vec<Message>) {
+    let topic_id = if orchestrator.state().open_chat().chat_id() == Some(chat_id) {
+        orchestrator.state().open_chat().topic_id()
+    } else {
+        None
+    };
+    inject_topic_messages(orchestrator, chat_id, topic_id, messages);
+}
+
+/// Helper: inject a topic-scoped (or chat-scoped) messages background result.
+fn inject_topic_messages(
+    orchestrator: &mut TestOrchestrator,
+    chat_id: i64,
+    topic_id: Option<i32>,
+    messages: Vec<Message>,
+) {
     orchestrator
         .handle_event(AppEvent::BackgroundTaskCompleted(
             BackgroundTaskResult::MessagesLoaded {
                 chat_id,
+                topic_id,
                 result: Ok(messages),
             },
         ))

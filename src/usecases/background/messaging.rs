@@ -18,6 +18,7 @@ pub(super) fn dispatch_load_messages<M: MessagesSource + Send + Sync + 'static>(
     source: &Arc<M>,
     tx: &Sender<BackgroundTaskResult>,
     chat_id: i64,
+    topic_id: Option<i32>,
 ) {
     let source = Arc::clone(source);
     let tx = tx.clone();
@@ -26,21 +27,30 @@ pub(super) fn dispatch_load_messages<M: MessagesSource + Send + Sync + 'static>(
     let spawn_result = std::thread::Builder::new()
         .name("rtg-bg-messages".into())
         .spawn(move || {
-            tracing::debug!(chat_id, "background: fetching messages");
-            let result = load_messages(source.as_ref(), LoadMessagesQuery::new(chat_id))
+            tracing::debug!(chat_id, ?topic_id, "background: fetching messages");
+            let query = match topic_id {
+                Some(tid) => LoadMessagesQuery::for_topic(chat_id, tid),
+                None => LoadMessagesQuery::new(chat_id),
+            };
+            let result = load_messages(source.as_ref(), query)
                 .map(|output| output.messages)
                 .map_err(|error| {
                     tracing::warn!(chat_id, error = ?error, "background: messages fetch failed");
                     BackgroundError::new(map_load_messages_error(&error))
                 });
 
-            let _ = tx.send(BackgroundTaskResult::MessagesLoaded { chat_id, result });
+            let _ = tx.send(BackgroundTaskResult::MessagesLoaded {
+                chat_id,
+                topic_id,
+                result,
+            });
         });
 
     if let Err(error) = spawn_result {
         tracing::error!(error = %error, "failed to spawn messages background thread");
         let _ = tx_fallback.send(BackgroundTaskResult::MessagesLoaded {
             chat_id,
+            topic_id,
             result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
         });
     }
@@ -50,6 +60,7 @@ pub(super) fn dispatch_load_older_messages<M: MessagesSource + Send + Sync + 'st
     source: &Arc<M>,
     tx: &Sender<BackgroundTaskResult>,
     chat_id: i64,
+    topic_id: Option<i32>,
     from_message_id: i64,
 ) {
     let source = Arc::clone(source);
@@ -61,26 +72,33 @@ pub(super) fn dispatch_load_older_messages<M: MessagesSource + Send + Sync + 'st
         .spawn(move || {
             tracing::debug!(
                 chat_id,
+                ?topic_id,
                 from_message_id,
                 "background: fetching older messages"
             );
-            let result = load_messages(
-                source.as_ref(),
-                LoadMessagesQuery::older_than(chat_id, from_message_id),
-            )
-            .map(|output| output.messages)
-            .map_err(|error| {
-                tracing::warn!(chat_id, error = ?error, "background: older messages fetch failed");
-                BackgroundError::new(map_load_messages_error(&error))
-            });
+            let query = match topic_id {
+                Some(tid) => LoadMessagesQuery::older_than_in_topic(chat_id, tid, from_message_id),
+                None => LoadMessagesQuery::older_than(chat_id, from_message_id),
+            };
+            let result = load_messages(source.as_ref(), query)
+                .map(|output| output.messages)
+                .map_err(|error| {
+                    tracing::warn!(chat_id, error = ?error, "background: older messages fetch failed");
+                    BackgroundError::new(map_load_messages_error(&error))
+                });
 
-            let _ = tx.send(BackgroundTaskResult::OlderMessagesLoaded { chat_id, result });
+            let _ = tx.send(BackgroundTaskResult::OlderMessagesLoaded {
+                chat_id,
+                topic_id,
+                result,
+            });
         });
 
     if let Err(error) = spawn_result {
         tracing::error!(error = %error, "failed to spawn older messages background thread");
         let _ = tx_fallback.send(BackgroundTaskResult::OlderMessagesLoaded {
             chat_id,
+            topic_id,
             result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
         });
     }
@@ -94,6 +112,7 @@ pub(super) fn dispatch_send_message<
     messages_source: &Arc<M>,
     tx: &Sender<BackgroundTaskResult>,
     chat_id: i64,
+    topic_id: Option<i32>,
     text: String,
     reply_to_message_id: Option<i64>,
 ) {
@@ -107,9 +126,10 @@ pub(super) fn dispatch_send_message<
     let spawn_result = std::thread::Builder::new()
         .name("rtg-bg-send-msg".into())
         .spawn(move || {
-            tracing::debug!(chat_id, "background: sending message");
+            tracing::debug!(chat_id, ?topic_id, "background: sending message");
             let command = SendMessageCommand {
                 chat_id,
+                topic_id,
                 text,
                 reply_to_message_id,
             };
@@ -128,7 +148,7 @@ pub(super) fn dispatch_send_message<
 
             // If send succeeded, automatically refresh messages
             if is_ok {
-                refresh_messages_after_send(&messages_source, &tx, chat_id);
+                refresh_messages_after_send(&messages_source, &tx, chat_id, topic_id);
             }
         });
 
@@ -192,6 +212,7 @@ pub(super) fn dispatch_prefetch_messages<M: MessagesSource + Send + Sync + 'stat
     source: &Arc<M>,
     tx: &Sender<BackgroundTaskResult>,
     chat_id: i64,
+    topic_id: Option<i32>,
 ) {
     let source = Arc::clone(source);
     let tx = tx.clone();
@@ -200,8 +221,12 @@ pub(super) fn dispatch_prefetch_messages<M: MessagesSource + Send + Sync + 'stat
     let spawn_result = std::thread::Builder::new()
         .name("rtg-bg-prefetch".into())
         .spawn(move || {
-            tracing::debug!(chat_id, "background: prefetching messages");
-            let result = load_messages(source.as_ref(), LoadMessagesQuery::new(chat_id))
+            tracing::debug!(chat_id, ?topic_id, "background: prefetching messages");
+            let query = match topic_id {
+                Some(tid) => LoadMessagesQuery::for_topic(chat_id, tid),
+                None => LoadMessagesQuery::new(chat_id),
+            };
+            let result = load_messages(source.as_ref(), query)
                 .map(|output| output.messages)
                 .map_err(|error| {
                     tracing::warn!(chat_id, error = ?error, "background: prefetch failed");
@@ -228,6 +253,7 @@ pub(super) fn dispatch_send_voice<
     messages_source: &Arc<M>,
     tx: &Sender<BackgroundTaskResult>,
     chat_id: i64,
+    topic_id: Option<i32>,
     file_path: String,
 ) {
     let sender = Arc::clone(sender);
@@ -240,13 +266,18 @@ pub(super) fn dispatch_send_voice<
         .spawn(move || {
             use crate::usecases::voice_recording;
 
-            tracing::info!(chat_id, file_path, "background: sending voice note");
+            tracing::info!(
+                chat_id,
+                ?topic_id,
+                file_path,
+                "background: sending voice note"
+            );
 
             let duration = voice_recording::get_audio_duration(&file_path).unwrap_or(0);
             let waveform = voice_recording::generate_waveform_stub();
 
             let result = sender
-                .send_voice_note(chat_id, &file_path, duration, &waveform)
+                .send_voice_note(chat_id, topic_id, &file_path, duration, &waveform)
                 .map_err(|error| {
                     tracing::warn!(
                         chat_id,
@@ -261,7 +292,7 @@ pub(super) fn dispatch_send_voice<
                 return;
             }
 
-            refresh_messages_after_send(&messages_source, &tx, chat_id);
+            refresh_messages_after_send(&messages_source, &tx, chat_id, topic_id);
         });
 
     if let Err(error) = spawn_result {
@@ -274,9 +305,18 @@ fn refresh_messages_after_send<M: MessagesSource>(
     messages_source: &M,
     tx: &Sender<BackgroundTaskResult>,
     chat_id: i64,
+    topic_id: Option<i32>,
 ) {
-    tracing::debug!(chat_id, "background: refreshing messages after send");
-    let refresh_result = load_messages(messages_source, LoadMessagesQuery::new(chat_id))
+    tracing::debug!(
+        chat_id,
+        ?topic_id,
+        "background: refreshing messages after send"
+    );
+    let query = match topic_id {
+        Some(tid) => LoadMessagesQuery::for_topic(chat_id, tid),
+        None => LoadMessagesQuery::new(chat_id),
+    };
+    let refresh_result = load_messages(messages_source, query)
         .map(|output| output.messages)
         .map_err(|error| {
             tracing::warn!(
@@ -289,6 +329,7 @@ fn refresh_messages_after_send<M: MessagesSource>(
 
     let _ = tx.send(BackgroundTaskResult::MessageSentRefreshCompleted {
         chat_id,
+        topic_id,
         result: refresh_result,
     });
 }

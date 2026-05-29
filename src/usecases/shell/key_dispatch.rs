@@ -5,7 +5,7 @@ use crate::{
     usecases::background::TaskDispatcher,
 };
 
-use super::{chat_list, chat_open, message_actions, voice, OrchestratorCtx};
+use super::{chat_list, chat_open, forum, message_actions, voice, OrchestratorCtx};
 
 pub(super) fn dispatch_chat_list_action<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
@@ -42,7 +42,10 @@ pub(super) fn dispatch_chat_list_action<D: TaskDispatcher>(
         Action::ShowChatInfo => chat_list::show_chat_info_popup(ctx),
         Action::SearchChats => ctx.state.open_chat_search(),
         Action::OpenChat if ctx.state.chat_list().selected_chat().is_some() => {
-            ctx.state.set_active_pane(ActivePane::Messages);
+            // Pane management lives inside open_selected_chat — forum chats
+            // need the ChatList pane to stay active, regular chats switch to
+            // Messages. Setting it here first would briefly show the wrong
+            // pane for forum chats.
             chat_open::open_selected_chat(ctx);
             return Ok(true);
         }
@@ -80,11 +83,26 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
             ctx.state.open_chat_mut().select_last();
         }
         Action::BackToChatList => {
-            chat_open::close_tdlib_chat(ctx);
-            ctx.state.set_active_pane(ActivePane::ChatList);
+            // A topic-open state implies an active forum_topic_list panel —
+            // they're installed and dropped together. If a topic is open, `h`
+            // returns to the topic list without closing the parent chat.
+            if ctx.state.open_chat().topic_id().is_some() {
+                debug_assert!(
+                    ctx.state.forum_topic_list().is_some(),
+                    "topic_id set without forum_topic_list panel — invariant broken"
+                );
+                forum::back_to_topic_list(ctx);
+            } else {
+                chat_open::close_tdlib_chat(ctx);
+                ctx.state.set_active_pane(ActivePane::ChatList);
+            }
         }
         Action::EnterMessageInput if ctx.state.open_chat().is_open() => {
-            ctx.state.set_active_pane(ActivePane::MessageInput);
+            if ctx.state.open_topic_is_closed() {
+                ctx.state.set_notification("Topic is closed");
+            } else {
+                ctx.state.set_active_pane(ActivePane::MessageInput);
+            }
         }
         Action::CopyMessage => {
             if let Some(msg) = ctx.state.open_chat().selected_message() {
@@ -237,6 +255,48 @@ fn maybe_load_older_messages<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>
     };
 
     *ctx.older_messages_in_flight = true;
+    let topic_id = ctx.state.open_chat().topic_id();
     ctx.dispatcher
-        .dispatch_load_older_messages(chat_id, from_message_id);
+        .dispatch_load_older_messages(chat_id, topic_id, from_message_id);
+}
+
+pub(super) fn dispatch_forum_topic_list_action<D: TaskDispatcher>(
+    ctx: &mut OrchestratorCtx<'_, D>,
+    action: Action,
+) -> Result<()> {
+    match action {
+        Action::SelectNextTopic => {
+            if let Some(list) = ctx.state.forum_topic_list_mut() {
+                list.select_next();
+            }
+        }
+        Action::SelectPreviousTopic => {
+            if let Some(list) = ctx.state.forum_topic_list_mut() {
+                list.select_previous();
+            }
+        }
+        Action::SelectFirstTopic => {
+            if let Some(list) = ctx.state.forum_topic_list_mut() {
+                list.select_first();
+            }
+        }
+        Action::OpenForumTopic => {
+            forum::open_selected_topic(ctx);
+        }
+        Action::BackFromForum => {
+            forum::leave_forum(ctx);
+        }
+        Action::ReloadForumTopics => {
+            forum::reload_topics(ctx);
+        }
+        Action::Quit => {
+            chat_open::close_tdlib_chat(ctx);
+            ctx.state.stop();
+        }
+        Action::ShowHelp => {
+            ctx.state.show_help();
+        }
+        _ => {}
+    }
+    Ok(())
 }

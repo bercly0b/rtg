@@ -58,6 +58,7 @@ fn older_messages_loaded_prepends_to_open_chat() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::OlderMessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Ok(older),
         },
     ))
@@ -80,6 +81,7 @@ fn older_messages_empty_result_sets_all_loaded() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::OlderMessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![]),
         },
     ))
@@ -98,6 +100,7 @@ fn older_messages_for_wrong_chat_is_discarded() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::OlderMessagesLoaded {
             chat_id: 999,
+            topic_id: None,
             result: Ok(older),
         },
     ))
@@ -115,6 +118,7 @@ fn older_messages_error_does_not_crash() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::OlderMessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Err(BackgroundError::new("TEST_ERROR")),
         },
     ))
@@ -141,6 +145,7 @@ fn can_dispatch_again_after_older_messages_complete() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::OlderMessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Ok(older),
         },
     ))

@@ -61,6 +61,10 @@ pub enum MessageSource {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenChatState {
     chat_id: Option<i64>,
+    /// Optional forum topic id. When set, this state represents an open
+    /// forum-topic conversation (messages, sends, mark-as-read, history
+    /// pagination must all be scoped to this topic).
+    topic_id: Option<i32>,
     chat_title: String,
     chat_subtitle: ChatSubtitle,
     chat_type: ChatType,
@@ -81,6 +85,7 @@ impl Default for OpenChatState {
     fn default() -> Self {
         Self {
             chat_id: None,
+            topic_id: None,
             chat_title: String::new(),
             chat_subtitle: ChatSubtitle::None,
             chat_type: ChatType::Private,
@@ -100,6 +105,13 @@ impl OpenChatState {
     #[allow(dead_code)]
     pub fn chat_id(&self) -> Option<i64> {
         self.chat_id
+    }
+
+    /// Returns the active forum topic id, if this state represents an open
+    /// forum topic conversation.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn topic_id(&self) -> Option<i32> {
+        self.topic_id
     }
 
     pub fn chat_title(&self) -> &str {
@@ -242,7 +254,23 @@ impl OpenChatState {
     }
 
     pub fn set_loading(&mut self, chat_id: i64, chat_title: String, chat_type: ChatType) {
+        self.set_loading_with_topic(chat_id, None, chat_title, chat_type);
+    }
+
+    /// Transitions to `Loading` for a specific forum topic inside a chat.
+    ///
+    /// When `topic_id` is `Some`, follow-up actions (mark-as-read, sends,
+    /// pagination) are expected to be scoped to that topic. Passing `None`
+    /// behaves identically to [`set_loading`].
+    pub fn set_loading_with_topic(
+        &mut self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        chat_title: String,
+        chat_type: ChatType,
+    ) {
         self.chat_id = Some(chat_id);
+        self.topic_id = topic_id;
         self.chat_title = chat_title;
         self.chat_subtitle = ChatSubtitle::None;
         self.chat_type = chat_type;
@@ -395,6 +423,7 @@ impl OpenChatState {
     #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.chat_id = None;
+        self.topic_id = None;
         self.chat_title.clear();
         self.chat_subtitle = ChatSubtitle::None;
         self.chat_type = ChatType::Private;

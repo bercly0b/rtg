@@ -1,5 +1,6 @@
 mod chat_list;
 mod chat_list_item;
+mod forum_topic_list_item;
 mod messages_panel;
 mod status_line;
 mod text_utils;
@@ -42,6 +43,7 @@ pub(super) fn chat_with_pinned(
         outgoing_status: OutgoingReadStatus::default(),
         last_message_id: None,
         unread_reaction_count: 0,
+        is_forum: false,
     }
 }
 
@@ -65,6 +67,7 @@ pub(super) fn group_chat(
         outgoing_status: OutgoingReadStatus::default(),
         last_message_id: None,
         unread_reaction_count: 0,
+        is_forum: false,
     }
 }
 
@@ -89,6 +92,7 @@ pub(super) fn group_chat_outgoing(
         outgoing_status: OutgoingReadStatus::Outgoing { is_read },
         last_message_id: None,
         unread_reaction_count: 0,
+        is_forum: false,
     }
 }
 
@@ -112,6 +116,7 @@ pub(super) fn private_chat_online(
         outgoing_status: OutgoingReadStatus::default(),
         last_message_id: None,
         unread_reaction_count: 0,
+        is_forum: false,
     }
 }
 
@@ -135,6 +140,7 @@ pub(super) fn private_chat_outgoing(
         outgoing_status: OutgoingReadStatus::Outgoing { is_read },
         last_message_id: None,
         unread_reaction_count: 0,
+        is_forum: false,
     }
 }
 
@@ -158,5 +164,6 @@ pub(super) fn channel_chat_outgoing(
         outgoing_status: OutgoingReadStatus::Outgoing { is_read },
         last_message_id: None,
         unread_reaction_count: 0,
+        is_forum: false,
     }
 }

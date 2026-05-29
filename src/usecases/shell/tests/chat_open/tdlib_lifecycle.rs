@@ -68,6 +68,7 @@ fn messages_loaded_dispatches_mark_as_read() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![message(10, "A"), message(20, "B"), message(30, "C")]),
         },
     ))
@@ -89,6 +90,7 @@ fn messages_loaded_does_not_mark_as_read_when_empty() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![]),
         },
     ))
@@ -104,6 +106,7 @@ fn message_sent_refresh_dispatches_mark_as_read() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessageSentRefreshCompleted {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![message(1, "Hello"), message(2, "My reply")]),
         },
     ))
@@ -161,6 +164,7 @@ fn stale_messages_do_not_dispatch_mark_as_read() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![message(10, "Stale")]),
         },
     ))
@@ -188,6 +192,7 @@ fn messages_loaded_does_not_mark_as_read_when_focus_on_chat_list() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![message(10, "A"), message(20, "B")]),
         },
     ))
@@ -207,6 +212,7 @@ fn messages_loaded_marks_as_read_when_focus_on_messages() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![message(10, "A"), message(20, "B")]),
         },
     ))
@@ -229,6 +235,7 @@ fn messages_loaded_marks_as_read_when_focus_on_message_input() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![message(1, "Hello"), message(2, "New")]),
         },
     ))

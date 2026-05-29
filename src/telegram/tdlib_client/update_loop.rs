@@ -88,6 +88,19 @@ impl TdLibClient {
                         Update::User(u) => {
                             cache.upsert_user(u.user);
                         }
+                        Update::Supergroup(u) => {
+                            let supergroup_id = u.supergroup.id;
+                            cache.upsert_supergroup(u.supergroup);
+                            // Re-resolve chat metadata so toggles of supergroup
+                            // properties (notably `is_forum`) become visible
+                            // in the chat list without a full restart.
+                            if let Some(chat_id) =
+                                cache.find_chat_id_by_supergroup_id(supergroup_id)
+                            {
+                                let _ = update_tx
+                                    .send(TdLibUpdate::SupergroupMetadataChanged { chat_id });
+                            }
+                        }
 
                         // TDLib option updates (e.g. "my_id" for current user)
                         Update::Option(u) => {
@@ -183,6 +196,20 @@ impl TdLibClient {
                                 u.chat_id,
                                 u.unread_reaction_count,
                             );
+                        }
+
+                        // Forum topic updates
+                        Update::ForumTopicInfo(u) => {
+                            let _ = update_tx.send(TdLibUpdate::ForumTopicInfoChanged {
+                                chat_id: u.info.chat_id,
+                                topic_id: u.info.forum_topic_id,
+                            });
+                        }
+                        Update::ForumTopic(u) => {
+                            let _ = update_tx.send(TdLibUpdate::ForumTopicChanged {
+                                chat_id: u.chat_id,
+                                topic_id: u.forum_topic_id,
+                            });
                         }
 
                         // File download progress updates

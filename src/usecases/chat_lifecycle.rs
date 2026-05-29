@@ -54,9 +54,12 @@ pub trait FileDownloader: Send + Sync {
 /// state changes, which triggers a reactive chat list refresh with
 /// updated `unread_count`.
 pub trait ChatReadMarker: Send + Sync {
+    /// Marks messages as read. When `topic_id` is `Some`, TDLib treats them
+    /// as viewed from a forum topic history (instead of the chat history).
     fn mark_messages_read(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         message_ids: Vec<i64>,
     ) -> Result<(), ChatLifecycleError>;
 }
@@ -82,6 +85,7 @@ mod tests {
         fn mark_messages_read(
             &self,
             _chat_id: i64,
+            _topic_id: Option<i32>,
             _message_ids: Vec<i64>,
         ) -> Result<(), ChatLifecycleError> {
             Ok(())
@@ -111,7 +115,7 @@ mod tests {
     #[test]
     fn stub_read_marker_succeeds() {
         let marker = StubReadMarker;
-        assert!(marker.mark_messages_read(1, vec![1, 2, 3]).is_ok());
+        assert!(marker.mark_messages_read(1, None, vec![1, 2, 3]).is_ok());
     }
 
     #[test]

@@ -17,6 +17,18 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
     let chat_id = selected.chat_id;
     let chat_title = selected.title.clone();
     let chat_type = selected.chat_type;
+    let is_forum = selected.is_forum;
+
+    // Forum chats route into the topic-list panel rather than directly into
+    // the messages view. The active pane stays ChatList (left panel just
+    // renders topics instead of chats) — see ui/view/chat_list.rs.
+    if is_forum {
+        super::forum::enter_forum(ctx, chat_id, chat_title);
+        return;
+    }
+
+    // Non-forum chats focus the messages pane.
+    ctx.state.set_active_pane(ActivePane::Messages);
 
     // Cancel any in-flight prefetch — the user explicitly opened a chat.
     *ctx.prefetch_in_flight = None;
@@ -84,7 +96,8 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
 
     // Dispatch a full background load (pagination).
     *ctx.messages_refresh_in_flight = true;
-    ctx.dispatcher.dispatch_load_messages(chat_id);
+    let topic_id = ctx.state.open_chat().topic_id();
+    ctx.dispatcher.dispatch_load_messages(chat_id, topic_id);
 
     // Dispatch subtitle resolution (user status / member count).
     ctx.dispatcher
@@ -113,7 +126,8 @@ pub(super) fn maybe_prefetch_selected_chat<D: TaskDispatcher>(ctx: &mut Orchestr
 
     tracing::debug!(chat_id, "prefetching messages for highlighted chat");
     *ctx.prefetch_in_flight = Some(chat_id);
-    ctx.dispatcher.dispatch_prefetch_messages(chat_id);
+    // Prefetch from the chat-list hover; never scoped to a forum topic.
+    ctx.dispatcher.dispatch_prefetch_messages(chat_id, None);
 }
 
 /// Closes the currently TDLib-opened chat if it differs from `next_chat_id`.
@@ -164,7 +178,9 @@ pub(super) fn mark_open_chat_messages_as_read<D: TaskDispatcher>(ctx: &mut Orche
     }
 
     let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
-    ctx.dispatcher.dispatch_mark_as_read(chat_id, message_ids);
+    let topic_id = ctx.state.open_chat().topic_id();
+    ctx.dispatcher
+        .dispatch_mark_as_read(chat_id, topic_id, message_ids);
 }
 
 /// Attempts to synchronously load cached messages for instant display.

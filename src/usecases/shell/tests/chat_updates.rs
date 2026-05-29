@@ -97,6 +97,7 @@ fn messages_load_error_does_not_dispatch_mark_as_read() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Err(BackgroundError::new("MESSAGES_UNAVAILABLE")),
         },
     ))
@@ -256,6 +257,7 @@ fn group_chat(chat_id: i64, title: &str) -> ChatSummary {
         outgoing_status: OutgoingReadStatus::default(),
         last_message_id: None,
         unread_reaction_count: 0,
+        is_forum: false,
     }
 }
 

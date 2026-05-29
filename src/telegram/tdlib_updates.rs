@@ -85,6 +85,17 @@ pub enum TdLibUpdate {
         is_downloading_completed: bool,
         downloaded_size: i64,
     },
+
+    /// Forum topic metadata (name, icon, closed/hidden flags) changed.
+    ForumTopicInfoChanged { chat_id: i64, topic_id: i32 },
+
+    /// Forum topic read state / pinned / draft changed.
+    ForumTopicChanged { chat_id: i64, topic_id: i32 },
+
+    /// A supergroup-level property changed (e.g. `is_forum` toggled). The
+    /// chat list should re-resolve this chat's metadata so the forum flag
+    /// becomes current.
+    SupergroupMetadataChanged { chat_id: i64 },
 }
 
 impl TdLibUpdate {
@@ -104,6 +115,9 @@ impl TdLibUpdate {
             | TdLibUpdate::ChatUnreadReactionCount { chat_id }
             | TdLibUpdate::MessageInteractionInfoChanged { chat_id, .. } => Some(*chat_id),
             TdLibUpdate::ChatAction { chat_id, .. } => Some(*chat_id),
+            TdLibUpdate::ForumTopicInfoChanged { chat_id, .. }
+            | TdLibUpdate::ForumTopicChanged { chat_id, .. }
+            | TdLibUpdate::SupergroupMetadataChanged { chat_id } => Some(*chat_id),
             TdLibUpdate::UserStatus { .. } | TdLibUpdate::FileUpdated { .. } => None,
         }
     }
@@ -125,6 +139,9 @@ impl TdLibUpdate {
             TdLibUpdate::MessageInteractionInfoChanged { .. } => "message_interaction_info_changed",
             TdLibUpdate::ChatAction { .. } => "chat_action",
             TdLibUpdate::FileUpdated { .. } => "file_updated",
+            TdLibUpdate::ForumTopicInfoChanged { .. } => "forum_topic_info",
+            TdLibUpdate::ForumTopicChanged { .. } => "forum_topic",
+            TdLibUpdate::SupergroupMetadataChanged { .. } => "supergroup_metadata",
         }
     }
 }

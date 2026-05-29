@@ -52,8 +52,10 @@ pub(super) fn mark_selected_chat_as_read<D: TaskDispatcher>(ctx: &mut Orchestrat
 
     // If this chat is already opened in TDLib, just mark messages as read directly
     if *ctx.tdlib_opened_chat_id == Some(chat_id) {
+        // Mark-from-chat-list is only triggered from the root list, never
+        // from inside a forum topic — no topic_id to thread.
         ctx.dispatcher
-            .dispatch_mark_as_read(chat_id, vec![last_message_id]);
+            .dispatch_mark_as_read(chat_id, None, vec![last_message_id]);
     } else {
         ctx.dispatcher
             .dispatch_mark_chat_as_read(chat_id, last_message_id);

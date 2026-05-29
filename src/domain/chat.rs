@@ -45,4 +45,10 @@ pub struct ChatSummary {
     pub last_message_id: Option<i64>,
     /// Number of unread reactions on own messages in this chat.
     pub unread_reaction_count: u32,
+    /// `true` if this chat is a supergroup forum (topics enabled).
+    ///
+    /// Forum chats are rendered as a topic list instead of a flat message
+    /// thread — see `ForumTopicListState`. Always `false` for non-supergroup
+    /// chats.
+    pub is_forum: bool,
 }

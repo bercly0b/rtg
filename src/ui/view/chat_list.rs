@@ -9,10 +9,12 @@ use ratatui::{
 use crate::domain::{
     chat::ChatSummary,
     chat_list_state::ChatListUiState,
+    forum_topic_list_state::ForumTopicListUiState,
     shell_state::{ActivePane, ShellState},
 };
 
 use super::chat_list_item::chat_list_item_line;
+use super::forum_topic_list_item::forum_topic_list_item_line;
 use super::{panel_title_style, styles};
 
 pub(super) fn render_chat_list_panel(
@@ -24,20 +26,27 @@ pub(super) fn render_chat_list_panel(
     let is_active = active_pane == ActivePane::ChatList;
     let title_style = panel_title_style(is_active);
 
+    if let Some(forum_list) = state.forum_topic_list() {
+        render_forum_topic_list_panel(frame, area, forum_list, is_active, title_style);
+        return;
+    }
+
     let chat_list = state.chat_list();
     match chat_list.ui_state() {
         ChatListUiState::Loading => {
-            render_chat_list_message(frame, area, "Loading chats...", title_style)
+            render_chat_list_message(frame, area, "Chats", "Loading chats...", title_style)
         }
         ChatListUiState::Empty => render_chat_list_message(
             frame,
             area,
+            "Chats",
             "No chats yet. Press refresh to try again.",
             title_style,
         ),
         ChatListUiState::Error => render_chat_list_message(
             frame,
             area,
+            "Chats",
             "Failed to load chats. Check connection and retry.",
             title_style,
         ),
@@ -80,10 +89,16 @@ pub(super) fn render_chat_list_panel(
     }
 }
 
-fn render_chat_list_message(frame: &mut Frame<'_>, area: Rect, message: &str, title_style: Style) {
+fn render_chat_list_message(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &str,
+    message: &str,
+    title_style: Style,
+) {
     let message = Paragraph::new(message).block(
         Block::new()
-            .title("Chats")
+            .title(title.to_owned())
             .title_style(title_style)
             .title_alignment(Alignment::Center)
             .padding(Padding::horizontal(1)),
@@ -143,4 +158,63 @@ fn section_header_item(title: &str) -> ListItem<'static> {
         styles::section_header_style(),
     )]);
     ListItem::new(line)
+}
+
+pub(super) fn render_forum_topic_list_panel(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    forum_list: &crate::domain::forum_topic_list_state::ForumTopicListState,
+    is_active: bool,
+    title_style: Style,
+) {
+    let panel_title = forum_list.parent_chat_title().to_owned();
+    match forum_list.ui_state() {
+        ForumTopicListUiState::Loading => {
+            render_chat_list_message(frame, area, &panel_title, "Loading topics...", title_style)
+        }
+        ForumTopicListUiState::Empty => {
+            render_chat_list_message(frame, area, &panel_title, "No topics yet.", title_style)
+        }
+        ForumTopicListUiState::Error => render_chat_list_message(
+            frame,
+            area,
+            &panel_title,
+            "Failed to load topics. Press h to go back.",
+            title_style,
+        ),
+        ForumTopicListUiState::Ready => {
+            let topics = forum_list.topics();
+            let inner_width = area.width.saturating_sub(2) as usize;
+            let mut items: Vec<ListItem<'static>> = Vec::with_capacity(topics.len());
+            for topic in topics {
+                items.push(ListItem::new(forum_topic_list_item_line(
+                    topic,
+                    inner_width,
+                )));
+            }
+
+            let title = format!("{} ({})", panel_title, topics.len());
+            let highlight = if is_active {
+                styles::highlight_style()
+            } else {
+                Style::default()
+            };
+
+            let list = List::new(items)
+                .block(
+                    Block::new()
+                        .title(title)
+                        .title_style(title_style)
+                        .title_alignment(Alignment::Center)
+                        .padding(Padding::horizontal(1)),
+                )
+                .highlight_style(highlight);
+
+            let mut list_state = ListState::default();
+            if is_active {
+                list_state.select(forum_list.selected_index());
+            }
+            frame.render_stateful_widget(list, area, &mut list_state);
+        }
+    }
 }

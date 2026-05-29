@@ -30,6 +30,7 @@ fn messages_loaded_error_sets_error_state() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Err(BackgroundError::new("MESSAGES_UNAVAILABLE")),
         },
     ))
@@ -53,6 +54,7 @@ fn stale_messages_result_is_discarded() {
     o.handle_event(AppEvent::BackgroundTaskCompleted(
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
+            topic_id: None,
             result: Ok(vec![message(1, "Stale")]),
         },
     ))

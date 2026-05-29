@@ -13,6 +13,13 @@ pub enum Action {
     ShowChatInfo,
     SearchChats,
     SelectFirstChat,
+    // ForumTopicList
+    SelectNextTopic,
+    SelectPreviousTopic,
+    SelectFirstTopic,
+    OpenForumTopic,
+    BackFromForum,
+    ReloadForumTopics,
     // Messages
     ScrollNextMessage,
     ScrollPreviousMessage,
@@ -46,6 +53,12 @@ impl Action {
             Self::ShowChatInfo => "show_chat_info",
             Self::SearchChats => "search_chats",
             Self::SelectFirstChat => "select_first_chat",
+            Self::SelectNextTopic => "select_next_topic",
+            Self::SelectPreviousTopic => "select_previous_topic",
+            Self::SelectFirstTopic => "select_first_topic",
+            Self::OpenForumTopic => "open_forum_topic",
+            Self::BackFromForum => "back_from_forum",
+            Self::ReloadForumTopics => "reload_forum_topics",
             Self::ScrollNextMessage => "scroll_to_next_message",
             Self::ScrollPreviousMessage => "scroll_to_previous_message",
             Self::BackToChatList => "back_to_chat_list",
@@ -77,6 +90,12 @@ impl Action {
             "show_chat_info" => Some(Self::ShowChatInfo),
             "search_chats" => Some(Self::SearchChats),
             "select_first_chat" => Some(Self::SelectFirstChat),
+            "select_next_topic" => Some(Self::SelectNextTopic),
+            "select_previous_topic" => Some(Self::SelectPreviousTopic),
+            "select_first_topic" => Some(Self::SelectFirstTopic),
+            "open_forum_topic" => Some(Self::OpenForumTopic),
+            "back_from_forum" => Some(Self::BackFromForum),
+            "reload_forum_topics" => Some(Self::ReloadForumTopics),
             "scroll_to_next_message" => Some(Self::ScrollNextMessage),
             "scroll_to_previous_message" => Some(Self::ScrollPreviousMessage),
             "back_to_chat_list" => Some(Self::BackToChatList),
@@ -177,6 +196,7 @@ impl KeyPattern {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyContext {
     ChatList,
+    ForumTopicList,
     Messages,
     Global,
 }
@@ -448,6 +468,42 @@ fn default_bindings() -> Vec<KeyBinding> {
             pattern: KeyPattern::sequence(vec!["g", "g"]),
             action: Action::SelectFirstChat,
             context: KeyContext::ChatList,
+        },
+        // ── ForumTopicList ──
+        KeyBinding {
+            pattern: KeyPattern::single("j"),
+            action: Action::SelectNextTopic,
+            context: KeyContext::ForumTopicList,
+        },
+        KeyBinding {
+            pattern: KeyPattern::single("k"),
+            action: Action::SelectPreviousTopic,
+            context: KeyContext::ForumTopicList,
+        },
+        KeyBinding {
+            pattern: KeyPattern::single("enter"),
+            action: Action::OpenForumTopic,
+            context: KeyContext::ForumTopicList,
+        },
+        KeyBinding {
+            pattern: KeyPattern::single("l"),
+            action: Action::OpenForumTopic,
+            context: KeyContext::ForumTopicList,
+        },
+        KeyBinding {
+            pattern: KeyPattern::single("h"),
+            action: Action::BackFromForum,
+            context: KeyContext::ForumTopicList,
+        },
+        KeyBinding {
+            pattern: KeyPattern::sequence(vec!["g", "g"]),
+            action: Action::SelectFirstTopic,
+            context: KeyContext::ForumTopicList,
+        },
+        KeyBinding {
+            pattern: KeyPattern::single("R"),
+            action: Action::ReloadForumTopics,
+            context: KeyContext::ForumTopicList,
         },
         // ── Messages ──
         KeyBinding {
@@ -829,6 +885,95 @@ mod tests {
         assert_eq!(
             km.resolve("l", false, KeyContext::ChatList),
             ResolveResult::Action(Action::OpenChat)
+        );
+    }
+
+    #[test]
+    fn forum_topic_list_navigation_keys_resolve() {
+        let mut km = Keymap::default();
+        assert_eq!(
+            km.resolve("j", false, KeyContext::ForumTopicList),
+            ResolveResult::Action(Action::SelectNextTopic)
+        );
+        assert_eq!(
+            km.resolve("k", false, KeyContext::ForumTopicList),
+            ResolveResult::Action(Action::SelectPreviousTopic)
+        );
+    }
+
+    #[test]
+    fn forum_topic_list_open_keys_resolve_to_open_forum_topic() {
+        let mut km = Keymap::default();
+        assert_eq!(
+            km.resolve("enter", false, KeyContext::ForumTopicList),
+            ResolveResult::Action(Action::OpenForumTopic)
+        );
+        let mut km = Keymap::default();
+        assert_eq!(
+            km.resolve("l", false, KeyContext::ForumTopicList),
+            ResolveResult::Action(Action::OpenForumTopic)
+        );
+    }
+
+    #[test]
+    fn h_in_forum_topic_list_returns_to_root_chat_list() {
+        let mut km = Keymap::default();
+        assert_eq!(
+            km.resolve("h", false, KeyContext::ForumTopicList),
+            ResolveResult::Action(Action::BackFromForum)
+        );
+    }
+
+    #[test]
+    fn gg_in_forum_topic_list_selects_first_topic() {
+        let mut km = Keymap::default();
+        assert_eq!(
+            km.resolve("g", false, KeyContext::ForumTopicList),
+            ResolveResult::Pending
+        );
+        assert_eq!(
+            km.resolve("g", false, KeyContext::ForumTopicList),
+            ResolveResult::Action(Action::SelectFirstTopic)
+        );
+    }
+
+    #[test]
+    fn open_chat_action_is_not_resolved_in_forum_topic_list_context() {
+        let mut km = Keymap::default();
+        // `l` resolves to OpenForumTopic, never OpenChat, in ForumTopicList ctx.
+        match km.resolve("l", false, KeyContext::ForumTopicList) {
+            ResolveResult::Action(Action::OpenForumTopic) => {}
+            other => panic!("expected OpenForumTopic, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn back_from_forum_can_be_remapped_via_override() {
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("back_from_forum".to_owned(), "b".to_owned());
+        let mut km = Keymap::with_overrides(&overrides);
+        assert_eq!(
+            km.resolve("b", false, KeyContext::ForumTopicList),
+            ResolveResult::Action(Action::BackFromForum)
+        );
+    }
+
+    #[test]
+    fn help_entries_for_forum_topic_list_include_navigation_and_back() {
+        let km = Keymap::default();
+        let entries = km.help_entries(KeyContext::ForumTopicList);
+
+        assert!(entries.iter().any(|e| e.action_name == "select_next_topic"));
+        assert!(entries.iter().any(|e| e.action_name == "open_forum_topic"));
+        assert!(entries.iter().any(|e| e.action_name == "back_from_forum"));
+    }
+
+    #[test]
+    fn reload_forum_topics_resolves_in_forum_context() {
+        let mut km = Keymap::default();
+        assert_eq!(
+            km.resolve("R", false, KeyContext::ForumTopicList),
+            ResolveResult::Action(Action::ReloadForumTopics)
         );
     }
 }

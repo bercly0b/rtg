@@ -1,4 +1,5 @@
 use super::chat::ChatSummary;
+use super::selectable_list::SelectableList;
 
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,8 +18,7 @@ const LOAD_MORE_OFFSET: usize = 10;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatListState {
     ui_state: ChatListUiState,
-    chats: Vec<ChatSummary>,
-    selected_index: Option<usize>,
+    list: SelectableList<ChatSummary>,
     all_chats_loaded: bool,
     total_limit: usize,
 }
@@ -27,8 +27,7 @@ impl Default for ChatListState {
     fn default() -> Self {
         Self {
             ui_state: ChatListUiState::Loading,
-            chats: Vec::new(),
-            selected_index: None,
+            list: SelectableList::default(),
             all_chats_loaded: false,
             total_limit: DEFAULT_CHAT_PAGE_SIZE,
         }
@@ -47,12 +46,13 @@ impl ChatListState {
         }
 
         let total_limit = chats.len().max(DEFAULT_CHAT_PAGE_SIZE);
+        let mut list = SelectableList::default();
+        list.replace(chats, None);
         Self {
             ui_state: ChatListUiState::Ready,
-            selected_index: Some(0),
             all_chats_loaded: false,
             total_limit,
-            chats,
+            list,
         }
     }
 }
@@ -64,15 +64,15 @@ impl ChatListState {
     }
 
     pub fn chats(&self) -> &[ChatSummary] {
-        &self.chats
+        self.list.items()
     }
 
     pub fn selected_index(&self) -> Option<usize> {
-        self.selected_index
+        self.list.selected_index()
     }
 
     pub fn selected_chat(&self) -> Option<&ChatSummary> {
-        self.selected_index.and_then(|index| self.chats.get(index))
+        self.list.selected()
     }
 
     pub fn all_chats_loaded(&self) -> bool {
@@ -87,10 +87,10 @@ impl ChatListState {
         if self.all_chats_loaded {
             return false;
         }
-        let Some(index) = self.selected_index else {
+        let Some(index) = self.list.selected_index() else {
             return false;
         };
-        let last = self.chats.len().saturating_sub(1);
+        let last = self.list.items().len().saturating_sub(1);
         last.saturating_sub(index) < LOAD_MORE_OFFSET
     }
 
@@ -104,8 +104,7 @@ impl ChatListState {
 
     pub fn set_loading(&mut self) {
         self.ui_state = ChatListUiState::Loading;
-        self.chats.clear();
-        self.selected_index = None;
+        self.list.clear();
         self.all_chats_loaded = false;
         self.total_limit = DEFAULT_CHAT_PAGE_SIZE;
     }
@@ -125,59 +124,48 @@ impl ChatListState {
             return;
         }
 
+        let preferred_index = preferred_chat_id
+            .and_then(|chat_id| chats.iter().position(|chat| chat.chat_id == chat_id));
+        self.list.replace(chats, preferred_index);
         self.ui_state = ChatListUiState::Ready;
-        self.chats = chats;
-        self.selected_index = resolve_selection_index(&self.chats, preferred_chat_id);
     }
 
     pub fn set_empty(&mut self) {
         self.ui_state = ChatListUiState::Empty;
-        self.chats.clear();
-        self.selected_index = None;
+        self.list.clear();
         self.all_chats_loaded = true;
     }
 
     pub fn set_error(&mut self) {
         self.ui_state = ChatListUiState::Error;
-        self.chats.clear();
-        self.selected_index = None;
+        self.list.clear();
         self.all_chats_loaded = false;
     }
 
     pub fn select_next(&mut self) {
-        let Some(index) = self.selected_index else {
-            return;
-        };
-
-        let last_index = self.chats.len().saturating_sub(1);
-        self.selected_index = Some(std::cmp::min(index.saturating_add(1), last_index));
+        self.list.select_next();
     }
 
     pub fn select_first(&mut self) {
-        if !self.chats.is_empty() {
-            self.selected_index = Some(0);
-        }
+        self.list.select_first();
     }
 
     pub fn select_previous(&mut self) {
-        let Some(index) = self.selected_index else {
-            return;
-        };
-
-        self.selected_index = Some(index.saturating_sub(1));
+        self.list.select_previous();
     }
 
     pub fn select_by_query(&mut self, query: &str) -> bool {
-        if self.chats.is_empty() || query.is_empty() {
+        let chats = self.list.items();
+        if chats.is_empty() || query.is_empty() {
             return false;
         }
         let query_lower = query.to_lowercase();
-        let start = self.selected_index.unwrap_or(0);
-        let len = self.chats.len();
+        let start = self.list.selected_index().unwrap_or(0);
+        let len = chats.len();
         for offset in 0..len {
             let idx = (start + offset) % len;
-            if self.chats[idx].title.to_lowercase().contains(&query_lower) {
-                self.selected_index = Some(idx);
+            if chats[idx].title.to_lowercase().contains(&query_lower) {
+                self.list.set_selected_index(Some(idx));
                 return true;
             }
         }
@@ -185,26 +173,10 @@ impl ChatListState {
     }
 
     pub fn clear_selected_chat_unread(&mut self) {
-        if let Some(index) = self.selected_index {
-            if let Some(chat) = self.chats.get_mut(index) {
-                chat.unread_count = 0;
-            }
+        if let Some(chat) = self.list.selected_mut() {
+            chat.unread_count = 0;
         }
     }
-}
-
-#[cfg_attr(not(test), allow(dead_code))]
-fn resolve_selection_index(
-    chats: &[ChatSummary],
-    previous_selected_chat_id: Option<i64>,
-) -> Option<usize> {
-    if chats.is_empty() {
-        return None;
-    }
-
-    previous_selected_chat_id
-        .and_then(|chat_id| chats.iter().position(|chat| chat.chat_id == chat_id))
-        .or(Some(0))
 }
 
 #[cfg(test)]
@@ -227,6 +199,7 @@ mod tests {
             outgoing_status: OutgoingReadStatus::default(),
             last_message_id: None,
             unread_reaction_count: 0,
+            is_forum: false,
         }
     }
 

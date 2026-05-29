@@ -66,6 +66,44 @@ impl TdLibClient {
         })
     }
 
+    /// Gets the history of a forum topic.
+    ///
+    /// Equivalent of [`get_chat_history`](Self::get_chat_history) scoped to a
+    /// single forum topic. Returns messages in reverse chronological order;
+    /// `from_message_id: 0` returns the most recent messages of the topic.
+    pub fn get_forum_topic_history(
+        &self,
+        chat_id: i64,
+        forum_topic_id: i32,
+        from_message_id: i64,
+        offset: i32,
+        limit: i32,
+    ) -> Result<Vec<tdlib_rs::types::Message>, TdLibError> {
+        let client_id = self.client_id;
+
+        self.rt.block_on(async {
+            let messages = tdlib_rs::functions::get_forum_topic_history(
+                chat_id,
+                forum_topic_id,
+                from_message_id,
+                offset,
+                limit,
+                client_id,
+            )
+            .await
+            .map_err(|e| TdLibError::Request {
+                code: e.code,
+                message: e.message,
+            })?;
+
+            match messages {
+                tdlib_rs::enums::Messages::Messages(m) => {
+                    Ok(m.messages.into_iter().flatten().collect())
+                }
+            }
+        })
+    }
+
     /// Gets message history for a chat.
     ///
     /// Returns messages in reverse chronological order (newest first).
@@ -103,12 +141,16 @@ impl TdLibClient {
         })
     }
 
-    /// Sends a text message to a chat.
+    /// Sends a text message to a chat or forum topic.
     ///
+    /// Pass `Some(forum_topic_id)` to post inside a specific topic of a
+    /// forum supergroup; `None` posts to the chat itself (private, group,
+    /// channel, or a non-forum supergroup).
     /// Returns the sent message (which may have a temporary ID until confirmed).
     pub fn send_message(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         text: &str,
         reply_to_message_id: Option<i64>,
     ) -> Result<tdlib_rs::types::Message, TdLibError> {
@@ -141,7 +183,11 @@ impl TdLibClient {
 
             let message = tdlib_rs::functions::send_message(
                 chat_id,
-                None, // topic_id
+                topic_id.map(|id| {
+                    tdlib_rs::enums::MessageTopic::Forum(tdlib_rs::types::MessageTopicForum {
+                        forum_topic_id: id,
+                    })
+                }),
                 reply_to,
                 None, // options
                 input_content,
@@ -159,12 +205,14 @@ impl TdLibClient {
         })
     }
 
-    /// Sends a voice note to a chat.
+    /// Sends a voice note to a chat or forum topic.
     ///
     /// The voice note file must be Opus-encoded in an OGG container.
+    /// See [`send_message`](Self::send_message) for the `topic_id` semantics.
     pub fn send_voice_note(
         &self,
         chat_id: i64,
+        topic_id: Option<i32>,
         file_path: &str,
         duration: i32,
         waveform: &str,
@@ -190,7 +238,11 @@ impl TdLibClient {
 
             let message = tdlib_rs::functions::send_message(
                 chat_id,
-                None, // topic_id
+                topic_id.map(|id| {
+                    tdlib_rs::enums::MessageTopic::Forum(tdlib_rs::types::MessageTopicForum {
+                        forum_topic_id: id,
+                    })
+                }),
                 None, // reply_to
                 None, // options
                 input_content,

@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, RwLock};
 
-use tdlib_rs::types::{Chat, ChatPosition, User};
+use tdlib_rs::types::{Chat, ChatPosition, Supergroup, User};
 
 /// Thread-safe cache for TDLib objects populated by the update loop.
 ///
@@ -30,6 +30,7 @@ pub struct TdLibCache {
 struct CacheInner {
     chats: HashMap<i64, Chat>,
     users: HashMap<i64, User>,
+    supergroups: HashMap<i64, Supergroup>,
 }
 
 impl TdLibCache {
@@ -65,6 +66,37 @@ impl TdLibCache {
     pub fn upsert_user(&self, user: User) {
         let mut inner = self.inner.write().expect("cache write lock poisoned");
         inner.users.insert(user.id, user);
+    }
+
+    /// Inserts or replaces a supergroup in the cache.
+    ///
+    /// TDLib guarantees `updateSupergroup` arrives before the supergroup ID
+    /// appears in any response, so reads after the initial sync are race-free.
+    pub fn upsert_supergroup(&self, supergroup: Supergroup) {
+        let mut inner = self.inner.write().expect("cache write lock poisoned");
+        inner.supergroups.insert(supergroup.id, supergroup);
+    }
+
+    /// Looks up a supergroup by ID. Returns a clone.
+    pub fn get_supergroup(&self, supergroup_id: i64) -> Option<Supergroup> {
+        let inner = self.inner.read().expect("cache read lock poisoned");
+        inner.supergroups.get(&supergroup_id).cloned()
+    }
+
+    /// Finds the chat_id of the cached chat backed by this supergroup, if any.
+    ///
+    /// Used to refresh chat metadata in the UI when a supergroup property
+    /// (e.g. `is_forum`) toggles via `UpdateSupergroup`.
+    pub fn find_chat_id_by_supergroup_id(&self, supergroup_id: i64) -> Option<i64> {
+        let inner = self.inner.read().expect("cache read lock poisoned");
+        inner.chats.iter().find_map(|(id, chat)| {
+            if let tdlib_rs::enums::ChatType::Supergroup(sg) = &chat.r#type {
+                if sg.supergroup_id == supergroup_id {
+                    return Some(*id);
+                }
+            }
+            None
+        })
     }
 
     /// Updates the last message and positions for a cached chat.
@@ -263,6 +295,40 @@ pub(crate) mod tests {
         }
     }
 
+    pub fn make_test_supergroup(id: i64, is_forum: bool) -> Supergroup {
+        Supergroup {
+            id,
+            usernames: None,
+            date: 0,
+            status: tdlib_rs::enums::ChatMemberStatus::Member(
+                tdlib_rs::types::ChatMemberStatusMember {
+                    member_until_date: 0,
+                },
+            ),
+            member_count: 0,
+            boost_level: 0,
+            has_automatic_translation: false,
+            has_linked_chat: false,
+            has_location: false,
+            sign_messages: false,
+            show_message_sender: false,
+            join_to_send_messages: false,
+            join_by_request: false,
+            is_slow_mode_enabled: false,
+            is_channel: false,
+            is_broadcast_group: false,
+            is_forum,
+            is_direct_messages_group: false,
+            is_administered_direct_messages_group: false,
+            verification_status: None,
+            has_direct_messages_group: false,
+            has_forum_tabs: false,
+            restriction_info: None,
+            paid_message_star_count: 0,
+            active_story_state: None,
+        }
+    }
+
     pub fn make_test_user(id: i64, first_name: &str) -> User {
         User {
             id,
@@ -455,6 +521,36 @@ pub(crate) mod tests {
 
         let cached = cache.get_chat(1).expect("chat should be cached");
         assert!(cached.positions.is_empty());
+    }
+
+    #[test]
+    fn upsert_and_get_supergroup() {
+        let cache = TdLibCache::new();
+        cache.upsert_supergroup(make_test_supergroup(101, true));
+
+        let cached = cache
+            .get_supergroup(101)
+            .expect("supergroup should be cached");
+        assert_eq!(cached.id, 101);
+        assert!(cached.is_forum);
+    }
+
+    #[test]
+    fn upsert_replaces_existing_supergroup() {
+        let cache = TdLibCache::new();
+        cache.upsert_supergroup(make_test_supergroup(1, false));
+        cache.upsert_supergroup(make_test_supergroup(1, true));
+
+        let cached = cache
+            .get_supergroup(1)
+            .expect("supergroup should be cached");
+        assert!(cached.is_forum);
+    }
+
+    #[test]
+    fn get_unknown_supergroup_returns_none() {
+        let cache = TdLibCache::new();
+        assert!(cache.get_supergroup(999).is_none());
     }
 
     #[test]
