@@ -1,4 +1,5 @@
 use super::forum_topic::ForumTopicSummary;
+use super::selectable_list::SelectableList;
 
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,8 +22,7 @@ pub struct ForumTopicListState {
     ui_state: ForumTopicListUiState,
     parent_chat_id: i64,
     parent_chat_title: String,
-    topics: Vec<ForumTopicSummary>,
-    selected_index: Option<usize>,
+    list: SelectableList<ForumTopicSummary>,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -33,8 +33,7 @@ impl ForumTopicListState {
             ui_state: ForumTopicListUiState::Loading,
             parent_chat_id,
             parent_chat_title,
-            topics: Vec::new(),
-            selected_index: None,
+            list: SelectableList::default(),
         }
     }
 
@@ -51,19 +50,19 @@ impl ForumTopicListState {
     }
 
     pub fn topics(&self) -> &[ForumTopicSummary] {
-        &self.topics
+        self.list.items()
     }
 
     pub fn selected_index(&self) -> Option<usize> {
-        self.selected_index
+        self.list.selected_index()
     }
 
     pub fn selected_topic(&self) -> Option<&ForumTopicSummary> {
-        self.selected_index.and_then(|i| self.topics.get(i))
+        self.list.selected()
     }
 
     pub fn find_topic(&self, topic_id: i32) -> Option<&ForumTopicSummary> {
-        self.topics.iter().find(|t| t.topic_id == topic_id)
+        self.list.items().iter().find(|t| t.topic_id == topic_id)
     }
 
     /// Replaces topics; sorts General first, then by `order` desc.
@@ -81,61 +80,38 @@ impl ForumTopicListState {
             _ => b.order.cmp(&a.order),
         });
 
-        self.selected_index = resolve_selection_index(&sorted, previous_topic_id);
-        self.topics = sorted;
+        let preferred_index =
+            previous_topic_id.and_then(|tid| sorted.iter().position(|t| t.topic_id == tid));
+        self.list.replace(sorted, preferred_index);
         self.ui_state = ForumTopicListUiState::Ready;
     }
 
     pub fn set_empty(&mut self) {
         self.ui_state = ForumTopicListUiState::Empty;
-        self.topics.clear();
-        self.selected_index = None;
+        self.list.clear();
     }
 
     pub fn set_error(&mut self) {
         self.ui_state = ForumTopicListUiState::Error;
-        self.topics.clear();
-        self.selected_index = None;
+        self.list.clear();
     }
 
     pub fn set_loading(&mut self) {
         self.ui_state = ForumTopicListUiState::Loading;
-        self.topics.clear();
-        self.selected_index = None;
+        self.list.clear();
     }
 
     pub fn select_next(&mut self) {
-        let Some(index) = self.selected_index else {
-            return;
-        };
-        let last = self.topics.len().saturating_sub(1);
-        self.selected_index = Some(std::cmp::min(index.saturating_add(1), last));
+        self.list.select_next();
     }
 
     pub fn select_previous(&mut self) {
-        let Some(index) = self.selected_index else {
-            return;
-        };
-        self.selected_index = Some(index.saturating_sub(1));
+        self.list.select_previous();
     }
 
     pub fn select_first(&mut self) {
-        if !self.topics.is_empty() {
-            self.selected_index = Some(0);
-        }
+        self.list.select_first();
     }
-}
-
-fn resolve_selection_index(
-    topics: &[ForumTopicSummary],
-    previous_topic_id: Option<i32>,
-) -> Option<usize> {
-    if topics.is_empty() {
-        return None;
-    }
-    previous_topic_id
-        .and_then(|tid| topics.iter().position(|t| t.topic_id == tid))
-        .or(Some(0))
 }
 
 #[cfg(test)]
