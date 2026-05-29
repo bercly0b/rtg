@@ -156,6 +156,20 @@ impl ShellState {
         &self.open_chat
     }
 
+    /// True when a forum topic is open and the cached topic summary marks it
+    /// as closed. Used to gate the message input — admins can still post but
+    /// we don't surface that capability in the TUI yet, so any open of input
+    /// is treated as read-only.
+    pub fn open_topic_is_closed(&self) -> bool {
+        let Some(topic_id) = self.open_chat.topic_id() else {
+            return false;
+        };
+        self.forum_topic_list
+            .as_ref()
+            .and_then(|list| list.find_topic(topic_id))
+            .is_some_and(|t| t.is_closed)
+    }
+
     pub fn open_chat_mut(&mut self) -> &mut OpenChatState {
         &mut self.open_chat
     }
@@ -707,5 +721,49 @@ mod tests {
             state.chat_list().selected_chat().map(|c| c.chat_id),
             prior_selection
         );
+    }
+
+    #[test]
+    fn open_topic_is_closed_returns_false_when_no_topic_open() {
+        let state = ShellState::default();
+        assert!(!state.open_topic_is_closed());
+    }
+
+    #[test]
+    fn open_topic_is_closed_reflects_topic_summary_flag() {
+        use crate::domain::forum_topic::ForumTopicSummary;
+        let mut closed = ForumTopicSummary {
+            chat_id: 100,
+            topic_id: 7,
+            name: "Backend".to_owned(),
+            is_general: false,
+            is_closed: true,
+            is_hidden: false,
+            is_pinned: false,
+            unread_count: 0,
+            last_message_preview: None,
+            last_message_unix_ms: None,
+            last_message_id: None,
+            order: 0,
+        };
+
+        let mut state = ShellState::default();
+        state.enter_forum(100, "Forum");
+        state
+            .forum_topic_list_mut()
+            .unwrap()
+            .set_ready(vec![closed.clone()]);
+        state
+            .open_chat_mut()
+            .set_loading_with_topic(100, Some(7), "x".to_owned(), ChatType::Group);
+
+        assert!(state.open_topic_is_closed());
+
+        closed.is_closed = false;
+        state
+            .forum_topic_list_mut()
+            .unwrap()
+            .set_ready(vec![closed]);
+        assert!(!state.open_topic_is_closed());
     }
 }

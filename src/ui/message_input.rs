@@ -15,8 +15,12 @@ use crate::domain::{
 
 use super::styles;
 
-/// Placeholder text shown when the input is not focused and empty.
-const PLACEHOLDER_TEXT: &str = "Press 'i' to type a message...";
+/// Default placeholder text shown when the input is not focused and empty.
+pub const PLACEHOLDER_TEXT: &str = "Press 'i' to type a message...";
+
+/// Placeholder shown instead of the default prompt when the open forum topic
+/// is closed and the user cannot post.
+pub const TOPIC_CLOSED_PLACEHOLDER: &str = "Topic is closed";
 
 /// Prompt symbol shown before the input text.
 const PROMPT_SYMBOL: &str = "> ";
@@ -36,6 +40,7 @@ pub fn render_message_input(
     area: Rect,
     input_state: &MessageInputState,
     active_pane: ActivePane,
+    placeholder: &str,
 ) {
     let is_focused = active_pane == ActivePane::MessageInput;
 
@@ -55,7 +60,7 @@ pub fn render_message_input(
     let effective_width = area.width.saturating_sub(2) as usize;
 
     let (input_lines, cursor_row, cursor_col) =
-        wrap_input_with_cursor(input_state, is_focused, effective_width);
+        wrap_input_with_cursor(input_state, is_focused, effective_width, placeholder);
     lines.extend(input_lines);
 
     let paragraph = Paragraph::new(ratatui::text::Text::from(lines))
@@ -77,6 +82,7 @@ fn wrap_input_with_cursor(
     input_state: &MessageInputState,
     is_focused: bool,
     max_width: usize,
+    placeholder: &str,
 ) -> (Vec<Line<'static>>, u16, u16) {
     if !is_focused {
         let text_style = if input_state.is_empty() {
@@ -85,7 +91,7 @@ fn wrap_input_with_cursor(
             styles::input_text_style()
         };
         let display_text = if input_state.is_empty() {
-            PLACEHOLDER_TEXT
+            placeholder
         } else {
             input_state.text()
         };
@@ -256,16 +262,25 @@ mod tests {
     #[test]
     fn shows_placeholder_when_empty_and_unfocused() {
         let state = MessageInputState::default();
-        let (lines, _, _) = wrap_input_with_cursor(&state, false, 80);
+        let (lines, _, _) = wrap_input_with_cursor(&state, false, 80, PLACEHOLDER_TEXT);
         let text = lines_to_text(&lines);
         assert!(text.contains(PLACEHOLDER_TEXT));
         assert!(text.starts_with(PROMPT_SYMBOL));
     }
 
     #[test]
+    fn shows_custom_placeholder_when_empty_and_unfocused() {
+        let state = MessageInputState::default();
+        let (lines, _, _) = wrap_input_with_cursor(&state, false, 80, TOPIC_CLOSED_PLACEHOLDER);
+        let text = lines_to_text(&lines);
+        assert!(text.contains(TOPIC_CLOSED_PLACEHOLDER));
+        assert!(!text.contains(PLACEHOLDER_TEXT));
+    }
+
+    #[test]
     fn shows_empty_prompt_when_focused_and_empty() {
         let state = MessageInputState::default();
-        let (lines, _, _) = wrap_input_with_cursor(&state, true, 80);
+        let (lines, _, _) = wrap_input_with_cursor(&state, true, 80, PLACEHOLDER_TEXT);
         let text = lines_to_text(&lines);
         assert!(!text.contains(PLACEHOLDER_TEXT));
         assert!(text.starts_with(PROMPT_SYMBOL));
@@ -276,7 +291,7 @@ mod tests {
         let mut state = MessageInputState::default();
         state.insert_char('H');
         state.insert_char('i');
-        let (lines, _, _) = wrap_input_with_cursor(&state, false, 80);
+        let (lines, _, _) = wrap_input_with_cursor(&state, false, 80, PLACEHOLDER_TEXT);
         let text = lines_to_text(&lines);
         assert!(text.contains("Hi"));
         assert!(!text.contains(PLACEHOLDER_TEXT));
@@ -288,7 +303,7 @@ mod tests {
         for ch in "Hello".chars() {
             state.insert_char(ch);
         }
-        let (_, row, col) = wrap_input_with_cursor(&state, true, 80);
+        let (_, row, col) = wrap_input_with_cursor(&state, true, 80, PLACEHOLDER_TEXT);
         assert_eq!(row, 0);
         assert_eq!(col, 7); // "> " (2) + "Hello" (5)
     }
@@ -301,7 +316,7 @@ mod tests {
             state.insert_char(ch);
         }
         // "> abcdefgh" = 10 chars on line 0, "ij" on line 1, cursor after "ij"
-        let (lines, row, col) = wrap_input_with_cursor(&state, true, 10);
+        let (lines, row, col) = wrap_input_with_cursor(&state, true, 10, PLACEHOLDER_TEXT);
         assert_eq!(lines.len(), 2);
         assert_eq!(row, 1);
         assert_eq!(col, 2);
@@ -315,7 +330,7 @@ mod tests {
             state.insert_char(ch);
         }
         // "> abcdefgh" = exactly 10, cursor at end of line 0
-        let (lines, row, col) = wrap_input_with_cursor(&state, true, 10);
+        let (lines, row, col) = wrap_input_with_cursor(&state, true, 10, PLACEHOLDER_TEXT);
         assert_eq!(lines.len(), 1);
         assert_eq!(row, 0);
         assert_eq!(col, 10);

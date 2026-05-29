@@ -98,7 +98,11 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
             }
         }
         Action::EnterMessageInput if ctx.state.open_chat().is_open() => {
-            ctx.state.set_active_pane(ActivePane::MessageInput);
+            if ctx.state.open_topic_is_closed() {
+                ctx.state.set_notification("Topic is closed");
+            } else {
+                ctx.state.set_active_pane(ActivePane::MessageInput);
+            }
         }
         Action::CopyMessage => {
             if let Some(msg) = ctx.state.open_chat().selected_message() {

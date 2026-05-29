@@ -447,3 +447,23 @@ fn chat_scoped_result_is_discarded_when_topic_is_open() {
 
     assert_eq!(o.state().open_chat().messages().to_vec(), messages_before);
 }
+
+#[test]
+fn pressing_i_in_closed_topic_does_not_enter_input_and_notifies() {
+    let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    let mut closed = topic(100, 7, "Backend", 1000);
+    closed.is_closed = true;
+    inject_forum_topics(&mut o, 100, vec![closed]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    assert_eq!(o.state().active_pane(), ActivePane::Messages);
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+        .unwrap();
+
+    // Input pane was not entered; notification surfaces the reason.
+    assert_eq!(o.state().active_pane(), ActivePane::Messages);
+    assert_eq!(o.state().active_notification(), Some("Topic is closed"));
+}

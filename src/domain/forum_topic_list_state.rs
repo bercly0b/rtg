@@ -62,6 +62,10 @@ impl ForumTopicListState {
         self.selected_index.and_then(|i| self.topics.get(i))
     }
 
+    pub fn find_topic(&self, topic_id: i32) -> Option<&ForumTopicSummary> {
+        self.topics.iter().find(|t| t.topic_id == topic_id)
+    }
+
     /// Replaces topics; sorts General first, then by `order` desc.
     pub fn set_ready(&mut self, topics: Vec<ForumTopicSummary>) {
         if topics.is_empty() {
@@ -294,5 +298,14 @@ mod tests {
         let mut state = ForumTopicListState::loading(100, "Forum".to_owned());
         state.select_first();
         assert_eq!(state.selected_index(), None);
+    }
+
+    #[test]
+    fn find_topic_returns_match_by_id() {
+        let mut state = ForumTopicListState::loading(100, "Forum".to_owned());
+        state.set_ready(vec![topic(1, "A", 100), topic(2, "B", 50)]);
+
+        assert_eq!(state.find_topic(2).map(|t| t.name.as_str()), Some("B"));
+        assert!(state.find_topic(999).is_none());
     }
 }

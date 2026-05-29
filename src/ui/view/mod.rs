@@ -20,7 +20,9 @@ use super::chat_search_popup;
 use super::command_popup;
 use super::help_popup;
 use super::message_info_popup;
-use super::message_input::{render_message_input, reply_preview_height};
+use super::message_input::{
+    render_message_input, reply_preview_height, PLACEHOLDER_TEXT, TOPIC_CLOSED_PLACEHOLDER,
+};
 use super::reaction_picker_popup;
 use super::styles;
 
@@ -66,7 +68,18 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_entries: &[Hel
     render_vertical_separator(frame, separator_area);
     messages_panel::render_messages_panel(frame, messages_area, state, active_pane);
     render_horizontal_separator(frame, input_separator_area);
-    render_message_input(frame, input_area, state.message_input(), active_pane);
+    let placeholder = if state.open_topic_is_closed() {
+        TOPIC_CLOSED_PLACEHOLDER
+    } else {
+        PLACEHOLDER_TEXT
+    };
+    render_message_input(
+        frame,
+        input_area,
+        state.message_input(),
+        active_pane,
+        placeholder,
+    );
 
     render_horizontal_separator(frame, status_separator_area);
     let status = Paragraph::new(status_line::status_line(state, status_area.width as usize))
