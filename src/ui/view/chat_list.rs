@@ -34,17 +34,19 @@ pub(super) fn render_chat_list_panel(
     let chat_list = state.chat_list();
     match chat_list.ui_state() {
         ChatListUiState::Loading => {
-            render_chat_list_message(frame, area, "Loading chats...", title_style)
+            render_chat_list_message(frame, area, "Chats", "Loading chats...", title_style)
         }
         ChatListUiState::Empty => render_chat_list_message(
             frame,
             area,
+            "Chats",
             "No chats yet. Press refresh to try again.",
             title_style,
         ),
         ChatListUiState::Error => render_chat_list_message(
             frame,
             area,
+            "Chats",
             "Failed to load chats. Check connection and retry.",
             title_style,
         ),
@@ -87,10 +89,16 @@ pub(super) fn render_chat_list_panel(
     }
 }
 
-fn render_chat_list_message(frame: &mut Frame<'_>, area: Rect, message: &str, title_style: Style) {
+fn render_chat_list_message(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &str,
+    message: &str,
+    title_style: Style,
+) {
     let message = Paragraph::new(message).block(
         Block::new()
-            .title("Chats")
+            .title(title.to_owned())
             .title_style(title_style)
             .title_alignment(Alignment::Center)
             .padding(Padding::horizontal(1)),
@@ -152,7 +160,7 @@ fn section_header_item(title: &str) -> ListItem<'static> {
     ListItem::new(line)
 }
 
-fn render_forum_topic_list_panel(
+pub(super) fn render_forum_topic_list_panel(
     frame: &mut Frame<'_>,
     area: Rect,
     forum_list: &crate::domain::forum_topic_list_state::ForumTopicListState,
@@ -162,14 +170,15 @@ fn render_forum_topic_list_panel(
     let panel_title = forum_list.parent_chat_title().to_owned();
     match forum_list.ui_state() {
         ForumTopicListUiState::Loading => {
-            render_chat_list_message(frame, area, "Loading topics...", title_style)
+            render_chat_list_message(frame, area, &panel_title, "Loading topics...", title_style)
         }
         ForumTopicListUiState::Empty => {
-            render_chat_list_message(frame, area, "No topics yet.", title_style)
+            render_chat_list_message(frame, area, &panel_title, "No topics yet.", title_style)
         }
         ForumTopicListUiState::Error => render_chat_list_message(
             frame,
             area,
+            &panel_title,
             "Failed to load topics. Press h to go back.",
             title_style,
         ),

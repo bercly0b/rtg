@@ -1,4 +1,10 @@
-use super::{super::chat_list::ChatListLayout, chat, chat_with_pinned};
+use ratatui::{backend::TestBackend, style::Style, Terminal};
+
+use super::{
+    super::chat_list::{render_forum_topic_list_panel, ChatListLayout},
+    chat, chat_with_pinned,
+};
+use crate::domain::forum_topic_list_state::ForumTopicListState;
 
 const TEST_WIDTH: usize = 50;
 
@@ -87,4 +93,36 @@ fn layout_no_pinned() {
 
     assert_eq!(layout.pinned_count, 0);
     assert!(!layout.has_pinned());
+}
+
+#[test]
+fn forum_panel_loading_state_shows_forum_title_not_chats() {
+    let backend = TestBackend::new(40, 5);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    let forum = ForumTopicListState::loading(100, "My Forum".to_owned());
+
+    terminal
+        .draw(|frame| {
+            let area = frame.area();
+            render_forum_topic_list_panel(frame, area, &forum, true, Style::default());
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer().clone();
+    let mut rendered = String::new();
+    for y in 0..buffer.area.height {
+        for x in 0..buffer.area.width {
+            rendered.push_str(buffer[(x, y)].symbol());
+        }
+    }
+
+    assert!(
+        rendered.contains("My Forum"),
+        "panel title in Loading state must be the forum name, got: {rendered}"
+    );
+    assert!(
+        !rendered.contains("Chats"),
+        "panel title in Loading state must not fall back to 'Chats', got: {rendered}"
+    );
 }
