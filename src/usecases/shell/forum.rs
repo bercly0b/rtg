@@ -94,9 +94,12 @@ pub(super) fn open_selected_topic<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'
 ///
 /// Differs from [`leave_forum`] in that the parent chat stays open in
 /// TDLib — we're still browsing the forum.
+///
+/// `open_chat` is intentionally not cleared so that the topic's messages
+/// remain visible in the messages pane until the user opens a different
+/// chat or topic — mirroring the behavior of `h` on a regular chat.
 pub(super) fn back_to_topic_list<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
     tracing::debug!("returning from topic to topic list");
-    ctx.state.open_chat_mut().clear();
     ctx.state.set_active_pane(ActivePane::ChatList);
 }
 

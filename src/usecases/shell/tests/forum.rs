@@ -93,6 +93,12 @@ fn h_inside_topic_returns_to_topic_list_without_closing_parent() {
     inject_forum_topics(&mut o, 100, vec![topic(100, 7, "Backend", 1000)]);
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
         .unwrap();
+    inject_topic_messages(
+        &mut o,
+        100,
+        Some(7),
+        vec![message(1, "hello"), message(2, "world")],
+    );
     let open_chats_before = o.dispatcher.open_chat_dispatch_count();
     let close_chats_before = o.dispatcher.close_chat_dispatch_count();
 
@@ -102,9 +108,12 @@ fn h_inside_topic_returns_to_topic_list_without_closing_parent() {
     assert_eq!(o.state().active_pane(), ActivePane::ChatList);
     // Forum list still active.
     assert!(o.state().forum_topic_list().is_some());
-    // OpenChatState is cleared.
-    assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Empty);
-    assert!(o.state().open_chat().topic_id().is_none());
+    // OpenChatState preserved so the topic's messages stay visible until the
+    // user opens a different chat or topic — same UX as `h` on a regular chat.
+    assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
+    assert_eq!(o.state().open_chat().chat_id(), Some(100));
+    assert_eq!(o.state().open_chat().topic_id(), Some(7));
+    assert_eq!(o.state().open_chat().messages().len(), 2);
     // Parent forum chat is NOT closed.
     assert_eq!(o.dispatcher.open_chat_dispatch_count(), open_chats_before);
     assert_eq!(o.dispatcher.close_chat_dispatch_count(), close_chats_before);
