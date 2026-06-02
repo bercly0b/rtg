@@ -74,7 +74,7 @@ impl ForumTopicListState {
         let previous_topic_id = self.selected_topic().map(|t| t.topic_id);
 
         let mut sorted = topics;
-        sorted.sort_by(|a, b| b.order.cmp(&a.order));
+        sorted.sort_by_key(|t| std::cmp::Reverse(t.order));
 
         let preferred_index =
             previous_topic_id.and_then(|tid| sorted.iter().position(|t| t.topic_id == tid));
