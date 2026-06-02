@@ -195,3 +195,30 @@ fn open_chat_title_typing_overrides_subtitle() {
         "subtitle should not appear when typing, got: {text}"
     );
 }
+
+#[test]
+fn logo_lines_share_one_display_width() {
+    let widths: Vec<usize> = messages_panel::RTG_LOGO_LINES
+        .iter()
+        .map(|line| line.chars().count())
+        .collect();
+    assert!(
+        widths.windows(2).all(|w| w[0] == w[1]),
+        "logo lines must share a uniform width, got {widths:?}"
+    );
+}
+
+#[test]
+fn empty_placeholder_includes_logo_version_and_slogan() {
+    let lines = messages_panel::empty_placeholder_lines();
+    let texts: Vec<String> = lines.iter().map(title_to_string).collect();
+
+    assert_eq!(texts.len(), messages_panel::RTG_LOGO_LINES.len() + 3);
+    for logo_line in messages_panel::RTG_LOGO_LINES {
+        assert!(texts.iter().any(|t| t == logo_line));
+    }
+    assert!(texts
+        .iter()
+        .any(|t| *t == format!("v{}", env!("CARGO_PKG_VERSION"))));
+    assert!(texts.iter().any(|t| t == messages_panel::RTG_SLOGAN));
+}
