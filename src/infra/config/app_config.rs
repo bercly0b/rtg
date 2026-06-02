@@ -31,6 +31,14 @@ impl LogConfig {
         let normalized = self.level.trim().to_ascii_lowercase();
         normalized == "debug" || normalized == "trace"
     }
+
+    /// Returns the number of log files to retain, clamped to at least 1.
+    ///
+    /// A configured value of `0` would otherwise wipe every log file on
+    /// startup, making post-mortem debugging impossible.
+    pub fn effective_max_log_files(&self) -> usize {
+        self.max_log_files.max(1)
+    }
 }
 
 impl Default for LogConfig {
@@ -205,6 +213,26 @@ mod tests {
         let config = LogConfig::default();
         assert_eq!(config.level, "info");
         assert_eq!(config.max_log_files, 3);
+    }
+
+    #[test]
+    fn effective_max_log_files_clamps_zero_to_one() {
+        let config = LogConfig {
+            max_log_files: 0,
+            ..LogConfig::default()
+        };
+        assert_eq!(config.effective_max_log_files(), 1);
+    }
+
+    #[test]
+    fn effective_max_log_files_preserves_positive_values() {
+        for value in [1, 3, 10] {
+            let config = LogConfig {
+                max_log_files: value,
+                ..LogConfig::default()
+            };
+            assert_eq!(config.effective_max_log_files(), value);
+        }
     }
 
     #[test]
