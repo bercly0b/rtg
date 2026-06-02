@@ -54,15 +54,6 @@ impl TelegramChatUpdatesMonitor {
         signal_tx: Sender<ChatUpdate>,
         mapper: Arc<dyn MessageMapper>,
     ) -> Result<Self, ChatUpdatesMonitorStartError> {
-        // Test switch for failure injection
-        if std::env::var("RTG_TELEGRAM_CHAT_UPDATES_MONITOR_FAIL")
-            .ok()
-            .as_deref()
-            == Some("1")
-        {
-            return Err(ChatUpdatesMonitorStartError::StartupRejected);
-        }
-
         let worker = thread::Builder::new()
             .name("rtg-chat-updates".into())
             .spawn(move || {
@@ -226,7 +217,7 @@ fn run_update_monitor(
 /// Error type for chat updates monitor startup.
 #[derive(Debug)]
 pub enum ChatUpdatesMonitorStartError {
-    /// Monitor startup was rejected (test switch or spawn failure).
+    /// Monitor startup was rejected (worker spawn failure or missing backend).
     StartupRejected,
 }
 

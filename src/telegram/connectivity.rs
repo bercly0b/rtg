@@ -28,14 +28,6 @@ impl TelegramConnectivityMonitor {
     where
         F: Fn(ConnectivityStatus) + Send + 'static,
     {
-        if std::env::var("RTG_TELEGRAM_CONNECTIVITY_MONITOR_FAIL")
-            .ok()
-            .as_deref()
-            == Some("1")
-        {
-            return Err(ConnectivityMonitorStartError::StartupRejected);
-        }
-
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
         let worker = thread::Builder::new()
             .name("rtg-telegram-connectivity".to_owned())
@@ -112,7 +104,7 @@ pub enum ConnectivityMonitorStartError {
 impl std::fmt::Display for ConnectivityMonitorStartError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::StartupRejected => f.write_str("startup rejected by test switch"),
+            Self::StartupRejected => f.write_str("startup rejected"),
             Self::WorkerSpawn(source) => write!(f, "worker spawn failed: {source}"),
         }
     }

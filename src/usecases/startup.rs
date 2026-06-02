@@ -139,17 +139,15 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    fn make_layout() -> StorageLayout {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should be monotonic")
-            .as_nanos();
-        let root = env::temp_dir().join(format!("rtg-startup-test-{suffix}"));
+    fn make_layout() -> (StorageLayout, tempfile::TempDir) {
+        let temp = tempfile::tempdir().expect("temp dir should be creatable");
+        let root = temp.path().to_path_buf();
 
-        StorageLayout {
+        let layout = StorageLayout {
             config_dir: root.clone(),
             cache_dir: root.join("cache"),
-        }
+        };
+        (layout, temp)
     }
 
     fn write_tdlib_session(layout: &StorageLayout) {
@@ -263,7 +261,7 @@ mod tests {
 
     #[test]
     fn stale_lock_file_on_disk_does_not_block_lock_acquisition() {
-        let layout = make_layout();
+        let (layout, _temp) = make_layout();
         layout.ensure_dirs().expect("dirs should be created");
 
         // Stale lock file left by a crashed process: file exists, no flock held.
@@ -277,7 +275,7 @@ mod tests {
 
     #[test]
     fn held_lock_blocks_second_acquisition() {
-        let layout = make_layout();
+        let (layout, _temp) = make_layout();
         layout.ensure_dirs().expect("dirs should be created");
 
         let first_guard = acquire_instance_lock(layout.instance_lock_file())
