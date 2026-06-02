@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Alignment, Rect},
-    style::Style,
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Padding, Paragraph},
     Frame,
@@ -40,8 +40,21 @@ pub(super) fn render_messages_panel(
 
     match ui_state {
         OpenChatUiState::Empty => {
-            let panel = Paragraph::new("Select a chat to view messages").block(block());
-            frame.render_widget(panel, area);
+            frame.render_widget(block(), area);
+
+            let inner = block().inner(area);
+            let lines = empty_placeholder_lines();
+            let content_height = (lines.len() as u16).min(inner.height);
+            let top = inner.height.saturating_sub(content_height) / 2;
+            let logo_area = Rect {
+                x: inner.x,
+                y: inner.y + top,
+                width: inner.width,
+                height: content_height,
+            };
+
+            let panel = Paragraph::new(lines).alignment(Alignment::Center);
+            frame.render_widget(panel, logo_area);
         }
         OpenChatUiState::Loading => {
             let panel = Paragraph::new("Loading messages...").block(block());
@@ -98,6 +111,46 @@ pub(super) fn render_messages_panel(
             }
         }
     }
+}
+
+/// ANSI Shadow rendering of "RTG". All lines share the same display width so
+/// centered alignment keeps the block shape intact.
+pub(super) const RTG_LOGO_LINES: [&str; 6] = [
+    "██████╗ ████████╗ ██████╗ ",
+    "██╔══██╗╚══██╔══╝██╔════╝ ",
+    "██████╔╝   ██║   ██║  ███╗",
+    "██╔══██╗   ██║   ██║   ██║",
+    "██║  ██║   ██║   ╚██████╔╝",
+    "╚═╝  ╚═╝   ╚═╝    ╚═════╝ ",
+];
+
+pub(super) const RTG_SLOGAN: &str = "a quiet Telegram client";
+
+/// Lines shown on the empty messages panel before a chat is opened: the RTG
+/// logo, the current version, and a tagline.
+pub(super) fn empty_placeholder_lines() -> Vec<Line<'static>> {
+    let logo_style = Style::default()
+        .fg(Color::DarkGray)
+        .add_modifier(Modifier::BOLD);
+
+    let mut lines: Vec<Line<'static>> = RTG_LOGO_LINES
+        .iter()
+        .map(|line| Line::styled((*line).to_owned(), logo_style))
+        .collect();
+
+    lines.push(Line::default());
+    lines.push(Line::styled(
+        format!("v{}", env!("CARGO_PKG_VERSION")),
+        Style::default().fg(Color::DarkGray),
+    ));
+    lines.push(Line::styled(
+        RTG_SLOGAN.to_owned(),
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::ITALIC),
+    ));
+
+    lines
 }
 
 pub(super) fn open_chat_title(
