@@ -100,7 +100,7 @@ fn display_content_handles_all_media_types() {
         (MessageMedia::Poll, "[Poll]"),
         (MessageMedia::Call, "[Call]"),
         (MessageMedia::VideoCall, "[Video call]"),
-        (MessageMedia::Other, "[Media]"),
+        (MessageMedia::Other, "[Unsupported message]"),
     ];
 
     for (media, expected_label) in types {

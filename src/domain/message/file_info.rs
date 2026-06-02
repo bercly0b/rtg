@@ -84,7 +84,7 @@ pub fn file_extension(file_name: &str) -> Option<&str> {
 /// Builds a metadata display string for a file-bearing message.
 ///
 /// Returns a formatted string like `"name=report.pdf, type=pdf, download=yes, size=15.5KB"`
-/// for rendering alongside the `[Media]` label.
+/// for rendering alongside the media label (e.g. `[Document]`).
 pub fn build_file_metadata_display(media: super::MessageMedia, info: &FileInfo) -> String {
     let mut parts = Vec::new();
 
