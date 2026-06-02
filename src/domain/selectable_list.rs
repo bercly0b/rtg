@@ -29,6 +29,10 @@ impl<T> SelectableList<T> {
         &self.items
     }
 
+    pub fn items_mut(&mut self) -> &mut [T] {
+        &mut self.items
+    }
+
     pub fn selected_index(&self) -> Option<usize> {
         self.selected_index
     }

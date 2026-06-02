@@ -223,6 +223,59 @@ fn mark_as_read_in_a_topic_carries_topic_id() {
 }
 
 #[test]
+fn opening_a_topic_optimistically_clears_parent_forum_unread_in_chat_list() {
+    let mut forum = forum_chat(100, "Topics");
+    forum.unread_count = 4;
+    let mut o = orchestrator_with_chats(vec![forum]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    let mut backend = topic(100, 7, "Backend", 1000);
+    backend.unread_count = 4;
+    inject_forum_topics(&mut o, 100, vec![backend]);
+
+    // Open the topic — the parent forum's badge in the root list should clear
+    // immediately, without waiting for TDLib's lagging updateChatReadInbox.
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    let parent = o
+        .state()
+        .chat_list()
+        .chats()
+        .iter()
+        .find(|c| c.chat_id == 100)
+        .expect("forum chat still in root list");
+    assert_eq!(parent.unread_count, 0);
+}
+
+#[test]
+fn opening_a_topic_only_subtracts_that_topics_unread_from_parent_badge() {
+    let mut forum = forum_chat(100, "Topics");
+    forum.unread_count = 10;
+    let mut o = orchestrator_with_chats(vec![forum]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    let mut backend = topic(100, 7, "Backend", 1000);
+    backend.unread_count = 4;
+    inject_forum_topics(&mut o, 100, vec![backend]);
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    // Other topics remain unread, so the chat badge drops by 4 (not to zero).
+    let parent = o
+        .state()
+        .chat_list()
+        .chats()
+        .iter()
+        .find(|c| c.chat_id == 100)
+        .expect("forum chat still in root list");
+    assert_eq!(parent.unread_count, 6);
+}
+
+#[test]
 fn forum_topic_update_for_open_forum_redispatches_topic_load() {
     use crate::domain::events::ChatUpdate;
 

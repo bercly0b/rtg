@@ -65,7 +65,7 @@ impl ForumTopicListState {
         self.list.items().iter().find(|t| t.topic_id == topic_id)
     }
 
-    /// Replaces topics; sorts General first, then by `order` desc.
+    /// Replaces topics; sorts by `order` desc, like the regular chat list.
     pub fn set_ready(&mut self, topics: Vec<ForumTopicSummary>) {
         if topics.is_empty() {
             self.set_empty();
@@ -74,11 +74,7 @@ impl ForumTopicListState {
         let previous_topic_id = self.selected_topic().map(|t| t.topic_id);
 
         let mut sorted = topics;
-        sorted.sort_by(|a, b| match (a.is_general, b.is_general) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => b.order.cmp(&a.order),
-        });
+        sorted.sort_by_key(|t| std::cmp::Reverse(t.order));
 
         let preferred_index =
             previous_topic_id.and_then(|tid| sorted.iter().position(|t| t.topic_id == tid));
@@ -174,17 +170,21 @@ mod tests {
     }
 
     #[test]
-    fn general_topic_is_sorted_first_regardless_of_order() {
+    fn general_topic_is_sorted_by_order_like_any_other() {
         let mut state = ForumTopicListState::loading(100, "Forum".to_owned());
 
+        let mut general = general_topic(2);
+        general.order = 500;
         state.set_ready(vec![
             topic(1, "High order", 1000),
-            general_topic(2),
+            general,
             topic(3, "Low order", 10),
         ]);
 
-        assert!(state.topics()[0].is_general);
-        assert_eq!(state.topics()[1].topic_id, 1);
+        // General is no longer pinned first — it sorts purely by `order`.
+        assert_eq!(state.topics()[0].topic_id, 1);
+        assert_eq!(state.topics()[1].topic_id, 2);
+        assert!(state.topics()[1].is_general);
         assert_eq!(state.topics()[2].topic_id, 3);
     }
 
