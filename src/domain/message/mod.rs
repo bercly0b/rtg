@@ -52,7 +52,7 @@ impl MessageMedia {
             MessageMedia::Poll => Some("[Poll]"),
             MessageMedia::Call => Some("[Call]"),
             MessageMedia::VideoCall => Some("[Video call]"),
-            MessageMedia::Other => Some("[Media]"),
+            MessageMedia::Other => Some("[Unsupported message]"),
         }
     }
 }
