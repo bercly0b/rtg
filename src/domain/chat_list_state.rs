@@ -177,6 +177,25 @@ impl ChatListState {
             chat.unread_count = 0;
         }
     }
+
+    /// Optimistically reduces a chat's unread counter by `amount`, saturating at 0.
+    ///
+    /// TDLib keeps a forum chat's `unread_count` and its per-topic unread counts
+    /// as separate server counters: reading a topic decrements only the topic and
+    /// emits `updateForumTopic`, while the chat counter is updated later by a
+    /// server-pushed `updateChatReadInbox` that lags. Reflecting the read here
+    /// keeps the chat-list badge in step with the topic list; the eventual server
+    /// update reconciles the authoritative value on the next refresh.
+    pub fn reduce_chat_unread(&mut self, chat_id: i64, amount: u32) {
+        if let Some(chat) = self
+            .list
+            .items_mut()
+            .iter_mut()
+            .find(|chat| chat.chat_id == chat_id)
+        {
+            chat.unread_count = chat.unread_count.saturating_sub(amount);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -380,6 +399,32 @@ mod tests {
     fn clear_selected_chat_unread_noop_without_selection() {
         let mut state = ChatListState::default();
         state.clear_selected_chat_unread(); // should not panic
+    }
+
+    #[test]
+    fn reduce_chat_unread_targets_by_id_and_saturates() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![
+            chat_with_unread(1, "Forum", 5),
+            chat_with_unread(2, "Other", 3),
+        ]);
+
+        state.reduce_chat_unread(1, 2);
+        assert_eq!(state.chats()[0].unread_count, 3);
+        // unrelated chat is untouched
+        assert_eq!(state.chats()[1].unread_count, 3);
+
+        // over-subtracting saturates at zero rather than wrapping
+        state.reduce_chat_unread(1, 100);
+        assert_eq!(state.chats()[0].unread_count, 0);
+    }
+
+    #[test]
+    fn reduce_chat_unread_noop_for_unknown_chat() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![chat_with_unread(1, "Forum", 5)]);
+        state.reduce_chat_unread(999, 1); // should not panic or change anything
+        assert_eq!(state.chats()[0].unread_count, 5);
     }
 
     #[test]

@@ -59,6 +59,7 @@ pub(super) fn open_selected_topic<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'
 
     let chat_id = forum_list.parent_chat_id();
     let topic_id = topic.topic_id;
+    let topic_unread = topic.unread_count;
     let title = format!("{} > {}", forum_list.parent_chat_title(), topic.name);
 
     tracing::debug!(chat_id, topic_id, %title, "opening forum topic");
@@ -70,6 +71,16 @@ pub(super) fn open_selected_topic<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'
     {
         ctx.state.set_active_pane(ActivePane::Messages);
         return;
+    }
+
+    // Optimistically clear the topic's contribution to the parent forum chat's
+    // badge in the root list. TDLib only decrements the chat-level `unread_count`
+    // on a later, lagging `updateChatReadInbox`, so without this the badge stays
+    // stale after the topic is read (the topic's own counter clears immediately).
+    if topic_unread > 0 {
+        ctx.state
+            .chat_list_mut()
+            .reduce_chat_unread(chat_id, topic_unread);
     }
 
     ctx.state.open_chat_mut().set_loading_with_topic(
