@@ -20,6 +20,24 @@ fn i_key_switches_to_message_input_mode_when_chat_is_open() {
 }
 
 #[test]
+fn pressing_i_in_channel_does_not_enter_input_and_notifies() {
+    let mut o = orchestrator_with_open_chat(
+        vec![channel_chat(1, "News")],
+        1,
+        vec![message(1, "Broadcast")],
+    );
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+        .unwrap();
+
+    assert_eq!(o.state().active_pane(), ActivePane::Messages);
+    assert_eq!(
+        o.state().active_notification(),
+        Some("Channel is read-only")
+    );
+}
+
+#[test]
 fn i_key_does_nothing_when_no_chat_is_open() {
     let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
     o.state.set_active_pane(ActivePane::Messages);
