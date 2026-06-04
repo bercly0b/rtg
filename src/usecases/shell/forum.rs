@@ -40,6 +40,27 @@ pub(super) fn enter_forum<D: TaskDispatcher>(
 pub(super) fn leave_forum<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
     tracing::debug!("leaving forum");
     chat_open::close_tdlib_chat(ctx);
+
+    // Reconcile the forum's root-list badge from the topic list we already hold,
+    // so topics read while browsing are reflected immediately without a fetch.
+    // Only when the list is Ready — Loading/Empty/Error would yield a bogus 0.
+    use crate::domain::forum_topic_list_state::ForumTopicListUiState;
+    let recomputed = ctx.state.forum_topic_list().and_then(|forum_list| {
+        (forum_list.ui_state() == ForumTopicListUiState::Ready).then(|| {
+            let unread = forum_list
+                .topics()
+                .iter()
+                .filter(|t| t.unread_count > 0)
+                .count() as u32;
+            (forum_list.parent_chat_id(), unread)
+        })
+    });
+    if let Some((chat_id, unread)) = recomputed {
+        ctx.state
+            .chat_list_mut()
+            .set_forum_unread_topic_count(chat_id, unread);
+    }
+
     ctx.state.leave_forum();
     ctx.state.set_active_pane(ActivePane::ChatList);
 }
@@ -73,14 +94,12 @@ pub(super) fn open_selected_topic<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'
         return;
     }
 
-    // Optimistically clear the topic's contribution to the parent forum chat's
-    // badge in the root list. TDLib only decrements the chat-level `unread_count`
-    // on a later, lagging `updateChatReadInbox`, so without this the badge stays
-    // stale after the topic is read (the topic's own counter clears immediately).
+    // The forum's root-list badge shows the number of unread topics. Opening a
+    // topic that had unread messages reads it, so optimistically drop the parent
+    // forum's unread-topic count by one — TDLib pushes no chat-level read for
+    // forums, and the next chat-list refresh reconciles from getForumTopics.
     if topic_unread > 0 {
-        ctx.state
-            .chat_list_mut()
-            .reduce_chat_unread(chat_id, topic_unread);
+        ctx.state.chat_list_mut().mark_forum_topic_read(chat_id);
     }
 
     ctx.state.open_chat_mut().set_loading_with_topic(

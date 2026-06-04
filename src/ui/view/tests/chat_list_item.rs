@@ -37,6 +37,36 @@ fn chat_list_item_omits_counter_when_zero() {
 }
 
 #[test]
+fn forum_chat_badge_shows_unread_topic_count_not_message_count() {
+    let mut c = chat(1, "Forum", 42, Some("Hello"));
+    c.is_forum = true;
+    c.unread_topic_count = Some(2);
+
+    let text = line_to_string(&chat_list_item::chat_list_item_line(&c, TEST_WIDTH));
+
+    assert!(
+        text.contains("[2]"),
+        "forum badge should show unread-topic count; got '{text}'"
+    );
+    assert!(
+        !text.contains("[42]"),
+        "forum badge must not show chat-level message count; got '{text}'"
+    );
+}
+
+#[test]
+fn forum_chat_badge_hidden_when_no_unread_topics() {
+    let mut c = chat(1, "Forum", 42, Some("Hello"));
+    c.is_forum = true;
+    c.unread_topic_count = Some(0);
+
+    let text = line_to_string(&chat_list_item::chat_list_item_line(&c, TEST_WIDTH));
+
+    assert!(!text.contains("[0]"));
+    assert!(!text.contains("[42]"));
+}
+
+#[test]
 fn chat_list_item_falls_back_to_placeholder_preview() {
     let line =
         chat_list_item::chat_list_item_line(&chat(1, "General", 0, Some("  \n\t  ")), TEST_WIDTH);
@@ -186,6 +216,7 @@ fn channel_does_not_render_sender_prefix() {
         last_message_id: None,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, TEST_WIDTH);
@@ -304,6 +335,7 @@ fn chat_with_unread_and_online_shows_both() {
         last_message_id: None,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, 70);
@@ -330,6 +362,7 @@ fn bot_chat_online_does_not_show_online_indicator() {
         last_message_id: None,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, 70);
@@ -360,6 +393,7 @@ fn chat_with_unread_reactions_shows_heart_badge() {
         last_message_id: None,
         unread_reaction_count: 2,
         is_forum: false,
+        unread_topic_count: None,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, 70);
@@ -400,6 +434,7 @@ fn chat_with_reactions_and_unread_shows_both_badges() {
         last_message_id: None,
         unread_reaction_count: 1,
         is_forum: false,
+        unread_topic_count: None,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, 80);

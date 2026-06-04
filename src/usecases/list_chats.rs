@@ -157,6 +157,7 @@ mod tests {
             last_message_id: None,
             unread_reaction_count: 0,
             is_forum: false,
+            unread_topic_count: None,
         }
     }
 

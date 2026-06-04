@@ -258,6 +258,7 @@ fn group_chat(chat_id: i64, title: &str) -> ChatSummary {
         last_message_id: None,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     }
 }
 

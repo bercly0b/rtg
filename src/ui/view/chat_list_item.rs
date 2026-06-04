@@ -35,8 +35,15 @@ pub(super) fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'sta
         .map(|(t, _)| t.width())
         .unwrap_or(0);
 
-    let unread_badge = if chat.unread_count > 0 {
-        format!(" [{}]", chat.unread_count)
+    // Forums show the number of unread topics, not the chat-level message
+    // count — TDLib's `unread_count` is unreliable for forums (see ChatSummary).
+    let badge_count = if chat.is_forum {
+        chat.unread_topic_count.unwrap_or(0)
+    } else {
+        chat.unread_count
+    };
+    let unread_badge = if badge_count > 0 {
+        format!(" [{}]", badge_count)
     } else {
         String::new()
     };

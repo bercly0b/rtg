@@ -51,4 +51,13 @@ pub struct ChatSummary {
     /// thread — see `ForumTopicListState`. Always `false` for non-supergroup
     /// chats.
     pub is_forum: bool,
+    /// Number of forum topics that have unread messages.
+    ///
+    /// `Some` only for forum chats whose topic list has been resolved via
+    /// `getForumTopics`; `None` for non-forums and forums not yet counted. The
+    /// chat-list badge shows this for forums instead of [`Self::unread_count`],
+    /// matching the official client: TDLib's chat-level `unread_count` counts
+    /// messages across all topics and is not decremented on per-topic reads, so
+    /// it is unreliable for forums (both wrong unit and stale).
+    pub unread_topic_count: Option<u32>,
 }

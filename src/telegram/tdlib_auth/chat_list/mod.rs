@@ -16,6 +16,11 @@ pub(super) trait ChatDataResolver {
     fn cache(&self) -> &TdLibCache;
     fn get_chat(&self, chat_id: i64) -> Result<Chat, TdLibError>;
     fn get_user(&self, user_id: i64) -> Result<tdlib_rs::types::User, TdLibError>;
+    fn get_forum_topics(
+        &self,
+        chat_id: i64,
+        limit: i32,
+    ) -> Result<Vec<tdlib_rs::types::ForumTopic>, TdLibError>;
 }
 
 impl ChatDataResolver for crate::telegram::tdlib_client::TdLibClient {
@@ -29,6 +34,14 @@ impl ChatDataResolver for crate::telegram::tdlib_client::TdLibClient {
 
     fn get_user(&self, user_id: i64) -> Result<tdlib_rs::types::User, TdLibError> {
         self.get_user(user_id)
+    }
+
+    fn get_forum_topics(
+        &self,
+        chat_id: i64,
+        limit: i32,
+    ) -> Result<Vec<tdlib_rs::types::ForumTopic>, TdLibError> {
+        self.get_forum_topics(chat_id, limit)
     }
 }
 
@@ -126,17 +139,43 @@ pub(super) fn build_summaries_from_ids(
 
         let (sender_name, is_online, is_bot, is_forum) =
             resolve_chat_metadata(resolver, &chat, cache);
-        let summary = crate::telegram::tdlib_mappers::map_chat_to_summary(
+        let mut summary = crate::telegram::tdlib_mappers::map_chat_to_summary(
             &chat,
             sender_name,
             is_online,
             is_bot,
             is_forum,
         );
+        // TDLib's chat-level `unread_count` is unreliable for forums, so the
+        // badge instead shows the number of topics with unread messages. Only
+        // resolved when the chat reports unread (cheap gate) to avoid an extra
+        // server round-trip for fully-read forums.
+        if is_forum && summary.unread_count > 0 {
+            summary.unread_topic_count = Some(count_unread_forum_topics(resolver, chat_id));
+        }
         summaries.push(summary);
     }
 
     summaries
+}
+
+/// `getForumTopics` page size used for the unread-topic count. TDLib caps this
+/// at 100 and may return fewer; unread topics sort to the top by `order`, so a
+/// single page covers the realistic unread set.
+const FORUM_TOPICS_PAGE_LIMIT: i32 = 100;
+
+/// Counts forum topics with unread messages for the chat-list badge.
+///
+/// On fetch failure returns 0 (badge hidden) rather than falling back to the
+/// misleading chat-level message count — the next chat-list refresh retries.
+fn count_unread_forum_topics(resolver: &dyn ChatDataResolver, chat_id: i64) -> u32 {
+    match resolver.get_forum_topics(chat_id, FORUM_TOPICS_PAGE_LIMIT) {
+        Ok(topics) => topics.iter().filter(|t| t.unread_count > 0).count() as u32,
+        Err(e) => {
+            tracing::warn!(chat_id, error = %e, "failed to fetch forum topics for unread count");
+            0
+        }
+    }
 }
 
 /// Resolves additional metadata for a chat (sender name, online status, forum flag).

@@ -175,25 +175,48 @@ impl ChatListState {
     pub fn clear_selected_chat_unread(&mut self) {
         if let Some(chat) = self.list.selected_mut() {
             chat.unread_count = 0;
+            if chat.is_forum {
+                chat.unread_topic_count = Some(0);
+            }
         }
     }
 
-    /// Optimistically reduces a chat's unread counter by `amount`, saturating at 0.
+    /// Sets a forum chat's unread-topic count directly.
     ///
-    /// TDLib keeps a forum chat's `unread_count` and its per-topic unread counts
-    /// as separate server counters: reading a topic decrements only the topic and
-    /// emits `updateForumTopic`, while the chat counter is updated later by a
-    /// server-pushed `updateChatReadInbox` that lags. Reflecting the read here
-    /// keeps the chat-list badge in step with the topic list; the eventual server
-    /// update reconciles the authoritative value on the next refresh.
-    pub fn reduce_chat_unread(&mut self, chat_id: i64, amount: u32) {
+    /// Used to reconcile the root-list badge from a topic list already held in
+    /// memory (e.g. when leaving a forum) without a `getForumTopics` round-trip.
+    /// No-op for non-forum chats and unknown ids.
+    pub fn set_forum_unread_topic_count(&mut self, chat_id: i64, count: u32) {
         if let Some(chat) = self
             .list
             .items_mut()
             .iter_mut()
             .find(|chat| chat.chat_id == chat_id)
         {
-            chat.unread_count = chat.unread_count.saturating_sub(amount);
+            if chat.is_forum {
+                chat.unread_topic_count = Some(count);
+            }
+        }
+    }
+
+    /// Optimistically decrements a forum chat's unread-topic count by one.
+    ///
+    /// Called when the user opens a forum topic that had unread messages: that
+    /// topic is now read, so one fewer topic is unread. The forum badge shows
+    /// the unread-topic count (not the message count), and TDLib does not push a
+    /// chat-level read for forums, so reflecting it here keeps the badge in step
+    /// until the next chat-list refresh recomputes the authoritative value from
+    /// `getForumTopics`. No-op when the count is unknown (`None`).
+    pub fn mark_forum_topic_read(&mut self, chat_id: i64) {
+        if let Some(chat) = self
+            .list
+            .items_mut()
+            .iter_mut()
+            .find(|chat| chat.chat_id == chat_id)
+        {
+            if let Some(count) = chat.unread_topic_count.as_mut() {
+                *count = count.saturating_sub(1);
+            }
         }
     }
 }
@@ -219,6 +242,7 @@ mod tests {
             last_message_id: None,
             unread_reaction_count: 0,
             is_forum: false,
+            unread_topic_count: None,
         }
     }
 
@@ -401,30 +425,55 @@ mod tests {
         state.clear_selected_chat_unread(); // should not panic
     }
 
-    #[test]
-    fn reduce_chat_unread_targets_by_id_and_saturates() {
-        let mut state = ChatListState::default();
-        state.set_ready(vec![
-            chat_with_unread(1, "Forum", 5),
-            chat_with_unread(2, "Other", 3),
-        ]);
-
-        state.reduce_chat_unread(1, 2);
-        assert_eq!(state.chats()[0].unread_count, 3);
-        // unrelated chat is untouched
-        assert_eq!(state.chats()[1].unread_count, 3);
-
-        // over-subtracting saturates at zero rather than wrapping
-        state.reduce_chat_unread(1, 100);
-        assert_eq!(state.chats()[0].unread_count, 0);
+    fn forum_chat_with_topics(chat_id: i64, title: &str, unread_topic_count: u32) -> ChatSummary {
+        let mut c = chat(chat_id, title);
+        c.is_forum = true;
+        c.unread_topic_count = Some(unread_topic_count);
+        c
     }
 
     #[test]
-    fn reduce_chat_unread_noop_for_unknown_chat() {
+    fn mark_forum_topic_read_decrements_by_one_and_saturates() {
         let mut state = ChatListState::default();
-        state.set_ready(vec![chat_with_unread(1, "Forum", 5)]);
-        state.reduce_chat_unread(999, 1); // should not panic or change anything
+        state.set_ready(vec![
+            forum_chat_with_topics(1, "Forum", 2),
+            forum_chat_with_topics(2, "Other", 3),
+        ]);
+
+        state.mark_forum_topic_read(1);
+        assert_eq!(state.chats()[0].unread_topic_count, Some(1));
+        // unrelated forum is untouched
+        assert_eq!(state.chats()[1].unread_topic_count, Some(3));
+
+        // decrementing past zero saturates rather than wrapping
+        state.mark_forum_topic_read(1);
+        state.mark_forum_topic_read(1);
+        assert_eq!(state.chats()[0].unread_topic_count, Some(0));
+    }
+
+    #[test]
+    fn mark_forum_topic_read_noop_when_count_unknown() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![chat_with_unread(1, "Plain", 5)]);
+        state.mark_forum_topic_read(1); // no topic count to decrement
+        assert_eq!(state.chats()[0].unread_topic_count, None);
         assert_eq!(state.chats()[0].unread_count, 5);
+    }
+
+    #[test]
+    fn mark_forum_topic_read_noop_for_unknown_chat() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![forum_chat_with_topics(1, "Forum", 2)]);
+        state.mark_forum_topic_read(999); // should not panic or change anything
+        assert_eq!(state.chats()[0].unread_topic_count, Some(2));
+    }
+
+    #[test]
+    fn clear_selected_chat_unread_zeroes_forum_topic_count() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![forum_chat_with_topics(1, "Forum", 4)]);
+        state.clear_selected_chat_unread();
+        assert_eq!(state.chats()[0].unread_topic_count, Some(0));
     }
 
     #[test]

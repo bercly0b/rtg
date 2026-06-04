@@ -61,6 +61,7 @@ pub fn map_chat_to_summary(
         last_message_id,
         unread_reaction_count: chat.unread_reaction_count.max(0) as u32,
         is_forum,
+        unread_topic_count: None,
     }
 }
 
