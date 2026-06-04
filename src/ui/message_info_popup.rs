@@ -68,7 +68,7 @@ fn build_loaded_lines(info: &MessageInfo) -> Vec<Line<'static>> {
         )));
         for r in &info.reaction_counts {
             lines.push(Line::from(Span::styled(
-                format!("  {} {}", r.emoji, r.count),
+                format!("  {} — {}", r.emoji, r.count),
                 styles::chat_info_popup_value_style(),
             )));
         }
