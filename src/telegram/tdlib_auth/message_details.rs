@@ -1,4 +1,4 @@
-use crate::domain::message_info_state::{MessageInfo, ReactionDetail, ViewerDetail};
+use crate::domain::message_info_state::{MessageInfo, ReactionCount, ReactionDetail, ViewerDetail};
 use crate::usecases::message_info::MessageInfoQuery;
 
 use super::TdLibAuthBackend;
@@ -28,6 +28,8 @@ impl TdLibAuthBackend {
             self.extract_inline_reactions(msg_reactions)
         };
 
+        let reaction_counts = extract_reaction_counts(msg_reactions);
+
         let props = self.client.get_message_properties(chat_id, message_id).ok();
 
         let viewers = if props.as_ref().is_some_and(|p| p.can_get_viewers) {
@@ -44,6 +46,7 @@ impl TdLibAuthBackend {
 
         MessageInfo {
             reactions,
+            reaction_counts,
             viewers,
             read_date,
             edit_date,
@@ -169,6 +172,31 @@ fn extract_inline_reactions(
         .collect()
 }
 
+fn extract_reaction_counts(
+    msg_reactions: Option<&tdlib_rs::types::MessageReactions>,
+) -> Vec<ReactionCount> {
+    let Some(reactions) = msg_reactions else {
+        return vec![];
+    };
+
+    reactions
+        .reactions
+        .iter()
+        .filter(|r| r.total_count > 0)
+        .map(|r| {
+            let emoji = match &r.r#type {
+                tdlib_rs::enums::ReactionType::Emoji(e) => e.emoji.clone(),
+                tdlib_rs::enums::ReactionType::CustomEmoji(_) => "⭐".to_owned(),
+                tdlib_rs::enums::ReactionType::Paid => "💎".to_owned(),
+            };
+            ReactionCount {
+                emoji,
+                count: r.total_count,
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,6 +300,53 @@ mod tests {
         let result = extract_inline_reactions(Some(&reactions), stub_resolve_name);
 
         assert_eq!(result[0].emoji, "💎");
+    }
+
+    #[test]
+    fn counts_none_returns_empty() {
+        let result = extract_reaction_counts(None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn counts_extracted_without_recent_senders() {
+        let reactions = make_reactions(vec![tdlib_rs::types::MessageReaction {
+            r#type: tdlib_rs::enums::ReactionType::Emoji(tdlib_rs::types::ReactionTypeEmoji {
+                emoji: "👍".to_owned(),
+            }),
+            total_count: 5,
+            is_chosen: false,
+            used_sender_id: None,
+            recent_sender_ids: vec![],
+        }]);
+        let result = extract_reaction_counts(Some(&reactions));
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].emoji, "👍");
+        assert_eq!(result[0].count, 5);
+    }
+
+    #[test]
+    fn counts_skip_zero_total() {
+        let reactions = make_reactions(vec![make_emoji_reaction("🔥", vec![])]);
+        let result = extract_reaction_counts(Some(&reactions));
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn counts_multiple_reactions() {
+        let reactions = make_reactions(vec![
+            make_emoji_reaction("👍", vec![1, 2]),
+            make_emoji_reaction("❤", vec![3]),
+        ]);
+        let result = extract_reaction_counts(Some(&reactions));
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].emoji, "👍");
+        assert_eq!(result[0].count, 2);
+        assert_eq!(result[1].emoji, "❤");
+        assert_eq!(result[1].count, 1);
     }
 
     #[test]
