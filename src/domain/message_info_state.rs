@@ -7,6 +7,12 @@ pub struct ReactionDetail {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReactionCount {
+    pub emoji: String,
+    pub count: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ViewerDetail {
     pub name: String,
     pub view_date: i32,
@@ -15,6 +21,7 @@ pub struct ViewerDetail {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageInfo {
     pub reactions: Vec<ReactionDetail>,
+    pub reaction_counts: Vec<ReactionCount>,
     pub viewers: Vec<ViewerDetail>,
     pub read_date: Option<i32>,
     pub edit_date: Option<i32>,
@@ -64,6 +71,7 @@ mod tests {
     fn loaded_state_returns_no_ids() {
         let state = MessageInfoPopupState::Loaded(MessageInfo {
             reactions: vec![],
+            reaction_counts: vec![],
             viewers: vec![],
             read_date: None,
             edit_date: None,
