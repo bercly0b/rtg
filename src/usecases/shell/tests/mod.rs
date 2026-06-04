@@ -479,6 +479,14 @@ fn forum_chat(chat_id: i64, title: &str) -> ChatSummary {
     c
 }
 
+/// Helper: build a ChatSummary that's a broadcast channel.
+#[allow(dead_code)]
+fn channel_chat(chat_id: i64, title: &str) -> ChatSummary {
+    let mut c = chat(chat_id, title);
+    c.chat_type = crate::domain::chat::ChatType::Channel;
+    c
+}
+
 /// Helper: build a ForumTopicSummary for tests.
 #[allow(dead_code)]
 fn topic(

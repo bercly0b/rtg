@@ -61,6 +61,18 @@ fn build_loaded_lines(info: &MessageInfo) -> Vec<Line<'static>> {
             )));
         }
         has_content = true;
+    } else if !info.reaction_counts.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "Reactions",
+            styles::chat_info_popup_label_style(),
+        )));
+        for r in &info.reaction_counts {
+            lines.push(Line::from(Span::styled(
+                format!("  {} — {}", r.emoji, r.count),
+                styles::chat_info_popup_value_style(),
+            )));
+        }
+        has_content = true;
     }
 
     if !info.viewers.is_empty() {
@@ -125,7 +137,7 @@ fn build_field_line(label: &str, value: &str) -> Line<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::message_info_state::{ReactionDetail, ViewerDetail};
+    use crate::domain::message_info_state::{ReactionCount, ReactionDetail, ViewerDetail};
 
     #[test]
     fn loading_state_shows_loading_text() {
@@ -150,6 +162,7 @@ mod tests {
     fn empty_info_shows_no_info_message() {
         let state = MessageInfoPopupState::Loaded(MessageInfo {
             reactions: vec![],
+            reaction_counts: vec![],
             viewers: vec![],
             read_date: None,
             edit_date: None,
@@ -165,6 +178,7 @@ mod tests {
                 emoji: "👍".to_owned(),
                 sender_name: "Alice".to_owned(),
             }],
+            reaction_counts: vec![],
             viewers: vec![],
             read_date: None,
             edit_date: None,
@@ -175,9 +189,47 @@ mod tests {
     }
 
     #[test]
+    fn loaded_with_reaction_counts_shows_counts() {
+        let state = MessageInfoPopupState::Loaded(MessageInfo {
+            reactions: vec![],
+            reaction_counts: vec![ReactionCount {
+                emoji: "👍".to_owned(),
+                count: 42,
+            }],
+            viewers: vec![],
+            read_date: None,
+            edit_date: None,
+        });
+        let lines = build_info_lines(&state);
+        assert!(lines[0].spans[0].content.contains("Reactions"));
+        assert!(lines[1].spans[0].content.contains("42"));
+    }
+
+    #[test]
+    fn named_reactions_take_precedence_over_counts() {
+        let state = MessageInfoPopupState::Loaded(MessageInfo {
+            reactions: vec![ReactionDetail {
+                emoji: "👍".to_owned(),
+                sender_name: "Alice".to_owned(),
+            }],
+            reaction_counts: vec![ReactionCount {
+                emoji: "👍".to_owned(),
+                count: 42,
+            }],
+            viewers: vec![],
+            read_date: None,
+            edit_date: None,
+        });
+        let lines = build_info_lines(&state);
+        assert!(lines[1].spans[0].content.contains("Alice"));
+        assert!(!lines[1].spans[0].content.contains("42"));
+    }
+
+    #[test]
     fn loaded_with_viewers_shows_section() {
         let state = MessageInfoPopupState::Loaded(MessageInfo {
             reactions: vec![],
+            reaction_counts: vec![],
             viewers: vec![ViewerDetail {
                 name: "Bob".to_owned(),
                 view_date: 1700000000,
@@ -194,6 +246,7 @@ mod tests {
     fn loaded_with_edit_date_shows_section() {
         let state = MessageInfoPopupState::Loaded(MessageInfo {
             reactions: vec![],
+            reaction_counts: vec![],
             viewers: vec![],
             read_date: None,
             edit_date: Some(1700000000),
@@ -206,6 +259,7 @@ mod tests {
     fn loaded_with_read_date_shows_section() {
         let state = MessageInfoPopupState::Loaded(MessageInfo {
             reactions: vec![],
+            reaction_counts: vec![],
             viewers: vec![],
             read_date: Some(1700000000),
             edit_date: None,

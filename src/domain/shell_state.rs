@@ -579,6 +579,7 @@ mod tests {
         state.show_message_info_loading(1, 42);
         state.set_message_info_loaded(MessageInfoPopupState::Loaded(MessageInfo {
             reactions: vec![],
+            reaction_counts: vec![],
             viewers: vec![],
             read_date: None,
             edit_date: Some(1700000000),

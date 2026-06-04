@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::{
-    domain::{events::ConnectivityStatus, keymap::Action, shell_state::ActivePane},
+    domain::{chat::ChatType, events::ConnectivityStatus, keymap::Action, shell_state::ActivePane},
     usecases::background::TaskDispatcher,
 };
 
@@ -98,7 +98,9 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
             }
         }
         Action::EnterMessageInput if ctx.state.open_chat().is_open() => {
-            if ctx.state.open_topic_is_closed() {
+            if ctx.state.open_chat().chat_type() == ChatType::Channel {
+                ctx.state.set_notification("Channel is read-only");
+            } else if ctx.state.open_topic_is_closed() {
                 ctx.state.set_notification("Topic is closed");
             } else {
                 ctx.state.set_active_pane(ActivePane::MessageInput);
