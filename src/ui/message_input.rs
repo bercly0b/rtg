@@ -22,6 +22,10 @@ pub const PLACEHOLDER_TEXT: &str = "Press 'i' to type a message...";
 /// is closed and the user cannot post.
 pub const TOPIC_CLOSED_PLACEHOLDER: &str = "Topic is closed";
 
+/// Placeholder shown instead of the default prompt when the open chat is a
+/// broadcast channel and the user cannot post.
+pub const CHANNEL_READONLY_PLACEHOLDER: &str = "Channel is read-only";
+
 /// Prompt symbol shown before the input text.
 const PROMPT_SYMBOL: &str = "> ";
 
