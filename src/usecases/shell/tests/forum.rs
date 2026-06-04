@@ -146,6 +146,36 @@ fn h_in_topic_list_leaves_forum_and_closes_parent() {
 }
 
 #[test]
+fn leaving_forum_reconciles_badge_from_loaded_topics() {
+    let mut forum = forum_chat(100, "Topics");
+    forum.unread_topic_count = Some(5); // stale value before browsing
+    let mut o = orchestrator_with_chats(vec![forum]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    let mut backend = topic(100, 7, "Backend", 1000);
+    backend.unread_count = 1;
+    let mut frontend = topic(100, 8, "Frontend", 900);
+    frontend.unread_count = 7;
+    let random = topic(100, 9, "Random", 800); // read (unread_count 0)
+    inject_forum_topics(&mut o, 100, vec![backend, frontend, random]);
+
+    // Leaving recomputes the root badge from the topics already in memory:
+    // two of three topics are unread.
+    o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+        .unwrap();
+
+    let parent = o
+        .state()
+        .chat_list()
+        .chats()
+        .iter()
+        .find(|c| c.chat_id == 100)
+        .expect("forum chat still in root list");
+    assert_eq!(parent.unread_topic_count, Some(2));
+}
+
+#[test]
 fn background_forum_topics_result_populates_list_when_open() {
     let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
@@ -223,9 +253,10 @@ fn mark_as_read_in_a_topic_carries_topic_id() {
 }
 
 #[test]
-fn opening_a_topic_optimistically_clears_parent_forum_unread_in_chat_list() {
+fn opening_a_topic_optimistically_clears_parent_forum_topic_badge() {
     let mut forum = forum_chat(100, "Topics");
     forum.unread_count = 4;
+    forum.unread_topic_count = Some(1);
     let mut o = orchestrator_with_chats(vec![forum]);
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
         .unwrap();
@@ -234,8 +265,8 @@ fn opening_a_topic_optimistically_clears_parent_forum_unread_in_chat_list() {
     backend.unread_count = 4;
     inject_forum_topics(&mut o, 100, vec![backend]);
 
-    // Open the topic — the parent forum's badge in the root list should clear
-    // immediately, without waiting for TDLib's lagging updateChatReadInbox.
+    // Open the topic — the parent forum's unread-topic badge in the root list
+    // should clear immediately, without waiting for the next refresh.
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
         .unwrap();
 
@@ -246,13 +277,14 @@ fn opening_a_topic_optimistically_clears_parent_forum_unread_in_chat_list() {
         .iter()
         .find(|c| c.chat_id == 100)
         .expect("forum chat still in root list");
-    assert_eq!(parent.unread_count, 0);
+    assert_eq!(parent.unread_topic_count, Some(0));
 }
 
 #[test]
-fn opening_a_topic_only_subtracts_that_topics_unread_from_parent_badge() {
+fn opening_a_topic_decrements_parent_forum_topic_count_by_one() {
     let mut forum = forum_chat(100, "Topics");
     forum.unread_count = 10;
+    forum.unread_topic_count = Some(3);
     let mut o = orchestrator_with_chats(vec![forum]);
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
         .unwrap();
@@ -264,7 +296,8 @@ fn opening_a_topic_only_subtracts_that_topics_unread_from_parent_badge() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
         .unwrap();
 
-    // Other topics remain unread, so the chat badge drops by 4 (not to zero).
+    // Reading one topic drops the unread-topic count by exactly one; the other
+    // two topics remain unread.
     let parent = o
         .state()
         .chat_list()
@@ -272,7 +305,7 @@ fn opening_a_topic_only_subtracts_that_topics_unread_from_parent_badge() {
         .iter()
         .find(|c| c.chat_id == 100)
         .expect("forum chat still in root list");
-    assert_eq!(parent.unread_count, 6);
+    assert_eq!(parent.unread_topic_count, Some(2));
 }
 
 #[test]

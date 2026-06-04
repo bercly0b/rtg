@@ -44,6 +44,7 @@ pub(super) fn chat_with_pinned(
         last_message_id: None,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     }
 }
 
@@ -68,6 +69,7 @@ pub(super) fn group_chat(
         last_message_id: None,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     }
 }
 
@@ -93,6 +95,7 @@ pub(super) fn group_chat_outgoing(
         last_message_id: None,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     }
 }
 
@@ -117,6 +120,7 @@ pub(super) fn private_chat_online(
         last_message_id: None,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     }
 }
 
@@ -141,6 +145,7 @@ pub(super) fn private_chat_outgoing(
         last_message_id: None,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     }
 }
 
@@ -165,5 +170,6 @@ pub(super) fn channel_chat_outgoing(
         last_message_id: None,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     }
 }

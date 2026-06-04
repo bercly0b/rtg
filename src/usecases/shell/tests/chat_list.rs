@@ -383,6 +383,7 @@ fn chat_with_unread(
         last_message_id: last_msg_id,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     }
 }
 

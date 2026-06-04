@@ -1,3 +1,5 @@
+use unicode_width::UnicodeWidthStr;
+
 use crate::domain::chat::{ChatSummary, ChatType, OutgoingReadStatus};
 
 use super::{
@@ -34,6 +36,36 @@ fn chat_list_item_omits_counter_when_zero() {
 
     assert!(!text.contains("[0]"));
     assert!(!text.contains("[]"));
+}
+
+#[test]
+fn forum_chat_badge_shows_unread_topic_count_not_message_count() {
+    let mut c = chat(1, "Forum", 42, Some("Hello"));
+    c.is_forum = true;
+    c.unread_topic_count = Some(2);
+
+    let text = line_to_string(&chat_list_item::chat_list_item_line(&c, TEST_WIDTH));
+
+    assert!(
+        text.contains("[2]"),
+        "forum badge should show unread-topic count; got '{text}'"
+    );
+    assert!(
+        !text.contains("[42]"),
+        "forum badge must not show chat-level message count; got '{text}'"
+    );
+}
+
+#[test]
+fn forum_chat_badge_hidden_when_no_unread_topics() {
+    let mut c = chat(1, "Forum", 42, Some("Hello"));
+    c.is_forum = true;
+    c.unread_topic_count = Some(0);
+
+    let text = line_to_string(&chat_list_item::chat_list_item_line(&c, TEST_WIDTH));
+
+    assert!(!text.contains("[0]"));
+    assert!(!text.contains("[42]"));
 }
 
 #[test]
@@ -186,6 +218,7 @@ fn channel_does_not_render_sender_prefix() {
         last_message_id: None,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, TEST_WIDTH);
@@ -266,6 +299,63 @@ fn private_chat_outgoing_delivered_shows_single_check() {
 }
 
 #[test]
+fn long_title_truncates_but_always_shows_unread_counter() {
+    let long_title = "Very Long Chat Title That Exceeds The Available Row Width By A Lot";
+    let line =
+        chat_list_item::chat_list_item_line(&chat(1, long_title, 999, Some("hi")), TEST_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(
+        text.contains("[999]"),
+        "unread counter must stay visible even with a long title; got '{text}'"
+    );
+    assert!(
+        !text.contains(long_title),
+        "an over-long title must be truncated, not rendered in full; got '{text}'"
+    );
+    assert!(
+        UnicodeWidthStr::width(text.as_str()) <= TEST_WIDTH,
+        "row width {} must not exceed {TEST_WIDTH}; got '{text}'",
+        UnicodeWidthStr::width(text.as_str())
+    );
+}
+
+#[test]
+fn long_title_and_sender_keep_status_counter_and_reaction_visible() {
+    // Long title + long sender prefix previously pushed the suffix off-row.
+    let mut c = group_chat_outgoing(
+        1,
+        "Enormous Team Channel Name That Is Really Quite Long Indeed",
+        Some("a preview that is also rather long and would fill the row"),
+        Some("AlexanderTheVeryLongNamedSender"),
+        true,
+    );
+    c.unread_count = 12;
+    c.unread_reaction_count = 1;
+
+    let line = chat_list_item::chat_list_item_line(&c, TEST_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(
+        text.contains("\u{2713}\u{2713}"),
+        "read status must stay visible; got '{text}'"
+    );
+    assert!(
+        text.contains("[\u{2661}]"),
+        "reaction badge must stay visible; got '{text}'"
+    );
+    assert!(
+        text.contains("[12]"),
+        "unread counter must stay visible; got '{text}'"
+    );
+    assert!(
+        UnicodeWidthStr::width(text.as_str()) <= TEST_WIDTH,
+        "row width {} must not exceed {TEST_WIDTH}; got '{text}'",
+        UnicodeWidthStr::width(text.as_str())
+    );
+}
+
+#[test]
 fn private_chat_outgoing_read_shows_double_check() {
     let line = chat_list_item::chat_list_item_line(
         &private_chat_outgoing(1, "Jane", Some("Got it"), true),
@@ -304,6 +394,7 @@ fn chat_with_unread_and_online_shows_both() {
         last_message_id: None,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, 70);
@@ -330,6 +421,7 @@ fn bot_chat_online_does_not_show_online_indicator() {
         last_message_id: None,
         unread_reaction_count: 0,
         is_forum: false,
+        unread_topic_count: None,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, 70);
@@ -360,6 +452,7 @@ fn chat_with_unread_reactions_shows_heart_badge() {
         last_message_id: None,
         unread_reaction_count: 2,
         is_forum: false,
+        unread_topic_count: None,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, 70);
@@ -400,6 +493,7 @@ fn chat_with_reactions_and_unread_shows_both_badges() {
         last_message_id: None,
         unread_reaction_count: 1,
         is_forum: false,
+        unread_topic_count: None,
     };
 
     let line = chat_list_item::chat_list_item_line(&c, 80);
