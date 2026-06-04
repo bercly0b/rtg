@@ -1,3 +1,5 @@
+use unicode_width::UnicodeWidthStr;
+
 use crate::domain::chat::{ChatSummary, ChatType, OutgoingReadStatus};
 
 use super::{
@@ -294,6 +296,63 @@ fn private_chat_outgoing_delivered_shows_single_check() {
     assert!(text.contains(" \u{2713}"));
     assert!(!text.contains("\u{2713}\u{2713}"));
     assert!(text.contains("See you tomorrow"));
+}
+
+#[test]
+fn long_title_truncates_but_always_shows_unread_counter() {
+    let long_title = "Very Long Chat Title That Exceeds The Available Row Width By A Lot";
+    let line =
+        chat_list_item::chat_list_item_line(&chat(1, long_title, 999, Some("hi")), TEST_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(
+        text.contains("[999]"),
+        "unread counter must stay visible even with a long title; got '{text}'"
+    );
+    assert!(
+        !text.contains(long_title),
+        "an over-long title must be truncated, not rendered in full; got '{text}'"
+    );
+    assert!(
+        UnicodeWidthStr::width(text.as_str()) <= TEST_WIDTH,
+        "row width {} must not exceed {TEST_WIDTH}; got '{text}'",
+        UnicodeWidthStr::width(text.as_str())
+    );
+}
+
+#[test]
+fn long_title_and_sender_keep_status_counter_and_reaction_visible() {
+    // Long title + long sender prefix previously pushed the suffix off-row.
+    let mut c = group_chat_outgoing(
+        1,
+        "Enormous Team Channel Name That Is Really Quite Long Indeed",
+        Some("a preview that is also rather long and would fill the row"),
+        Some("AlexanderTheVeryLongNamedSender"),
+        true,
+    );
+    c.unread_count = 12;
+    c.unread_reaction_count = 1;
+
+    let line = chat_list_item::chat_list_item_line(&c, TEST_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(
+        text.contains("\u{2713}\u{2713}"),
+        "read status must stay visible; got '{text}'"
+    );
+    assert!(
+        text.contains("[\u{2661}]"),
+        "reaction badge must stay visible; got '{text}'"
+    );
+    assert!(
+        text.contains("[12]"),
+        "unread counter must stay visible; got '{text}'"
+    );
+    assert!(
+        UnicodeWidthStr::width(text.as_str()) <= TEST_WIDTH,
+        "row width {} must not exceed {TEST_WIDTH}; got '{text}'",
+        UnicodeWidthStr::width(text.as_str())
+    );
 }
 
 #[test]

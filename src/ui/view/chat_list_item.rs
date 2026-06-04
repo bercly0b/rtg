@@ -27,7 +27,6 @@ pub(super) fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'sta
         .unwrap_or_else(|| "No messages yet".to_owned());
 
     let prefix_segments = build_preview_prefix_segments(chat);
-    let prefix_total_width = prefix_segments_width(&prefix_segments);
 
     let outgoing_suffix = build_outgoing_status_suffix(chat);
     let outgoing_suffix_width = outgoing_suffix
@@ -66,26 +65,37 @@ pub(super) fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'sta
         + reaction_badge.width()
         + unread_badge.width()
         + online_indicator.width();
-    let name_width = chat.title.width();
 
-    let content_width = fixed_prefix_width + name_width + 1 + prefix_total_width;
-    let available_for_preview_and_padding = width.saturating_sub(content_width + suffix_width);
+    // The unread badge and trailing icons must always be visible: reserve their
+    // width up front and truncate the middle (title + sender prefix + preview)
+    // into whatever budget remains. Segments lay out left-to-right and truncate
+    // from the tail — the preview yields first, then the sender prefix, then the
+    // title — so the suffix is never pushed off the row by a long title.
+    let middle_budget = width.saturating_sub(fixed_prefix_width + suffix_width);
 
-    let (display_preview, padding) =
-        truncate_to_display_width(&raw_preview, available_for_preview_and_padding);
+    let mut middle_segments = Vec::with_capacity(prefix_segments.len() + 3);
+    middle_segments.push(PrefixSegment {
+        text: chat.title.clone(),
+        style: styles::chat_name_style(),
+    });
+    middle_segments.push(PrefixSegment {
+        text: " ".to_owned(),
+        style: Style::default(),
+    });
+    middle_segments.extend(prefix_segments);
+    middle_segments.push(PrefixSegment {
+        text: raw_preview,
+        style: styles::chat_preview_style(),
+    });
+
+    let (middle_spans, middle_used) = truncate_segments_to_width(middle_segments, middle_budget);
+    let padding = middle_budget.saturating_sub(middle_used);
 
     let mut spans = vec![
         Span::styled(format!("{:>5}", timestamp), styles::timestamp_style()),
         Span::styled(" | ", styles::separator_style()),
-        Span::styled(chat.title.clone(), styles::chat_name_style()),
-        Span::raw(" "),
     ];
-
-    for segment in prefix_segments {
-        spans.push(Span::styled(segment.text, segment.style));
-    }
-
-    spans.push(Span::styled(display_preview, styles::chat_preview_style()));
+    spans.extend(middle_spans);
 
     if padding > 0 {
         spans.push(Span::raw(" ".repeat(padding)));
@@ -154,6 +164,37 @@ fn build_outgoing_status_suffix(chat: &ChatSummary) -> Option<(String, Style)> {
     }
 }
 
-fn prefix_segments_width(segments: &[PrefixSegment]) -> usize {
-    segments.iter().map(|s| s.text.width()).sum()
+/// Lays out `segments` left-to-right into spans, capped at `max_width`.
+///
+/// Earlier segments are placed first; the segment that overflows the budget is
+/// truncated (with an ellipsis) and any remaining segments are dropped. Returns
+/// the spans and the total display width they consumed (`<= max_width`).
+fn truncate_segments_to_width(
+    segments: Vec<PrefixSegment>,
+    max_width: usize,
+) -> (Vec<Span<'static>>, usize) {
+    let mut spans = Vec::with_capacity(segments.len());
+    let mut used = 0usize;
+
+    for segment in segments {
+        let remaining = max_width.saturating_sub(used);
+        if remaining == 0 {
+            break;
+        }
+
+        let seg_width = segment.text.width();
+        if seg_width <= remaining {
+            used += seg_width;
+            spans.push(Span::styled(segment.text, segment.style));
+        } else {
+            let (truncated, _) = truncate_to_display_width(&segment.text, remaining);
+            if !truncated.is_empty() {
+                used += truncated.width();
+                spans.push(Span::styled(truncated, segment.style));
+            }
+            break;
+        }
+    }
+
+    (spans, used)
 }
