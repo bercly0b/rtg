@@ -12,6 +12,14 @@ use super::TdLibAuthBackend;
 ///
 /// Separates cache reads from TDLib API calls, enabling unit tests
 /// with a fake implementation that never touches real TDLib.
+///
+/// Every method here sits on the chat-list build path, which runs before the
+/// first paint of the chat list. Methods must be answerable locally (TDLib
+/// SQLite at worst, and only as a cache-miss fallback) — never add a method
+/// that performs a server round-trip. Data that requires the server must be
+/// derived from the update-driven `TdLibCache` or resolved by a background
+/// task after the list is delivered (see the unread-topic badge warm-up).
+/// `warm_cache_first_load_makes_no_tdlib_calls` enforces this invariant.
 pub(super) trait ChatDataResolver {
     fn cache(&self) -> &TdLibCache;
     fn get_chat(&self, chat_id: i64) -> Result<Chat, TdLibError>;

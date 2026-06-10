@@ -505,6 +505,58 @@ fn non_supergroup_chat_is_never_forum() {
 }
 
 // ---------------------------------------------------------------------------
+// First-paint critical path invariant
+// ---------------------------------------------------------------------------
+
+/// Guards the chat-list fast path: with a warm cache, building summaries makes
+/// no TDLib calls at all. This code runs before the first paint of the chat
+/// list, so any call here is at best an SQLite read and at worst a server
+/// round-trip — the `getForumTopics` regression of PR #156 kept the startup
+/// loader on screen for seconds exactly this way. When a new method is added
+/// to `ChatDataResolver`, wire its call counter into this test and keep every
+/// expected count at zero.
+#[test]
+fn warm_cache_first_load_makes_no_tdlib_calls() {
+    use crate::telegram::tdlib_cache::tests::make_test_supergroup;
+
+    // One chat of every shape that triggers extra resolution: a private chat
+    // (online status + bot flag), a group with a last-message sender, and an
+    // unread forum (unread-topic badge).
+    let private_chat = make_test_chat(1, "Alice");
+    let mut group_chat = make_group_chat(2, "Dev Team");
+    group_chat.last_message = Some(make_message_from_user(42));
+    let forum_chat = make_unread_forum_chat(3, 100, 42);
+
+    let resolver = FakeResolver::new()
+        .with_cached_chat(private_chat)
+        .with_cached_chat(group_chat)
+        .with_cached_chat(forum_chat)
+        .with_cached_user(make_online_user(1, "Alice"))
+        .with_cached_user(make_test_user(42, "Sender"));
+    resolver
+        .cache
+        .upsert_supergroup(make_test_supergroup(100, true));
+    resolver
+        .cache
+        .seed_forum_topics(3, &[make_test_forum_topic(1, 5)]);
+
+    let summaries = build_summaries_from_ids(&resolver, vec![1, 2, 3], NO_FORCE);
+
+    assert_eq!(summaries.len(), 3, "all chats resolved from cache");
+    assert_eq!(summaries[2].unread_topic_count, Some(1));
+    assert_eq!(
+        resolver.get_chat_call_count(),
+        0,
+        "warm first load must not call get_chat"
+    );
+    assert_eq!(
+        resolver.get_user_call_count(),
+        0,
+        "warm first load must not call get_user"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Forum unread-topic count: the badge counts unread topics, not messages,
 // and is derived from the seeded topic cache — never fetched on this path
 // ---------------------------------------------------------------------------
