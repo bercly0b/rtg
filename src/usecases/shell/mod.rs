@@ -48,6 +48,7 @@ pub(super) struct OrchestratorCtx<'a, D: TaskDispatcher> {
     pub chat_list_refresh_pending: &'a mut bool,
     pub chat_list_pending_force: &'a mut bool,
     pub user_requested_chat_refresh: &'a mut bool,
+    pub forum_warmup_in_flight: &'a mut bool,
     pub messages_refresh_in_flight: &'a mut bool,
     pub older_messages_in_flight: &'a mut bool,
     pub active_downloads: &'a mut std::collections::HashMap<i32, (i64, i64)>,
@@ -91,6 +92,8 @@ where
     /// When `true`, the current in-flight chat list refresh was triggered by the user (R key)
     /// so we should show a status-bar notification when it completes.
     user_requested_chat_refresh: bool,
+    /// Guards against dispatching duplicate forum badge warm-up sweeps.
+    forum_warmup_in_flight: bool,
     /// Guards against dispatching duplicate message refresh requests while one is in-flight.
     messages_refresh_in_flight: bool,
     /// Guards against dispatching duplicate older-messages pagination requests.
@@ -147,6 +150,7 @@ where
             chat_list_refresh_pending: false,
             chat_list_pending_force: false,
             user_requested_chat_refresh: false,
+            forum_warmup_in_flight: false,
             messages_refresh_in_flight: false,
             older_messages_in_flight: false,
             initial_refresh_needed: false,
@@ -197,6 +201,7 @@ where
             chat_list_refresh_pending: false,
             chat_list_pending_force: false,
             user_requested_chat_refresh: false,
+            forum_warmup_in_flight: false,
             messages_refresh_in_flight: false,
             older_messages_in_flight: false,
             initial_refresh_needed,
@@ -227,6 +232,7 @@ where
             chat_list_refresh_pending: &mut self.chat_list_refresh_pending,
             chat_list_pending_force: &mut self.chat_list_pending_force,
             user_requested_chat_refresh: &mut self.user_requested_chat_refresh,
+            forum_warmup_in_flight: &mut self.forum_warmup_in_flight,
             messages_refresh_in_flight: &mut self.messages_refresh_in_flight,
             older_messages_in_flight: &mut self.older_messages_in_flight,
             active_downloads: &mut self.active_downloads,

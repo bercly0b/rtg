@@ -12,15 +12,18 @@ use super::TdLibAuthBackend;
 ///
 /// Separates cache reads from TDLib API calls, enabling unit tests
 /// with a fake implementation that never touches real TDLib.
+///
+/// Every method here sits on the chat-list build path, which runs before the
+/// first paint of the chat list. Methods must be answerable locally (TDLib
+/// SQLite at worst, and only as a cache-miss fallback) — never add a method
+/// that performs a server round-trip. Data that requires the server must be
+/// derived from the update-driven `TdLibCache` or resolved by a background
+/// task after the list is delivered (see the unread-topic badge warm-up).
+/// `warm_cache_first_load_makes_no_tdlib_calls` enforces this invariant.
 pub(super) trait ChatDataResolver {
     fn cache(&self) -> &TdLibCache;
     fn get_chat(&self, chat_id: i64) -> Result<Chat, TdLibError>;
     fn get_user(&self, user_id: i64) -> Result<tdlib_rs::types::User, TdLibError>;
-    fn get_forum_topics(
-        &self,
-        chat_id: i64,
-        limit: i32,
-    ) -> Result<Vec<tdlib_rs::types::ForumTopic>, TdLibError>;
 }
 
 impl ChatDataResolver for crate::telegram::tdlib_client::TdLibClient {
@@ -34,14 +37,6 @@ impl ChatDataResolver for crate::telegram::tdlib_client::TdLibClient {
 
     fn get_user(&self, user_id: i64) -> Result<tdlib_rs::types::User, TdLibError> {
         self.get_user(user_id)
-    }
-
-    fn get_forum_topics(
-        &self,
-        chat_id: i64,
-        limit: i32,
-    ) -> Result<Vec<tdlib_rs::types::ForumTopic>, TdLibError> {
-        self.get_forum_topics(chat_id, limit)
     }
 }
 
@@ -147,35 +142,17 @@ pub(super) fn build_summaries_from_ids(
             is_forum,
         );
         // TDLib's chat-level `unread_count` is unreliable for forums, so the
-        // badge instead shows the number of topics with unread messages. Only
-        // resolved when the chat reports unread (cheap gate) to avoid an extra
-        // server round-trip for fully-read forums.
-        if is_forum && summary.unread_count > 0 {
-            summary.unread_topic_count = Some(count_unread_forum_topics(resolver, chat_id));
+        // badge instead shows the number of topics with unread messages,
+        // derived from the update-driven topic cache — no server round-trip
+        // on the chat-list path. `None` (chat not seeded yet) hides the badge
+        // until the background warm-up delivers the count.
+        if is_forum {
+            summary.unread_topic_count = cache.unread_forum_topic_count(chat_id);
         }
         summaries.push(summary);
     }
 
     summaries
-}
-
-/// `getForumTopics` page size used for the unread-topic count. TDLib caps this
-/// at 100 and may return fewer; unread topics sort to the top by `order`, so a
-/// single page covers the realistic unread set.
-const FORUM_TOPICS_PAGE_LIMIT: i32 = 100;
-
-/// Counts forum topics with unread messages for the chat-list badge.
-///
-/// On fetch failure returns 0 (badge hidden) rather than falling back to the
-/// misleading chat-level message count — the next chat-list refresh retries.
-fn count_unread_forum_topics(resolver: &dyn ChatDataResolver, chat_id: i64) -> u32 {
-    match resolver.get_forum_topics(chat_id, FORUM_TOPICS_PAGE_LIMIT) {
-        Ok(topics) => topics.iter().filter(|t| t.unread_count > 0).count() as u32,
-        Err(e) => {
-            tracing::warn!(chat_id, error = %e, "failed to fetch forum topics for unread count");
-            0
-        }
-    }
 }
 
 /// Resolves additional metadata for a chat (sender name, online status, forum flag).

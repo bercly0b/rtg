@@ -97,6 +97,54 @@ pub(super) fn dispatch_load_forum_topics<C: ForumTopicsSource + Send + Sync + 's
     }
 }
 
+/// Resolves unread-topic counts for forums whose badge is unknown.
+///
+/// One thread sweeps all requested chats sequentially: each fetch also seeds
+/// the TDLib-layer topic cache, so subsequent chat-list rebuilds read the
+/// counts locally. A failed chat is skipped (logged); the single result is
+/// always sent so the orchestrator can clear its in-flight guard.
+pub(super) fn dispatch_forum_unread_counts<C: ForumTopicsSource + Send + Sync + 'static>(
+    source: &Arc<C>,
+    tx: &Sender<BackgroundTaskResult>,
+    chat_ids: Vec<i64>,
+) {
+    let source = Arc::clone(source);
+    let tx = tx.clone();
+    let tx_fallback = tx.clone();
+
+    let spawn_result = std::thread::Builder::new()
+        .name("rtg-bg-forum-unread".into())
+        .spawn(move || {
+            tracing::debug!(
+                chat_count = chat_ids.len(),
+                "background: resolving forum unread-topic counts"
+            );
+            let mut counts = Vec::with_capacity(chat_ids.len());
+            for chat_id in chat_ids {
+                match list_forum_topics(source.as_ref(), ListForumTopicsQuery::new(chat_id)) {
+                    Ok(output) => {
+                        let unread =
+                            output.topics.iter().filter(|t| t.unread_count > 0).count() as u32;
+                        counts.push((chat_id, unread));
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            chat_id,
+                            error = ?error,
+                            "background: forum unread count fetch failed"
+                        );
+                    }
+                }
+            }
+            let _ = tx.send(BackgroundTaskResult::ForumUnreadCountsLoaded { counts });
+        });
+
+    if let Err(error) = spawn_result {
+        tracing::error!(error = %error, "failed to spawn forum unread counts background thread");
+        let _ = tx_fallback.send(BackgroundTaskResult::ForumUnreadCountsLoaded { counts: vec![] });
+    }
+}
+
 pub(super) fn dispatch_open_chat<L: ChatLifecycle + Send + Sync + 'static>(
     lifecycle: &Arc<L>,
     chat_id: i64,

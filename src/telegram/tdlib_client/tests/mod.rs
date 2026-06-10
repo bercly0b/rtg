@@ -101,3 +101,23 @@ fn publish_unread_reaction_count_updates_cache_and_emits_update() {
         other => panic!("unexpected update kind: {}", other.kind()),
     }
 }
+
+#[test]
+fn forum_topic_id_extracts_forum_topic() {
+    use super::update_loop::forum_topic_id;
+
+    let mut message = crate::telegram::tdlib_cache::tests::make_test_topic_message(1);
+    assert_eq!(forum_topic_id(&message), None);
+
+    message.topic_id = Some(tdlib_rs::enums::MessageTopic::Forum(
+        tdlib_rs::types::MessageTopicForum { forum_topic_id: 7 },
+    ));
+    assert_eq!(forum_topic_id(&message), Some(7));
+
+    message.topic_id = Some(tdlib_rs::enums::MessageTopic::SavedMessages(
+        tdlib_rs::types::MessageTopicSavedMessages {
+            saved_messages_topic_id: 3,
+        },
+    ));
+    assert_eq!(forum_topic_id(&message), None);
+}

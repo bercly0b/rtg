@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, RwLock};
 
-use tdlib_rs::types::{Chat, ChatPosition, Supergroup, User};
+use tdlib_rs::types::{Chat, ChatPosition, ForumTopic, Supergroup, User};
 
 /// Thread-safe cache for TDLib objects populated by the update loop.
 ///
@@ -31,6 +31,28 @@ struct CacheInner {
     chats: HashMap<i64, Chat>,
     users: HashMap<i64, User>,
     supergroups: HashMap<i64, Supergroup>,
+    /// Per-forum topic read state, keyed by chat id then topic id. A chat is
+    /// present only after a `getForumTopics` snapshot seeded it — updates for
+    /// unseeded chats are dropped, since a partial picture would produce a
+    /// wrong unread-topic count.
+    forum_topics: HashMap<i64, HashMap<i32, TopicReadState>>,
+}
+
+/// Read state of a single forum topic, sufficient to derive "has unread".
+///
+/// `unread_count` is not tracked: `updateForumTopic` does not carry it, so the
+/// verdict is derived from the watermark of incoming message ids vs the last
+/// read position — both of which TDLib does push.
+#[derive(Debug, Clone, Copy)]
+struct TopicReadState {
+    max_incoming_message_id: i64,
+    last_read_inbox_message_id: i64,
+}
+
+impl TopicReadState {
+    fn is_unread(&self) -> bool {
+        self.max_incoming_message_id > self.last_read_inbox_message_id
+    }
 }
 
 impl TdLibCache {
@@ -186,6 +208,86 @@ impl TdLibCache {
         }
     }
 
+    /// Seeds the topic read state for a forum chat from a full `getForumTopics`
+    /// snapshot, replacing any previously held state for that chat.
+    pub fn seed_forum_topics(&self, chat_id: i64, topics: &[ForumTopic]) {
+        let snapshot = topics
+            .iter()
+            .map(|t| {
+                let last_read = t.last_read_inbox_message_id;
+                // The snapshot's `unread_count` is authoritative; the stored ids
+                // only need to reproduce its read/unread verdict while staying
+                // updatable by later pushes. `last_read + 1` covers an unread
+                // topic whose last_message is missing or lagging.
+                let max_incoming = if t.unread_count > 0 {
+                    t.last_message
+                        .as_ref()
+                        .map(|m| m.id)
+                        .unwrap_or(0)
+                        .max(last_read + 1)
+                } else {
+                    last_read
+                };
+                (
+                    t.info.forum_topic_id,
+                    TopicReadState {
+                        max_incoming_message_id: max_incoming,
+                        last_read_inbox_message_id: last_read,
+                    },
+                )
+            })
+            .collect();
+
+        let mut inner = self.inner.write().expect("cache write lock poisoned");
+        inner.forum_topics.insert(chat_id, snapshot);
+    }
+
+    /// Applies a topic read-position change (from `updateForumTopic` or a local
+    /// `viewMessages`). Read positions are monotonic, so the highest one wins —
+    /// this also keeps an optimistic local read from being undone by a slightly
+    /// older server push. No-op for unseeded chats.
+    pub fn apply_forum_topic_read(
+        &self,
+        chat_id: i64,
+        topic_id: i32,
+        last_read_inbox_message_id: i64,
+    ) {
+        let mut inner = self.inner.write().expect("cache write lock poisoned");
+        if let Some(topics) = inner.forum_topics.get_mut(&chat_id) {
+            let entry = topics.entry(topic_id).or_insert(TopicReadState {
+                max_incoming_message_id: 0,
+                last_read_inbox_message_id: 0,
+            });
+            entry.last_read_inbox_message_id = entry
+                .last_read_inbox_message_id
+                .max(last_read_inbox_message_id);
+        }
+    }
+
+    /// Records a new incoming message in a forum topic, raising its unread
+    /// watermark. A topic unknown to the snapshot (just created) starts unread.
+    /// No-op for unseeded chats.
+    pub fn note_incoming_topic_message(&self, chat_id: i64, topic_id: i32, message_id: i64) {
+        let mut inner = self.inner.write().expect("cache write lock poisoned");
+        if let Some(topics) = inner.forum_topics.get_mut(&chat_id) {
+            let entry = topics.entry(topic_id).or_insert(TopicReadState {
+                max_incoming_message_id: 0,
+                last_read_inbox_message_id: 0,
+            });
+            entry.max_incoming_message_id = entry.max_incoming_message_id.max(message_id);
+        }
+    }
+
+    /// Returns the number of topics with unread messages for a forum chat, or
+    /// `None` when the chat was never seeded (badge unknown).
+    pub fn unread_forum_topic_count(&self, chat_id: i64) -> Option<u32> {
+        let inner = self.inner.read().expect("cache read lock poisoned");
+        inner
+            .forum_topics
+            .get(&chat_id)
+            .map(|topics| topics.values().filter(|t| t.is_unread()).count() as u32)
+    }
+
     /// Returns the number of cached chats (for diagnostics).
     #[cfg(test)]
     pub fn chat_count(&self) -> usize {
@@ -326,6 +428,56 @@ pub(crate) mod tests {
             restriction_info: None,
             paid_message_star_count: 0,
             active_story_state: None,
+        }
+    }
+
+    pub fn make_test_forum_topic(topic_id: i32, unread_count: i32) -> ForumTopic {
+        ForumTopic {
+            info: tdlib_rs::types::ForumTopicInfo {
+                chat_id: 0,
+                forum_topic_id: topic_id,
+                name: format!("Topic {topic_id}"),
+                icon: tdlib_rs::types::ForumTopicIcon {
+                    color: 0,
+                    custom_emoji_id: 0,
+                },
+                creation_date: 0,
+                creator_id: tdlib_rs::enums::MessageSender::User(
+                    tdlib_rs::types::MessageSenderUser { user_id: 0 },
+                ),
+                is_general: false,
+                is_outgoing: false,
+                is_closed: false,
+                is_hidden: false,
+                is_name_implicit: false,
+            },
+            last_message: None,
+            order: i64::from(topic_id),
+            is_pinned: false,
+            unread_count,
+            last_read_inbox_message_id: 0,
+            last_read_outbox_message_id: 0,
+            unread_mention_count: 0,
+            unread_reaction_count: 0,
+            notification_settings: tdlib_rs::types::ChatNotificationSettings {
+                use_default_mute_for: true,
+                mute_for: 0,
+                use_default_sound: true,
+                sound_id: 0,
+                use_default_show_preview: true,
+                show_preview: false,
+                use_default_mute_stories: true,
+                mute_stories: false,
+                use_default_story_sound: true,
+                story_sound_id: 0,
+                use_default_show_story_poster: true,
+                show_story_poster: false,
+                use_default_disable_pinned_message_notifications: true,
+                disable_pinned_message_notifications: false,
+                use_default_disable_mention_notifications: true,
+                disable_mention_notifications: false,
+            },
+            draft_message: None,
         }
     }
 
@@ -551,6 +703,183 @@ pub(crate) mod tests {
     fn get_unknown_supergroup_returns_none() {
         let cache = TdLibCache::new();
         assert!(cache.get_supergroup(999).is_none());
+    }
+
+    fn unread_topic_with_read_position(topic_id: i32, last_read: i64, last_msg: i64) -> ForumTopic {
+        let mut topic = make_test_forum_topic(topic_id, 1);
+        topic.last_read_inbox_message_id = last_read;
+        topic.last_message = Some(make_test_topic_message(last_msg));
+        topic
+    }
+
+    pub fn make_test_topic_message(id: i64) -> tdlib_rs::types::Message {
+        use tdlib_rs::enums::{MessageContent, MessageSender};
+        tdlib_rs::types::Message {
+            id,
+            sender_id: MessageSender::User(tdlib_rs::types::MessageSenderUser { user_id: 1 }),
+            chat_id: 0,
+            sending_state: None,
+            scheduling_state: None,
+            is_outgoing: false,
+            is_pinned: false,
+            is_from_offline: false,
+            can_be_saved: true,
+            has_timestamped_media: false,
+            is_channel_post: false,
+            is_paid_star_suggested_post: false,
+            is_paid_ton_suggested_post: false,
+            contains_unread_mention: false,
+            date: 1_700_000_000,
+            edit_date: 0,
+            forward_info: None,
+            import_info: None,
+            interaction_info: None,
+            unread_reactions: vec![],
+            fact_check: None,
+            suggested_post_info: None,
+            reply_to: None,
+            topic_id: None,
+            self_destruct_type: None,
+            self_destruct_in: 0.0,
+            auto_delete_in: 0.0,
+            via_bot_user_id: 0,
+            sender_business_bot_user_id: 0,
+            sender_boost_count: 0,
+            paid_message_star_count: 0,
+            author_signature: String::new(),
+            media_album_id: 0,
+            effect_id: 0,
+            restriction_info: None,
+            summary_language_code: String::new(),
+            content: MessageContent::MessageText(tdlib_rs::types::MessageText {
+                text: tdlib_rs::types::FormattedText {
+                    text: "test".to_owned(),
+                    entities: vec![],
+                },
+                link_preview: None,
+                link_preview_options: None,
+            }),
+            reply_markup: None,
+        }
+    }
+
+    #[test]
+    fn seed_counts_unread_topics() {
+        let cache = TdLibCache::new();
+        cache.seed_forum_topics(
+            10,
+            &[
+                make_test_forum_topic(1, 3),
+                make_test_forum_topic(2, 0),
+                make_test_forum_topic(3, 1),
+            ],
+        );
+
+        assert_eq!(cache.unread_forum_topic_count(10), Some(2));
+    }
+
+    #[test]
+    fn unseeded_chat_has_no_unread_topic_count() {
+        let cache = TdLibCache::new();
+        assert_eq!(cache.unread_forum_topic_count(10), None);
+    }
+
+    #[test]
+    fn seed_unread_topic_without_last_message_still_counts() {
+        let mut topic = make_test_forum_topic(1, 5);
+        topic.last_message = None;
+        topic.last_read_inbox_message_id = 100;
+
+        let cache = TdLibCache::new();
+        cache.seed_forum_topics(10, &[topic]);
+
+        assert_eq!(cache.unread_forum_topic_count(10), Some(1));
+    }
+
+    #[test]
+    fn apply_read_clears_topic_unread() {
+        let cache = TdLibCache::new();
+        cache.seed_forum_topics(10, &[unread_topic_with_read_position(1, 100, 150)]);
+        assert_eq!(cache.unread_forum_topic_count(10), Some(1));
+
+        cache.apply_forum_topic_read(10, 1, 150);
+
+        assert_eq!(cache.unread_forum_topic_count(10), Some(0));
+    }
+
+    #[test]
+    fn apply_read_below_watermark_keeps_topic_unread() {
+        let cache = TdLibCache::new();
+        cache.seed_forum_topics(10, &[unread_topic_with_read_position(1, 100, 150)]);
+
+        cache.apply_forum_topic_read(10, 1, 120);
+
+        assert_eq!(cache.unread_forum_topic_count(10), Some(1));
+    }
+
+    #[test]
+    fn apply_read_never_regresses() {
+        let cache = TdLibCache::new();
+        cache.seed_forum_topics(10, &[unread_topic_with_read_position(1, 100, 150)]);
+
+        cache.apply_forum_topic_read(10, 1, 150);
+        // A lagging server push with an older read position must not resurrect
+        // the optimistic local read.
+        cache.apply_forum_topic_read(10, 1, 110);
+
+        assert_eq!(cache.unread_forum_topic_count(10), Some(0));
+    }
+
+    #[test]
+    fn apply_read_ignored_for_unseeded_chat() {
+        let cache = TdLibCache::new();
+        cache.apply_forum_topic_read(10, 1, 150);
+
+        assert_eq!(cache.unread_forum_topic_count(10), None);
+    }
+
+    #[test]
+    fn incoming_message_marks_read_topic_unread() {
+        let cache = TdLibCache::new();
+        cache.seed_forum_topics(10, &[make_test_forum_topic(1, 0)]);
+        assert_eq!(cache.unread_forum_topic_count(10), Some(0));
+
+        cache.note_incoming_topic_message(10, 1, 200);
+
+        assert_eq!(cache.unread_forum_topic_count(10), Some(1));
+    }
+
+    #[test]
+    fn incoming_message_in_unknown_topic_counts_as_unread() {
+        let cache = TdLibCache::new();
+        cache.seed_forum_topics(10, &[make_test_forum_topic(1, 0)]);
+
+        cache.note_incoming_topic_message(10, 99, 200);
+
+        assert_eq!(cache.unread_forum_topic_count(10), Some(1));
+    }
+
+    #[test]
+    fn incoming_message_ignored_for_unseeded_chat() {
+        let cache = TdLibCache::new();
+        cache.note_incoming_topic_message(10, 1, 200);
+
+        assert_eq!(cache.unread_forum_topic_count(10), None);
+    }
+
+    #[test]
+    fn reseed_replaces_previous_topic_state() {
+        let cache = TdLibCache::new();
+        cache.seed_forum_topics(
+            10,
+            &[make_test_forum_topic(1, 4), make_test_forum_topic(2, 1)],
+        );
+        assert_eq!(cache.unread_forum_topic_count(10), Some(2));
+
+        // Topic 2 deleted, topic 1 read in the fresh snapshot.
+        cache.seed_forum_topics(10, &[make_test_forum_topic(1, 0)]);
+
+        assert_eq!(cache.unread_forum_topic_count(10), Some(0));
     }
 
     #[test]

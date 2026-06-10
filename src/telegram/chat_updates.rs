@@ -165,10 +165,22 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
             action_label,
             is_cancel,
         }),
-        TdLibUpdate::ForumTopicInfoChanged { chat_id, topic_id }
-        | TdLibUpdate::ForumTopicChanged { chat_id, topic_id } => {
-            Some(ChatUpdate::ForumTopicChanged { chat_id, topic_id })
+        TdLibUpdate::ForumTopicInfoChanged { chat_id, topic_id } => {
+            Some(ChatUpdate::ForumTopicChanged {
+                chat_id,
+                topic_id,
+                unread_topic_count: None,
+            })
         }
+        TdLibUpdate::ForumTopicChanged {
+            chat_id,
+            topic_id,
+            unread_topic_count,
+        } => Some(ChatUpdate::ForumTopicChanged {
+            chat_id,
+            topic_id,
+            unread_topic_count,
+        }),
     }
 }
 
@@ -493,6 +505,53 @@ mod tests {
             }
             other => panic!("expected MessageReactionsChanged, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn map_forum_topic_changed_carries_unread_topic_count() {
+        let mapper = StubMessageMapper;
+        let update = TdLibUpdate::ForumTopicChanged {
+            chat_id: 10,
+            topic_id: 7,
+            unread_topic_count: Some(3),
+        };
+
+        let result = map_update(update, &mapper);
+
+        assert!(
+            matches!(
+                result,
+                Some(ChatUpdate::ForumTopicChanged {
+                    chat_id: 10,
+                    topic_id: 7,
+                    unread_topic_count: Some(3),
+                })
+            ),
+            "expected ForumTopicChanged with count, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn map_forum_topic_info_changed_has_no_count() {
+        let mapper = StubMessageMapper;
+        let update = TdLibUpdate::ForumTopicInfoChanged {
+            chat_id: 10,
+            topic_id: 7,
+        };
+
+        let result = map_update(update, &mapper);
+
+        assert!(
+            matches!(
+                result,
+                Some(ChatUpdate::ForumTopicChanged {
+                    chat_id: 10,
+                    topic_id: 7,
+                    unread_topic_count: None,
+                })
+            ),
+            "expected ForumTopicChanged without count, got: {result:?}"
+        );
     }
 
     #[test]

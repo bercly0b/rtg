@@ -36,8 +36,22 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                     if user_requested {
                         ctx.state.set_notification("Chat list refreshed");
                     }
+                    // Forums reporting unread whose badge is unknown (topic
+                    // cache not seeded yet) get their counts resolved by a
+                    // background sweep so the list itself renders instantly.
+                    let warmup_ids: Vec<i64> = chats
+                        .iter()
+                        .filter(|c| {
+                            c.is_forum && c.unread_count > 0 && c.unread_topic_count.is_none()
+                        })
+                        .map(|c| c.chat_id)
+                        .collect();
                     ctx.state.chat_list_mut().set_all_chats_loaded(all_loaded);
                     ctx.state.chat_list_mut().set_ready(chats);
+                    if !warmup_ids.is_empty() && !*ctx.forum_warmup_in_flight {
+                        *ctx.forum_warmup_in_flight = true;
+                        ctx.dispatcher.dispatch_forum_unread_counts(warmup_ids);
+                    }
                 }
                 Err(error) => {
                     tracing::warn!(code = error.code, "background: chat list load failed");
@@ -54,6 +68,18 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                     "re-dispatching chat list refresh (pending flag was set)"
                 );
                 super::chat_list::dispatch_chat_list_refresh(ctx, pending_force);
+            }
+        }
+        BackgroundTaskResult::ForumUnreadCountsLoaded { counts } => {
+            *ctx.forum_warmup_in_flight = false;
+            tracing::debug!(
+                count = counts.len(),
+                "background: forum unread-topic counts loaded"
+            );
+            for (chat_id, count) in counts {
+                ctx.state
+                    .chat_list_mut()
+                    .set_forum_unread_topic_count(chat_id, count);
             }
         }
         BackgroundTaskResult::ForumTopicsLoaded { chat_id, result } => {

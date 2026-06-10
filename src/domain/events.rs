@@ -41,6 +41,10 @@ pub enum BackgroundTaskResult {
         chat_id: i64,
         result: Result<Vec<super::forum_topic::ForumTopicSummary>, BackgroundError>,
     },
+    /// Unread-topic counts resolved for forum chats whose chat-list badge was
+    /// unknown. Chats whose fetch failed are absent; the next chat-list load
+    /// re-dispatches the warm-up for them.
+    ForumUnreadCountsLoaded { counts: Vec<(i64, u32)> },
     /// Messages fetch for a specific chat completed. `topic_id` mirrors the
     /// request scope so handlers can drop results from a topic the user is
     /// no longer viewing.
@@ -174,7 +178,14 @@ pub enum ChatUpdate {
     },
     /// A forum topic's metadata or unread state changed. The orchestrator
     /// should refresh the topic list when this matches the open forum.
-    ForumTopicChanged { chat_id: i64, topic_id: i32 },
+    /// `unread_topic_count` carries the chat's recomputed unread-topic count
+    /// for the chat-list badge (`None` when unknown — e.g. metadata-only
+    /// updates or a not-yet-seeded topic cache).
+    ForumTopicChanged {
+        chat_id: i64,
+        topic_id: i32,
+        unread_topic_count: Option<u32>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

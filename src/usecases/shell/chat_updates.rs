@@ -129,12 +129,17 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
             ChatUpdate::ForumTopicChanged {
                 chat_id,
                 topic_id: _,
+                unread_topic_count,
             } => {
-                // Refresh the root list so the forum's unread-topic badge tracks
-                // reads/activity that happen elsewhere (e.g. the official client)
-                // — debounced by the in-flight/pending guard. Recompute is cheap:
-                // only forums with unread re-fetch topics during the rebuild.
-                should_refresh_chat_list = true;
+                // Patch the forum's root-list badge in place — no full chat-list
+                // refresh. The count comes from the update-driven topic cache;
+                // `None` means the cache isn't seeded for this chat yet, and the
+                // badge warm-up dispatched on chat-list load covers it.
+                if let Some(count) = unread_topic_count {
+                    ctx.state
+                        .chat_list_mut()
+                        .set_forum_unread_topic_count(chat_id, count);
+                }
                 // Only reload the topic panel when the user is browsing this very
                 // forum — no point refreshing topics they can't see right now.
                 if ctx.state.forum_topic_list().map(|f| f.parent_chat_id()) == Some(chat_id) {

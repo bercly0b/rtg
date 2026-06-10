@@ -110,6 +110,7 @@ struct RecordingDispatcher {
     dispatched_mark_chat_as_read: RefCell<Vec<(i64, i64)>>,
     dispatched_prefetches: RefCell<Vec<(i64, Option<i32>)>>,
     dispatched_forum_topics: RefCell<Vec<i64>>,
+    dispatched_forum_unread_counts: RefCell<Vec<Vec<i64>>>,
     dispatched_deletes: RefCell<Vec<(i64, i64)>>,
     dispatched_voice_sends: RefCell<Vec<(i64, Option<i32>, String)>>,
     dispatched_subtitles: RefCell<Vec<ChatSubtitleQuery>>,
@@ -131,6 +132,7 @@ impl RecordingDispatcher {
             dispatched_mark_chat_as_read: RefCell::new(Vec::new()),
             dispatched_prefetches: RefCell::new(Vec::new()),
             dispatched_forum_topics: RefCell::new(Vec::new()),
+            dispatched_forum_unread_counts: RefCell::new(Vec::new()),
             dispatched_deletes: RefCell::new(Vec::new()),
             dispatched_voice_sends: RefCell::new(Vec::new()),
             dispatched_subtitles: RefCell::new(Vec::new()),
@@ -180,6 +182,16 @@ impl RecordingDispatcher {
     #[allow(dead_code)]
     fn forum_topics_dispatch_count(&self) -> usize {
         self.dispatched_forum_topics.borrow().len()
+    }
+
+    #[allow(dead_code)]
+    fn forum_unread_counts_dispatch_count(&self) -> usize {
+        self.dispatched_forum_unread_counts.borrow().len()
+    }
+
+    #[allow(dead_code)]
+    fn last_forum_unread_counts_chat_ids(&self) -> Option<Vec<i64>> {
+        self.dispatched_forum_unread_counts.borrow().last().cloned()
     }
 
     fn send_dispatch_count(&self) -> usize {
@@ -290,6 +302,12 @@ impl TaskDispatcher for RecordingDispatcher {
 
     fn dispatch_load_forum_topics(&self, chat_id: i64) {
         self.dispatched_forum_topics.borrow_mut().push(chat_id);
+    }
+
+    fn dispatch_forum_unread_counts(&self, chat_ids: Vec<i64>) {
+        self.dispatched_forum_unread_counts
+            .borrow_mut()
+            .push(chat_ids);
     }
 
     fn dispatch_load_messages(&self, chat_id: i64, topic_id: Option<i32>) {
