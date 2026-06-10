@@ -101,7 +101,13 @@ impl TdLibClient {
             })?;
 
             match topics {
-                tdlib_rs::enums::ForumTopics::ForumTopics(t) => Ok(t.topics),
+                tdlib_rs::enums::ForumTopics::ForumTopics(t) => {
+                    // Single choke point for topic fetches: every snapshot
+                    // (topic panel load or badge warm-up) seeds the read-state
+                    // cache that the chat-list badge is derived from.
+                    self.cache.seed_forum_topics(chat_id, &t.topics);
+                    Ok(t.topics)
+                }
             }
         })
     }
@@ -243,6 +249,7 @@ impl TdLibClient {
         } else {
             tdlib_rs::enums::MessageSource::ChatHistory
         };
+        let max_viewed_id = message_ids.iter().max().copied();
 
         self.rt.block_on(async {
             tdlib_rs::functions::view_messages(
@@ -257,7 +264,16 @@ impl TdLibClient {
                 code: e.code,
                 message: e.message,
             })
-        })
+        })?;
+
+        // Advance the topic's read position in the cache right away, so a
+        // chat-list rebuild during TDLib's read-ack window doesn't resurrect
+        // the unread badge the UI already cleared optimistically.
+        if let (Some(topic_id), Some(max_id)) = (topic_id, max_viewed_id) {
+            self.cache.apply_forum_topic_read(chat_id, topic_id, max_id);
+        }
+
+        Ok(())
     }
 
     /// Informs TDLib that the chat is closed by the user.

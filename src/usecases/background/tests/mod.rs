@@ -35,6 +35,8 @@ impl TaskDispatcher for StubTaskDispatcher {
 
     fn dispatch_load_forum_topics(&self, _chat_id: i64) {}
 
+    fn dispatch_forum_unread_counts(&self, _chat_ids: Vec<i64>) {}
+
     fn dispatch_load_messages(&self, _chat_id: i64, _topic_id: Option<i32>) {}
 
     fn dispatch_load_older_messages(

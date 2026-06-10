@@ -670,3 +670,104 @@ fn auto_update_during_inflight_redispatches_without_force() {
         "auto-update re-dispatch should use force=false"
     );
 }
+
+// ── Forum badge warm-up: forums with unread but an unknown unread-topic
+// count get their badge resolved by a background sweep after the list lands ──
+
+fn unread_forum_without_badge(chat_id: i64, title: &str) -> ChatSummary {
+    let mut c = forum_chat(chat_id, title);
+    c.unread_count = 42;
+    c.unread_topic_count = None;
+    c
+}
+
+#[test]
+fn chat_list_loaded_dispatches_badge_warmup_for_unknown_forum_badges() {
+    let mut o = make_orchestrator();
+
+    let mut known_forum = forum_chat(2, "Known");
+    known_forum.unread_count = 5;
+    known_forum.unread_topic_count = Some(1);
+    let mut plain_unread = chat(3, "Plain");
+    plain_unread.unread_count = 9;
+
+    inject_chat_list(
+        &mut o,
+        vec![
+            unread_forum_without_badge(1, "Unknown"),
+            known_forum,
+            plain_unread,
+        ],
+    );
+
+    assert_eq!(o.dispatcher.forum_unread_counts_dispatch_count(), 1);
+    assert_eq!(
+        o.dispatcher.last_forum_unread_counts_chat_ids(),
+        Some(vec![1]),
+        "only the forum with an unknown badge needs the warm-up"
+    );
+}
+
+#[test]
+fn chat_list_loaded_skips_warmup_when_no_unknown_badges() {
+    let mut o = make_orchestrator();
+
+    let mut known_forum = forum_chat(1, "Known");
+    known_forum.unread_count = 5;
+    known_forum.unread_topic_count = Some(2);
+    let read_forum = forum_chat(2, "Read");
+
+    inject_chat_list(&mut o, vec![known_forum, read_forum, chat(3, "Plain")]);
+
+    assert_eq!(o.dispatcher.forum_unread_counts_dispatch_count(), 0);
+}
+
+#[test]
+fn badge_warmup_not_redispatched_while_in_flight() {
+    let mut o = make_orchestrator();
+
+    inject_chat_list(&mut o, vec![unread_forum_without_badge(1, "Forum")]);
+    inject_chat_list(&mut o, vec![unread_forum_without_badge(1, "Forum")]);
+    assert_eq!(
+        o.dispatcher.forum_unread_counts_dispatch_count(),
+        1,
+        "second list load must not duplicate the in-flight warm-up"
+    );
+
+    // Sweep completes (fetch failed: no counts) — the guard clears, so the
+    // next list load may retry.
+    o.handle_event(AppEvent::BackgroundTaskCompleted(
+        BackgroundTaskResult::ForumUnreadCountsLoaded { counts: vec![] },
+    ))
+    .unwrap();
+    inject_chat_list(&mut o, vec![unread_forum_without_badge(1, "Forum")]);
+    assert_eq!(o.dispatcher.forum_unread_counts_dispatch_count(), 2);
+}
+
+#[test]
+fn forum_unread_counts_loaded_patches_badges() {
+    let mut o = make_orchestrator();
+    inject_chat_list(
+        &mut o,
+        vec![
+            unread_forum_without_badge(1, "Forum A"),
+            unread_forum_without_badge(2, "Forum B"),
+        ],
+    );
+
+    o.handle_event(AppEvent::BackgroundTaskCompleted(
+        BackgroundTaskResult::ForumUnreadCountsLoaded {
+            counts: vec![(1, 3), (2, 0)],
+        },
+    ))
+    .unwrap();
+
+    let badges: Vec<Option<u32>> = o
+        .state()
+        .chat_list()
+        .chats()
+        .iter()
+        .map(|c| c.unread_topic_count)
+        .collect();
+    assert_eq!(badges, vec![Some(3), Some(0)]);
+}

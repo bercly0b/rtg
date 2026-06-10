@@ -89,8 +89,15 @@ pub enum TdLibUpdate {
     /// Forum topic metadata (name, icon, closed/hidden flags) changed.
     ForumTopicInfoChanged { chat_id: i64, topic_id: i32 },
 
-    /// Forum topic read state / pinned / draft changed.
-    ForumTopicChanged { chat_id: i64, topic_id: i32 },
+    /// Forum topic read state / pinned / draft changed. Carries the chat's
+    /// unread-topic count recomputed from the topic cache (`None` when the
+    /// chat's topics were never seeded) so consumers can patch the chat-list
+    /// badge without a full refresh.
+    ForumTopicChanged {
+        chat_id: i64,
+        topic_id: i32,
+        unread_topic_count: Option<u32>,
+    },
 
     /// A supergroup-level property changed (e.g. `is_forum` toggled). The
     /// chat list should re-resolve this chat's metadata so the forum flag

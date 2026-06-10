@@ -309,6 +309,69 @@ fn opening_a_topic_decrements_parent_forum_topic_count_by_one() {
 }
 
 #[test]
+fn forum_topic_update_patches_root_badge_without_chat_list_refresh() {
+    use crate::domain::events::ChatUpdate;
+
+    let mut forum = forum_chat(100, "Topics");
+    forum.unread_count = 42;
+    forum.unread_topic_count = Some(3);
+    let mut o = orchestrator_with_chats(vec![forum]);
+    let refreshes_before = o.dispatcher.chat_list_dispatch_count();
+
+    // Topic read elsewhere (e.g. official client): the update carries the
+    // recomputed count — the badge is patched in place, no full refresh.
+    o.handle_event(AppEvent::ChatUpdateReceived {
+        updates: vec![ChatUpdate::ForumTopicChanged {
+            chat_id: 100,
+            topic_id: 7,
+            unread_topic_count: Some(2),
+        }],
+    })
+    .unwrap();
+
+    let parent = o
+        .state()
+        .chat_list()
+        .chats()
+        .iter()
+        .find(|c| c.chat_id == 100)
+        .expect("forum chat in root list");
+    assert_eq!(parent.unread_topic_count, Some(2));
+    assert_eq!(
+        o.dispatcher.chat_list_dispatch_count(),
+        refreshes_before,
+        "badge patch must not trigger a full chat-list refresh"
+    );
+}
+
+#[test]
+fn forum_topic_update_without_count_keeps_badge() {
+    use crate::domain::events::ChatUpdate;
+
+    let mut forum = forum_chat(100, "Topics");
+    forum.unread_topic_count = Some(3);
+    let mut o = orchestrator_with_chats(vec![forum]);
+
+    o.handle_event(AppEvent::ChatUpdateReceived {
+        updates: vec![ChatUpdate::ForumTopicChanged {
+            chat_id: 100,
+            topic_id: 7,
+            unread_topic_count: None,
+        }],
+    })
+    .unwrap();
+
+    let parent = o
+        .state()
+        .chat_list()
+        .chats()
+        .iter()
+        .find(|c| c.chat_id == 100)
+        .expect("forum chat in root list");
+    assert_eq!(parent.unread_topic_count, Some(3));
+}
+
+#[test]
 fn forum_topic_update_for_open_forum_redispatches_topic_load() {
     use crate::domain::events::ChatUpdate;
 
@@ -322,6 +385,7 @@ fn forum_topic_update_for_open_forum_redispatches_topic_load() {
         updates: vec![ChatUpdate::ForumTopicChanged {
             chat_id: 100,
             topic_id: 7,
+            unread_topic_count: None,
         }],
     })
     .unwrap();
@@ -344,6 +408,7 @@ fn forum_topic_update_for_other_forum_does_not_redispatch() {
         updates: vec![ChatUpdate::ForumTopicChanged {
             chat_id: 999,
             topic_id: 1,
+            unread_topic_count: None,
         }],
     })
     .unwrap();

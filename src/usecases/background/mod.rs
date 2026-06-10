@@ -37,6 +37,10 @@ pub trait TaskDispatcher {
     fn dispatch_chat_list(&self, force: bool, limit: usize);
     /// Fetches the topic list for a forum supergroup chat in the background.
     fn dispatch_load_forum_topics(&self, chat_id: i64);
+    /// Resolves unread-topic counts for forum chats whose chat-list badge is
+    /// unknown (topic cache not seeded yet). Results arrive as
+    /// `ForumUnreadCountsLoaded`.
+    fn dispatch_forum_unread_counts(&self, chat_ids: Vec<i64>);
     /// Loads messages for a chat, or for a specific forum topic when
     /// `topic_id` is `Some`.
     fn dispatch_load_messages(&self, chat_id: i64, topic_id: Option<i32>);
@@ -182,6 +186,10 @@ where
 
     fn dispatch_load_forum_topics(&self, chat_id: i64) {
         lifecycle::dispatch_load_forum_topics(&self.chats_source, &self.result_tx, chat_id);
+    }
+
+    fn dispatch_forum_unread_counts(&self, chat_ids: Vec<i64>) {
+        lifecycle::dispatch_forum_unread_counts(&self.chats_source, &self.result_tx, chat_ids);
     }
 
     fn dispatch_load_messages(&self, chat_id: i64, topic_id: Option<i32>) {

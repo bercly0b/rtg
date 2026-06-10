@@ -113,6 +113,15 @@ impl TdLibClient {
 
                         // Message updates
                         Update::NewMessage(u) => {
+                            if !u.message.is_outgoing {
+                                if let Some(topic_id) = forum_topic_id(&u.message) {
+                                    cache.note_incoming_topic_message(
+                                        u.message.chat_id,
+                                        topic_id,
+                                        u.message.id,
+                                    );
+                                }
+                            }
                             let _ = update_tx.send(TdLibUpdate::NewMessage {
                                 chat_id: u.message.chat_id,
                                 message: Box::new(u.message),
@@ -206,9 +215,15 @@ impl TdLibClient {
                             });
                         }
                         Update::ForumTopic(u) => {
+                            cache.apply_forum_topic_read(
+                                u.chat_id,
+                                u.forum_topic_id,
+                                u.last_read_inbox_message_id,
+                            );
                             let _ = update_tx.send(TdLibUpdate::ForumTopicChanged {
                                 chat_id: u.chat_id,
                                 topic_id: u.forum_topic_id,
+                                unread_topic_count: cache.unread_forum_topic_count(u.chat_id),
                             });
                         }
 
@@ -284,6 +299,14 @@ pub(super) fn map_connection_state(state: &ConnectionState) -> ConnectivityStatu
         }
         ConnectionState::Updating => ConnectivityStatus::Updating,
         ConnectionState::Ready => ConnectivityStatus::Connected,
+    }
+}
+
+/// Extracts the forum topic id of a message, if it belongs to a forum topic.
+pub(super) fn forum_topic_id(message: &tdlib_rs::types::Message) -> Option<i32> {
+    match message.topic_id.as_ref()? {
+        tdlib_rs::enums::MessageTopic::Forum(t) => Some(t.forum_topic_id),
+        _ => None,
     }
 }
 

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use tdlib_rs::types::{Chat, ForumTopic, User};
+use tdlib_rs::types::{Chat, User};
 
 use crate::domain::chat::ChatType;
-use crate::telegram::tdlib_cache::tests::{make_test_chat, make_test_user};
+use crate::telegram::tdlib_cache::tests::{make_test_chat, make_test_forum_topic, make_test_user};
 use crate::telegram::tdlib_cache::TdLibCache;
 use crate::telegram::tdlib_client::TdLibError;
 
@@ -20,10 +20,8 @@ struct FakeResolver {
     cache: TdLibCache,
     chats: HashMap<i64, Chat>,
     users: HashMap<i64, User>,
-    forum_topics: HashMap<i64, Vec<ForumTopic>>,
     get_chat_calls: Mutex<Vec<i64>>,
     get_user_calls: Mutex<Vec<i64>>,
-    get_forum_topics_calls: Mutex<Vec<i64>>,
 }
 
 impl FakeResolver {
@@ -32,10 +30,8 @@ impl FakeResolver {
             cache: TdLibCache::new(),
             chats: HashMap::new(),
             users: HashMap::new(),
-            forum_topics: HashMap::new(),
             get_chat_calls: Mutex::new(Vec::new()),
             get_user_calls: Mutex::new(Vec::new()),
-            get_forum_topics_calls: Mutex::new(Vec::new()),
         }
     }
 
@@ -66,15 +62,6 @@ impl FakeResolver {
     fn get_user_call_count(&self) -> usize {
         self.get_user_calls.lock().unwrap().len()
     }
-
-    fn with_forum_topics(mut self, chat_id: i64, topics: Vec<ForumTopic>) -> Self {
-        self.forum_topics.insert(chat_id, topics);
-        self
-    }
-
-    fn get_forum_topics_call_count(&self) -> usize {
-        self.get_forum_topics_calls.lock().unwrap().len()
-    }
 }
 
 impl ChatDataResolver for FakeResolver {
@@ -101,17 +88,6 @@ impl ChatDataResolver for FakeResolver {
             .ok_or(TdLibError::Request {
                 code: 404,
                 message: format!("user {user_id} not found"),
-            })
-    }
-
-    fn get_forum_topics(&self, chat_id: i64, _limit: i32) -> Result<Vec<ForumTopic>, TdLibError> {
-        self.get_forum_topics_calls.lock().unwrap().push(chat_id);
-        self.forum_topics
-            .get(&chat_id)
-            .cloned()
-            .ok_or(TdLibError::Request {
-                code: 404,
-                message: format!("forum topics for chat {chat_id} not found"),
             })
     }
 }
@@ -529,58 +505,9 @@ fn non_supergroup_chat_is_never_forum() {
 }
 
 // ---------------------------------------------------------------------------
-// Forum unread-topic count: the badge counts unread topics, not messages
+// Forum unread-topic count: the badge counts unread topics, not messages,
+// and is derived from the seeded topic cache — never fetched on this path
 // ---------------------------------------------------------------------------
-
-fn make_forum_topic(topic_id: i32, unread_count: i32) -> ForumTopic {
-    ForumTopic {
-        info: tdlib_rs::types::ForumTopicInfo {
-            chat_id: 0,
-            forum_topic_id: topic_id,
-            name: format!("Topic {topic_id}"),
-            icon: tdlib_rs::types::ForumTopicIcon {
-                color: 0,
-                custom_emoji_id: 0,
-            },
-            creation_date: 0,
-            creator_id: tdlib_rs::enums::MessageSender::User(tdlib_rs::types::MessageSenderUser {
-                user_id: 0,
-            }),
-            is_general: false,
-            is_outgoing: false,
-            is_closed: false,
-            is_hidden: false,
-            is_name_implicit: false,
-        },
-        last_message: None,
-        order: i64::from(topic_id),
-        is_pinned: false,
-        unread_count,
-        last_read_inbox_message_id: 0,
-        last_read_outbox_message_id: 0,
-        unread_mention_count: 0,
-        unread_reaction_count: 0,
-        notification_settings: tdlib_rs::types::ChatNotificationSettings {
-            use_default_mute_for: true,
-            mute_for: 0,
-            use_default_sound: true,
-            sound_id: 0,
-            use_default_show_preview: true,
-            show_preview: false,
-            use_default_mute_stories: true,
-            mute_stories: false,
-            use_default_story_sound: true,
-            story_sound_id: 0,
-            use_default_show_story_poster: true,
-            show_story_poster: false,
-            use_default_disable_pinned_message_notifications: true,
-            disable_pinned_message_notifications: false,
-            use_default_disable_mention_notifications: true,
-            disable_mention_notifications: false,
-        },
-        draft_message: None,
-    }
-}
 
 fn make_unread_forum_chat(chat_id: i64, supergroup_id: i64, chat_unread: i32) -> Chat {
     let mut chat = make_supergroup_chat(chat_id, supergroup_id, "Forum");
@@ -589,24 +516,23 @@ fn make_unread_forum_chat(chat_id: i64, supergroup_id: i64, chat_unread: i32) ->
 }
 
 #[test]
-fn forum_badge_counts_unread_topics_not_messages() {
+fn forum_badge_counts_unread_topics_from_cache() {
     use crate::telegram::tdlib_cache::tests::make_test_supergroup;
 
     // chat-level unread_count (42) is the stale message total; the real unread
     // is two topics with 1 and 7 messages — the badge must read 2.
-    let resolver = FakeResolver::new()
-        .with_cached_chat(make_unread_forum_chat(10, 100, 42))
-        .with_forum_topics(
-            10,
-            vec![
-                make_forum_topic(1, 1),
-                make_forum_topic(2, 7),
-                make_forum_topic(3, 0),
-            ],
-        );
+    let resolver = FakeResolver::new().with_cached_chat(make_unread_forum_chat(10, 100, 42));
     resolver
         .cache
         .upsert_supergroup(make_test_supergroup(100, true));
+    resolver.cache.seed_forum_topics(
+        10,
+        &[
+            make_test_forum_topic(1, 1),
+            make_test_forum_topic(2, 7),
+            make_test_forum_topic(3, 0),
+        ],
+    );
 
     let summaries = build_summaries_from_ids(&resolver, vec![10], NO_FORCE);
 
@@ -617,30 +543,12 @@ fn forum_badge_counts_unread_topics_not_messages() {
 }
 
 #[test]
-fn read_forum_skips_topic_fetch_and_leaves_count_none() {
+fn unseeded_forum_leaves_count_none() {
     use crate::telegram::tdlib_cache::tests::make_test_supergroup;
 
-    let resolver = FakeResolver::new().with_cached_chat(make_unread_forum_chat(10, 100, 0));
-    resolver
-        .cache
-        .upsert_supergroup(make_test_supergroup(100, true));
-
-    let summaries = build_summaries_from_ids(&resolver, vec![10], NO_FORCE);
-
-    assert_eq!(summaries.len(), 1);
-    assert_eq!(summaries[0].unread_topic_count, None);
-    assert_eq!(
-        resolver.get_forum_topics_call_count(),
-        0,
-        "fully-read forum must not trigger a topic fetch"
-    );
-}
-
-#[test]
-fn forum_topic_fetch_failure_yields_zero_not_message_count() {
-    use crate::telegram::tdlib_cache::tests::make_test_supergroup;
-
-    // unread_count > 0 but no topics registered in the fake -> fetch errors.
+    // Topic cache not seeded yet: the badge stays unknown (hidden) instead of
+    // falling back to the misleading chat-level message count; the background
+    // warm-up delivers the real value later.
     let resolver = FakeResolver::new().with_cached_chat(make_unread_forum_chat(10, 100, 42));
     resolver
         .cache
@@ -649,21 +557,41 @@ fn forum_topic_fetch_failure_yields_zero_not_message_count() {
     let summaries = build_summaries_from_ids(&resolver, vec![10], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
-    assert_eq!(summaries[0].unread_topic_count, Some(0));
-    assert_eq!(resolver.get_forum_topics_call_count(), 1);
+    assert_eq!(summaries[0].unread_topic_count, None);
 }
 
 #[test]
-fn non_forum_unread_chat_never_fetches_topics() {
+fn seeded_read_forum_reports_zero_unread_topics() {
+    use crate::telegram::tdlib_cache::tests::make_test_supergroup;
+
+    let resolver = FakeResolver::new().with_cached_chat(make_unread_forum_chat(10, 100, 0));
+    resolver
+        .cache
+        .upsert_supergroup(make_test_supergroup(100, true));
+    resolver
+        .cache
+        .seed_forum_topics(10, &[make_test_forum_topic(1, 0)]);
+
+    let summaries = build_summaries_from_ids(&resolver, vec![10], NO_FORCE);
+
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].unread_topic_count, Some(0));
+}
+
+#[test]
+fn non_forum_chat_has_no_unread_topic_count() {
     let mut chat = make_test_chat(1, "Plain");
     chat.unread_count = 9;
     let resolver = FakeResolver::new().with_cached_chat(chat);
+    // Even a (bogus) seeded entry must not leak onto non-forum chats.
+    resolver
+        .cache
+        .seed_forum_topics(1, &[make_test_forum_topic(1, 1)]);
 
     let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
 
     assert_eq!(summaries[0].unread_count, 9);
     assert_eq!(summaries[0].unread_topic_count, None);
-    assert_eq!(resolver.get_forum_topics_call_count(), 0);
 }
 
 fn make_message_from_user(user_id: i64) -> tdlib_rs::types::Message {
