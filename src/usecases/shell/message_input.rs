@@ -22,6 +22,9 @@ pub(super) fn handle_message_input_key<D: TaskDispatcher>(
                 try_send_message(ctx);
             }
         }
+        "shift-enter" => {
+            ctx.state.message_input_mut().insert_char('\n');
+        }
         "backspace" => ctx.state.message_input_mut().delete_char_before(),
         "delete" => ctx.state.message_input_mut().delete_char_at(),
         "left" => ctx.state.message_input_mut().move_cursor_left(),

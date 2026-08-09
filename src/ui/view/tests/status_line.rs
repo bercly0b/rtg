@@ -144,6 +144,22 @@ fn compute_input_height_capped_at_twenty() {
 }
 
 #[test]
+fn compute_input_height_counts_explicit_newlines() {
+    assert_eq!(status_line::compute_input_height("a\nb\nc", 80), 3);
+}
+
+#[test]
+fn compute_input_height_counts_trailing_newline() {
+    assert_eq!(status_line::compute_input_height("a\n", 80), 2);
+}
+
+#[test]
+fn compute_input_height_combines_newlines_and_wrapping() {
+    let text = format!("{}\nb", "a".repeat(32));
+    assert_eq!(status_line::compute_input_height(&text, 20), 3);
+}
+
+#[test]
 fn compute_input_height_zero_width_returns_one() {
     assert_eq!(status_line::compute_input_height("hello", 0), 1);
 }

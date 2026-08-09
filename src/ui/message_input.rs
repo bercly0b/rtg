@@ -99,11 +99,21 @@ fn wrap_input_with_cursor(
         } else {
             input_state.text()
         };
-        let line = Line::from(vec![
-            Span::styled(PROMPT_SYMBOL.to_owned(), styles::input_prompt_style()),
-            Span::styled(display_text.to_owned(), text_style),
-        ]);
-        return (vec![line], 0, 0);
+        let lines = display_text
+            .split('\n')
+            .enumerate()
+            .map(|(i, line_text)| {
+                if i == 0 {
+                    Line::from(vec![
+                        Span::styled(PROMPT_SYMBOL.to_owned(), styles::input_prompt_style()),
+                        Span::styled(line_text.to_owned(), text_style),
+                    ])
+                } else {
+                    Line::from(Span::styled(line_text.to_owned(), text_style))
+                }
+            })
+            .collect();
+        return (lines, 0, 0);
     }
 
     let full_text: String = format!("{}{}", PROMPT_SYMBOL, input_state.text());
@@ -137,18 +147,19 @@ fn wrap_input_with_cursor(
             cursor_row = visual_lines.len();
             cursor_col = current_width;
         }
+        char_idx += 1;
+
+        if ch == '\n' {
+            visual_lines.push(std::mem::take(&mut current_line));
+            current_width = 0;
+            continue;
+        }
 
         current_line.push(ch);
         current_width += ch_w;
-        char_idx += 1;
     }
 
-    if !current_line.is_empty() {
-        visual_lines.push(current_line);
-    }
-    if visual_lines.is_empty() {
-        visual_lines.push(String::new());
-    }
+    visual_lines.push(current_line);
 
     if cursor_char_idx >= char_idx {
         cursor_row = visual_lines.len().saturating_sub(1);
@@ -338,6 +349,60 @@ mod tests {
         assert_eq!(lines.len(), 1);
         assert_eq!(row, 0);
         assert_eq!(col, 10);
+    }
+
+    #[test]
+    fn newline_breaks_line_and_moves_cursor_down() {
+        let mut state = MessageInputState::default();
+        state.insert_char('a');
+        state.insert_char('\n');
+        state.insert_char('b');
+
+        let (lines, row, col) = wrap_input_with_cursor(&state, true, 80, PLACEHOLDER_TEXT);
+
+        assert_eq!(lines_to_text(&lines), "> a\nb");
+        assert_eq!(row, 1);
+        assert_eq!(col, 1);
+    }
+
+    #[test]
+    fn trailing_newline_keeps_empty_last_line() {
+        let mut state = MessageInputState::default();
+        state.insert_char('a');
+        state.insert_char('\n');
+
+        let (lines, row, col) = wrap_input_with_cursor(&state, true, 80, PLACEHOLDER_TEXT);
+
+        assert_eq!(lines.len(), 2);
+        assert_eq!(row, 1);
+        assert_eq!(col, 0);
+    }
+
+    #[test]
+    fn cursor_before_newline_stays_on_first_line() {
+        let mut state = MessageInputState::default();
+        state.insert_char('a');
+        state.insert_char('\n');
+        state.insert_char('b');
+        state.move_cursor_home();
+        state.move_cursor_right();
+
+        let (_, row, col) = wrap_input_with_cursor(&state, true, 80, PLACEHOLDER_TEXT);
+
+        assert_eq!(row, 0);
+        assert_eq!(col, 3); // "> " (2) + "a" (1)
+    }
+
+    #[test]
+    fn unfocused_multiline_text_renders_as_separate_lines() {
+        let mut state = MessageInputState::default();
+        state.insert_char('a');
+        state.insert_char('\n');
+        state.insert_char('b');
+
+        let (lines, _, _) = wrap_input_with_cursor(&state, false, 80, PLACEHOLDER_TEXT);
+
+        assert_eq!(lines_to_text(&lines), "> a\nb");
     }
 
     #[test]

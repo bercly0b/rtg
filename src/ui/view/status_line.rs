@@ -85,7 +85,9 @@ pub(super) fn compute_input_height(text: &str, available_width: u16) -> u16 {
         return 1;
     }
 
-    let text_width = text.width();
-    let lines = text_width.div_ceil(effective_width);
+    let lines: usize = text
+        .split('\n')
+        .map(|line| line.width().div_ceil(effective_width).max(1))
+        .sum();
     (lines as u16).clamp(1, 20)
 }

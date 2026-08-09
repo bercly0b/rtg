@@ -39,7 +39,15 @@ Hotkeys are context-aware. The `KeyContext` enum defines where a binding applies
 - **`Messages`** — active when the messages panel has focus.
 - **`Global`** — active in all contexts (ChatList + Messages).
 
-`MessageInput` is handled separately (raw text input, not hotkeys).
+`MessageInput` is handled separately (raw text input, not hotkeys) in
+`usecases/shell/message_input.rs`: `Enter` sends the message, `Shift+Enter`
+inserts a line break.
+
+`Shift+Enter` is only distinguishable from `Enter` when the terminal supports
+the kitty keyboard protocol; `TerminalSession` pushes
+`DISAMBIGUATE_ESCAPE_CODES` at startup when `supports_keyboard_enhancement()`
+reports it. On terminals without that support (e.g. macOS Terminal.app) the
+key arrives as a plain `Enter` and still sends the message.
 
 ### Sequences
 
