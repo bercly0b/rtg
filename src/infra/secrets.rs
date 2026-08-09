@@ -1,6 +1,10 @@
+use std::any::Any;
 use std::panic;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const REDACTED: &str = "[REDACTED]";
+
+static PANIC_STDERR_SUPPRESSED: AtomicBool = AtomicBool::new(false);
 
 const SENSITIVE_MARKERS: [&str; 7] = [
     "password", "passcode", "2fa", "secret", "token", "otp", "code",
@@ -28,27 +32,43 @@ pub fn sanitize_error_code(code: &str) -> String {
     }
 }
 
+/// Extracts the human-readable message carried by a panic payload.
+pub fn panic_payload_text(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|text| (*text).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "panic payload omitted".to_owned())
+}
+
+/// Silences the panic hook's stderr output.
+///
+/// Enabled while the TUI holds the alternate screen: anything written to
+/// stderr there is painted over the rendered frame and garbles it. The panic
+/// report still reaches the log file through `tracing`.
+pub fn set_panic_stderr_suppressed(suppressed: bool) {
+    PANIC_STDERR_SUPPRESSED.store(suppressed, Ordering::Release);
+}
+
 pub fn install_panic_redaction_hook() {
     panic::set_hook(Box::new(|panic_info| {
-        let payload = panic_info
-            .payload()
-            .downcast_ref::<&str>()
-            .map(ToString::to_string)
-            .or_else(|| panic_info.payload().downcast_ref::<String>().cloned())
-            .unwrap_or_else(|| "panic payload omitted".to_owned());
+        let scrubbed = redact_text(&panic_payload_text(panic_info.payload()));
 
-        let scrubbed = redact_text(&payload);
-
-        if let Some(location) = panic_info.location() {
-            eprintln!(
+        let report = match panic_info.location() {
+            Some(location) => format!(
                 "rtg panic: {} at {}:{}:{}",
                 scrubbed,
                 location.file(),
                 location.line(),
                 location.column()
-            );
-        } else {
-            eprintln!("rtg panic: {}", scrubbed);
+            ),
+            None => format!("rtg panic: {}", scrubbed),
+        };
+
+        tracing::error!("{}", report);
+
+        if !PANIC_STDERR_SUPPRESSED.load(Ordering::Acquire) {
+            eprintln!("{}", report);
         }
     }));
 }
@@ -179,6 +199,27 @@ mod tests {
     fn sanitize_error_code_rejects_too_long_code() {
         let long_code = format!("AUTH_{}", "A".repeat(60));
         assert_eq!(sanitize_error_code(&long_code), "AUTH_TRANSIENT");
+    }
+
+    #[test]
+    fn panic_payload_text_reads_str_payloads() {
+        let payload: Box<dyn Any + Send> = Box::new("static panic message");
+        assert_eq!(panic_payload_text(payload.as_ref()), "static panic message");
+    }
+
+    #[test]
+    fn panic_payload_text_reads_string_payloads() {
+        let payload: Box<dyn Any + Send> = Box::new("formatted panic".to_owned());
+        assert_eq!(panic_payload_text(payload.as_ref()), "formatted panic");
+    }
+
+    #[test]
+    fn panic_payload_text_falls_back_for_unknown_payloads() {
+        let payload: Box<dyn Any + Send> = Box::new(42u8);
+        assert_eq!(
+            panic_payload_text(payload.as_ref()),
+            "panic payload omitted"
+        );
     }
 
     #[test]

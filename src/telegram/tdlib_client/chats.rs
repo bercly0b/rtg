@@ -19,7 +19,7 @@ impl TdLibClient {
     pub fn get_chats(&self, limit: i32) -> Result<GetChatsResult, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getChats", async {
             let mut all_loaded = false;
 
             // Try to load fresh chats from the server. Failures are non-fatal:
@@ -84,7 +84,7 @@ impl TdLibClient {
     ) -> Result<Vec<tdlib_rs::types::ForumTopic>, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getForumTopics", async {
             let topics = tdlib_rs::functions::get_forum_topics(
                 chat_id,
                 String::new(), // query (empty = all topics)
@@ -116,7 +116,7 @@ impl TdLibClient {
     pub fn get_chat(&self, chat_id: i64) -> Result<tdlib_rs::types::Chat, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getChat", async {
             let chat = tdlib_rs::functions::get_chat(chat_id, client_id)
                 .await
                 .map_err(|e| TdLibError::Request {
@@ -134,7 +134,7 @@ impl TdLibClient {
     pub fn get_user(&self, user_id: i64) -> Result<tdlib_rs::types::User, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getUser", async {
             let user = tdlib_rs::functions::get_user(user_id, client_id)
                 .await
                 .map_err(|e| TdLibError::Request {
@@ -155,7 +155,7 @@ impl TdLibClient {
     ) -> Result<tdlib_rs::types::UserFullInfo, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getUserFullInfo", async {
             let info = tdlib_rs::functions::get_user_full_info(user_id, client_id)
                 .await
                 .map_err(|e| TdLibError::Request {
@@ -176,7 +176,7 @@ impl TdLibClient {
     ) -> Result<tdlib_rs::types::SupergroupFullInfo, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getSupergroupFullInfo", async {
             let info = tdlib_rs::functions::get_supergroup_full_info(supergroup_id, client_id)
                 .await
                 .map_err(|e| TdLibError::Request {
@@ -197,7 +197,7 @@ impl TdLibClient {
     ) -> Result<tdlib_rs::types::BasicGroupFullInfo, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getBasicGroupFullInfo", async {
             let info = tdlib_rs::functions::get_basic_group_full_info(basic_group_id, client_id)
                 .await
                 .map_err(|e| TdLibError::Request {
@@ -219,7 +219,7 @@ impl TdLibClient {
     pub fn open_chat(&self, chat_id: i64) -> Result<(), TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("openChat", async {
             tdlib_rs::functions::open_chat(chat_id, client_id)
                 .await
                 .map_err(|e| TdLibError::Request {
@@ -251,7 +251,7 @@ impl TdLibClient {
         };
         let max_viewed_id = message_ids.iter().max().copied();
 
-        self.rt.block_on(async {
+        self.block_on_request("viewMessages", async {
             tdlib_rs::functions::view_messages(
                 chat_id,
                 message_ids,
@@ -283,7 +283,7 @@ impl TdLibClient {
     pub fn close_chat(&self, chat_id: i64) -> Result<(), TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("closeChat", async {
             tdlib_rs::functions::close_chat(chat_id, client_id)
                 .await
                 .map_err(|e| TdLibError::Request {

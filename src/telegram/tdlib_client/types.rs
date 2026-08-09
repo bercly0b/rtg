@@ -72,6 +72,13 @@ pub enum TdLibError {
     /// TDLib timeout error
     #[error("TDLib operation timed out: {message}")]
     Timeout { message: String },
+
+    /// A panic raised inside `tdlib-rs` while decoding a TDLib response.
+    #[error("TDLib response to {request} could not be decoded: {message}")]
+    Decode {
+        request: &'static str,
+        message: String,
+    },
 }
 
 /// Authorization state change event.

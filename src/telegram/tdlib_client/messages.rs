@@ -9,7 +9,7 @@ impl TdLibClient {
     pub fn download_file(&self, file_id: i32) -> Result<(), TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("downloadFile", async {
             tdlib_rs::functions::download_file(
                 file_id, 16,    // priority (1-32, 16 = medium-high)
                 0,     // offset (from start)
@@ -43,7 +43,7 @@ impl TdLibClient {
     ) -> Result<Vec<tdlib_rs::types::Message>, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getChatHistory", async {
             let messages = tdlib_rs::functions::get_chat_history(
                 chat_id,
                 from_message_id,
@@ -81,7 +81,7 @@ impl TdLibClient {
     ) -> Result<Vec<tdlib_rs::types::Message>, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getForumTopicHistory", async {
             let messages = tdlib_rs::functions::get_forum_topic_history(
                 chat_id,
                 forum_topic_id,
@@ -117,7 +117,7 @@ impl TdLibClient {
     ) -> Result<Vec<tdlib_rs::types::Message>, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getChatHistory", async {
             let messages = tdlib_rs::functions::get_chat_history(
                 chat_id,
                 from_message_id,
@@ -157,7 +157,7 @@ impl TdLibClient {
         let client_id = self.client_id;
         let text = text.to_owned();
 
-        self.rt.block_on(async {
+        self.block_on_request("sendMessage", async {
             let formatted_text = tdlib_rs::types::FormattedText {
                 text,
                 entities: vec![],
@@ -221,7 +221,7 @@ impl TdLibClient {
         let file_path = file_path.to_owned();
         let waveform = waveform.to_owned();
 
-        self.rt.block_on(async {
+        self.block_on_request("sendMessage", async {
             let voice_note = tdlib_rs::enums::InputFile::Local(tdlib_rs::types::InputFileLocal {
                 path: file_path,
             });
@@ -269,7 +269,7 @@ impl TdLibClient {
         let client_id = self.client_id;
         let text = text.to_owned();
 
-        self.rt.block_on(async {
+        self.block_on_request("editMessageText", async {
             let formatted_text = tdlib_rs::types::FormattedText {
                 text,
                 entities: vec![],
@@ -300,7 +300,7 @@ impl TdLibClient {
     ) -> Result<tdlib_rs::types::MessageProperties, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getMessageProperties", async {
             let props = tdlib_rs::functions::get_message_properties(chat_id, message_id, client_id)
                 .await
                 .map_err(|e| TdLibError::Request {
@@ -321,7 +321,7 @@ impl TdLibClient {
     ) -> Result<tdlib_rs::types::AddedReactions, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getMessageAddedReactions", async {
             let reactions = tdlib_rs::functions::get_message_added_reactions(
                 chat_id,
                 message_id,
@@ -349,7 +349,7 @@ impl TdLibClient {
     ) -> Result<tdlib_rs::types::MessageViewers, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getMessageViewers", async {
             let viewers = tdlib_rs::functions::get_message_viewers(chat_id, message_id, client_id)
                 .await
                 .map_err(|e| TdLibError::Request {
@@ -370,7 +370,7 @@ impl TdLibClient {
     ) -> Result<tdlib_rs::enums::MessageReadDate, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getMessageReadDate", async {
             tdlib_rs::functions::get_message_read_date(chat_id, message_id, client_id)
                 .await
                 .map_err(|e| TdLibError::Request {
@@ -387,7 +387,7 @@ impl TdLibClient {
     ) -> Result<tdlib_rs::types::Message, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getMessage", async {
             let msg = tdlib_rs::functions::get_message(chat_id, message_id, client_id)
                 .await
                 .map_err(|e| TdLibError::Request {
@@ -408,7 +408,7 @@ impl TdLibClient {
     ) -> Result<tdlib_rs::types::AvailableReactions, TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("getMessageAvailableReactions", async {
             let reactions = tdlib_rs::functions::get_message_available_reactions(
                 chat_id, message_id, 8, client_id,
             )
@@ -432,7 +432,7 @@ impl TdLibClient {
     ) -> Result<(), TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("addMessageReaction", async {
             tdlib_rs::functions::add_message_reaction(
                 chat_id,
                 message_id,
@@ -458,7 +458,7 @@ impl TdLibClient {
     ) -> Result<(), TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("removeMessageReaction", async {
             tdlib_rs::functions::remove_message_reaction(
                 chat_id,
                 message_id,
@@ -485,7 +485,7 @@ impl TdLibClient {
     ) -> Result<(), TdLibError> {
         let client_id = self.client_id;
 
-        self.rt.block_on(async {
+        self.block_on_request("deleteMessages", async {
             tdlib_rs::functions::delete_messages(chat_id, message_ids, revoke, client_id)
                 .await
                 .map_err(|e| TdLibError::Request {

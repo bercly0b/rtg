@@ -8,6 +8,8 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Frame, Terminal};
 
+use crate::infra::secrets::set_panic_stderr_suppressed;
+
 pub struct TerminalSession {
     terminal: Terminal<CrosstermBackend<Stdout>>,
 }
@@ -21,6 +23,7 @@ struct InitState {
 impl InitState {
     fn rollback<W: Write>(&self, stdout: &mut W) {
         if self.alternate_screen_entered {
+            set_panic_stderr_suppressed(false);
             let _ = execute!(stdout, LeaveAlternateScreen, Show);
         }
 
@@ -43,6 +46,7 @@ impl TerminalSession {
             return Err(err.into());
         }
         init_state.alternate_screen_entered = true;
+        set_panic_stderr_suppressed(true);
 
         let backend = CrosstermBackend::new(stdout);
         let terminal = match Terminal::new(backend) {
@@ -68,6 +72,7 @@ impl TerminalSession {
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {
+        set_panic_stderr_suppressed(false);
         let _ = disable_raw_mode();
         let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         let _ = self.terminal.show_cursor();
