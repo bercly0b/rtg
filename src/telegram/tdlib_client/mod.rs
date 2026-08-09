@@ -9,6 +9,7 @@ mod auth;
 mod chats;
 mod log_setup;
 mod messages;
+mod request_guard;
 mod types;
 mod update_loop;
 

@@ -19,12 +19,12 @@ pub(super) fn map_init_error(error: TdLibError) -> AuthBackendError {
 pub(super) fn map_tdlib_error(error: TdLibError) -> AuthBackendError {
     match error {
         TdLibError::Timeout { .. } => AuthBackendError::Timeout,
-        TdLibError::Init { message } | TdLibError::Request { message, .. } => {
-            AuthBackendError::Transient {
-                code: "AUTH_BACKEND_UNAVAILABLE",
-                message,
-            }
-        }
+        TdLibError::Init { message }
+        | TdLibError::Request { message, .. }
+        | TdLibError::Decode { message, .. } => AuthBackendError::Transient {
+            code: "AUTH_BACKEND_UNAVAILABLE",
+            message,
+        },
         TdLibError::Shutdown { message } => AuthBackendError::Transient {
             code: "AUTH_BACKEND_CLOSED",
             message,
