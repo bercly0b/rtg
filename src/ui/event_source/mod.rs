@@ -259,6 +259,7 @@ fn map_key_event(key: KeyEvent) -> Option<AppEvent> {
     }
 
     let special_key = match key.code {
+        KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => Some("shift-enter"),
         KeyCode::Enter => Some("enter"),
         KeyCode::Esc => Some("esc"),
         KeyCode::Backspace => Some("backspace"),

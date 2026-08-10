@@ -172,6 +172,43 @@ fn enter_key_dispatches_send_message_and_clears_input() {
 }
 
 #[test]
+fn shift_enter_inserts_newline_without_sending() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+        .unwrap();
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("a", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("shift-enter", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("b", false)))
+        .unwrap();
+
+    assert_eq!(o.state().message_input().text(), "a\nb");
+    assert_eq!(o.dispatcher.send_dispatch_count(), 0);
+    assert_eq!(o.state().active_pane(), ActivePane::MessageInput);
+}
+
+#[test]
+fn enter_sends_multiline_text_composed_with_shift_enter() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+        .unwrap();
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("a", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("shift-enter", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("b", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    assert_eq!(o.state().message_input().text(), "");
+    assert_eq!(o.dispatcher.last_send(), Some((1, "a\nb".to_owned(), None)));
+}
+
+#[test]
 fn message_sent_success_keeps_input_cleared() {
     let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
     o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))

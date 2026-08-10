@@ -53,6 +53,15 @@ fn special_keys_produce_named_input() {
 }
 
 #[test]
+fn shift_enter_produces_dedicated_input_key() {
+    let event = map_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT));
+    assert_eq!(
+        event,
+        Some(AppEvent::InputKey(KeyInput::new("shift-enter", false)))
+    );
+}
+
+#[test]
 fn ctrl_o_produces_ctrl_input_key() {
     let event = map_key_event(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
     assert_eq!(event, Some(AppEvent::InputKey(KeyInput::new("o", true))));

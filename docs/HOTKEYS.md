@@ -39,7 +39,32 @@ Hotkeys are context-aware. The `KeyContext` enum defines where a binding applies
 - **`Messages`** — active when the messages panel has focus.
 - **`Global`** — active in all contexts (ChatList + Messages).
 
-`MessageInput` is handled separately (raw text input, not hotkeys).
+`MessageInput` is handled separately (raw text input, not hotkeys) in
+`usecases/shell/message_input.rs`: `Enter` sends the message, `Shift+Enter`
+inserts a line break.
+
+`Shift+Enter` is indistinguishable from `Enter` until the terminal is asked to
+report modified keys, so `TerminalSession` requests it at startup and resets it
+on teardown: `DISAMBIGUATE_ESCAPE_CODES` (kitty keyboard protocol) when
+`supports_keyboard_enhancement()` reports support, otherwise xterm
+`modifyOtherKeys=2` (`ESC[>4;2m`). Terminals that honour neither report a plain
+`Enter`, which still sends the message.
+
+### tmux
+
+tmux implements no kitty keyboard protocol, so the `modifyOtherKeys` path is
+used — but tmux only forwards the request when it is configured for extended
+keys, and crossterm parses only the `csi-u` form. Required in `tmux.conf`:
+
+```tmux
+set -s extended-keys on
+set -s extended-keys-format csi-u
+set -as terminal-features 'xterm*:extkeys'
+```
+
+`extended-keys` defaults to `off`; `extkeys` tells tmux to request extended keys
+from the outer terminal (match the pattern against the *outer* `TERM`). Reload
+plus a client detach/attach is needed for the feature to take effect.
 
 ### Sequences
 
