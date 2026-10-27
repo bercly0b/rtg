@@ -1,12 +1,140 @@
-use ratatui::{backend::TestBackend, style::Style, Terminal};
+use ratatui::{
+    backend::TestBackend,
+    buffer::Buffer,
+    style::{Color, Style},
+    Terminal,
+};
 
 use super::{
-    super::chat_list::{render_forum_topic_list_panel, ChatListLayout},
+    super::chat_list::{render_chat_list_panel, render_forum_topic_list_panel, ChatListLayout},
     chat, chat_with_pinned,
 };
-use crate::domain::forum_topic_list_state::ForumTopicListState;
+use crate::domain::{
+    forum_topic::ForumTopicSummary,
+    forum_topic_list_state::ForumTopicListState,
+    shell_state::{ActivePane, ShellState},
+};
 
 const TEST_WIDTH: usize = 50;
+const SCROLLED_INDEX: usize = 25;
+
+fn buffer_text(buffer: &Buffer) -> String {
+    let mut rendered = String::new();
+    for y in 0..buffer.area.height {
+        for x in 0..buffer.area.width {
+            rendered.push_str(buffer[(x, y)].symbol());
+        }
+        rendered.push('\n');
+    }
+    rendered
+}
+
+fn has_highlighted_cell(buffer: &Buffer) -> bool {
+    buffer.content().iter().any(|cell| cell.bg == Color::Gray)
+}
+
+fn state_scrolled_down() -> ShellState {
+    let mut state = ShellState::default();
+    let chats = (0..30)
+        .map(|i| chat(i, &format!("Chat {i:02}"), 0, None))
+        .collect();
+    state.chat_list_mut().set_ready(chats);
+    for _ in 0..SCROLLED_INDEX {
+        state.chat_list_mut().select_next();
+    }
+    state
+}
+
+fn render_chat_list(state: &ShellState, active_pane: ActivePane) -> Buffer {
+    let mut terminal = Terminal::new(TestBackend::new(60, 10)).unwrap();
+    terminal
+        .draw(|frame| render_chat_list_panel(frame, frame.area(), state, active_pane))
+        .unwrap();
+    terminal.backend().buffer().clone()
+}
+
+fn topic(topic_id: i32, name: &str, order: i64) -> ForumTopicSummary {
+    ForumTopicSummary {
+        chat_id: 100,
+        topic_id,
+        name: name.to_owned(),
+        is_general: false,
+        is_closed: false,
+        is_hidden: false,
+        is_pinned: false,
+        unread_count: 0,
+        last_message_preview: None,
+        last_message_unix_ms: None,
+        last_message_id: None,
+        order,
+    }
+}
+
+fn forum_scrolled_down() -> ForumTopicListState {
+    let mut forum = ForumTopicListState::loading(100, "My Forum".to_owned());
+    let topics = (0..30)
+        .map(|i| topic(i, &format!("Topic {i:02}"), i64::from(100 - i)))
+        .collect();
+    forum.set_ready(topics);
+    for _ in 0..SCROLLED_INDEX {
+        forum.select_next();
+    }
+    forum
+}
+
+fn render_forum(forum: &ForumTopicListState, is_active: bool) -> Buffer {
+    let mut terminal = Terminal::new(TestBackend::new(60, 10)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_forum_topic_list_panel(frame, frame.area(), forum, is_active, Style::default())
+        })
+        .unwrap();
+    terminal.backend().buffer().clone()
+}
+
+#[test]
+fn chat_list_keeps_scroll_position_when_focus_moves_to_messages() {
+    let state = state_scrolled_down();
+
+    let active = render_chat_list(&state, ActivePane::ChatList);
+    let inactive = render_chat_list(&state, ActivePane::Messages);
+
+    assert!(buffer_text(&inactive).contains("Chat 25"));
+    assert_eq!(buffer_text(&inactive), buffer_text(&active));
+}
+
+#[test]
+fn inactive_chat_list_does_not_highlight_selected_chat() {
+    let state = state_scrolled_down();
+
+    assert!(has_highlighted_cell(&render_chat_list(
+        &state,
+        ActivePane::ChatList
+    )));
+    assert!(!has_highlighted_cell(&render_chat_list(
+        &state,
+        ActivePane::Messages
+    )));
+}
+
+#[test]
+fn forum_topic_list_keeps_scroll_position_when_focus_moves_to_messages() {
+    let forum = forum_scrolled_down();
+
+    let active = render_forum(&forum, true);
+    let inactive = render_forum(&forum, false);
+
+    assert!(buffer_text(&inactive).contains("Topic 25"));
+    assert_eq!(buffer_text(&inactive), buffer_text(&active));
+}
+
+#[test]
+fn inactive_forum_topic_list_does_not_highlight_selected_topic() {
+    let forum = forum_scrolled_down();
+
+    assert!(has_highlighted_cell(&render_forum(&forum, true)));
+    assert!(!has_highlighted_cell(&render_forum(&forum, false)));
+}
 
 #[test]
 fn build_chat_list_items_creates_all_chats_section_for_regular_chats() {
