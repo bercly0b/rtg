@@ -74,13 +74,11 @@ pub(super) fn render_chat_list_panel(
                 )
                 .highlight_style(highlight);
 
-            let visual_index = if is_active {
-                chat_list
-                    .selected_index()
-                    .map(|idx| layout.visual_index(idx))
-            } else {
-                None
-            };
+            // Keep the selection while inactive (with an unstyled highlight) so
+            // the list stays scrolled to it instead of jumping to the top.
+            let visual_index = chat_list
+                .selected_index()
+                .map(|idx| layout.visual_index(idx));
 
             let mut list_state = ListState::default();
             list_state.select(visual_index);
@@ -211,9 +209,7 @@ pub(super) fn render_forum_topic_list_panel(
                 .highlight_style(highlight);
 
             let mut list_state = ListState::default();
-            if is_active {
-                list_state.select(forum_list.selected_index());
-            }
+            list_state.select(forum_list.selected_index());
             frame.render_stateful_widget(list, area, &mut list_state);
         }
     }
