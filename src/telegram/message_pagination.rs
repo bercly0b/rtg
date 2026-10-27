@@ -38,6 +38,11 @@ pub struct PageResult<M> {
 /// (currently 500). The upstream `LoadMessagesQuery` caps at 200.
 ///
 /// Returns accumulated messages in newest-first order.
+///
+/// An error on the first page is returned as is. An error on a later page
+/// stops pagination and returns the messages fetched so far: they are the
+/// newest contiguous slice of history, and the next older-messages load
+/// resumes from the oldest of them.
 pub fn fetch_paginated<M, F, Id>(
     limit: usize,
     initial_from_message_id: i64,
@@ -61,7 +66,18 @@ where
         let page_limit =
             i32::try_from(remaining.min(TDLIB_PAGE_SIZE)).unwrap_or(TDLIB_PAGE_SIZE as i32);
 
-        let page = fetch_page(from_message_id, page_limit)?;
+        let page = match fetch_page(from_message_id, page_limit) {
+            Ok(page) => page,
+            Err(error) if accumulated.is_empty() => return Err(error),
+            Err(error) => {
+                tracing::warn!(
+                    ?error,
+                    fetched = accumulated.len(),
+                    "message history page failed; returning messages fetched so far"
+                );
+                break;
+            }
+        };
 
         if page.messages.is_empty() {
             break; // Chat history exhausted
@@ -304,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn error_on_second_page_returns_error_not_partial() {
+    fn error_on_second_page_returns_messages_fetched_so_far() {
         let mut call_count = 0;
 
         let result = fetch_paginated(
@@ -324,9 +340,12 @@ mod tests {
                 }
             },
             |m: &FakeMsg| m.id,
-        );
+        )
+        .unwrap();
 
-        assert!(result.is_err());
+        let ids: Vec<i64> = result.iter().map(|m| m.id).collect();
+        assert_eq!(ids, vec![10, 9, 8]);
+        assert_eq!(call_count, 2);
     }
 
     #[test]
