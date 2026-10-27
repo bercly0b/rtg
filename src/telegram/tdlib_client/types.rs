@@ -7,6 +7,10 @@ use tdlib_rs::enums::AuthorizationState;
 /// 10ms provides responsive update handling without excessive CPU usage.
 pub(super) const UPDATE_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
+/// How long `close()` waits for TDLib to flush its databases and report
+/// `AuthorizationState::Closed`.
+pub(super) const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Maximum size of TDLib's internal log file before automatic rotation.
 /// TDLib creates a `.old` backup when this limit is reached.
 pub(super) const TDLIB_LOG_MAX_SIZE: i64 = 10 * 1024 * 1024; // 10 MB

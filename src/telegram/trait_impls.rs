@@ -1,5 +1,6 @@
 use crate::{
     domain::message::Message,
+    infra::error::AppError,
     usecases::{
         chat_lifecycle::{
             ChatLifecycle, ChatLifecycleError, ChatReadMarker, FileDownloader, MessageDeleter,
@@ -9,6 +10,7 @@ use crate::{
         list_chats::{ListChatsSource, ListChatsSourceError},
         list_forum_topics::{ForumTopicsSource, ListForumTopicsSourceError},
         load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
+        logout::LogoutSession,
         message_info::{MessageInfoError, MessageInfoQuery, MessageInfoSource},
         message_reactions::{
             AddReactionQuery, AvailableReactionsQuery, ReactionError, ReactionSource,
@@ -251,5 +253,19 @@ impl ReactionSource for TelegramAdapter {
             Some(backend) => backend.remove_reaction(query),
             None => Err(ReactionError::Unavailable),
         }
+    }
+}
+
+impl LogoutSession for TelegramAdapter {
+    fn disconnect_and_reset(&mut self) -> Result<(), AppError> {
+        if let Some(backend) = self.tdlib_backend.as_mut() {
+            backend
+                .disconnect_and_reset()
+                .map_err(|error| AppError::TdlibClose {
+                    details: error.to_string(),
+                })?;
+        }
+        self.status_tracker.on_logout_reset();
+        Ok(())
     }
 }
