@@ -1,0 +1,14 @@
+id: tui-only-in-ui
+language: rust
+severity: error
+message: ratatui/crossterm is used outside ui/
+note: |
+  Terminal rendering and input stay inside ui/ (docs/ARCHITECTURE.md).
+  Other layers exchange domain types and AppEvents with it.
+files:
+  - src/**/*.rs
+ignores:
+  - src/ui/**
+rule:
+  kind: identifier
+  regex: ^(ratatui|crossterm)$

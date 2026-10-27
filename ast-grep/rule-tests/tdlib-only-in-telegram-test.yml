@@ -1,0 +1,10 @@
+id: tdlib-only-in-telegram
+valid:
+  - use crate::telegram::TdLibClient;
+  - 'const NOISY: &[&str] = &["tdlib_rs", "tokio"];'
+  - "// tdlib_rs logs to stderr by default"
+invalid:
+  - use tdlib_rs::enums::Update;
+  - use tdlib_rs::{enums, functions};
+  - "fn f() { tdlib_rs::create_client(); }"
+  - "fn f(_: tdlib_rs::types::Chat) {}"

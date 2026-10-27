@@ -65,6 +65,9 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
 ## Rust engineering style
 
 1. Keep layer boundaries clear (`ui`, `domain`, `usecases`, `infra`, `telegram`).
+   The ast-grep rules in `ast-grep/rules/` enforce them (see "Enforced boundaries" in
+   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)); fix the dependency instead of
+   weakening or ignoring a rule.
 2. Avoid mixing business logic with infrastructure details in one module.
 
 ## UI principles

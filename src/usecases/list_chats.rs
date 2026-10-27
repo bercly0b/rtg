@@ -1,6 +1,5 @@
 use crate::domain::chat::ChatSummary;
-
-pub const DEFAULT_CHAT_PAGE_SIZE: usize = 50;
+use crate::domain::chat_list_state::DEFAULT_CHAT_PAGE_SIZE;
 
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]

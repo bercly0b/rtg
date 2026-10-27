@@ -40,6 +40,20 @@ The map of `src/` — layers, dependencies, and where new code belongs.
 
 **Dependency direction**: `domain/` depends on nothing. `usecases/` depends on `domain/` and defines trait ports. `telegram/` and `ui/` implement or consume those ports. `infra/` provides cross-cutting support (config, logging, storage).
 
+### Enforced boundaries
+
+`mise run ast-grep` (part of `mise run quality`) fails on these, with rules in
+[`ast-grep/rules/`](../ast-grep/rules/):
+
+| Rule | Boundary |
+|------|----------|
+| `domain-no-outer-layers` | `domain/` does not import `usecases`, `telegram`, `ui`, `infra`, `app` or `cli` |
+| `tdlib-only-in-telegram` | `tdlib_rs` is used only in `telegram/` |
+| `tui-only-in-ui` | `ratatui` and `crossterm` are used only in `ui/` |
+
+Each rule has valid and invalid examples in `ast-grep/rule-tests/`. When a rule
+changes, update its snapshot with `ast-grep test --update-all` and review the diff.
+
 ## Layer descriptions
 
 ### `domain/` — Pure types, no I/O

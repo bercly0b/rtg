@@ -10,7 +10,7 @@ pub enum ChatListUiState {
     Error,
 }
 
-use crate::usecases::list_chats::DEFAULT_CHAT_PAGE_SIZE;
+pub const DEFAULT_CHAT_PAGE_SIZE: usize = 50;
 
 const LOAD_MORE_OFFSET: usize = 10;
 

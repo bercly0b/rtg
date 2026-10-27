@@ -1,0 +1,14 @@
+id: tdlib-only-in-telegram
+language: rust
+severity: error
+message: tdlib_rs is used outside telegram/
+note: |
+  TDLib types stay inside telegram/ (docs/ARCHITECTURE.md). Map them to domain
+  types there and expose behaviour through a trait port in usecases/.
+files:
+  - src/**/*.rs
+ignores:
+  - src/telegram/**
+rule:
+  kind: identifier
+  regex: ^tdlib_rs$
