@@ -89,6 +89,7 @@ fn message_info_loaded_updates_popup_state() {
             chat_id: 1,
             message_id: 10,
             result: Ok(MessageInfo {
+                author: None,
                 reactions: vec![ReactionDetail {
                     emoji: "👍".to_owned(),
                     sender_name: "Bob".to_owned(),
@@ -149,6 +150,7 @@ fn message_info_loaded_ignored_when_popup_closed() {
             chat_id: 1,
             message_id: 10,
             result: Ok(MessageInfo {
+                author: None,
                 reactions: vec![],
                 reaction_counts: vec![],
                 viewers: vec![],
@@ -182,6 +184,7 @@ fn message_info_loaded_stale_result_ignored() {
             chat_id: 1,
             message_id: 10,
             result: Ok(MessageInfo {
+                author: None,
                 reactions: vec![],
                 reaction_counts: vec![],
                 viewers: vec![],

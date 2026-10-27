@@ -6,7 +6,7 @@ use ratatui::{
 };
 
 use crate::domain::message_info_state::{
-    format_unix_timestamp, MessageInfo, MessageInfoPopupState,
+    format_unix_timestamp, MessageAuthor, MessageInfo, MessageInfoPopupState,
 };
 
 use super::{popup_utils, styles};
@@ -49,7 +49,15 @@ fn build_loaded_lines(info: &MessageInfo) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let mut has_content = false;
 
+    if let Some(author) = &info.author {
+        lines.push(build_field_line("Author", &format_author(author)));
+        has_content = true;
+    }
+
     if !info.reactions.is_empty() {
+        if has_content {
+            lines.push(Line::from(""));
+        }
         lines.push(Line::from(Span::styled(
             "Reactions",
             styles::chat_info_popup_label_style(),
@@ -62,6 +70,9 @@ fn build_loaded_lines(info: &MessageInfo) -> Vec<Line<'static>> {
         }
         has_content = true;
     } else if !info.reaction_counts.is_empty() {
+        if has_content {
+            lines.push(Line::from(""));
+        }
         lines.push(Line::from(Span::styled(
             "Reactions",
             styles::chat_info_popup_label_style(),
@@ -127,6 +138,13 @@ fn build_loaded_lines(info: &MessageInfo) -> Vec<Line<'static>> {
     lines
 }
 
+fn format_author(author: &MessageAuthor) -> String {
+    match &author.username {
+        Some(username) => format!("{} @{username}", author.name),
+        None => author.name.clone(),
+    }
+}
+
 fn build_field_line(label: &str, value: &str) -> Line<'static> {
     Line::from(vec![
         Span::styled(format!("{label}: "), styles::chat_info_popup_label_style()),
@@ -161,6 +179,7 @@ mod tests {
     #[test]
     fn empty_info_shows_no_info_message() {
         let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: None,
             reactions: vec![],
             reaction_counts: vec![],
             viewers: vec![],
@@ -171,9 +190,78 @@ mod tests {
         assert!(lines[0].spans[0].content.contains("No additional info"));
     }
 
+    fn line_text(line: &Line<'_>) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn author_with_username_shows_name_and_handle() {
+        let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: Some(MessageAuthor {
+                name: "Alice Smith".to_owned(),
+                username: Some("alice".to_owned()),
+            }),
+            reactions: vec![],
+            reaction_counts: vec![],
+            viewers: vec![],
+            read_date: None,
+            edit_date: None,
+        });
+        let lines = build_info_lines(&state);
+        assert_eq!(line_text(&lines[0]), "Author: Alice Smith @alice");
+        assert_eq!(
+            lines[0].spans[0].style,
+            styles::chat_info_popup_label_style()
+        );
+    }
+
+    #[test]
+    fn author_without_username_shows_name_only() {
+        let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: Some(MessageAuthor {
+                name: "Alice".to_owned(),
+                username: None,
+            }),
+            reactions: vec![],
+            reaction_counts: vec![],
+            viewers: vec![],
+            read_date: None,
+            edit_date: None,
+        });
+        let lines = build_info_lines(&state);
+        assert_eq!(line_text(&lines[0]), "Author: Alice");
+        assert!(!lines
+            .iter()
+            .any(|l| line_text(l).contains("No additional info")));
+    }
+
+    #[test]
+    fn author_is_shown_above_reactions() {
+        let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: Some(MessageAuthor {
+                name: "Alice".to_owned(),
+                username: Some("alice".to_owned()),
+            }),
+            reactions: vec![ReactionDetail {
+                emoji: "👍".to_owned(),
+                sender_name: "Bob".to_owned(),
+            }],
+            reaction_counts: vec![],
+            viewers: vec![],
+            read_date: None,
+            edit_date: None,
+        });
+        let lines = build_info_lines(&state);
+        assert_eq!(line_text(&lines[0]), "Author: Alice @alice");
+        assert_eq!(line_text(&lines[1]), "");
+        assert_eq!(line_text(&lines[2]), "Reactions");
+        assert!(line_text(&lines[3]).contains("Bob"));
+    }
+
     #[test]
     fn loaded_with_reactions_shows_section() {
         let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: None,
             reactions: vec![ReactionDetail {
                 emoji: "👍".to_owned(),
                 sender_name: "Alice".to_owned(),
@@ -191,6 +279,7 @@ mod tests {
     #[test]
     fn loaded_with_reaction_counts_shows_counts() {
         let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: None,
             reactions: vec![],
             reaction_counts: vec![ReactionCount {
                 emoji: "👍".to_owned(),
@@ -208,6 +297,7 @@ mod tests {
     #[test]
     fn named_reactions_take_precedence_over_counts() {
         let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: None,
             reactions: vec![ReactionDetail {
                 emoji: "👍".to_owned(),
                 sender_name: "Alice".to_owned(),
@@ -228,6 +318,7 @@ mod tests {
     #[test]
     fn loaded_with_viewers_shows_section() {
         let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: None,
             reactions: vec![],
             reaction_counts: vec![],
             viewers: vec![ViewerDetail {
@@ -245,6 +336,7 @@ mod tests {
     #[test]
     fn loaded_with_edit_date_shows_section() {
         let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: None,
             reactions: vec![],
             reaction_counts: vec![],
             viewers: vec![],
@@ -258,6 +350,7 @@ mod tests {
     #[test]
     fn loaded_with_read_date_shows_section() {
         let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: None,
             reactions: vec![],
             reaction_counts: vec![],
             viewers: vec![],

@@ -1,4 +1,7 @@
-use crate::domain::message_info_state::{MessageInfo, ReactionCount, ReactionDetail, ViewerDetail};
+use crate::domain::message_info_state::{
+    MessageAuthor, MessageInfo, ReactionCount, ReactionDetail, ViewerDetail,
+};
+use crate::telegram::tdlib_mappers;
 use crate::usecases::message_info::MessageInfoQuery;
 
 use super::TdLibAuthBackend;
@@ -9,6 +12,7 @@ impl TdLibAuthBackend {
         let message_id = query.message_id;
 
         let msg = self.client.get_message(chat_id, message_id).ok();
+        let author = msg.as_ref().map(|m| self.resolve_author(&m.sender_id));
         let edit_date = msg.as_ref().and_then(|m| {
             if m.edit_date > 0 {
                 Some(m.edit_date)
@@ -45,6 +49,7 @@ impl TdLibAuthBackend {
         };
 
         MessageInfo {
+            author,
             reactions,
             reaction_counts,
             viewers,
@@ -109,6 +114,38 @@ impl TdLibAuthBackend {
         }
     }
 
+    fn resolve_author(&self, sender_id: &tdlib_rs::enums::MessageSender) -> MessageAuthor {
+        let cache = self.client.cache();
+        match sender_id {
+            tdlib_rs::enums::MessageSender::User(u) => cache
+                .get_user(u.user_id)
+                .or_else(|| self.client.get_user(u.user_id).ok())
+                .map(|user| user_author(&user))
+                .unwrap_or_else(|| MessageAuthor {
+                    name: "Unknown".to_owned(),
+                    username: None,
+                }),
+            tdlib_rs::enums::MessageSender::Chat(c) => {
+                let chat = cache
+                    .get_chat(c.chat_id)
+                    .or_else(|| self.client.get_chat(c.chat_id).ok());
+                let supergroup = chat.as_ref().and_then(|chat| match &chat.r#type {
+                    tdlib_rs::enums::ChatType::Supergroup(s) => {
+                        cache.get_supergroup(s.supergroup_id)
+                    }
+                    _ => None,
+                });
+                match chat {
+                    Some(chat) => chat_author(&chat, supergroup.as_ref()),
+                    None => MessageAuthor {
+                        name: "Channel".to_owned(),
+                        username: None,
+                    },
+                }
+            }
+        }
+    }
+
     fn resolve_sender_name(&self, sender_id: &tdlib_rs::enums::MessageSender) -> String {
         match sender_id {
             tdlib_rs::enums::MessageSender::User(u) => self.resolve_user_name(u.user_id),
@@ -141,6 +178,27 @@ impl TdLibAuthBackend {
             None => format!("User#{user_id}"),
         }
     }
+}
+
+fn user_author(user: &tdlib_rs::types::User) -> MessageAuthor {
+    MessageAuthor {
+        name: tdlib_mappers::format_user_name(user),
+        username: first_active_username(user.usernames.as_ref()),
+    }
+}
+
+fn chat_author(
+    chat: &tdlib_rs::types::Chat,
+    supergroup: Option<&tdlib_rs::types::Supergroup>,
+) -> MessageAuthor {
+    MessageAuthor {
+        name: chat.title.clone(),
+        username: supergroup.and_then(|s| first_active_username(s.usernames.as_ref())),
+    }
+}
+
+fn first_active_username(usernames: Option<&tdlib_rs::types::Usernames>) -> Option<String> {
+    usernames.and_then(|u| u.active_usernames.first().cloned())
 }
 
 fn extract_inline_reactions(
@@ -236,6 +294,67 @@ mod tests {
             paid_reactors: vec![],
             can_get_added_reactions: false,
         }
+    }
+
+    fn make_usernames(active: &[&str]) -> tdlib_rs::types::Usernames {
+        tdlib_rs::types::Usernames {
+            active_usernames: active.iter().map(|u| (*u).to_owned()).collect(),
+            disabled_usernames: vec![],
+            editable_username: active.first().map(|u| (*u).to_owned()).unwrap_or_default(),
+            collectible_usernames: vec![],
+        }
+    }
+
+    #[test]
+    fn user_author_uses_display_name_and_first_active_username() {
+        let mut user = crate::telegram::tdlib_cache::tests::make_test_user(1, "Alice");
+        user.last_name = "Smith".to_owned();
+        user.usernames = Some(make_usernames(&["alice", "alice_alt"]));
+
+        let author = user_author(&user);
+
+        assert_eq!(author.name, "Alice Smith");
+        assert_eq!(author.username.as_deref(), Some("alice"));
+    }
+
+    #[test]
+    fn user_author_without_usernames_has_no_username() {
+        let user = crate::telegram::tdlib_cache::tests::make_test_user(1, "Alice");
+
+        let author = user_author(&user);
+
+        assert_eq!(author.name, "Alice");
+        assert_eq!(author.username, None);
+    }
+
+    #[test]
+    fn user_author_with_only_disabled_usernames_has_no_username() {
+        let mut user = crate::telegram::tdlib_cache::tests::make_test_user(1, "Alice");
+        user.usernames = Some(make_usernames(&[]));
+
+        assert_eq!(user_author(&user).username, None);
+    }
+
+    #[test]
+    fn chat_author_uses_title_and_supergroup_username() {
+        let chat = crate::telegram::tdlib_cache::tests::make_test_chat(1, "News");
+        let mut supergroup = crate::telegram::tdlib_cache::tests::make_test_supergroup(2, false);
+        supergroup.usernames = Some(make_usernames(&["news"]));
+
+        let author = chat_author(&chat, Some(&supergroup));
+
+        assert_eq!(author.name, "News");
+        assert_eq!(author.username.as_deref(), Some("news"));
+    }
+
+    #[test]
+    fn chat_author_without_supergroup_has_no_username() {
+        let chat = crate::telegram::tdlib_cache::tests::make_test_chat(1, "News");
+
+        let author = chat_author(&chat, None);
+
+        assert_eq!(author.name, "News");
+        assert_eq!(author.username, None);
     }
 
     #[test]
