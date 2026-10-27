@@ -14,7 +14,8 @@ api_id = 0
 api_hash = "replace-me"
 
 [voice]
-# Override voice recording command. Use {file_path} as placeholder for the output path.
+# Override voice recording command. Must contain {file_path} as placeholder for the output path.
+# Arguments are split shell-style, so quote values with spaces: -i ':MacBook Pro Microphone'
 # The output must be Opus-encoded in an OGG container (mono audio channel).
 # Default (macOS): ffmpeg -f avfoundation -i ':0' -c:a libopus -b:a 32k {file_path}
 # Default (Linux):  ffmpeg -f alsa -i hw:0 -c:a libopus -b:a 32k {file_path}
@@ -27,7 +28,7 @@ api_hash = "replace-me"
 
 [open]
 # MIME-type handlers for opening message files (mailcap-style).
-# Use {file_path} as placeholder for the file path.
+# Use {file_path} as placeholder for the file path. Arguments are split shell-style (quotes supported).
 # Supports exact types ("audio/ogg") and wildcards ("audio/*").
 # When no handler matches, the system default opener is used
 # (macOS: `open`, Linux: `xdg-open`).

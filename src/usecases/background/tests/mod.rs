@@ -1,4 +1,5 @@
 mod error_mapping;
+mod file_ops;
 
 use std::sync::mpsc::{self, Sender};
 
