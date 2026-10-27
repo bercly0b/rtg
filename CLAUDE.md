@@ -69,6 +69,9 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
    [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)); fix the dependency instead of
    weakening or ignoring a rule.
 2. Avoid mixing business logic with infrastructure details in one module.
+3. Every `#[allow(...)]` carries `reason = "..."` (enforced by
+   `clippy::allow_attributes_without_reason`); prefer fixing the warning over
+   suppressing it.
 
 ## UI principles
 

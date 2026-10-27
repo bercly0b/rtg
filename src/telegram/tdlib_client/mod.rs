@@ -172,19 +172,17 @@ impl TdLibClient {
     }
 
     /// Returns the TDLib client ID for sending requests.
-    #[allow(dead_code)]
     pub fn client_id(&self) -> i32 {
         self.client_id
     }
 
     /// Returns the configuration used to create this client.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "not used yet")]
     pub fn config(&self) -> &TdLibConfig {
         &self.config
     }
 
     /// Returns the async runtime for executing TDLib operations.
-    #[allow(dead_code)]
     pub fn runtime(&self) -> &Arc<Runtime> {
         &self.rt
     }
@@ -195,7 +193,7 @@ impl TdLibClient {
     }
 
     /// Checks if the client has been closed.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "not used yet")]
     pub fn is_closed(&self) -> bool {
         self.is_closed.load(Ordering::Acquire)
     }
@@ -205,7 +203,7 @@ impl TdLibClient {
     /// After calling this method, the client should not be used for any
     /// further operations. TDLib will flush all data to disk and send
     /// `AuthorizationStateClosed` update.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "graceful shutdown is not wired in yet")]
     pub fn close(&self) -> Result<(), TdLibError> {
         // Use compare_exchange to atomically check and set is_closed
         // This prevents race conditions when close() is called concurrently

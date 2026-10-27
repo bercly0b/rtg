@@ -75,7 +75,7 @@ impl ShellState {
     ///
     /// If `chats` is non-empty, `ChatListState` starts as `Ready` immediately,
     /// allowing the TUI to display cached chats on the very first frame.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn with_initial_chat_list(chats: Vec<ChatSummary>) -> Self {
         Self {
             chat_list: ChatListState::with_initial_chats(chats),
@@ -112,24 +112,20 @@ impl ShellState {
         self.connectivity_status = status;
     }
 
-    #[allow(dead_code)]
     pub fn chat_list(&self) -> &ChatListState {
         &self.chat_list
     }
 
-    #[allow(dead_code)]
     pub fn chat_list_mut(&mut self) -> &mut ChatListState {
         &mut self.chat_list
     }
 
     /// Returns the active forum topic list, if any. `None` means the root
     /// chat list is shown.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn forum_topic_list(&self) -> Option<&ForumTopicListState> {
         self.forum_topic_list.as_ref()
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn forum_topic_list_mut(&mut self) -> Option<&mut ForumTopicListState> {
         self.forum_topic_list.as_mut()
     }
@@ -138,7 +134,6 @@ impl ShellState {
     ///
     /// Does not touch `chat_list` — the root list keeps its selection and
     /// pagination so the user returns to the same view on `leave_forum`.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn enter_forum(&mut self, parent_chat_id: i64, parent_chat_title: impl Into<String>) {
         self.forum_topic_list = Some(ForumTopicListState::loading(
             parent_chat_id,
@@ -147,7 +142,6 @@ impl ShellState {
     }
 
     /// Drops the topic-list panel. The root chat list is untouched.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn leave_forum(&mut self) {
         self.forum_topic_list = None;
     }

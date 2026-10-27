@@ -102,14 +102,12 @@ impl Default for OpenChatState {
 }
 
 impl OpenChatState {
-    #[allow(dead_code)]
     pub fn chat_id(&self) -> Option<i64> {
         self.chat_id
     }
 
     /// Returns the active forum topic id, if this state represents an open
     /// forum topic conversation.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn topic_id(&self) -> Option<i32> {
         self.topic_id
     }
@@ -202,7 +200,7 @@ impl OpenChatState {
         self.refreshing = refreshing;
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn message_source(&self) -> MessageSource {
         self.message_source
     }
@@ -211,12 +209,12 @@ impl OpenChatState {
         self.message_source = source;
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn all_messages_loaded(&self) -> bool {
         self.all_messages_loaded
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn set_all_messages_loaded(&mut self, loaded: bool) {
         self.all_messages_loaded = loaded;
     }
@@ -420,7 +418,7 @@ impl OpenChatState {
         self.message_source = MessageSource::None;
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "used only by tests")]
     pub fn clear(&mut self) {
         self.chat_id = None;
         self.topic_id = None;

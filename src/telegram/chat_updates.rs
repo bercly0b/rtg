@@ -38,7 +38,7 @@ pub trait MessageMapper: Send + Sync {
 #[derive(Debug)]
 pub struct TelegramChatUpdatesMonitor {
     /// Worker thread handle. Kept for debugging but not joined on drop.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "kept for debugging; read only by tests")]
     worker: Option<JoinHandle<()>>,
 }
 

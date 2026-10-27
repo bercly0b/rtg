@@ -449,7 +449,6 @@ impl TdLibClient {
         })
     }
 
-    #[allow(dead_code)]
     pub fn remove_message_reaction(
         &self,
         chat_id: i64,

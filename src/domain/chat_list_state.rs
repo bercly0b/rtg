@@ -1,7 +1,6 @@
 use super::chat::ChatSummary;
 use super::selectable_list::SelectableList;
 
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatListUiState {
     Loading,
@@ -14,7 +13,6 @@ pub const DEFAULT_CHAT_PAGE_SIZE: usize = 50;
 
 const LOAD_MORE_OFFSET: usize = 10;
 
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatListState {
     ui_state: ChatListUiState,
@@ -57,7 +55,10 @@ impl ChatListState {
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "some methods are used only by tests")
+)]
 impl ChatListState {
     pub fn ui_state(&self) -> ChatListUiState {
         self.ui_state.clone()

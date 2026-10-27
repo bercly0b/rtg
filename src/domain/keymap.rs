@@ -283,13 +283,13 @@ impl Keymap {
         ResolveResult::Unmatched
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "used only by tests")]
     pub fn reset_pending(&mut self) {
         self.pending_keys.clear();
         self.pending_since = None;
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "used only by tests")]
     pub fn has_pending(&self) -> bool {
         !self.pending_keys.is_empty()
     }

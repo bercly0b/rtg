@@ -16,7 +16,10 @@ use super::text_utils::wrap_line;
 /// Indentation that aligns content with the message time column.
 const MESSAGE_INDENT: &str = "      ";
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "each argument is a separate part of the rendered message"
+)]
 pub(super) fn build_message_lines(
     time: &str,
     show_time: bool,

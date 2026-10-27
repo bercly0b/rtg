@@ -197,7 +197,7 @@ pub enum ConnectivityStatus {
 }
 
 impl ConnectivityStatus {
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "not used yet"))]
     pub fn as_label(self) -> &'static str {
         match self {
             Self::Connected => "connected",

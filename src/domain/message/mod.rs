@@ -6,7 +6,7 @@ mod url;
 mod tests;
 
 pub use call_info::{build_call_metadata_display, CallDiscardReason, CallInfo};
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "some re-exports are used only by tests")]
 pub use file_info::{
     build_file_metadata_display, file_extension, format_duration, format_file_size, DownloadStatus,
     FileInfo,

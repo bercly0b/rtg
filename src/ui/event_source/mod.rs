@@ -93,7 +93,7 @@ impl Default for CrosstermEventSource {
 }
 
 impl CrosstermEventSource {
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn new(connectivity_source: Box<dyn ConnectivityStatusSource>) -> Self {
         Self::with_sources(
             connectivity_source,
