@@ -8,7 +8,9 @@ and where to find more detailed docs.
 
 ### Prerequisites
 
-- Stable Rust toolchain with `cargo`, `rustfmt`, and `clippy`
+- [mise](https://mise.jdx.dev/installing-mise.html), activated in your shell —
+  installs the Rust toolchain and `cargo-llvm-cov` pinned in
+  [`mise.toml`](mise.toml) and runs the project tasks
 - Git
 - On Linux: libc++ runtime for the prebuilt TDLib
   (`sudo apt install libc++1 libc++abi1 libunwind8`)
@@ -24,17 +26,22 @@ feature of `tdlib-rs` — no manual install required.
    cd rtg
    ```
 
-2. Build the project:
+2. Install the pinned tools:
+   ```bash
+   mise install
+   ```
+
+3. Build the project:
    ```bash
    cargo build
    ```
 
-3. Run the test suite:
+4. Run the test suite:
    ```bash
-   cargo test
+   mise run test
    ```
 
-4. Optionally copy the example config:
+5. Optionally copy the example config:
    ```bash
    mkdir -p ~/.config/rtg
    cp config.example.toml ~/.config/rtg/config.toml
@@ -89,12 +96,10 @@ Commit messages must be written in English.
    git checkout -b feature/your-feature
    ```
 
-2. Make your changes and run the local quality gate:
+2. Make your changes and run the local quality gate (`fmt`, `clippy`,
+   `test`, `check` — the same tasks CI runs):
    ```bash
-   cargo fmt --check
-   cargo clippy -- -D warnings
-   cargo test
-   cargo check
+   mise run quality
    ```
 
 3. Push your branch and open a pull request. Describe the change and link

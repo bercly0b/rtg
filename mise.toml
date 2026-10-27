@@ -1,0 +1,54 @@
+[tools]
+rust = { version = "1.97.1", components = ["rustfmt", "clippy", "llvm-tools"] }
+"github:taiki-e/cargo-llvm-cov" = "0.9.1"
+
+# ── Quality gate (mirrors CLAUDE.md rules) ──────────────────────────────────
+
+[tasks.test]
+run = "cargo test"
+
+[tasks.fmt]
+run = "cargo fmt --check"
+
+[tasks.clippy]
+run = "cargo clippy -- -D warnings"
+
+[tasks.check]
+run = "cargo check"
+
+[tasks.quality]
+description = "Run fmt, clippy, test and check in order"
+run = [{ task = "fmt" }, { task = "clippy" }, { task = "test" }, { task = "check" }]
+
+# ── Test coverage ───────────────────────────────────────────────────────────
+#
+# The coverage targets exclude TDLib-dependent integration paths that
+# cannot run without a live Telegram session.
+
+[tasks.coverage]
+run = "cargo llvm-cov --no-fail-fast"
+
+[tasks.coverage-html]
+run = "cargo llvm-cov --no-fail-fast --html --open"
+
+[tasks.coverage-lcov]
+run = "cargo llvm-cov --no-fail-fast --lcov --output-path lcov.info"
+
+# ── Release ─────────────────────────────────────────────────────────────────
+#
+# CI picks up the pushed tag and publishes a GitHub Release with prebuilt
+# binaries.
+
+[tasks.release]
+description = "Bump Cargo.toml version, commit, tag and push"
+usage = 'arg "<version>" help="Version to release, e.g. 0.2.0"'
+run = '''
+if [ -n "$(git status --porcelain)" ]; then echo "error: working tree not clean"; exit 1; fi
+if [ "$(git rev-parse --abbrev-ref HEAD)" != "main" ]; then echo "error: must be on main branch"; exit 1; fi
+sed -i.bak "s/^version = \".*\"/version = \"${usage_version}\"/" Cargo.toml && rm Cargo.toml.bak
+cargo check
+git add Cargo.toml Cargo.lock
+git commit -m "release: v${usage_version}"
+git tag "v${usage_version}"
+git push origin main "v${usage_version}"
+'''

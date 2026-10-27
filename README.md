@@ -77,7 +77,8 @@ sudo apt install libc++1 libc++abi1
 
 Prerequisites:
 
-- Rust toolchain (stable) with `cargo`, `rustfmt`, and `clippy`
+- [mise](https://mise.jdx.dev/installing-mise.html), activated in your shell —
+  installs the Rust toolchain pinned in [`mise.toml`](mise.toml)
 - On Linux, the libc++ runtime used by the prebuilt TDLib:
   ```bash
   sudo apt install libc++1 libc++abi1 libunwind8
@@ -91,6 +92,7 @@ macOS Intel/Apple Silicon, Windows x86_64/arm64. For other platforms see the
 ```bash
 git clone https://github.com/bercly0b/rtg.git
 cd rtg
+mise install
 cargo build --release
 ./target/release/rtg
 ```

@@ -50,10 +50,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libc++-dev libc++abi-dev patchelf
 
-      - name: Rust env bootstrap
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+      - name: Tools bootstrap (mise.toml)
+        uses: jdx/mise-action@v5
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
