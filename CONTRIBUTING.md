@@ -49,6 +49,14 @@ feature of `tdlib-rs` — no manual install required.
 
 ## Development workflow
 
+### Tooling
+
+`mise` pins the toolchain and holds the composite project tasks — the quality
+gate, coverage and release (`mise tasks` lists them). Everyday cargo commands
+such as `cargo build`, `cargo run` and `cargo build --release` are run directly:
+with mise activated, `cargo` already resolves to the pinned toolchain. Without
+activation, prefix them with `mise exec --`.
+
 ### Code style
 
 - Run `cargo fmt` before committing
