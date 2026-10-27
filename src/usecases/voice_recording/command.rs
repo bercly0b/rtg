@@ -10,15 +10,15 @@ use std::{
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-use crate::domain::events::CommandEvent;
+use crate::domain::{command_template, events::CommandEvent};
 
 use super::{handle::RecordingHandle, output::stream_output};
 
 /// Starts an external command and returns a handle and the event channel receiver.
 ///
-/// The command template is split by whitespace and `{file_path}` is replaced
-/// with the actual path. stdout and stderr are merged and streamed line-by-line
-/// through the returned channel.
+/// The command template is split with shell-like quoting rules and
+/// `{file_path}` is replaced with the actual path. stdout and stderr are
+/// merged and streamed line-by-line through the returned channel.
 ///
 /// When both pipe readers finish (process exited or was killed), a
 /// `CommandEvent::Exited` is automatically sent through the channel.
@@ -28,17 +28,7 @@ pub fn start_command(
     cmd_template: &str,
     file_path: &str,
 ) -> anyhow::Result<(RecordingHandle, mpsc::Receiver<CommandEvent>)> {
-    let template_parts: Vec<&str> = cmd_template.split_whitespace().collect();
-    if template_parts.is_empty() {
-        anyhow::bail!("empty command");
-    }
-
-    // Substitute {file_path} AFTER splitting so paths with spaces
-    // remain a single argument token.
-    let resolved: Vec<String> = template_parts
-        .iter()
-        .map(|p| p.replace("{file_path}", file_path))
-        .collect();
+    let resolved = command_template::resolve_argv(cmd_template, file_path)?;
 
     let mut cmd = Command::new(&resolved[0]);
     cmd.args(&resolved[1..]).stdin(Stdio::null());

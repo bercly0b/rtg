@@ -255,7 +255,7 @@ fn failed_phase_any_key_closes_popup() {
 }
 
 #[test]
-fn failed_phase_message_mentions_config() {
+fn failed_phase_message_mentions_config_without_hardcoded_path() {
     use crate::domain::command_popup_state::CommandPhase;
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
@@ -268,12 +268,12 @@ fn failed_phase_message_mentions_config() {
     match popup.phase() {
         CommandPhase::Failed { message } => {
             assert!(
-                message.contains("config.toml"),
-                "message should mention config.toml: {message}"
+                message.contains("[voice] record_cmd"),
+                "message should mention [voice] record_cmd: {message}"
             );
             assert!(
-                message.contains("[voice]"),
-                "message should mention [voice] section: {message}"
+                !message.contains("~/.config"),
+                "message should not hardcode the default config path: {message}"
             );
         }
         other => panic!("expected Failed but got {other:?}"),
