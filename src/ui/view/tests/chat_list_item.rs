@@ -405,6 +405,26 @@ fn chat_with_unread_and_online_shows_both() {
 }
 
 #[test]
+fn outgoing_status_unread_and_online_together_fill_row_exactly() {
+    let mut c = private_chat_outgoing(1, "Jane", Some("See you tomorrow"), true);
+    c.unread_count = 5;
+    c.is_online = Some(true);
+
+    let line = chat_list_item::chat_list_item_line(&c, TEST_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(
+        text.ends_with(" \u{2713}\u{2713} \u{2022} [5]"),
+        "status, online bullet and counter must all trail the row; got '{text}'"
+    );
+    assert_eq!(
+        UnicodeWidthStr::width(text.as_str()),
+        TEST_WIDTH,
+        "reserved suffix width must match the rendered suffix; got '{text}'"
+    );
+}
+
+#[test]
 fn bot_chat_online_does_not_show_online_indicator() {
     let c = ChatSummary {
         chat_id: 1,

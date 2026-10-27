@@ -6,7 +6,10 @@ use ratatui::{
     widgets::StatefulWidget,
 };
 
-use crate::ui::chat_message_list::{ChatMessageList, ChatMessageListState, ScrollOffset};
+use crate::ui::chat_message_list::rendering::render_items;
+use crate::ui::chat_message_list::{
+    ChatMessageList, ChatMessageListItem, ChatMessageListState, ScrollOffset,
+};
 
 use super::make_items;
 
@@ -83,6 +86,39 @@ fn render_partial_first_item_skips_top_lines() {
         .collect::<String>();
     assert_eq!(row0, "line-2");
     assert_eq!(row1, "line-3");
+}
+
+#[test]
+fn render_items_skips_zero_height_item() {
+    let items = vec![
+        ChatMessageListItem::new(Text::from("above")),
+        ChatMessageListItem::new(Text::default()),
+        ChatMessageListItem::new(Text::from("below")),
+    ];
+    assert_eq!(items[1].height(), 0, "precondition: empty item");
+
+    let area = Rect::new(0, 0, 10, 3);
+    let mut buf = Buffer::empty(area);
+
+    render_items(
+        &items,
+        ScrollOffset::ZERO,
+        area,
+        &mut buf,
+        None,
+        Style::default(),
+    );
+
+    let row = |y: u16| -> String {
+        (0..area.width)
+            .map(|x| buf[(x, y)].symbol().to_string())
+            .collect::<String>()
+            .trim_end()
+            .to_owned()
+    };
+    assert_eq!(row(0), "above");
+    assert_eq!(row(1), "below", "empty item must not leave a blank row");
+    assert_eq!(row(2), "");
 }
 
 #[test]
