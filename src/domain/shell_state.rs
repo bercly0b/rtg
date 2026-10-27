@@ -578,6 +578,7 @@ mod tests {
         let mut state = ShellState::default();
         state.show_message_info_loading(1, 42);
         state.set_message_info_loaded(MessageInfoPopupState::Loaded(MessageInfo {
+            author: None,
             reactions: vec![],
             reaction_counts: vec![],
             viewers: vec![],

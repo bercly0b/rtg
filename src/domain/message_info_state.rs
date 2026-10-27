@@ -19,7 +19,14 @@ pub struct ViewerDetail {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageAuthor {
+    pub name: String,
+    pub username: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageInfo {
+    pub author: Option<MessageAuthor>,
     pub reactions: Vec<ReactionDetail>,
     pub reaction_counts: Vec<ReactionCount>,
     pub viewers: Vec<ViewerDetail>,
@@ -70,6 +77,7 @@ mod tests {
     #[test]
     fn loaded_state_returns_no_ids() {
         let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: None,
             reactions: vec![],
             reaction_counts: vec![],
             viewers: vec![],
