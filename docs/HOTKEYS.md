@@ -127,9 +127,7 @@ Action::MyNewAction => {
 ### Step 5: Verify
 
 ```sh
-cargo fmt --check
-cargo clippy
-cargo test
+mise run quality
 ```
 
 ## User configuration

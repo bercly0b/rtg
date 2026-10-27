@@ -27,13 +27,13 @@ A release is triggered by pushing a `v*` git tag (e.g. `v0.2.0`). The
 
 ## Cutting a release
 
-Use the `just` recipe from a clean `main`:
+Use the `mise` task from a clean `main`:
 
 ```bash
-just release 0.2.0
+mise run release 0.2.0
 ```
 
-The recipe:
+The task:
 1. Checks the working tree is clean and HEAD is on `main`.
 2. Bumps `version = "0.2.0"` in `Cargo.toml` and refreshes `Cargo.lock`
    via `cargo check`.

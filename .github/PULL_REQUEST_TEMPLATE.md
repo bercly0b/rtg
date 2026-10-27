@@ -5,10 +5,7 @@
 -
 
 ## Validation
-- [ ] `cargo fmt --check`
-- [ ] `cargo clippy -- -D warnings`
-- [ ] `cargo test`
-- [ ] `cargo check`
+- [ ] `mise run quality` (fmt, clippy, test, check)
 
 ## Tests
 - [ ] Added/updated tests for new or changed logic

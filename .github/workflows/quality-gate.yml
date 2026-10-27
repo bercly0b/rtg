@@ -17,25 +17,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libc++-dev libc++abi-dev
 
-      - name: Rust env bootstrap (stable + rustfmt + clippy)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Tools bootstrap (mise.toml)
+        uses: jdx/mise-action@v5
 
       - name: Cargo cache (registry + target)
         uses: Swatinem/rust-cache@v2
 
-      - name: Gate 1 — cargo fmt --check
-        run: cargo fmt --check
+      - name: Gate 1 — mise run fmt
+        run: mise run fmt
 
-      - name: Gate 2 — cargo clippy -- -D warnings
-        run: cargo clippy -- -D warnings
+      - name: Gate 2 — mise run clippy
+        run: mise run clippy
 
-      - name: Gate 3 — cargo test
-        run: cargo test
+      - name: Gate 3 — mise run test
+        run: mise run test
 
-      - name: Gate 4 — cargo check
-        run: cargo check
+      - name: Gate 4 — mise run check
+        run: mise run check
 
   coverage:
     runs-on: ubuntu-latest
@@ -51,16 +49,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libc++-dev libc++abi-dev
 
-      - name: Rust env bootstrap (stable + llvm-tools)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
+      - name: Tools bootstrap (mise.toml)
+        uses: jdx/mise-action@v5
 
       - name: Cargo cache (registry + target)
         uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate PR branch coverage
         run: cargo llvm-cov --no-fail-fast --json --summary-only --output-path pr-coverage.json

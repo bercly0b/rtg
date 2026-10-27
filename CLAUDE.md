@@ -45,10 +45,8 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
 
 2. Test and quality gate is mandatory:
    - every code change must be covered with tests;
-   - after finishing a task, run full quality gate locally:
-     - `cargo fmt --check`
-     - `cargo clippy`
-     - `cargo test`
+   - after finishing a task, run the full quality gate locally: `mise run quality`
+     (gates are defined in [mise.toml](mise.toml) and are the same ones CI runs).
 
 3. Telegram API implementation rule:
    - before implementing features that interact with Telegram API, review `tdlib-rs` and TDLib documentation;
