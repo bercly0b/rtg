@@ -1,7 +1,7 @@
 use ratatui::{
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Padding, Paragraph},
+    widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap},
     Frame,
 };
 
@@ -15,17 +15,13 @@ pub fn render_help_popup(
     active_pane: ActivePane,
     entries: &[HelpEntry],
 ) {
-    let popup_area = popup_utils::centered_rect(area, 50, 70);
-
-    frame.render_widget(Clear, popup_area);
-
     let title = match active_pane {
-        ActivePane::ChatList => "Help — Chat List",
-        ActivePane::Messages | ActivePane::MessageInput => "Help — Messages",
+        ActivePane::ChatList => " Help — Chat List ",
+        ActivePane::Messages | ActivePane::MessageInput => " Help — Messages ",
     };
 
     let block = Block::default()
-        .title(format!(" {title} "))
+        .title(title)
         .borders(Borders::ALL)
         .border_style(styles::help_popup_border_style())
         .padding(Padding::new(2, 2, 1, 1));
@@ -37,8 +33,11 @@ pub fn render_help_popup(
         styles::help_popup_footer_style(),
     )));
 
-    let paragraph = Paragraph::new(lines).block(block);
-    frame.render_widget(paragraph, popup_area);
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let popup_area = popup_utils::content_sized_rect(area, title, &block, &paragraph);
+
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(paragraph.block(block), popup_area);
 }
 
 fn build_hotkey_lines(entries: &[HelpEntry]) -> Vec<Line<'static>> {
@@ -116,5 +115,29 @@ mod tests {
         let lines = build_hotkey_lines(&entries);
         assert_eq!(lines.len(), entries.len());
         assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn popup_is_sized_to_entries() {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let entries = vec![
+            HelpEntry {
+                key_label: "j".to_owned(),
+                action_name: "next".to_owned(),
+            },
+            HelpEntry {
+                key_label: "k".to_owned(),
+                action_name: "previous".to_owned(),
+            },
+        ];
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
+        terminal
+            .draw(|frame| render_help_popup(frame, frame.area(), ActivePane::ChatList, &entries))
+            .unwrap();
+
+        let rect = popup_utils::rendered_border_rect(terminal.backend().buffer()).unwrap();
+        // The footer is the widest line; two entries, blank, footer.
+        assert_eq!((rect.width, rect.height), (26 + 6, 4 + 4));
     }
 }

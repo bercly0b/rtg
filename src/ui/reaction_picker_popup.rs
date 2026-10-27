@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Padding, Paragraph},
+    widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap},
     Frame,
 };
 
@@ -11,19 +11,19 @@ use crate::domain::reaction_picker_state::ReactionPickerState;
 use super::{popup_utils, styles};
 
 pub fn render_reaction_picker(frame: &mut Frame<'_>, area: Rect, state: &ReactionPickerState) {
-    let popup_area = popup_utils::centered_rect(area, 50, 60);
-
-    frame.render_widget(Clear, popup_area);
-
+    let title = " Reactions ";
     let block = Block::default()
-        .title(" Reactions ")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(styles::chat_info_popup_border_style())
         .padding(Padding::new(2, 2, 1, 1));
 
     let lines = build_lines(state);
-    let paragraph = Paragraph::new(lines).block(block);
-    frame.render_widget(paragraph, popup_area);
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let popup_area = popup_utils::content_sized_rect(area, title, &block, &paragraph);
+
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(paragraph.block(block), popup_area);
 }
 
 fn build_lines(state: &ReactionPickerState) -> Vec<Line<'static>> {
@@ -164,5 +164,25 @@ mod tests {
         let lines = build_lines(&state);
         assert!(lines[0].spans[0].content.contains("🧪"));
         assert!(lines[0].spans[0].content.contains("+1"));
+    }
+
+    #[test]
+    fn ready_popup_is_sized_to_content() {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let reactions = vec![AvailableReaction {
+            emoji: "👍".into(),
+            needs_premium: false,
+            is_chosen: false,
+        }];
+        let state = ReactionPickerState::Ready(ReactionPickerData::new(reactions, 1, 2));
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
+        terminal
+            .draw(|frame| render_reaction_picker(frame, frame.area(), &state))
+            .unwrap();
+
+        let rect = popup_utils::rendered_border_rect(terminal.backend().buffer()).unwrap();
+        // The footer is the widest line; reaction, blank, two footer lines.
+        assert_eq!((rect.width, rect.height), (26 + 6, 4 + 4));
     }
 }

@@ -13,22 +13,19 @@ use super::{popup_utils, styles};
 
 /// Renders the chat info popup as an overlay on top of existing content.
 pub fn render_chat_info_popup(frame: &mut Frame<'_>, area: Rect, state: &ChatInfoPopupState) {
-    let popup_area = popup_utils::centered_rect(area, 50, 60);
-
-    frame.render_widget(Clear, popup_area);
-
     let title = format!(" Chat Info — {} ", state.title());
     let block = Block::default()
-        .title(title)
+        .title(title.as_str())
         .borders(Borders::ALL)
         .border_style(styles::chat_info_popup_border_style())
         .padding(Padding::new(2, 2, 1, 1));
 
     let lines = build_info_lines(state);
-    let paragraph = Paragraph::new(lines)
-        .block(block)
-        .wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, popup_area);
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let popup_area = popup_utils::content_sized_rect(area, &title, &block, &paragraph);
+
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(paragraph.block(block), popup_area);
 }
 
 fn build_info_lines(state: &ChatInfoPopupState) -> Vec<Line<'static>> {
@@ -220,5 +217,41 @@ mod tests {
             rendered.contains("width"),
             "last word of description should be visible when wrapping is enabled"
         );
+    }
+
+    fn rendered_popup_rect(state: &ChatInfoPopupState, width: u16, height: u16) -> Rect {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| render_chat_info_popup(frame, frame.area(), state))
+            .unwrap();
+        popup_utils::rendered_border_rect(terminal.backend().buffer()).unwrap()
+    }
+
+    #[test]
+    fn loading_popup_is_sized_to_content() {
+        let state = ChatInfoPopupState::Loading {
+            chat_id: 1,
+            title: "Alice".into(),
+        };
+        let rect = rendered_popup_rect(&state, 100, 40);
+        // Minimum width; one text row plus borders and padding.
+        assert_eq!((rect.width, rect.height), (30, 5));
+    }
+
+    #[test]
+    fn loaded_popup_height_counts_wrapped_description() {
+        let state = ChatInfoPopupState::Loaded(ChatInfo {
+            title: "Chat".into(),
+            chat_type: ChatType::Group,
+            status_line: "5 members".into(),
+            username: None,
+            description: Some("word ".repeat(30).trim_end().to_owned()),
+        });
+        let rect = rendered_popup_rect(&state, 100, 40);
+        assert_eq!(rect.width, 80);
+        // Status, blank, label, 2 wrapped description rows, blank, footer.
+        assert_eq!(rect.height, 7 + 4);
     }
 }
