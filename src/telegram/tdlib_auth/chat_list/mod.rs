@@ -59,31 +59,44 @@ impl TdLibAuthBackend {
             .get_chats(limit_i32)
             .map_err(map_list_chats_error)?;
 
-        let requested_count = result.chat_ids.len();
         tracing::debug!(
-            count = requested_count,
+            count = result.chat_ids.len(),
             all_loaded = result.all_loaded,
             force,
             "Fetched chat IDs from TDLib"
         );
 
-        let summaries = build_summaries_from_ids(&self.client, result.chat_ids, force);
-
-        if requested_count > 0 && summaries.is_empty() {
-            tracing::warn!(
-                requested_count,
-                "all chats failed to resolve from TDLib and cache"
-            );
-            return Err(ListChatsSourceError::Unavailable);
-        }
-
-        if requested_count == 0 && !result.all_loaded {
-            tracing::warn!("TDLib returned zero chat IDs without all-loaded signal");
-            return Err(ListChatsSourceError::Unavailable);
-        }
-
-        Ok((summaries, result.all_loaded))
+        resolve_chat_list(&self.client, result.chat_ids, result.all_loaded, force)
     }
+}
+
+/// Resolves the chat IDs returned by `getChats` into summaries.
+///
+/// Reports `Unavailable` when TDLib returned IDs but none of them resolved,
+/// or returned no IDs without signalling that the whole list is loaded.
+pub(super) fn resolve_chat_list(
+    resolver: &dyn ChatDataResolver,
+    chat_ids: Vec<i64>,
+    all_loaded: bool,
+    force: bool,
+) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError> {
+    let requested_count = chat_ids.len();
+    let summaries = build_summaries_from_ids(resolver, chat_ids, force);
+
+    if requested_count > 0 && summaries.is_empty() {
+        tracing::warn!(
+            requested_count,
+            "all chats failed to resolve from TDLib and cache"
+        );
+        return Err(ListChatsSourceError::Unavailable);
+    }
+
+    if requested_count == 0 && !all_loaded {
+        tracing::warn!("TDLib returned zero chat IDs without all-loaded signal");
+        return Err(ListChatsSourceError::Unavailable);
+    }
+
+    Ok((summaries, all_loaded))
 }
 
 /// Builds domain `ChatSummary` list from raw TDLib chat IDs.

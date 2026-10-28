@@ -7,8 +7,9 @@ use crate::domain::chat::ChatType;
 use crate::telegram::tdlib_cache::tests::{make_test_chat, make_test_forum_topic, make_test_user};
 use crate::telegram::tdlib_cache::TdLibCache;
 use crate::telegram::tdlib_client::TdLibError;
+use crate::usecases::list_chats::ListChatsSourceError;
 
-use super::{build_summaries_from_ids, ChatDataResolver};
+use super::{build_summaries_from_ids, resolve_chat_list, ChatDataResolver};
 
 const NO_FORCE: bool = false;
 
@@ -281,6 +282,49 @@ fn empty_chat_ids_returns_empty_vec() {
 
     assert!(summaries.is_empty());
     assert_eq!(resolver.get_chat_call_count(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Chat list availability
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unresolvable_chat_ids_report_unavailable() {
+    let resolver = FakeResolver::new();
+
+    let result = resolve_chat_list(&resolver, vec![10, 20], true, NO_FORCE);
+
+    assert_eq!(result, Err(ListChatsSourceError::Unavailable));
+}
+
+#[test]
+fn zero_chat_ids_before_all_loaded_report_unavailable() {
+    let resolver = FakeResolver::new();
+
+    let result = resolve_chat_list(&resolver, vec![], false, NO_FORCE);
+
+    assert_eq!(result, Err(ListChatsSourceError::Unavailable));
+}
+
+#[test]
+fn zero_chat_ids_after_all_loaded_is_empty_list() {
+    let resolver = FakeResolver::new();
+
+    let result = resolve_chat_list(&resolver, vec![], true, NO_FORCE);
+
+    assert_eq!(result, Ok((vec![], true)));
+}
+
+#[test]
+fn partially_resolved_chat_ids_return_resolved_chats() {
+    let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Good Chat"));
+
+    let (summaries, all_loaded) =
+        resolve_chat_list(&resolver, vec![1, 2], false, NO_FORCE).expect("partial list is ok");
+
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].chat_id, 1);
+    assert!(!all_loaded);
 }
 
 // ---------------------------------------------------------------------------

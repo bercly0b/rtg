@@ -91,4 +91,25 @@ mod tests {
         let cmd = resolve_open_command("", &h);
         assert_eq!(cmd, DEFAULT_OPEN);
     }
+
+    #[test]
+    fn mime_without_subtype_matches_major_wildcard() {
+        let h = handlers();
+        let cmd = resolve_open_command("audio", &h);
+        assert_eq!(cmd, "mpv {file_path}");
+    }
+
+    #[test]
+    fn bare_slash_mime_uses_default() {
+        let h = handlers();
+        let cmd = resolve_open_command("/", &h);
+        assert_eq!(cmd, DEFAULT_OPEN);
+    }
+
+    #[test]
+    fn mime_with_extra_segment_matches_major_wildcard_not_exact() {
+        let h = handlers();
+        let cmd = resolve_open_command("audio/ogg/extra", &h);
+        assert_eq!(cmd, "mpv {file_path}");
+    }
 }
