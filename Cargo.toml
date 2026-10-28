@@ -1,6 +1,6 @@
 [package]
 name = "rtg"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 description = "A terminal-first Telegram client written in Rust."
 license = "MIT"
@@ -29,6 +29,7 @@ open = "5"
 dirs = "6"
 libc = "0.2"
 base64 = "0.22"
+shell-words = "1.1"
 
 [dev-dependencies]
 tempfile = "3.25.0"

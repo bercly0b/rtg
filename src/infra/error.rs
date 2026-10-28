@@ -48,6 +48,8 @@ pub enum AppError {
         #[source]
         source: io::Error,
     },
+    #[error("failed to close TDLib before removing its data: {details}")]
+    TdlibClose { details: String },
     #[error("failed to remove TDLib data at {path}: {source}")]
     TdlibDataCleanup {
         path: PathBuf,

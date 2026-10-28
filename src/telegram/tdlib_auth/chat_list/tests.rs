@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use tdlib_rs::types::{Chat, User};
 
@@ -192,6 +192,55 @@ fn partial_failure_returns_resolved_chats_only() {
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].chat_id, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Unresolved-chat logging
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unresolved_chats_log_one_summary_warning() {
+    let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Good Chat"));
+
+    let (summaries, logs) =
+        capture_logs(|| build_summaries_from_ids(&resolver, vec![1, 2, 3], NO_FORCE));
+
+    assert_eq!(summaries.len(), 1);
+    let warnings = log_lines(&logs, "WARN");
+    assert_eq!(warnings.len(), 1, "expected one summary warning: {logs}");
+    assert!(warnings[0].contains("unresolved=2"), "{logs}");
+    assert!(warnings[0].contains("requested=3"), "{logs}");
+    let per_chat = log_lines(&logs, "DEBUG")
+        .into_iter()
+        .filter(|line| line.contains("chat missing from cache and TDLib"))
+        .count();
+    assert_eq!(per_chat, 2, "{logs}");
+}
+
+#[test]
+fn force_unresolved_chats_log_one_summary_warning() {
+    let resolver = FakeResolver::new();
+
+    let (summaries, logs) = capture_logs(|| build_summaries_from_ids(&resolver, vec![1, 2], true));
+
+    assert!(summaries.is_empty());
+    let warnings = log_lines(&logs, "WARN");
+    assert_eq!(warnings.len(), 1, "expected one summary warning: {logs}");
+    assert!(warnings[0].contains("unresolved=2"), "{logs}");
+    let per_chat = log_lines(&logs, "DEBUG")
+        .into_iter()
+        .filter(|line| line.contains("chat missing from TDLib (force refresh)"))
+        .count();
+    assert_eq!(per_chat, 2, "{logs}");
+}
+
+#[test]
+fn resolved_chats_log_no_warning() {
+    let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Good Chat"));
+
+    let (_, logs) = capture_logs(|| build_summaries_from_ids(&resolver, vec![1], NO_FORCE));
+
+    assert!(log_lines(&logs, "WARN").is_empty(), "{logs}");
 }
 
 // ---------------------------------------------------------------------------
@@ -423,6 +472,40 @@ fn no_force_uses_cache_first() {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+#[derive(Clone, Default)]
+struct LogBuffer(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for LogBuffer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn capture_logs<T>(f: impl FnOnce() -> T) -> (T, String) {
+    let buffer = LogBuffer::default();
+    let writer = buffer.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_ansi(false)
+        .without_time()
+        .with_writer(move || writer.clone())
+        .finish();
+    let result = tracing::subscriber::with_default(subscriber, f);
+    let logs = String::from_utf8(buffer.0.lock().unwrap().clone()).unwrap();
+    (result, logs)
+}
+
+fn log_lines<'a>(logs: &'a str, level: &str) -> Vec<&'a str> {
+    logs.lines()
+        .filter(|line| line.trim_start().starts_with(level))
+        .collect()
+}
 
 fn make_online_user(id: i64, name: &str) -> User {
     let mut user = make_test_user(id, name);

@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
-use crate::domain::events::BackgroundTaskResult;
+use crate::domain::{command_template, events::BackgroundTaskResult};
 
 pub(super) fn dispatch_open_file(
     tx: &Sender<BackgroundTaskResult>,
@@ -13,18 +13,15 @@ pub(super) fn dispatch_open_file(
     if let Err(error) = std::thread::Builder::new()
         .name("rtg-bg-open-file".into())
         .spawn(move || {
-            let parts: Vec<&str> = cmd_template.split_whitespace().collect();
-            if parts.is_empty() {
-                let _ = tx.send(BackgroundTaskResult::OpenFileFailed {
-                    stderr: "empty open command".to_owned(),
-                });
-                return;
-            }
-
-            let resolved: Vec<String> = parts
-                .iter()
-                .map(|p| p.replace("{file_path}", &file_path))
-                .collect();
+            let resolved = match command_template::resolve_argv(&cmd_template, &file_path) {
+                Ok(argv) => argv,
+                Err(error) => {
+                    let _ = tx.send(BackgroundTaskResult::OpenFileFailed {
+                        stderr: error.to_string(),
+                    });
+                    return;
+                }
+            };
 
             let result = std::process::Command::new(&resolved[0])
                 .args(&resolved[1..])

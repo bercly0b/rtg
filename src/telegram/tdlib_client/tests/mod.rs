@@ -121,3 +121,82 @@ fn forum_topic_id_extracts_forum_topic() {
     ));
     assert_eq!(forum_topic_id(&message), None);
 }
+
+#[test]
+fn forward_update_delivers_to_live_receiver() {
+    use super::update_loop::forward_update;
+
+    let (tx, rx) = mpsc::channel();
+
+    forward_update(&tx, TdLibUpdate::UserStatus { user_id: 7 });
+
+    match rx.try_recv().expect("update should be delivered") {
+        TdLibUpdate::UserStatus { user_id } => assert_eq!(user_id, 7),
+        other => panic!("unexpected update kind: {}", other.kind()),
+    }
+}
+
+#[test]
+fn forward_update_tolerates_dropped_receiver() {
+    use super::update_loop::forward_update;
+
+    let (tx, rx) = mpsc::channel();
+    drop(rx);
+
+    forward_update(&tx, TdLibUpdate::UserStatus { user_id: 7 });
+}
+
+fn auth_state(state: tdlib_rs::enums::AuthorizationState) -> super::types::AuthStateUpdate {
+    super::types::AuthStateUpdate { state }
+}
+
+#[test]
+fn await_closed_and_join_waits_for_closed_then_joins_update_loop() {
+    use super::shutdown::await_closed_and_join;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use tdlib_rs::enums::AuthorizationState;
+
+    let (tx, rx) = mpsc::channel();
+    let loop_finished = Arc::new(AtomicBool::new(false));
+    let update_loop = {
+        let loop_finished = Arc::clone(&loop_finished);
+        std::thread::spawn(move || {
+            tx.send(auth_state(AuthorizationState::Ready)).unwrap();
+            tx.send(auth_state(AuthorizationState::Closing)).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            tx.send(auth_state(AuthorizationState::Closed)).unwrap();
+            loop_finished.store(true, Ordering::Release);
+        })
+    };
+
+    await_closed_and_join(&rx, Some(update_loop), std::time::Duration::from_secs(5))
+        .expect("close should complete once Closed arrives");
+
+    assert!(loop_finished.load(Ordering::Acquire));
+}
+
+#[test]
+fn await_closed_and_join_times_out_without_closed() {
+    use super::shutdown::await_closed_and_join;
+    use tdlib_rs::enums::AuthorizationState;
+
+    let (tx, rx) = mpsc::channel();
+    tx.send(auth_state(AuthorizationState::Closing)).unwrap();
+
+    let error = await_closed_and_join(&rx, None, std::time::Duration::from_millis(50))
+        .expect_err("close must not complete without Closed");
+
+    assert!(matches!(error, TdLibError::Timeout { .. }), "got: {error}");
+}
+
+#[test]
+fn await_closed_and_join_accepts_update_loop_that_already_stopped() {
+    use super::shutdown::await_closed_and_join;
+
+    let (tx, rx) = mpsc::channel::<super::types::AuthStateUpdate>();
+    let update_loop = std::thread::spawn(move || drop(tx));
+
+    await_closed_and_join(&rx, Some(update_loop), std::time::Duration::from_secs(5))
+        .expect("a stopped update loop means TDLib already reported Closed");
+}
