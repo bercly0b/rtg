@@ -92,3 +92,53 @@ fn stop_terminates_process_group_via_start_command() {
         events
     );
 }
+
+#[cfg(unix)]
+fn output_lines_until_exit(rx: &mpsc::Receiver<CommandEvent>) -> Vec<String> {
+    let mut lines = Vec::new();
+    loop {
+        match rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("command must exit")
+        {
+            CommandEvent::OutputLine { text, .. } => lines.push(text),
+            CommandEvent::Exited { .. } => return lines,
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn quoted_arguments_and_file_path_reach_child_as_single_tokens() {
+    let (_handle, rx) = start_command(
+        r"printf '[%s]\n' ':MacBook Pro Microphone' {file_path}",
+        "/tmp/my voice.oga",
+    )
+    .unwrap();
+
+    assert_eq!(
+        output_lines_until_exit(&rx),
+        ["[:MacBook Pro Microphone]", "[/tmp/my voice.oga]"]
+    );
+}
+
+#[test]
+fn start_command_rejects_unbalanced_quote() {
+    let Err(error) = start_command("ffmpeg -i ':0 {file_path}", "/dev/null") else {
+        panic!("unbalanced quote must be rejected");
+    };
+
+    assert!(
+        error.to_string().contains("missing closing quote"),
+        "{error}"
+    );
+}
+
+#[test]
+fn start_command_rejects_empty_template() {
+    let Err(error) = start_command("  ", "/dev/null") else {
+        panic!("empty template must be rejected");
+    };
+
+    assert_eq!(error.to_string(), "empty command");
+}

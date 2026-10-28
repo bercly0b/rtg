@@ -82,6 +82,20 @@ Examples: `config/`, `StorageLayout`, `logging.rs`, `secrets.rs`, `stubs.rs`.
 
 When adding a new top-level command or changing the startup sequence, start from `cli.rs` → `app.rs`.
 
+## TDLib client lifecycle
+
+`TdLibClient::close()` follows the TDLib shutdown protocol: it sends `close`,
+waits for `AuthorizationState::Closed` (TDLib's signal that databases are
+flushed) and joins the update loop thread, which exits right after forwarding
+that state. It blocks for at most `CLOSE_TIMEOUT` and is a no-op on repeated calls.
+
+- **Run**: once the shell is gone (its monitors are stopped and joined on
+  drop), `app.rs` closes TDLib through `TelegramAdapter::close()`, regardless
+  of how many `Arc` clones background tasks still hold.
+- **Logout**: `logout_and_reset()` closes TDLib (`LogoutSession`) first and
+  removes its data only after `Closed`; if TDLib does not close, the data is
+  kept and logout fails.
+
 ## Module conventions
 
 Module decomposition, file layout, and test layout — see

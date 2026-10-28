@@ -2,6 +2,10 @@ use crate::usecases::background::TaskDispatcher;
 
 use super::OrchestratorCtx;
 
+// Generic on purpose: the config may live outside the default location (`--config`).
+const RECORDING_FAILED_MESSAGE: &str =
+    "Recording failed. Override recording command via [voice] record_cmd in the config file (press any key)";
+
 pub(super) fn start_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
     use crate::usecases::voice_recording;
 
@@ -139,9 +143,7 @@ pub(super) fn handle_command_exited<D: TaskDispatcher>(
                         });
                     } else {
                         popup.set_phase(CommandPhase::Failed {
-                            message:
-                                "Recording failed. Override recording command via [voice] record_cmd in ~/.config/rtg/config.toml (press any key)"
-                                    .into(),
+                            message: RECORDING_FAILED_MESSAGE.into(),
                         });
                         discard_voice_recording(ctx);
                     }
@@ -161,9 +163,7 @@ pub(super) fn handle_command_exited<D: TaskDispatcher>(
                         });
                     } else {
                         popup.set_phase(CommandPhase::Failed {
-                            message:
-                                "Recording failed. Override recording command via [voice] record_cmd in ~/.config/rtg/config.toml (press any key)"
-                                    .into(),
+                            message: RECORDING_FAILED_MESSAGE.into(),
                         });
                         discard_voice_recording(ctx);
                     }

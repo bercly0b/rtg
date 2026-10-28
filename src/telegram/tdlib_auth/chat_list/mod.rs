@@ -115,7 +115,8 @@ pub(super) fn build_summaries_from_ids(
     force: bool,
 ) -> Vec<ChatSummary> {
     let cache = resolver.cache();
-    let mut summaries = Vec::with_capacity(chat_ids.len());
+    let requested = chat_ids.len();
+    let mut summaries = Vec::with_capacity(requested);
 
     for chat_id in chat_ids {
         let chat = if force {
@@ -125,7 +126,7 @@ pub(super) fn build_summaries_from_ids(
                     c
                 }
                 Err(e) => {
-                    tracing::warn!(chat_id, error = %e, "chat missing from TDLib (force refresh)");
+                    tracing::debug!(chat_id, error = %e, "chat missing from TDLib (force refresh)");
                     continue;
                 }
             }
@@ -138,7 +139,7 @@ pub(super) fn build_summaries_from_ids(
                         c
                     }
                     Err(e) => {
-                        tracing::warn!(chat_id, error = %e, "chat missing from cache and TDLib");
+                        tracing::debug!(chat_id, error = %e, "chat missing from cache and TDLib");
                         continue;
                     }
                 },
@@ -163,6 +164,16 @@ pub(super) fn build_summaries_from_ids(
             summary.unread_topic_count = cache.unread_forum_topic_count(chat_id);
         }
         summaries.push(summary);
+    }
+
+    let unresolved = requested - summaries.len();
+    if unresolved > 0 {
+        tracing::warn!(
+            unresolved,
+            requested,
+            force,
+            "chats skipped: missing from cache and TDLib"
+        );
     }
 
     summaries
