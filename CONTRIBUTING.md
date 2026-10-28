@@ -105,7 +105,7 @@ Commit messages must be written in English.
    ```
 
 2. Make your changes and run the local quality gate (`fmt`, `clippy`,
-   `ast-grep`, `test`, `check` — the same tasks CI runs):
+   `ast-grep`, `deny`, `test`, `check` — the same tasks CI runs):
    ```bash
    mise run quality
    ```

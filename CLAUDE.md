@@ -72,6 +72,9 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
 3. Every `#[allow(...)]` carries `reason = "..."` (enforced by
    `clippy::allow_attributes_without_reason`); prefer fixing the warning over
    suppressing it.
+4. Dependencies must pass `cargo deny check` (policy in `deny.toml`: RustSec
+   advisories, licences, sources); prefer updating or replacing a crate over
+   adding an exception, and give every exception a `reason`.
 
 ## UI principles
 
