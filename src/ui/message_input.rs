@@ -394,6 +394,49 @@ mod tests {
     }
 
     #[test]
+    fn cursor_after_wide_chars_counts_display_columns() {
+        let mut state = MessageInputState::default();
+        for ch in "日本👍".chars() {
+            state.insert_char(ch);
+        }
+
+        let (_, row, col) = wrap_input_with_cursor(&state, true, 80, PLACEHOLDER_TEXT);
+
+        assert_eq!(row, 0);
+        assert_eq!(col, 8); // "> " (2) + three double-width chars (6)
+    }
+
+    #[test]
+    fn cursor_between_wide_chars_counts_display_columns() {
+        let mut state = MessageInputState::default();
+        for ch in "日本語".chars() {
+            state.insert_char(ch);
+        }
+        state.move_cursor_left();
+
+        let (_, row, col) = wrap_input_with_cursor(&state, true, 80, PLACEHOLDER_TEXT);
+
+        assert_eq!(row, 0);
+        assert_eq!(col, 6); // "> " (2) + "日本" (4)
+    }
+
+    #[test]
+    fn wide_char_that_does_not_fit_wraps_with_cursor() {
+        let mut state = MessageInputState::default();
+        // width=9: "> abcdef" takes 8 columns, so the double-width "日" moves
+        // to the next line instead of being split.
+        for ch in "abcdef日".chars() {
+            state.insert_char(ch);
+        }
+
+        let (lines, row, col) = wrap_input_with_cursor(&state, true, 9, PLACEHOLDER_TEXT);
+
+        assert_eq!(lines_to_text(&lines), "> abcdef\n日");
+        assert_eq!(row, 1);
+        assert_eq!(col, 2);
+    }
+
+    #[test]
     fn unfocused_multiline_text_renders_as_separate_lines() {
         let mut state = MessageInputState::default();
         state.insert_char('a');

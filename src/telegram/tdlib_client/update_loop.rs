@@ -17,7 +17,7 @@ impl TdLibClient {
         unread_reaction_count: i32,
     ) {
         cache.update_chat_unread_reaction_count(chat_id, unread_reaction_count);
-        let _ = update_tx.send(TdLibUpdate::ChatUnreadReactionCount { chat_id });
+        forward_update(update_tx, TdLibUpdate::ChatUnreadReactionCount { chat_id });
     }
 
     /// Background loop that receives and processes TDLib updates.
@@ -81,9 +81,12 @@ impl TdLibClient {
                         // the corresponding IDs appear in any response.
                         Update::NewChat(u) => {
                             cache.upsert_chat(u.chat.clone());
-                            let _ = update_tx.send(TdLibUpdate::NewChat {
-                                chat: Box::new(u.chat),
-                            });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::NewChat {
+                                    chat: Box::new(u.chat),
+                                },
+                            );
                         }
                         Update::User(u) => {
                             cache.upsert_user(u.user);
@@ -97,8 +100,10 @@ impl TdLibClient {
                             if let Some(chat_id) =
                                 cache.find_chat_id_by_supergroup_id(supergroup_id)
                             {
-                                let _ = update_tx
-                                    .send(TdLibUpdate::SupergroupMetadataChanged { chat_id });
+                                forward_update(
+                                    &update_tx,
+                                    TdLibUpdate::SupergroupMetadataChanged { chat_id },
+                                );
                             }
                         }
 
@@ -122,41 +127,57 @@ impl TdLibClient {
                                     );
                                 }
                             }
-                            let _ = update_tx.send(TdLibUpdate::NewMessage {
-                                chat_id: u.message.chat_id,
-                                message: Box::new(u.message),
-                            });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::NewMessage {
+                                    chat_id: u.message.chat_id,
+                                    message: Box::new(u.message),
+                                },
+                            );
                         }
                         Update::MessageContent(u) => {
-                            let _ = update_tx.send(TdLibUpdate::MessageContentChanged {
-                                chat_id: u.chat_id,
-                                message_id: u.message_id,
-                                new_content: Box::new(u.new_content),
-                            });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::MessageContentChanged {
+                                    chat_id: u.chat_id,
+                                    message_id: u.message_id,
+                                    new_content: Box::new(u.new_content),
+                                },
+                            );
                         }
                         Update::DeleteMessages(u) => {
-                            let _ = update_tx.send(TdLibUpdate::DeleteMessages {
-                                chat_id: u.chat_id,
-                                message_ids: u.message_ids,
-                            });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::DeleteMessages {
+                                    chat_id: u.chat_id,
+                                    message_ids: u.message_ids,
+                                },
+                            );
                         }
                         Update::MessageSendSucceeded(u) => {
-                            let _ = update_tx.send(TdLibUpdate::MessageSendSucceeded {
-                                chat_id: u.message.chat_id,
-                                old_message_id: u.old_message_id,
-                            });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::MessageSendSucceeded {
+                                    chat_id: u.message.chat_id,
+                                    old_message_id: u.old_message_id,
+                                },
+                            );
                         }
 
                         // Chat list updates — also write through to cache
                         Update::ChatLastMessage(u) => {
                             cache.update_chat_last_message(u.chat_id, u.last_message, u.positions);
-                            let _ =
-                                update_tx.send(TdLibUpdate::ChatLastMessage { chat_id: u.chat_id });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::ChatLastMessage { chat_id: u.chat_id },
+                            );
                         }
                         Update::ChatPosition(u) => {
                             cache.update_chat_position(u.chat_id, u.position);
-                            let _ =
-                                update_tx.send(TdLibUpdate::ChatPosition { chat_id: u.chat_id });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::ChatPosition { chat_id: u.chat_id },
+                            );
                         }
 
                         // Read status updates — also write through to cache
@@ -166,19 +187,26 @@ impl TdLibClient {
                                 u.unread_count,
                                 u.last_read_inbox_message_id,
                             );
-                            let _ =
-                                update_tx.send(TdLibUpdate::ChatReadInbox { chat_id: u.chat_id });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::ChatReadInbox { chat_id: u.chat_id },
+                            );
                         }
                         Update::ChatReadOutbox(u) => {
                             cache.update_chat_read_outbox(u.chat_id, u.last_read_outbox_message_id);
-                            let _ =
-                                update_tx.send(TdLibUpdate::ChatReadOutbox { chat_id: u.chat_id });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::ChatReadOutbox { chat_id: u.chat_id },
+                            );
                         }
 
                         // User status updates — write through to cache
                         Update::UserStatus(u) => {
                             cache.update_user_status(u.user_id, u.status);
-                            let _ = update_tx.send(TdLibUpdate::UserStatus { user_id: u.user_id });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::UserStatus { user_id: u.user_id },
+                            );
                         }
 
                         // Reaction updates
@@ -192,11 +220,14 @@ impl TdLibClient {
                         }
                         Update::MessageInteractionInfo(u) => {
                             let reaction_count = sum_reaction_counts(u.interaction_info.as_ref());
-                            let _ = update_tx.send(TdLibUpdate::MessageInteractionInfoChanged {
-                                chat_id: u.chat_id,
-                                message_id: u.message_id,
-                                reaction_count,
-                            });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::MessageInteractionInfoChanged {
+                                    chat_id: u.chat_id,
+                                    message_id: u.message_id,
+                                    reaction_count,
+                                },
+                            );
                         }
                         Update::MessageUnreadReactions(u) => {
                             Self::publish_unread_reaction_count(
@@ -209,10 +240,13 @@ impl TdLibClient {
 
                         // Forum topic updates
                         Update::ForumTopicInfo(u) => {
-                            let _ = update_tx.send(TdLibUpdate::ForumTopicInfoChanged {
-                                chat_id: u.info.chat_id,
-                                topic_id: u.info.forum_topic_id,
-                            });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::ForumTopicInfoChanged {
+                                    chat_id: u.info.chat_id,
+                                    topic_id: u.info.forum_topic_id,
+                                },
+                            );
                         }
                         Update::ForumTopic(u) => {
                             cache.apply_forum_topic_read(
@@ -220,24 +254,30 @@ impl TdLibClient {
                                 u.forum_topic_id,
                                 u.last_read_inbox_message_id,
                             );
-                            let _ = update_tx.send(TdLibUpdate::ForumTopicChanged {
-                                chat_id: u.chat_id,
-                                topic_id: u.forum_topic_id,
-                                unread_topic_count: cache.unread_forum_topic_count(u.chat_id),
-                            });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::ForumTopicChanged {
+                                    chat_id: u.chat_id,
+                                    topic_id: u.forum_topic_id,
+                                    unread_topic_count: cache.unread_forum_topic_count(u.chat_id),
+                                },
+                            );
                         }
 
                         // File download progress updates
                         Update::File(u) => {
-                            let _ = update_tx.send(TdLibUpdate::FileUpdated {
-                                file_id: u.file.id,
-                                size: u.file.size,
-                                expected_size: u.file.expected_size,
-                                local_path: u.file.local.path,
-                                is_downloading_active: u.file.local.is_downloading_active,
-                                is_downloading_completed: u.file.local.is_downloading_completed,
-                                downloaded_size: u.file.local.downloaded_size,
-                            });
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::FileUpdated {
+                                    file_id: u.file.id,
+                                    size: u.file.size,
+                                    expected_size: u.file.expected_size,
+                                    local_path: u.file.local.path,
+                                    is_downloading_active: u.file.local.is_downloading_active,
+                                    is_downloading_completed: u.file.local.is_downloading_completed,
+                                    downloaded_size: u.file.local.downloaded_size,
+                                },
+                            );
                         }
 
                         // Chat action updates (typing indicators)
@@ -256,13 +296,16 @@ impl TdLibClient {
                                         crate::telegram::tdlib_mappers::format_user_name(&user)
                                     })
                                     .unwrap_or_default();
-                                let _ = update_tx.send(TdLibUpdate::ChatAction {
-                                    chat_id: u.chat_id,
-                                    sender_user_id,
-                                    sender_name,
-                                    action_label: action_label.to_owned(),
-                                    is_cancel,
-                                });
+                                forward_update(
+                                    &update_tx,
+                                    TdLibUpdate::ChatAction {
+                                        chat_id: u.chat_id,
+                                        sender_user_id,
+                                        sender_name,
+                                        action_label: action_label.to_owned(),
+                                        is_cancel,
+                                    },
+                                );
                             }
                         }
 
@@ -280,6 +323,18 @@ impl TdLibClient {
         }
 
         tracing::debug!(client_id, "TDLib update loop finished");
+    }
+}
+
+/// Sends an update to the chat updates monitor. The channel is unbounded,
+/// so a failure only means the receiver is gone (e.g. the monitor was
+/// stopped while TDLib is still closing).
+pub(super) fn forward_update(update_tx: &mpsc::Sender<TdLibUpdate>, update: TdLibUpdate) {
+    if let Err(mpsc::SendError(update)) = update_tx.send(update) {
+        tracing::debug!(
+            update_kind = update.kind(),
+            "TDLib update receiver dropped, update discarded"
+        );
     }
 }
 

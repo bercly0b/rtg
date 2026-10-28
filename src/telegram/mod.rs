@@ -173,11 +173,13 @@ impl TelegramAdapter {
         }
     }
 
-    pub fn disconnect_and_reset(&mut self) {
-        if let Some(backend) = self.tdlib_backend.as_mut() {
-            backend.disconnect_and_reset();
+    /// Closes TDLib, blocking until it reports `AuthorizationState::Closed`
+    /// and its update loop has stopped. A no-op for stub backends.
+    pub fn close(&self) -> Result<(), TdLibError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.close(),
+            None => Ok(()),
         }
-        self.status_tracker.on_logout_reset();
     }
 }
 
@@ -194,6 +196,7 @@ mod tests {
         guided_auth::TelegramAuthClient,
         list_chats::{ListChatsSource, ListChatsSourceError},
         load_messages::{MessagesSource, MessagesSourceError},
+        logout::LogoutSession,
         send_message::{MessageSender, SendMessageSourceError},
     };
 
@@ -250,7 +253,9 @@ mod tests {
         let mut adapter = TelegramAdapter::stub();
         adapter.record_connectivity_status(ConnectivityStatus::Connected);
 
-        adapter.disconnect_and_reset();
+        adapter
+            .disconnect_and_reset()
+            .expect("stub backend has no TDLib to close");
 
         let snapshot = adapter.status_snapshot();
         assert_eq!(snapshot.auth.as_label(), "AUTH_NOT_STARTED");
@@ -298,6 +303,13 @@ mod tests {
         let error = adapter.open_chat(1).expect_err("stub adapter should fail");
 
         assert_eq!(error, ChatLifecycleError::Unavailable);
+    }
+
+    #[test]
+    fn close_is_a_no_op_for_stub_backend() {
+        let adapter = TelegramAdapter::stub();
+
+        adapter.close().expect("stub backend has no TDLib to close");
     }
 
     #[test]

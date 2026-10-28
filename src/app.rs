@@ -1,4 +1,6 @@
-use anyhow::Result;
+use std::sync::Arc;
+
+use anyhow::{anyhow, Context, Result};
 
 use crate::{
     cli::{Cli, Command},
@@ -8,6 +10,7 @@ use crate::{
     ui,
     usecases::{
         self, bootstrap,
+        context::AppContext,
         guided_auth::{run_guided_auth, GuidedAuthOutcome, RetryPolicy, StdTerminal},
         logout::logout_and_reset,
         startup::{acquire_instance_lock, InstanceLockGuard},
@@ -35,50 +38,14 @@ pub fn run(cli: Cli) -> Result<()> {
     match cli.command_or_default() {
         Command::Run => {
             let mut context = bootstrap::bootstrap(cli.config.as_deref())?;
-            // Safe: no Arc clones exist yet — context was just created by bootstrap()
-            let startup = {
-                let telegram_mut = std::sync::Arc::get_mut(&mut context.telegram)
-                    .expect("single owner during startup planning");
-                usecases::startup::plan_startup(telegram_mut)
-            };
-
-            match startup.state {
-                usecases::startup::StartupFlowState::LaunchTui => {
-                    let mut shell = bootstrap::compose_shell(&context);
-                    ui::shell::start(
-                        &context,
-                        shell.event_source.as_mut(),
-                        shell.orchestrator.as_mut(),
-                    )?
-                }
-                usecases::startup::StartupFlowState::GuidedAuth { ref reason } => {
-                    tracing::info!(
-                        code = reason.code(),
-                        message = reason.user_message(),
-                        "starting guided CLI authorization"
-                    );
-
-                    let mut terminal = StdTerminal::new(context.config.logging.is_verbose());
-                    let telegram_mut = std::sync::Arc::get_mut(&mut context.telegram)
-                        .expect("single owner during guided auth");
-                    let auth_outcome =
-                        run_guided_auth(&mut terminal, telegram_mut, &RetryPolicy::default())?;
-
-                    if matches!(auth_outcome, GuidedAuthOutcome::Authenticated) {
-                        let mut shell = bootstrap::compose_shell(&context);
-                        if let Err(error) = ui::shell::start(
-                            &context,
-                            shell.event_source.as_mut(),
-                            shell.orchestrator.as_mut(),
-                        ) {
-                            report_post_auth_tui_bootstrap_failure(&error);
-                        }
-                    }
-                }
+            let session = run_session(&mut context);
+            if let Err(error) = context.telegram.close() {
+                tracing::warn!(error = %error, "failed to close TDLib on shutdown");
             }
+            session?;
         }
         Command::Logout => {
-            let mut telegram = build_logout_telegram(cli.config.as_deref());
+            let mut telegram = build_logout_telegram(cli.config.as_deref())?;
             let outcome = logout_and_reset(&mut telegram)?;
             tracing::info!(
                 tdlib_data_removed = outcome.tdlib_data_removed,
@@ -91,27 +58,79 @@ pub fn run(cli: Cli) -> Result<()> {
     Ok(())
 }
 
+/// Runs startup planning, guided auth and the TUI. The shell (and with it the
+/// update monitors) is dropped before returning, so the caller can close TDLib.
+fn run_session(context: &mut AppContext) -> Result<()> {
+    let startup = usecases::startup::plan_startup(exclusive_telegram(&mut context.telegram)?);
+
+    match startup.state {
+        usecases::startup::StartupFlowState::LaunchTui => {
+            let mut shell = bootstrap::compose_shell(context);
+            ui::shell::start(
+                context,
+                shell.event_source.as_mut(),
+                shell.orchestrator.as_mut(),
+            )?
+        }
+        usecases::startup::StartupFlowState::GuidedAuth { ref reason } => {
+            tracing::info!(
+                code = reason.code(),
+                message = reason.user_message(),
+                "starting guided CLI authorization"
+            );
+
+            let mut terminal = StdTerminal::new(context.config.logging.is_verbose());
+            let auth_outcome = run_guided_auth(
+                &mut terminal,
+                exclusive_telegram(&mut context.telegram)?,
+                &RetryPolicy::default(),
+            )?;
+
+            if matches!(auth_outcome, GuidedAuthOutcome::Authenticated) {
+                let mut shell = bootstrap::compose_shell(context);
+                if let Err(error) = ui::shell::start(
+                    context,
+                    shell.event_source.as_mut(),
+                    shell.orchestrator.as_mut(),
+                ) {
+                    report_post_auth_tui_bootstrap_failure(&error);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Startup planning and guided auth run before the shell clones the adapter,
+/// so it must still have a single owner here.
+fn exclusive_telegram(telegram: &mut Arc<TelegramAdapter>) -> Result<&mut TelegramAdapter> {
+    Arc::get_mut(telegram).context("telegram adapter is unexpectedly shared before the TUI starts")
+}
+
 fn acquire_runtime_lock() -> Result<InstanceLockGuard> {
     let layout = StorageLayout::resolve()?;
     layout.ensure_dirs()?;
     acquire_instance_lock(layout.instance_lock_file()).map_err(Into::into)
 }
 
-fn build_logout_telegram(config_path: Option<&std::path::Path>) -> TelegramAdapter {
+fn build_logout_telegram(config_path: Option<&std::path::Path>) -> Result<TelegramAdapter> {
     match bootstrap::bootstrap(config_path) {
-        Ok(context) => std::sync::Arc::try_unwrap(context.telegram).unwrap_or_else(|arc| {
-            tracing::warn!("logout: Arc had multiple owners, creating stub adapter");
-            drop(arc);
-            TelegramAdapter::stub()
-        }),
+        Ok(context) => into_exclusive_telegram(context.telegram),
         Err(error) => {
             tracing::warn!(
                 error = ?error,
                 "logout fallback: telegram bootstrap failed, continuing with local cleanup"
             );
-            TelegramAdapter::stub()
+            Ok(TelegramAdapter::stub())
         }
     }
+}
+
+/// A stub fallback here would skip closing TDLib before its data is wiped.
+fn into_exclusive_telegram(telegram: Arc<TelegramAdapter>) -> Result<TelegramAdapter> {
+    Arc::try_unwrap(telegram)
+        .map_err(|_| anyhow!("logout: telegram adapter is unexpectedly shared, cannot close TDLib"))
 }
 
 fn report_post_auth_tui_bootstrap_failure(error: &anyhow::Error) {
@@ -149,6 +168,36 @@ mod tests {
         assert!(lines[0].contains("Session is saved"));
         assert!(lines[1].contains(AUTH_TUI_BOOTSTRAP_FAILED));
         assert!(lines[2].contains("restart RTG"));
+    }
+
+    #[test]
+    fn exclusive_telegram_returns_error_instead_of_panicking_when_shared() {
+        let mut telegram = Arc::new(TelegramAdapter::stub());
+        let _other_owner = Arc::clone(&telegram);
+
+        assert!(exclusive_telegram(&mut telegram).is_err());
+    }
+
+    #[test]
+    fn exclusive_telegram_borrows_sole_owner() {
+        let mut telegram = Arc::new(TelegramAdapter::stub());
+
+        assert!(exclusive_telegram(&mut telegram).is_ok());
+    }
+
+    #[test]
+    fn logout_refuses_shared_adapter_instead_of_falling_back_to_stub() {
+        let telegram = Arc::new(TelegramAdapter::stub());
+        let _other_owner = Arc::clone(&telegram);
+
+        assert!(into_exclusive_telegram(telegram).is_err());
+    }
+
+    #[test]
+    fn logout_takes_sole_owned_adapter() {
+        let telegram = Arc::new(TelegramAdapter::stub());
+
+        assert!(into_exclusive_telegram(telegram).is_ok());
     }
 
     #[test]

@@ -10,6 +10,7 @@ mod chats;
 mod log_setup;
 mod messages;
 mod request_guard;
+mod shutdown;
 mod types;
 mod update_loop;
 
@@ -24,7 +25,7 @@ use tokio::runtime::Runtime;
 
 use super::tdlib_updates::TdLibUpdate;
 use crate::domain::events::ConnectivityStatus;
-use types::TDLIB_LOG_MAX_SIZE;
+use types::{CLOSE_TIMEOUT, TDLIB_LOG_MAX_SIZE};
 
 /// TDLib client with managed lifecycle.
 ///
@@ -45,8 +46,8 @@ pub struct TdLibClient {
     /// Receiver for TDLib connection state updates mapped to domain status.
     /// Wrapped in Option to allow taking once.
     connectivity_rx: Mutex<Option<mpsc::Receiver<ConnectivityStatus>>>,
-    /// Update loop thread handle. Kept alive for the client's lifetime.
-    _update_thread: Option<thread::JoinHandle<()>>,
+    /// Update loop thread handle, joined by `close()` once TDLib reports `Closed`.
+    update_thread: Mutex<Option<thread::JoinHandle<()>>>,
     is_closed: AtomicBool,
     /// Shared cache of Chat/User objects populated by the update loop.
     cache: super::tdlib_cache::TdLibCache,
@@ -149,7 +150,7 @@ impl TdLibClient {
             auth_state_rx: Mutex::new(auth_state_rx),
             update_rx: Mutex::new(Some(update_rx)),
             connectivity_rx: Mutex::new(Some(connectivity_rx)),
-            _update_thread: Some(update_thread),
+            update_thread: Mutex::new(Some(update_thread)),
             is_closed: AtomicBool::new(false),
             cache,
         })
@@ -198,12 +199,11 @@ impl TdLibClient {
         self.is_closed.load(Ordering::Acquire)
     }
 
-    /// Graceful shutdown: sends `close()` and marks client as closed.
+    /// Graceful shutdown: sends `close`, waits for `AuthorizationState::Closed`
+    /// and joins the update loop thread.
     ///
     /// After calling this method, the client should not be used for any
-    /// further operations. TDLib will flush all data to disk and send
-    /// `AuthorizationStateClosed` update.
-    #[allow(dead_code, reason = "graceful shutdown is not wired in yet")]
+    /// further operations. Repeated calls are no-ops.
     pub fn close(&self) -> Result<(), TdLibError> {
         // Use compare_exchange to atomically check and set is_closed
         // This prevents race conditions when close() is called concurrently
@@ -218,26 +218,49 @@ impl TdLibClient {
 
         tracing::info!(client_id = self.client_id, "Closing TDLib client");
 
-        let client_id = self.client_id;
-        let result = self.rt.block_on(async {
-            tdlib_rs::functions::close(client_id)
-                .await
-                .map_err(|e| TdLibError::Shutdown { message: e.message })
-        });
+        let result = self.shut_down();
 
         // Don't reset is_closed on failure - a failed close attempt leaves the
         // client in an undefined state. The client should be considered unusable
         // after any close attempt, successful or not.
-        if result.is_err() {
-            tracing::error!(
+        match &result {
+            Ok(()) => tracing::info!(client_id = self.client_id, "TDLib client closed"),
+            Err(error) => tracing::error!(
                 client_id = self.client_id,
+                error = %error,
                 "TDLib close failed - client is in undefined state"
-            );
-        } else {
-            tracing::info!(client_id = self.client_id, "TDLib client closed");
+            ),
         }
 
         result
+    }
+
+    fn shut_down(&self) -> Result<(), TdLibError> {
+        let client_id = self.client_id;
+        // The `ok` reply is delivered by the update loop, which is already gone
+        // if TDLib closed on its own (e.g. the session was terminated remotely).
+        // `Closed` is the completion signal, so the reply is not awaited.
+        self.rt.spawn(async move {
+            if let Err(error) = tdlib_rs::functions::close(client_id).await {
+                tracing::error!(client_id, error = %error.message, "TDLib rejected close request");
+            }
+        });
+
+        let auth_state_rx = self
+            .auth_state_rx
+            .lock()
+            .map_err(|_| TdLibError::Shutdown {
+                message: "auth state receiver lock poisoned".to_owned(),
+            })?;
+        let update_thread = self
+            .update_thread
+            .lock()
+            .map_err(|_| TdLibError::Shutdown {
+                message: "update thread lock poisoned".to_owned(),
+            })?
+            .take();
+
+        shutdown::await_closed_and_join(&auth_state_rx, update_thread, CLOSE_TIMEOUT)
     }
 }
 

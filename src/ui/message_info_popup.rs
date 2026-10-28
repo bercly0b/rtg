@@ -1,7 +1,7 @@
 use ratatui::{
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Padding, Paragraph},
+    widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap},
     Frame,
 };
 
@@ -12,19 +12,19 @@ use crate::domain::message_info_state::{
 use super::{popup_utils, styles};
 
 pub fn render_message_info_popup(frame: &mut Frame<'_>, area: Rect, state: &MessageInfoPopupState) {
-    let popup_area = popup_utils::centered_rect(area, 50, 60);
-
-    frame.render_widget(Clear, popup_area);
-
+    let title = " Message Info ";
     let block = Block::default()
-        .title(" Message Info ")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(styles::chat_info_popup_border_style())
         .padding(Padding::new(2, 2, 1, 1));
 
     let lines = build_info_lines(state);
-    let paragraph = Paragraph::new(lines).block(block);
-    frame.render_widget(paragraph, popup_area);
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let popup_area = popup_utils::content_sized_rect(area, title, &block, &paragraph);
+
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(paragraph.block(block), popup_area);
 }
 
 fn build_info_lines(state: &MessageInfoPopupState) -> Vec<Line<'static>> {
@@ -359,5 +359,64 @@ mod tests {
         });
         let lines = build_info_lines(&state);
         assert!(lines[0].spans[0].content.contains("Read at"));
+    }
+
+    fn rendered_popup_rect(state: &MessageInfoPopupState, width: u16, height: u16) -> Rect {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| render_message_info_popup(frame, frame.area(), state))
+            .unwrap();
+        popup_utils::rendered_border_rect(terminal.backend().buffer()).unwrap()
+    }
+
+    #[test]
+    fn loading_popup_is_sized_to_content() {
+        let state = MessageInfoPopupState::Loading {
+            chat_id: 1,
+            message_id: 2,
+        };
+        let rect = rendered_popup_rect(&state, 100, 40);
+        assert_eq!((rect.width, rect.height), (30, 5));
+    }
+
+    #[test]
+    fn loaded_popup_height_follows_lines() {
+        let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: Some(MessageAuthor {
+                name: "Alice".to_owned(),
+                username: None,
+            }),
+            reactions: vec![ReactionDetail {
+                emoji: "👍".to_owned(),
+                sender_name: "Bob".to_owned(),
+            }],
+            reaction_counts: vec![],
+            viewers: vec![],
+            read_date: None,
+            edit_date: None,
+        });
+        let rect = rendered_popup_rect(&state, 100, 40);
+        // Author, blank, label, reaction, blank, footer.
+        assert_eq!(rect.height, 6 + 4);
+    }
+
+    #[test]
+    fn long_author_wraps_instead_of_being_cut() {
+        let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: Some(MessageAuthor {
+                name: "Name ".repeat(20).trim_end().to_owned(),
+                username: Some("tail".to_owned()),
+            }),
+            reactions: vec![],
+            reaction_counts: vec![],
+            viewers: vec![],
+            read_date: None,
+            edit_date: None,
+        });
+        let rect = rendered_popup_rect(&state, 60, 30);
+        assert_eq!(rect.width, 48);
+        assert!(rect.height > 3 + 4);
     }
 }

@@ -83,6 +83,44 @@ fn delivered_message_has_no_sending_indicator() {
     assert!(!all_text.contains("sending..."));
 }
 
+// ── hidden time ──
+
+#[test]
+fn hidden_time_renders_blank_indent_span() {
+    let messages = vec![
+        msg(1, "Alice", "First", FEB_14_2026_10AM, false),
+        msg(2, "Alice", "Second", FEB_14_2026_10AM + 5000, false),
+    ];
+
+    let elements = build_message_list_elements(&messages);
+    let MessageListElement::Message {
+        time, show_time, ..
+    } = &elements[2]
+    else {
+        panic!("Expected Message element");
+    };
+    assert!(!show_time, "precondition: grouped message hides its time");
+
+    let text = element_to_text(&elements[2], 80);
+
+    assert_eq!(text.lines.len(), 1);
+    let first_span = &text.lines[0].spans[0];
+    assert_eq!(first_span.content.as_ref(), "      ");
+    assert_eq!(first_span.style, ratatui::style::Style::default());
+
+    let line_text: String = text.lines[0]
+        .spans
+        .iter()
+        .map(|s| s.content.as_ref())
+        .collect();
+    assert!(
+        !line_text.contains(time.as_str()),
+        "hidden time must not be rendered: '{}'",
+        line_text
+    );
+    assert!(line_text.contains("Second"));
+}
+
 // ── edited indicator ──
 
 #[test]

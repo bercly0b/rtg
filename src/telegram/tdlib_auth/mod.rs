@@ -294,10 +294,17 @@ impl TdLibAuthBackend {
         None
     }
 
-    /// Disconnects and resets the auth state.
-    pub fn disconnect_and_reset(&mut self) {
+    /// Closes TDLib, blocking until it reports `AuthorizationState::Closed`.
+    pub fn close(&self) -> Result<(), TdLibError> {
+        self.client.close()
+    }
+
+    /// Resets the auth state and closes TDLib, blocking until it reports
+    /// `AuthorizationState::Closed`.
+    pub fn disconnect_and_reset(&mut self) -> Result<(), TdLibError> {
         self.current_code_token = None;
         self.last_auth_state = None;
+        self.client.close()
     }
 
     /// Returns the underlying TDLib client.

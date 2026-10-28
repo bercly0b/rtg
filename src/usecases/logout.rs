@@ -1,21 +1,28 @@
 use std::{fs, io::ErrorKind, path::Path};
 
-use crate::{
-    infra::error::AppError, infra::storage_layout::StorageLayout, telegram::TelegramAdapter,
-};
+use crate::{infra::error::AppError, infra::storage_layout::StorageLayout};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogoutOutcome {
     pub tdlib_data_removed: bool,
 }
 
-pub fn logout_and_reset(telegram: &mut TelegramAdapter) -> Result<LogoutOutcome, AppError> {
+/// Telegram session that must be shut down before its local data is wiped.
+pub trait LogoutSession {
+    /// Closes TDLib, blocking until it reports `AuthorizationState::Closed`,
+    /// and resets the reported auth/connectivity status.
+    fn disconnect_and_reset(&mut self) -> Result<(), AppError>;
+}
+
+/// Closes the Telegram session and only then removes TDLib data, so TDLib
+/// never writes into (or holds open) files that are being deleted.
+pub fn logout_and_reset(telegram: &mut dyn LogoutSession) -> Result<LogoutOutcome, AppError> {
+    telegram.disconnect_and_reset()?;
+
     let layout = StorageLayout::resolve()?;
     layout.ensure_dirs()?;
 
     let tdlib_data_removed = remove_tdlib_data(&layout)?;
-
-    telegram.disconnect_and_reset();
 
     Ok(LogoutOutcome { tdlib_data_removed })
 }
@@ -45,7 +52,7 @@ mod tests {
     use std::{env, fs};
 
     use super::*;
-    use crate::test_support::env_lock;
+    use crate::{telegram::TelegramAdapter, test_support::env_lock};
 
     #[test]
     fn logout_removes_tdlib_data() {
@@ -141,5 +148,85 @@ mod tests {
         }
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    /// Runs `test` with `XDG_CONFIG_HOME` pointed at a fresh temp dir that
+    /// already holds a fake TDLib database.
+    fn with_tdlib_data(test: impl FnOnce(&StorageLayout)) {
+        let _guard = env_lock();
+        let xdg = tempfile::tempdir().expect("temp dir");
+
+        let old_xdg = env::var_os("XDG_CONFIG_HOME");
+        // SAFETY: env is guarded by process-wide test mutex.
+        unsafe { env::set_var("XDG_CONFIG_HOME", xdg.path()) };
+
+        let layout = StorageLayout::resolve().expect("layout should resolve");
+        layout.ensure_dirs().expect("dirs should be created");
+        let db_dir = layout.tdlib_database_dir();
+        fs::create_dir_all(&db_dir).expect("db dir should be creatable");
+        fs::write(db_dir.join("td.binlog"), b"data").expect("fake data should be writable");
+
+        test(&layout);
+
+        match old_xdg {
+            Some(value) => {
+                // SAFETY: restoring env while guard is held.
+                unsafe { env::set_var("XDG_CONFIG_HOME", value) }
+            }
+            None => {
+                // SAFETY: restoring env while guard is held.
+                unsafe { env::remove_var("XDG_CONFIG_HOME") }
+            }
+        }
+    }
+
+    /// Records whether TDLib data was still on disk when TDLib was closed.
+    struct RecordingSession {
+        tdlib_db_dir: std::path::PathBuf,
+        data_present_at_close: Option<bool>,
+    }
+
+    impl LogoutSession for RecordingSession {
+        fn disconnect_and_reset(&mut self) -> Result<(), AppError> {
+            self.data_present_at_close = Some(self.tdlib_db_dir.exists());
+            Ok(())
+        }
+    }
+
+    struct FailingSession;
+
+    impl LogoutSession for FailingSession {
+        fn disconnect_and_reset(&mut self) -> Result<(), AppError> {
+            Err(AppError::TdlibClose {
+                details: "timed out waiting for Closed".to_owned(),
+            })
+        }
+    }
+
+    #[test]
+    fn logout_closes_tdlib_before_removing_its_data() {
+        with_tdlib_data(|layout| {
+            let mut session = RecordingSession {
+                tdlib_db_dir: layout.tdlib_database_dir(),
+                data_present_at_close: None,
+            };
+
+            let outcome = logout_and_reset(&mut session).expect("logout should succeed");
+
+            assert_eq!(session.data_present_at_close, Some(true));
+            assert!(outcome.tdlib_data_removed);
+            assert!(!layout.tdlib_database_dir().exists());
+        });
+    }
+
+    #[test]
+    fn logout_keeps_tdlib_data_when_tdlib_does_not_close() {
+        with_tdlib_data(|layout| {
+            let error = logout_and_reset(&mut FailingSession)
+                .expect_err("logout must fail when TDLib does not close");
+
+            assert!(matches!(error, AppError::TdlibClose { .. }), "got: {error}");
+            assert!(layout.tdlib_database_dir().join("td.binlog").exists());
+        });
     }
 }

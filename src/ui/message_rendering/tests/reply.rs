@@ -163,3 +163,48 @@ fn grouped_message_with_reply_shows_reply_line() {
         all_text
     );
 }
+
+#[test]
+fn reply_and_reactions_render_in_order() {
+    let mut message = msg_with_reply(
+        1,
+        "Bob",
+        "Yes, done",
+        FEB_14_2026_10AM,
+        "Alice",
+        "Is the PR ready?",
+    );
+    message.reaction_count = 2;
+
+    let elements = build_message_list_elements(&[message]);
+    let text = element_to_text(&elements[1], 80);
+
+    let lines: Vec<String> = text
+        .lines
+        .iter()
+        .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+        .collect();
+    assert_eq!(
+        lines.len(),
+        3,
+        "Expected header + reply + content, got {:?}",
+        lines
+    );
+
+    assert!(lines[0].contains("Bob:"), "header: '{}'", lines[0]);
+    assert!(
+        lines[1].contains('│') && lines[1].contains("Alice: Is the PR ready?"),
+        "reply: '{}'",
+        lines[1]
+    );
+    assert!(
+        lines[2].contains("Yes, done") && lines[2].ends_with(" [♡×2]"),
+        "content with reaction badge: '{}'",
+        lines[2]
+    );
+    assert!(
+        !lines[0].contains('♡') && !lines[1].contains('♡'),
+        "reaction badge must only follow the content: {:?}",
+        lines
+    );
+}
