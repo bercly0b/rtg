@@ -1,18 +1,10 @@
-//! Voice recording management: spawning ffmpeg, streaming output, and process control.
+//! Voice recording helpers: output file naming and voice note metadata.
 //!
-//! The recording process runs in a background thread. Its output is streamed
-//! through an mpsc channel that the UI event source polls to update the command
-//! popup in real time.
-
-mod command;
-pub(crate) mod handle;
-mod output;
+//! The recording process itself is spawned via `usecases::external_command`.
 
 use std::process::{Command, Stdio};
 
 pub use crate::domain::voice_defaults::DEFAULT_RECORD_CMD;
-pub use command::start_command;
-pub use handle::RecordingHandle;
 
 /// Generates a unique file path for a voice recording in the temp directory.
 pub fn generate_voice_file_path() -> String {

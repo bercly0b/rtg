@@ -73,7 +73,7 @@ fn command_exited_transitions_running_to_awaiting_on_success() {
         "expected AwaitingConfirmation but got {:?}",
         popup.phase()
     );
-    assert!(o.recording_handle.is_none());
+    assert!(o.command_handle.is_none());
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn command_exited_with_failure_transitions_to_failed() {
         "expected Failed phase but got {:?}",
         popup.phase()
     );
-    assert!(o.recording_handle.is_none());
+    assert!(o.command_handle.is_none());
     assert!(
         o.recording_file_path.is_none(),
         "failed recording should discard file path"

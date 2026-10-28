@@ -12,7 +12,7 @@ use std::os::unix::process::CommandExt;
 
 use crate::domain::{command_template, events::CommandEvent};
 
-use super::{handle::RecordingHandle, output::stream_output};
+use super::{handle::CommandHandle, output::stream_output};
 
 /// Starts an external command and returns a handle and the event channel receiver.
 ///
@@ -27,7 +27,7 @@ use super::{handle::RecordingHandle, output::stream_output};
 pub fn start_command(
     cmd_template: &str,
     file_path: &str,
-) -> anyhow::Result<(RecordingHandle, mpsc::Receiver<CommandEvent>)> {
+) -> anyhow::Result<(CommandHandle, mpsc::Receiver<CommandEvent>)> {
     let resolved = command_template::resolve_argv(cmd_template, file_path)?;
 
     let mut cmd = Command::new(&resolved[0]);
@@ -134,7 +134,7 @@ pub fn start_command(
 
     reader_gate.set_expected(spawned_readers, &tx);
 
-    Ok((RecordingHandle::from_parts(child), rx))
+    Ok((CommandHandle::from_parts(child), rx))
 }
 
 /// Coordinates pipe reader threads. When all expected readers finish,

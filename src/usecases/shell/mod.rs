@@ -2,6 +2,7 @@ mod background_results;
 mod chat_list;
 mod chat_open;
 mod chat_updates;
+mod command_popup;
 mod forum;
 mod key_dispatch;
 mod message_actions;
@@ -53,7 +54,7 @@ pub(super) struct OrchestratorCtx<'a, D: TaskDispatcher> {
     pub older_messages_in_flight: &'a mut bool,
     pub active_downloads: &'a mut std::collections::HashMap<i32, (i64, i64)>,
     pub max_auto_download_bytes: u64,
-    pub recording_handle: &'a mut Option<super::voice_recording::RecordingHandle>,
+    pub command_handle: &'a mut Option<super::external_command::CommandHandle>,
     pub recording_file_path: &'a mut Option<String>,
     pub pending_command_rx:
         &'a mut Option<std::sync::mpsc::Receiver<crate::domain::events::CommandEvent>>,
@@ -112,8 +113,8 @@ where
     /// sparse preview (eliminates the "1 message flash" artifact).
     min_display_messages: usize,
     keymap: Keymap,
-    /// Handle to a running recording process (voice recording, etc.).
-    recording_handle: Option<super::voice_recording::RecordingHandle>,
+    /// Handle to the running external command (voice recording, media playback).
+    command_handle: Option<super::external_command::CommandHandle>,
     /// Path to the currently recorded voice file.
     recording_file_path: Option<String>,
     /// Pending command event receiver to be wired into the event source.
@@ -158,7 +159,7 @@ where
             prefetch_in_flight: None,
             min_display_messages: DEFAULT_MIN_DISPLAY_MESSAGES,
             keymap: Keymap::default(),
-            recording_handle: None,
+            command_handle: None,
             recording_file_path: None,
             pending_command_rx: None,
             voice_record_cmd: super::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
@@ -213,7 +214,7 @@ where
             } else {
                 Keymap::with_overrides(&key_overrides)
             },
-            recording_handle: None,
+            command_handle: None,
             recording_file_path: None,
             pending_command_rx: None,
             voice_record_cmd,
@@ -237,7 +238,7 @@ where
             older_messages_in_flight: &mut self.older_messages_in_flight,
             active_downloads: &mut self.active_downloads,
             max_auto_download_bytes: self.max_auto_download_bytes,
-            recording_handle: &mut self.recording_handle,
+            command_handle: &mut self.command_handle,
             recording_file_path: &mut self.recording_file_path,
             pending_command_rx: &mut self.pending_command_rx,
             voice_record_cmd: &self.voice_record_cmd,
@@ -368,7 +369,7 @@ where
             }
             AppEvent::CommandExited { success } => {
                 tracing::info!(success, "external command exited");
-                voice::handle_command_exited(&mut self.as_ctx(), success);
+                command_popup::handle_command_exited(&mut self.as_ctx(), success);
             }
             AppEvent::InputKey(key) => {
                 if self.state.chat_search().is_some() {
@@ -395,7 +396,7 @@ where
                 }
 
                 if self.state.command_popup().is_some() {
-                    voice::handle_command_popup_key(&mut self.as_ctx(), &key.key);
+                    command_popup::handle_command_popup_key(&mut self.as_ctx(), &key.key);
                     return Ok(());
                 }
 

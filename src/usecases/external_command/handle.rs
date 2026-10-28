@@ -1,13 +1,13 @@
 use std::{process::Child, thread};
 
-/// Handle to a running recording process.
+/// Handle to a running external command process.
 ///
 /// Holds the child process so it can be killed on user request.
-pub struct RecordingHandle {
+pub struct CommandHandle {
     child: Child,
 }
 
-impl Drop for RecordingHandle {
+impl Drop for CommandHandle {
     fn drop(&mut self) {
         if let Ok(None) = self.child.try_wait() {
             self.stop();
@@ -15,7 +15,7 @@ impl Drop for RecordingHandle {
     }
 }
 
-impl RecordingHandle {
+impl CommandHandle {
     pub(super) fn from_parts(child: Child) -> Self {
         Self { child }
     }
@@ -38,7 +38,7 @@ impl RecordingHandle {
         }
     }
 
-    /// Gracefully stops the recording process.
+    /// Gracefully stops the command process.
     ///
     /// First sends SIGTERM to the child process only (not the group), giving
     /// shell scripts a chance to handle cleanup (e.g. run `opusenc` after
