@@ -1,10 +1,14 @@
+use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::mpsc;
+use std::sync::atomic::AtomicBool;
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
 
 use super::types::{TdLibConfig, TdLibError, TDLIB_ERROR_ALL_CHATS_LOADED};
 use super::update_loop::map_connection_state;
 use super::TdLibClient;
 use crate::domain::events::ConnectivityStatus;
+use crate::telegram::tdlib_cache::TdLibCache;
 use crate::telegram::tdlib_updates::TdLibUpdate;
 
 #[test]
@@ -39,6 +43,50 @@ fn request_error_displays_code_and_message() {
     let display = format!("{error}");
     assert!(display.contains("404"));
     assert!(display.contains("Chat list loading completed"));
+}
+
+#[test]
+fn tdlib_rs_error_converts_into_request_error() {
+    let error = TdLibError::from(tdlib_rs::types::Error {
+        code: 400,
+        message: "Chat not found".to_owned(),
+    });
+
+    assert!(matches!(
+        error,
+        TdLibError::Request { code: 400, ref message } if message == "Chat not found"
+    ));
+}
+
+#[test]
+fn recv_auth_state_reports_poisoned_lock_as_internal_error() {
+    let (_auth_state_tx, auth_state_rx) = mpsc::channel();
+    let client = TdLibClient {
+        client_id: 0,
+        config: TdLibConfig {
+            api_id: 1,
+            api_hash: "hash".into(),
+            database_directory: PathBuf::from("/tmp/test_db"),
+            files_directory: PathBuf::from("/tmp/test_files"),
+            log_file: PathBuf::from("/tmp/test_logs/tdlib.log"),
+            verbose: false,
+        },
+        rt: Arc::new(tokio::runtime::Runtime::new().expect("runtime should build")),
+        auth_state_rx: Mutex::new(auth_state_rx),
+        update_rx: Mutex::new(None),
+        connectivity_rx: Mutex::new(None),
+        update_thread: Mutex::new(None),
+        is_closed: AtomicBool::new(true),
+        cache: TdLibCache::new(),
+    };
+    let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+        let _guard = client.auth_state_rx.lock();
+        panic!("poison the auth state receiver lock");
+    }));
+
+    let result = client.recv_auth_state(Duration::from_millis(1));
+
+    assert!(matches!(result, Err(TdLibError::Internal { .. })));
 }
 
 #[test]
