@@ -177,3 +177,68 @@ fn command_popup_random_key_during_awaiting_is_ignored() {
     ));
     assert_eq!(o.dispatcher.voice_send_dispatch_count(), 0);
 }
+
+#[test]
+fn command_popup_q_stops_live_recording_process() {
+    use crate::domain::command_popup_state::CommandPhase;
+
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+    o.voice_record_cmd = "sleep 60".to_owned();
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("v", false)))
+        .unwrap();
+    assert!(o.recording_handle.is_some(), "recording must have started");
+    let rx = o
+        .take_pending_command_rx()
+        .expect("command events receiver");
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
+        .unwrap();
+    assert!(
+        o.recording_handle.is_none(),
+        "handle must move to the stop thread"
+    );
+    assert_eq!(
+        o.state().command_popup().unwrap().phase(),
+        &CommandPhase::Stopping
+    );
+
+    let exited = wait_for_command_exit(&rx);
+    assert_eq!(exited, AppEvent::CommandExited { success: false });
+
+    o.handle_event(exited).unwrap();
+    assert!(
+        matches!(
+            o.state().command_popup().unwrap().phase(),
+            CommandPhase::Failed { .. }
+        ),
+        "`sleep` records nothing, so the stopped recording must fail"
+    );
+}
+
+#[test]
+fn v_with_missing_record_binary_shows_start_error() {
+    use crate::domain::command_popup_state::CommandPhase;
+
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+    o.voice_record_cmd = "rtg-test-missing-binary {file_path}".to_owned();
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("v", false)))
+        .unwrap();
+
+    assert!(o.recording_handle.is_none());
+    assert!(o.recording_file_path.is_none());
+    let popup = o.state().command_popup().expect("failure must be visible");
+    assert!(
+        matches!(popup.phase(), CommandPhase::Failed { message } if message.contains("[voice] record_cmd")),
+        "unexpected phase {:?}",
+        popup.phase()
+    );
+    let lines = popup.visible_lines(20);
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("failed to start `rtg-test-missing-binary`")),
+        "start error must be shown: {lines:?}"
+    );
+}
