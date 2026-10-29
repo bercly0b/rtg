@@ -59,31 +59,44 @@ impl TdLibAuthBackend {
             .get_chats(limit_i32)
             .map_err(map_list_chats_error)?;
 
-        let requested_count = result.chat_ids.len();
         tracing::debug!(
-            count = requested_count,
+            count = result.chat_ids.len(),
             all_loaded = result.all_loaded,
             force,
             "Fetched chat IDs from TDLib"
         );
 
-        let summaries = build_summaries_from_ids(&self.client, result.chat_ids, force);
-
-        if requested_count > 0 && summaries.is_empty() {
-            tracing::warn!(
-                requested_count,
-                "all chats failed to resolve from TDLib and cache"
-            );
-            return Err(ListChatsSourceError::Unavailable);
-        }
-
-        if requested_count == 0 && !result.all_loaded {
-            tracing::warn!("TDLib returned zero chat IDs without all-loaded signal");
-            return Err(ListChatsSourceError::Unavailable);
-        }
-
-        Ok((summaries, result.all_loaded))
+        resolve_chat_list(&self.client, result.chat_ids, result.all_loaded, force)
     }
+}
+
+/// Resolves the chat IDs returned by `getChats` into summaries.
+///
+/// Reports `Unavailable` when TDLib returned IDs but none of them resolved,
+/// or returned no IDs without signalling that the whole list is loaded.
+pub(super) fn resolve_chat_list(
+    resolver: &dyn ChatDataResolver,
+    chat_ids: Vec<i64>,
+    all_loaded: bool,
+    force: bool,
+) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError> {
+    let requested_count = chat_ids.len();
+    let summaries = build_summaries_from_ids(resolver, chat_ids, force);
+
+    if requested_count > 0 && summaries.is_empty() {
+        tracing::warn!(
+            requested_count,
+            "all chats failed to resolve from TDLib and cache"
+        );
+        return Err(ListChatsSourceError::Unavailable);
+    }
+
+    if requested_count == 0 && !all_loaded {
+        tracing::warn!("TDLib returned zero chat IDs without all-loaded signal");
+        return Err(ListChatsSourceError::Unavailable);
+    }
+
+    Ok((summaries, all_loaded))
 }
 
 /// Builds domain `ChatSummary` list from raw TDLib chat IDs.
@@ -102,7 +115,8 @@ pub(super) fn build_summaries_from_ids(
     force: bool,
 ) -> Vec<ChatSummary> {
     let cache = resolver.cache();
-    let mut summaries = Vec::with_capacity(chat_ids.len());
+    let requested = chat_ids.len();
+    let mut summaries = Vec::with_capacity(requested);
 
     for chat_id in chat_ids {
         let chat = if force {
@@ -112,7 +126,7 @@ pub(super) fn build_summaries_from_ids(
                     c
                 }
                 Err(e) => {
-                    tracing::warn!(chat_id, error = %e, "chat missing from TDLib (force refresh)");
+                    tracing::debug!(chat_id, error = %e, "chat missing from TDLib (force refresh)");
                     continue;
                 }
             }
@@ -125,7 +139,7 @@ pub(super) fn build_summaries_from_ids(
                         c
                     }
                     Err(e) => {
-                        tracing::warn!(chat_id, error = %e, "chat missing from cache and TDLib");
+                        tracing::debug!(chat_id, error = %e, "chat missing from cache and TDLib");
                         continue;
                     }
                 },
@@ -150,6 +164,16 @@ pub(super) fn build_summaries_from_ids(
             summary.unread_topic_count = cache.unread_forum_topic_count(chat_id);
         }
         summaries.push(summary);
+    }
+
+    let unresolved = requested - summaries.len();
+    if unresolved > 0 {
+        tracing::warn!(
+            unresolved,
+            requested,
+            force,
+            "chats skipped: missing from cache and TDLib"
+        );
     }
 
     summaries

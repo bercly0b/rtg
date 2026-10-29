@@ -4,7 +4,7 @@
 //! types via `MessageMapper`, and forwards `ChatUpdate` events downstream
 //! for cache warming and UI refresh.
 
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -18,6 +18,7 @@ const CHAT_UPDATES_MONITOR_STARTED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_STARTE
 const CHAT_UPDATES_MONITOR_STOPPED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_STOPPED";
 const CHAT_UPDATES_MONITOR_SIGNAL_SEND_FAILED: &str =
     "TELEGRAM_CHAT_UPDATES_MONITOR_SIGNAL_SEND_FAILED";
+const CHAT_UPDATES_MONITOR_SHUTDOWN_FAILED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_SHUTDOWN_FAILED";
 
 /// Timeout for receiving updates from TDLib channel.
 const UPDATE_RECV_TIMEOUT: Duration = Duration::from_millis(100);
@@ -34,11 +35,11 @@ pub trait MessageMapper: Send + Sync {
 ///
 /// Runs a background thread that reads `TdLibUpdate` from a channel,
 /// maps message data to domain types, and sends `ChatUpdate` events
-/// for cache warming and UI refresh.
+/// for cache warming and UI refresh. Dropping the monitor stops and joins
+/// the worker.
 #[derive(Debug)]
 pub struct TelegramChatUpdatesMonitor {
-    /// Worker thread handle. Kept for debugging but not joined on drop.
-    #[allow(dead_code)]
+    stop_tx: Option<Sender<()>>,
     worker: Option<JoinHandle<()>>,
 }
 
@@ -54,10 +55,11 @@ impl TelegramChatUpdatesMonitor {
         signal_tx: Sender<ChatUpdate>,
         mapper: Arc<dyn MessageMapper>,
     ) -> Result<Self, ChatUpdatesMonitorStartError> {
+        let (stop_tx, stop_rx) = mpsc::channel::<()>();
         let worker = thread::Builder::new()
             .name("rtg-chat-updates".into())
             .spawn(move || {
-                run_update_monitor(update_rx, signal_tx, &*mapper);
+                run_update_monitor(update_rx, signal_tx, stop_rx, &*mapper);
             })
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to spawn chat updates monitor thread");
@@ -70,6 +72,7 @@ impl TelegramChatUpdatesMonitor {
         );
 
         Ok(Self {
+            stop_tx: Some(stop_tx),
             worker: Some(worker),
         })
     }
@@ -77,13 +80,30 @@ impl TelegramChatUpdatesMonitor {
     /// Creates an inert monitor for testing (no background thread).
     #[cfg(test)]
     pub fn inert() -> Self {
-        Self { worker: None }
+        Self {
+            stop_tx: None,
+            worker: None,
+        }
     }
 }
 
 impl Drop for TelegramChatUpdatesMonitor {
     fn drop(&mut self) {
-        tracing::debug!("TelegramChatUpdatesMonitor dropped");
+        if let Some(stop_tx) = self.stop_tx.take() {
+            if stop_tx.send(()).is_err() {
+                tracing::debug!("chat updates monitor worker already stopped");
+            }
+        }
+
+        if let Some(worker) = self.worker.take() {
+            if let Err(error) = worker.join() {
+                tracing::warn!(
+                    code = CHAT_UPDATES_MONITOR_SHUTDOWN_FAILED,
+                    error = ?error,
+                    "telegram chat updates monitor worker panicked on shutdown"
+                );
+            }
+        }
     }
 }
 
@@ -188,9 +208,12 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
 fn run_update_monitor(
     update_rx: Receiver<TdLibUpdate>,
     signal_tx: Sender<ChatUpdate>,
+    stop_rx: Receiver<()>,
     mapper: &dyn MessageMapper,
 ) {
-    loop {
+    // Checked on every iteration, not only on recv timeouts: under a steady
+    // update stream the timeout branch may never be reached.
+    while stop_rx.try_recv() == Err(TryRecvError::Empty) {
         match update_rx.recv_timeout(UPDATE_RECV_TIMEOUT) {
             Ok(update) => {
                 let kind = update.kind();
@@ -458,6 +481,59 @@ mod tests {
 
         drop(update_tx);
         drop(monitor);
+    }
+
+    /// Drops the monitor on a helper thread and fails the test if the drop
+    /// (stop + join) does not finish in time instead of hanging the suite.
+    fn drop_within(monitor: TelegramChatUpdatesMonitor, timeout: Duration) {
+        let (done_tx, done_rx) = mpsc::channel();
+        thread::spawn(move || {
+            drop(monitor);
+            done_tx.send(()).expect("test thread waits for drop");
+        });
+        done_rx
+            .recv_timeout(timeout)
+            .expect("monitor drop must stop and join the worker");
+    }
+
+    #[test]
+    fn drop_stops_and_joins_worker_while_update_sender_is_alive() {
+        let (update_tx, update_rx) = mpsc::channel::<TdLibUpdate>();
+        let (signal_tx, _signal_rx) = mpsc::channel();
+        let monitor =
+            TelegramChatUpdatesMonitor::start(update_rx, signal_tx, Arc::new(StubMessageMapper))
+                .expect("monitor should start");
+
+        drop_within(monitor, Duration::from_secs(5));
+
+        assert!(
+            update_tx
+                .send(TdLibUpdate::UserStatus { user_id: 1 })
+                .is_err(),
+            "joined worker must have released the update receiver"
+        );
+    }
+
+    #[test]
+    fn drop_stops_worker_under_steady_update_stream() {
+        let (update_tx, update_rx) = mpsc::channel::<TdLibUpdate>();
+        let (signal_tx, _signal_rx) = mpsc::channel();
+        let monitor =
+            TelegramChatUpdatesMonitor::start(update_rx, signal_tx, Arc::new(StubMessageMapper))
+                .expect("monitor should start");
+
+        // Keeps the worker busy so `recv_timeout` never times out.
+        let feeder = thread::spawn(move || {
+            while update_tx
+                .send(TdLibUpdate::UserStatus { user_id: 1 })
+                .is_ok()
+            {
+                thread::sleep(Duration::from_millis(1));
+            }
+        });
+
+        drop_within(monitor, Duration::from_secs(5));
+        feeder.join().expect("feeder stops once the worker is gone");
     }
 
     #[test]

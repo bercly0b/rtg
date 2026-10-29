@@ -2,10 +2,11 @@ use tdlib_rs::enums::MessageContent;
 
 use crate::domain::message::MessageMedia;
 use crate::telegram::tdlib_mappers::{
-    extract_forward_info, extract_message_media, extract_message_text, map_tdlib_message_to_domain,
+    extract_forward_info, extract_message_media, extract_message_text, extract_reply_info,
+    map_tdlib_message_to_domain,
 };
 
-use super::{make_test_file, make_test_message};
+use super::{make_formatted_text, make_test_file, make_test_message};
 
 #[test]
 fn normalize_preview_text_collapses_whitespace() {
@@ -383,6 +384,224 @@ fn extract_forward_info_chat_falls_back_to_signature() {
     let result = extract_forward_info(&td_msg, |_| None, |_| None);
     let fwd = result.expect("should have forward_info");
     assert_eq!(fwd.sender_name, "Chat Sig");
+}
+
+// ── reply info extraction tests ──
+
+const MY_USER_ID: i64 = 7;
+
+fn make_reply_message(
+    origin: Option<tdlib_rs::enums::MessageOrigin>,
+    content: Option<MessageContent>,
+    quote: Option<&str>,
+) -> tdlib_rs::types::Message {
+    let mut td_msg = make_test_message(2, "My answer", false);
+    td_msg.reply_to = Some(tdlib_rs::enums::MessageReplyTo::Message(
+        tdlib_rs::types::MessageReplyToMessage {
+            chat_id: 100,
+            message_id: 1,
+            quote: quote.map(|text| tdlib_rs::types::TextQuote {
+                text: make_formatted_text(text, vec![]),
+                position: 0,
+                is_manual: true,
+            }),
+            checklist_task_id: 0,
+            origin,
+            origin_send_date: 0,
+            content,
+        },
+    ));
+    td_msg
+}
+
+fn user_origin(user_id: i64) -> Option<tdlib_rs::enums::MessageOrigin> {
+    Some(tdlib_rs::enums::MessageOrigin::User(
+        tdlib_rs::types::MessageOriginUser {
+            sender_user_id: user_id,
+        },
+    ))
+}
+
+fn text_content(text: &str) -> Option<MessageContent> {
+    Some(make_test_message(1, text, false).content)
+}
+
+fn resolve_alice(user_id: i64) -> Option<String> {
+    (user_id == 42).then(|| "Alice".to_owned())
+}
+
+#[test]
+fn extract_reply_info_returns_none_when_no_reply() {
+    let td_msg = make_test_message(1, "Hello", false);
+    let result = extract_reply_info(&td_msg, |_| None, |_| None, Some(MY_USER_ID));
+    assert!(result.is_none());
+}
+
+#[test]
+fn extract_reply_info_ignores_story_replies() {
+    let mut td_msg = make_test_message(1, "Nice story", false);
+    td_msg.reply_to = Some(tdlib_rs::enums::MessageReplyTo::Story(
+        tdlib_rs::types::MessageReplyToStory {
+            story_poster_chat_id: 100,
+            story_id: 5,
+        },
+    ));
+
+    let result = extract_reply_info(&td_msg, |_| None, |_| None, Some(MY_USER_ID));
+    assert!(result.is_none());
+}
+
+#[test]
+fn extract_reply_info_from_user_origin() {
+    let td_msg = make_reply_message(user_origin(42), text_content("Original"), None);
+
+    let reply = extract_reply_info(&td_msg, resolve_alice, |_| None, Some(MY_USER_ID))
+        .expect("should have reply_info");
+
+    assert_eq!(reply.sender_name, "Alice");
+    assert_eq!(reply.text, "Original");
+    assert!(!reply.is_outgoing);
+}
+
+#[test]
+fn extract_reply_info_unresolved_user_falls_back_to_id() {
+    let td_msg = make_reply_message(user_origin(43), text_content("Original"), None);
+
+    let reply = extract_reply_info(&td_msg, resolve_alice, |_| None, Some(MY_USER_ID))
+        .expect("should have reply_info");
+
+    assert_eq!(reply.sender_name, "User#43");
+    assert!(!reply.is_outgoing);
+}
+
+#[test]
+fn extract_reply_info_to_own_message_shows_you() {
+    let td_msg = make_reply_message(user_origin(MY_USER_ID), text_content("Mine"), None);
+
+    let reply = extract_reply_info(
+        &td_msg,
+        |_| Some("My Full Name".to_owned()),
+        |_| None,
+        Some(MY_USER_ID),
+    )
+    .expect("should have reply_info");
+
+    assert_eq!(reply.sender_name, "You");
+    assert!(reply.is_outgoing);
+}
+
+#[test]
+fn extract_reply_info_without_my_user_id_never_shows_you() {
+    let td_msg = make_reply_message(user_origin(MY_USER_ID), text_content("Mine"), None);
+
+    let reply =
+        extract_reply_info(&td_msg, |_| None, |_| None, None).expect("should have reply_info");
+
+    assert_eq!(reply.sender_name, format!("User#{MY_USER_ID}"));
+    assert!(!reply.is_outgoing);
+}
+
+#[test]
+fn extract_reply_info_from_chat_origin() {
+    let origin = Some(tdlib_rs::enums::MessageOrigin::Chat(
+        tdlib_rs::types::MessageOriginChat {
+            sender_chat_id: 555,
+            author_signature: "Sig".to_owned(),
+        },
+    ));
+    let td_msg = make_reply_message(origin, text_content("Announcement"), None);
+
+    let resolved = extract_reply_info(
+        &td_msg,
+        |_| None,
+        |cid| (cid == 555).then(|| "Group Chat".to_owned()),
+        Some(MY_USER_ID),
+    )
+    .expect("should have reply_info");
+    let unresolved = extract_reply_info(&td_msg, |_| None, |_| None, Some(MY_USER_ID))
+        .expect("should have reply_info");
+
+    assert_eq!(resolved.sender_name, "Group Chat");
+    assert_eq!(unresolved.sender_name, "Sig");
+    assert!(!resolved.is_outgoing);
+}
+
+#[test]
+fn extract_reply_info_from_channel_origin() {
+    let origin = Some(tdlib_rs::enums::MessageOrigin::Channel(
+        tdlib_rs::types::MessageOriginChannel {
+            chat_id: 999,
+            message_id: 1,
+            author_signature: "Author Sig".to_owned(),
+        },
+    ));
+    let td_msg = make_reply_message(origin, text_content("Post"), None);
+
+    let resolved = extract_reply_info(
+        &td_msg,
+        |_| None,
+        |cid| (cid == 999).then(|| "News Channel".to_owned()),
+        Some(MY_USER_ID),
+    )
+    .expect("should have reply_info");
+    let unresolved = extract_reply_info(&td_msg, |_| None, |_| None, Some(MY_USER_ID))
+        .expect("should have reply_info");
+
+    assert_eq!(resolved.sender_name, "News Channel");
+    assert_eq!(unresolved.sender_name, "Author Sig");
+    assert!(!resolved.is_outgoing);
+}
+
+#[test]
+fn extract_reply_info_from_hidden_user_origin() {
+    let origin = Some(tdlib_rs::enums::MessageOrigin::HiddenUser(
+        tdlib_rs::types::MessageOriginHiddenUser {
+            sender_name: "Hidden Person".to_owned(),
+        },
+    ));
+    let td_msg = make_reply_message(origin, text_content("Secret"), None);
+
+    let reply = extract_reply_info(&td_msg, |_| None, |_| None, Some(MY_USER_ID))
+        .expect("should have reply_info");
+
+    assert_eq!(reply.sender_name, "Hidden Person");
+    assert!(!reply.is_outgoing);
+}
+
+#[test]
+fn extract_reply_info_without_origin_has_empty_sender() {
+    let td_msg = make_reply_message(None, None, None);
+
+    let reply = extract_reply_info(&td_msg, |_| None, |_| None, Some(MY_USER_ID))
+        .expect("should have reply_info");
+
+    assert_eq!(reply.sender_name, "");
+    assert_eq!(reply.text, "");
+    assert!(!reply.is_outgoing);
+}
+
+#[test]
+fn extract_reply_info_falls_back_to_quote_without_content() {
+    let td_msg = make_reply_message(user_origin(42), None, Some("quoted part"));
+
+    let reply = extract_reply_info(&td_msg, resolve_alice, |_| None, Some(MY_USER_ID))
+        .expect("should have reply_info");
+
+    assert_eq!(reply.text, "quoted part");
+}
+
+#[test]
+fn extract_reply_info_prefers_content_over_quote() {
+    let td_msg = make_reply_message(
+        user_origin(42),
+        text_content("full original"),
+        Some("quoted part"),
+    );
+
+    let reply = extract_reply_info(&td_msg, resolve_alice, |_| None, Some(MY_USER_ID))
+        .expect("should have reply_info");
+
+    assert_eq!(reply.text, "full original");
 }
 
 // ── service message tests ──

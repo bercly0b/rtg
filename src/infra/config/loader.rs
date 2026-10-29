@@ -31,7 +31,7 @@ pub(crate) fn load(path: Option<&Path>) -> Result<AppConfig, AppError> {
                 source,
             })?;
 
-        file_config.merge_into(&mut config);
+        file_config.merge_into(&mut config)?;
     }
 
     Ok(config)
@@ -138,6 +138,26 @@ record_cmd = "my-recorder --output {file_path}"
         fs::remove_file(config_path).expect("must remove test config");
 
         assert_eq!(config.voice.record_cmd, "my-recorder --output {file_path}");
+    }
+
+    #[test]
+    fn fails_when_record_cmd_has_no_file_path_placeholder() {
+        let temp_dir = tempfile::tempdir().expect("must create temp dir");
+        let config_path = temp_dir.path().join("config.toml");
+        fs::write(
+            &config_path,
+            r#"[voice]
+record_cmd = "rec out.oga"
+"#,
+        )
+        .expect("must write test config");
+
+        let error = load(Some(&config_path)).expect_err("must fail");
+
+        assert!(
+            error.to_string().contains("record_cmd"),
+            "error should mention record_cmd: {error}"
+        );
     }
 
     #[test]

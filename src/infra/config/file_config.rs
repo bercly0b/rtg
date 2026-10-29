@@ -1,8 +1,14 @@
 use serde::Deserialize;
 
-use crate::infra::config::{
-    AppConfig, CacheConfig, DownloadConfig, KeysConfig, LogConfig, OpenConfig, TelegramConfig,
-    VoiceConfig,
+use crate::{
+    domain::command_template::FILE_PATH_PLACEHOLDER,
+    infra::{
+        config::{
+            AppConfig, CacheConfig, DownloadConfig, KeysConfig, LogConfig, OpenConfig,
+            TelegramConfig, VoiceConfig,
+        },
+        error::AppError,
+    },
 };
 
 #[derive(Debug, Deserialize, Default)]
@@ -17,7 +23,7 @@ pub struct FileConfig {
 }
 
 impl FileConfig {
-    pub fn merge_into(self, config: &mut AppConfig) {
+    pub fn merge_into(self, config: &mut AppConfig) -> Result<(), AppError> {
         if let Some(logging) = self.logging {
             logging.merge_into(&mut config.logging);
         }
@@ -31,7 +37,7 @@ impl FileConfig {
         }
 
         if let Some(voice) = self.voice {
-            voice.merge_into(&mut config.voice);
+            voice.merge_into(&mut config.voice)?;
         }
 
         if let Some(open) = self.open {
@@ -45,6 +51,8 @@ impl FileConfig {
         if let Some(keys) = self.keys {
             keys.merge_into(&mut config.keys);
         }
+
+        Ok(())
     }
 }
 
@@ -110,10 +118,23 @@ pub struct FileVoiceConfig {
 }
 
 impl FileVoiceConfig {
-    fn merge_into(self, config: &mut VoiceConfig) {
+    /// A `record_cmd` without `{file_path}` is rejected: RTG would never find
+    /// the recording. It is an error, not a warning, because logging is not
+    /// initialized yet while the config is loaded.
+    fn merge_into(self, config: &mut VoiceConfig) -> Result<(), AppError> {
         if let Some(record_cmd) = self.record_cmd {
+            if !record_cmd.contains(FILE_PATH_PLACEHOLDER) {
+                return Err(AppError::ConfigValidation {
+                    code: "VOICE_RECORD_CMD_INVALID",
+                    details: format!(
+                        "[voice] record_cmd must contain the {FILE_PATH_PLACEHOLDER} placeholder, got {record_cmd:?}"
+                    ),
+                });
+            }
             config.record_cmd = record_cmd;
         }
+
+        Ok(())
     }
 }
 
@@ -240,7 +261,7 @@ level = "warn"
         };
 
         let mut config = AppConfig::default();
-        file.merge_into(&mut config);
+        file.merge_into(&mut config).unwrap();
 
         assert_eq!(config.logging.level, "trace");
         assert_eq!(config.logging.max_log_files, 3); // default preserved
@@ -281,7 +302,7 @@ level = "warn"
         };
 
         let mut config = AppConfig::default();
-        file.merge_into(&mut config);
+        file.merge_into(&mut config).unwrap();
 
         assert_eq!(config.logging.level, "error");
         assert_eq!(config.logging.max_log_files, 10);
@@ -306,8 +327,34 @@ level = "warn"
         };
 
         let mut config = AppConfig::default();
-        file.merge_into(&mut config);
+        file.merge_into(&mut config).unwrap();
 
+        assert_eq!(
+            config.voice.record_cmd,
+            crate::domain::voice_defaults::DEFAULT_RECORD_CMD
+        );
+    }
+
+    #[test]
+    fn merge_rejects_record_cmd_without_file_path_placeholder() {
+        let file = FileConfig {
+            voice: Some(FileVoiceConfig {
+                record_cmd: Some("ffmpeg -f avfoundation -i :0 out.oga".to_owned()),
+            }),
+            ..FileConfig::default()
+        };
+
+        let mut config = AppConfig::default();
+        let error = file.merge_into(&mut config).unwrap_err();
+
+        assert!(matches!(
+            error,
+            AppError::ConfigValidation {
+                code: "VOICE_RECORD_CMD_INVALID",
+                ..
+            }
+        ));
+        assert!(error.to_string().contains("{file_path}"), "{error}");
         assert_eq!(
             config.voice.record_cmd,
             crate::domain::voice_defaults::DEFAULT_RECORD_CMD
@@ -355,7 +402,7 @@ record_cmd = "sox -d {file_path}"
 "#;
         let file: FileConfig = toml::from_str(toml).unwrap();
         let mut config = AppConfig::default();
-        file.merge_into(&mut config);
+        file.merge_into(&mut config).unwrap();
 
         assert_eq!(
             config.open.handlers.get("audio/ogg").unwrap(),
@@ -375,7 +422,7 @@ record_cmd = "sox -d {file_path}"
             keys: None,
         };
         let mut config = AppConfig::default();
-        file.merge_into(&mut config);
+        file.merge_into(&mut config).unwrap();
         assert!(config.open.handlers.is_empty());
     }
 
@@ -398,7 +445,7 @@ max_auto_download_size = "500KB"
 "#;
         let file: FileConfig = toml::from_str(toml).unwrap();
         let mut config = AppConfig::default();
-        file.merge_into(&mut config);
+        file.merge_into(&mut config).unwrap();
         assert_eq!(config.download.max_auto_download_size, "500KB");
     }
 
@@ -414,7 +461,7 @@ max_auto_download_size = "500KB"
             keys: None,
         };
         let mut config = AppConfig::default();
-        file.merge_into(&mut config);
+        file.merge_into(&mut config).unwrap();
         assert_eq!(config.download.max_auto_download_size, "10MB");
     }
 
@@ -441,7 +488,7 @@ quit = "Q"
 "#;
         let file: FileConfig = toml::from_str(toml).unwrap();
         let mut config = AppConfig::default();
-        file.merge_into(&mut config);
+        file.merge_into(&mut config).unwrap();
         assert_eq!(config.keys.overrides.get("quit").unwrap(), "Q");
     }
 
@@ -457,7 +504,7 @@ quit = "Q"
             keys: None,
         };
         let mut config = AppConfig::default();
-        file.merge_into(&mut config);
+        file.merge_into(&mut config).unwrap();
         assert!(config.keys.overrides.is_empty());
     }
 }
