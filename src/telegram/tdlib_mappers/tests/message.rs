@@ -690,14 +690,68 @@ fn service_message_mapped_to_domain_shows_text_not_media() {
     let mut td_msg = make_test_message(1, "", false);
     td_msg.content =
         MessageContent::MessageChatAddMembers(tdlib_rs::types::MessageChatAddMembers {
-            member_user_ids: vec![1],
+            member_user_ids: vec![2],
         });
 
     let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None, |_: i64| None);
     assert_eq!(msg.media, MessageMedia::None);
-    assert_eq!(msg.text, "added User#1");
-    assert_eq!(msg.display_content(), "added User#1");
+    assert_eq!(msg.text, "added User#2");
+    assert_eq!(msg.display_content(), "added User#2");
     assert!(msg.is_service);
+}
+
+#[test]
+fn service_message_sender_adding_self_reads_as_joined() {
+    let mut td_msg = make_test_message(1, "", false);
+    td_msg.content =
+        MessageContent::MessageChatAddMembers(tdlib_rs::types::MessageChatAddMembers {
+            member_user_ids: vec![1],
+        });
+
+    let msg = map_tdlib_message_to_domain(&td_msg, "Paul".to_owned(), None, None, |_: i64| {
+        Some("Paul".to_owned())
+    });
+    assert_eq!(msg.text, "joined the group");
+    assert!(msg.is_service);
+}
+
+#[test]
+fn service_message_sender_removing_self_reads_as_left() {
+    let mut td_msg = make_test_message(1, "", false);
+    td_msg.content =
+        MessageContent::MessageChatDeleteMember(tdlib_rs::types::MessageChatDeleteMember {
+            user_id: 1,
+        });
+
+    let msg = map_tdlib_message_to_domain(&td_msg, "Paul".to_owned(), None, None, |_: i64| {
+        Some("Paul".to_owned())
+    });
+    assert_eq!(msg.text, "left the group");
+    assert!(msg.is_service);
+}
+
+#[test]
+fn service_message_sender_adding_self_and_others_keeps_added_wording() {
+    let mut td_msg = make_test_message(1, "", false);
+    td_msg.content =
+        MessageContent::MessageChatAddMembers(tdlib_rs::types::MessageChatAddMembers {
+            member_user_ids: vec![1, 2],
+        });
+
+    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None, |_: i64| None);
+    assert_eq!(msg.text, "added User#1, User#2");
+}
+
+#[test]
+fn service_message_sender_removing_other_keeps_removed_wording() {
+    let mut td_msg = make_test_message(1, "", false);
+    td_msg.content =
+        MessageContent::MessageChatDeleteMember(tdlib_rs::types::MessageChatDeleteMember {
+            user_id: 2,
+        });
+
+    let msg = map_tdlib_message_to_domain(&td_msg, "User".to_owned(), None, None, |_: i64| None);
+    assert_eq!(msg.text, "removed User#2");
 }
 
 #[test]
