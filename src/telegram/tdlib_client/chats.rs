@@ -49,11 +49,7 @@ impl TdLibClient {
                 limit,
                 client_id,
             )
-            .await
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })?;
+            .await?;
 
             match chats {
                 tdlib_rs::enums::Chats::Chats(c) => {
@@ -94,11 +90,7 @@ impl TdLibClient {
                 limit,
                 client_id,
             )
-            .await
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })?;
+            .await?;
 
             match topics {
                 tdlib_rs::enums::ForumTopics::ForumTopics(t) => {
@@ -117,12 +109,7 @@ impl TdLibClient {
         let client_id = self.client_id;
 
         self.block_on_request("getChat", async {
-            let chat = tdlib_rs::functions::get_chat(chat_id, client_id)
-                .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })?;
+            let chat = tdlib_rs::functions::get_chat(chat_id, client_id).await?;
 
             match chat {
                 tdlib_rs::enums::Chat::Chat(c) => Ok(c),
@@ -135,12 +122,7 @@ impl TdLibClient {
         let client_id = self.client_id;
 
         self.block_on_request("getUser", async {
-            let user = tdlib_rs::functions::get_user(user_id, client_id)
-                .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })?;
+            let user = tdlib_rs::functions::get_user(user_id, client_id).await?;
 
             match user {
                 tdlib_rs::enums::User::User(u) => Ok(u),
@@ -156,12 +138,7 @@ impl TdLibClient {
         let client_id = self.client_id;
 
         self.block_on_request("getUserFullInfo", async {
-            let info = tdlib_rs::functions::get_user_full_info(user_id, client_id)
-                .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })?;
+            let info = tdlib_rs::functions::get_user_full_info(user_id, client_id).await?;
 
             match info {
                 tdlib_rs::enums::UserFullInfo::UserFullInfo(i) => Ok(i),
@@ -177,12 +154,8 @@ impl TdLibClient {
         let client_id = self.client_id;
 
         self.block_on_request("getSupergroupFullInfo", async {
-            let info = tdlib_rs::functions::get_supergroup_full_info(supergroup_id, client_id)
-                .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })?;
+            let info =
+                tdlib_rs::functions::get_supergroup_full_info(supergroup_id, client_id).await?;
 
             match info {
                 tdlib_rs::enums::SupergroupFullInfo::SupergroupFullInfo(i) => Ok(i),
@@ -198,12 +171,8 @@ impl TdLibClient {
         let client_id = self.client_id;
 
         self.block_on_request("getBasicGroupFullInfo", async {
-            let info = tdlib_rs::functions::get_basic_group_full_info(basic_group_id, client_id)
-                .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })?;
+            let info =
+                tdlib_rs::functions::get_basic_group_full_info(basic_group_id, client_id).await?;
 
             match info {
                 tdlib_rs::enums::BasicGroupFullInfo::BasicGroupFullInfo(i) => Ok(i),
@@ -222,10 +191,7 @@ impl TdLibClient {
         self.block_on_request("openChat", async {
             tdlib_rs::functions::open_chat(chat_id, client_id)
                 .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })
+                .map_err(TdLibError::from)
         })
     }
 
@@ -260,10 +226,7 @@ impl TdLibClient {
                 client_id,
             )
             .await
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })
+            .map_err(TdLibError::from)
         })?;
 
         // Advance the topic's read position in the cache right away, so a
@@ -286,10 +249,7 @@ impl TdLibClient {
         self.block_on_request("closeChat", async {
             tdlib_rs::functions::close_chat(chat_id, client_id)
                 .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })
+                .map_err(TdLibError::from)
         })
     }
 }

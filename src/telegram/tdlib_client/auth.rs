@@ -9,9 +9,12 @@ impl TdLibClient {
         &self,
         timeout: std::time::Duration,
     ) -> Result<AuthStateUpdate, TdLibError> {
-        let rx = self.auth_state_rx.lock().map_err(|_| TdLibError::Init {
-            message: "auth state receiver lock poisoned".to_owned(),
-        })?;
+        let rx = self
+            .auth_state_rx
+            .lock()
+            .map_err(|_| TdLibError::Internal {
+                message: "auth state receiver lock poisoned".to_owned(),
+            })?;
         rx.recv_timeout(timeout).map_err(|_| TdLibError::Timeout {
             message: "waiting for authorization state".to_owned(),
         })
@@ -71,10 +74,7 @@ impl TdLibClient {
         self.rt.block_on(async {
             tdlib_rs::functions::set_authentication_phone_number(phone, None, client_id)
                 .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })
+                .map_err(TdLibError::from)
         })
     }
 
@@ -86,10 +86,7 @@ impl TdLibClient {
         self.rt.block_on(async {
             tdlib_rs::functions::check_authentication_code(code, client_id)
                 .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })
+                .map_err(TdLibError::from)
         })
     }
 
@@ -101,10 +98,7 @@ impl TdLibClient {
         self.rt.block_on(async {
             tdlib_rs::functions::check_authentication_password(password, client_id)
                 .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })
+                .map_err(TdLibError::from)
         })
     }
 }

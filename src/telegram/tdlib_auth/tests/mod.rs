@@ -10,10 +10,14 @@ use super::messages::{enrich_same_chat_reply_info, reply_sender_name_for_message
 
 #[test]
 fn parse_flood_wait_extracts_seconds() {
-    assert_eq!(parse_flood_wait_seconds("flood_wait_67"), Some(67));
-    assert_eq!(parse_flood_wait_seconds("FLOOD_WAIT_120"), Some(120));
-    assert_eq!(parse_flood_wait_seconds("no flood here"), None);
-    assert_eq!(parse_flood_wait_seconds("other error"), None);
+    assert_eq!(
+        parse_flood_wait_seconds(429, "too many requests: retry after 67"),
+        Some(67)
+    );
+    assert_eq!(parse_flood_wait_seconds(420, "flood_wait_120"), Some(120));
+    assert_eq!(parse_flood_wait_seconds(400, "no flood here"), None);
+    assert_eq!(parse_flood_wait_seconds(400, "retry after 30"), None);
+    assert_eq!(parse_flood_wait_seconds(400, "other error"), None);
 }
 
 #[test]
@@ -83,7 +87,7 @@ fn map_list_chats_error_returns_unauthorized_for_auth_error() {
 }
 
 #[test]
-fn map_tdlib_error_maps_request_to_transient() {
+fn map_tdlib_error_keeps_request_code_in_transient_message() {
     let error = TdLibError::Request {
         code: 400,
         message: "BAD_REQUEST".to_owned(),
@@ -92,7 +96,7 @@ fn map_tdlib_error_maps_request_to_transient() {
         map_tdlib_error(error),
         AuthBackendError::Transient {
             code: "AUTH_BACKEND_UNAVAILABLE",
-            message: "BAD_REQUEST".to_owned(),
+            message: "TDLib request error 400: BAD_REQUEST".to_owned(),
         }
     );
 }

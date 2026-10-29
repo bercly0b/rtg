@@ -77,12 +77,25 @@ pub enum TdLibError {
     #[error("TDLib operation timed out: {message}")]
     Timeout { message: String },
 
+    /// Failure of the client's own runtime machinery, such as a poisoned lock.
+    #[error("TDLib client internal error: {message}")]
+    Internal { message: String },
+
     /// A panic raised inside `tdlib-rs` while decoding a TDLib response.
     #[error("TDLib response to {request} could not be decoded: {message}")]
     Decode {
         request: &'static str,
         message: String,
     },
+}
+
+impl From<tdlib_rs::types::Error> for TdLibError {
+    fn from(error: tdlib_rs::types::Error) -> Self {
+        Self::Request {
+            code: error.code,
+            message: error.message,
+        }
+    }
 }
 
 /// Authorization state change event.
