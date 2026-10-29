@@ -114,7 +114,6 @@ impl MessageInputState {
     }
 
     /// Clears all text, reply context, edit context, and resets cursor.
-    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.text.clear();
         self.cursor_position = 0;

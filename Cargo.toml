@@ -33,3 +33,6 @@ shell-words = "1.1"
 
 [dev-dependencies]
 tempfile = "3.25.0"
+
+[lints.clippy]
+allow_attributes_without_reason = "warn"

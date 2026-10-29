@@ -57,7 +57,6 @@ pub fn compose_shell(context: &AppContext) -> ShellComposition {
     compose_shell_with_factory(context, &RealConnectivityMonitorFactory)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn compose_shell_with_factory(
     context: &AppContext,
     monitor_factory: &dyn ConnectivityMonitorFactory,
@@ -170,12 +169,10 @@ fn build_context(config_path: Option<&Path>) -> Result<AppContext, AppError> {
     build_context_with(&config_adapter)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn build_context_with(config_adapter: &dyn ConfigAdapter) -> Result<AppContext, AppError> {
     build_context_with_factories(config_adapter, &RealTelegramAdapterFactory)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn build_context_with_factories(
     config_adapter: &dyn ConfigAdapter,
     telegram_factory: &dyn TelegramAdapterFactory,
@@ -210,7 +207,10 @@ fn build_context_with_factories_inner(
     Ok(AppContext::new(config, telegram))
 }
 
-#[allow(clippy::wrong_self_convention)]
+#[allow(
+    clippy::wrong_self_convention,
+    reason = "factory method takes &self so tests can inject a fake factory"
+)]
 trait TelegramAdapterFactory {
     fn from_config(
         &self,

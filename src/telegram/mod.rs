@@ -13,9 +13,15 @@ mod tdlib_updates;
 mod trait_impls;
 
 // Re-export TDLib types for external use
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "public API of the telegram module, not used outside it yet"
+)]
 pub use tdlib_client::{TdLibClient, TdLibConfig, TdLibError};
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "public API of the telegram module, not used outside it yet"
+)]
 pub use tdlib_updates::TdLibUpdate;
 
 use std::sync::mpsc::{Receiver, Sender};
@@ -95,7 +101,7 @@ impl TelegramAdapter {
         })
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn uses_real_backend(&self) -> bool {
         matches!(self.backend_kind, BackendKind::TdLib)
     }
@@ -137,17 +143,16 @@ impl TelegramAdapter {
         TelegramChatUpdatesMonitor::start(update_rx, updates_tx, mapper)
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn subscribe_status(&self) -> Receiver<AuthConnectivityStatus> {
         self.status_tracker.subscribe()
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn status_snapshot(&self) -> AuthConnectivityStatus {
         self.status_tracker.snapshot()
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn record_connectivity_status(&self, status: ConnectivityStatus) {
         self.status_tracker.on_connectivity_changed(status);
     }

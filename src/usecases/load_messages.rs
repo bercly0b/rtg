@@ -25,7 +25,6 @@ impl LoadMessagesQuery {
     }
 
     /// Builds a query scoped to a forum topic inside `chat_id`.
-    #[allow(dead_code)]
     pub fn for_topic(chat_id: i64, topic_id: i32) -> Self {
         Self {
             chat_id,
@@ -45,7 +44,6 @@ impl LoadMessagesQuery {
     }
 
     /// Like [`older_than`](Self::older_than) but scoped to a forum topic.
-    #[allow(dead_code)]
     pub fn older_than_in_topic(chat_id: i64, topic_id: i32, from_message_id: i64) -> Self {
         Self {
             chat_id,

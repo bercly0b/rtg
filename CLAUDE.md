@@ -65,7 +65,16 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
 ## Rust engineering style
 
 1. Keep layer boundaries clear (`ui`, `domain`, `usecases`, `infra`, `telegram`).
+   The ast-grep rules in `ast-grep/rules/` enforce them (see "Enforced boundaries" in
+   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)); fix the dependency instead of
+   weakening or ignoring a rule.
 2. Avoid mixing business logic with infrastructure details in one module.
+3. Every `#[allow(...)]` carries `reason = "..."` (enforced by
+   `clippy::allow_attributes_without_reason`); prefer fixing the warning over
+   suppressing it.
+4. Dependencies must pass `cargo deny check` (policy in `deny.toml`: RustSec
+   advisories, licences, sources); prefer updating or replacing a crate over
+   adding an exception, and give every exception a `reason`.
 
 ## UI principles
 

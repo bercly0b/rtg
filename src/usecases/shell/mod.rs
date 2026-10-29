@@ -138,7 +138,7 @@ where
     O: ExternalOpener,
     D: TaskDispatcher,
 {
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn new(storage: S, opener: O, dispatcher: D) -> Self {
         Self {
             state: ShellState::default(),
@@ -177,7 +177,10 @@ where
     ///
     /// `cache_source` provides synchronous access to TDLib's local cache
     /// for instant message display when opening chats.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "tracked in docs/REVIEW_BACKLOG.md (OrchestratorConfig)"
+    )]
     pub fn new_with_initial_state(
         storage: S,
         opener: O,

@@ -1,0 +1,42 @@
+id: domain-no-outer-layers
+snapshots:
+  "fn f() { crate::telegram::connect(); }":
+    labels:
+    - source: crate::telegram
+      style: primary
+      start: 9
+      end: 24
+  "fn f(_: crate::usecases::shell::Shell) {}":
+    labels:
+    - source: crate::usecases
+      style: primary
+      start: 8
+      end: 23
+  "use crate::infra::error::AppError;":
+    labels:
+    - source: crate::infra
+      style: primary
+      start: 4
+      end: 16
+  "use crate::usecases::list_chats::DEFAULT_CHAT_PAGE_SIZE;":
+    labels:
+    - source: crate::usecases
+      style: primary
+      start: 4
+      end: 19
+  "use crate::{\n    domain::chat::ChatSummary,\n    telegram::TdLibClient,\n};":
+    labels:
+    - source: |-
+        use crate::{
+            domain::chat::ChatSummary,
+            telegram::TdLibClient,
+        };
+      style: primary
+      start: 0
+      end: 73
+  "use crate::{domain::chat::ChatSummary, ui::styles};":
+    labels:
+    - source: use crate::{domain::chat::ChatSummary, ui::styles};
+      style: primary
+      start: 0
+      end: 51

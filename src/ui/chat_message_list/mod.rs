@@ -42,7 +42,7 @@ impl ChatMessageListState {
         self.offset
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "not used yet")]
     pub fn selected(&self) -> Option<usize> {
         self.selected
     }

@@ -1,7 +1,9 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use tdlib_rs::types::{Chat, User};
+use tracing::subscriber::NoSubscriber;
+use tracing::Dispatch;
 
 use crate::domain::chat::ChatType;
 use crate::telegram::tdlib_cache::tests::{make_test_chat, make_test_forum_topic, make_test_user};
@@ -532,6 +534,13 @@ impl std::io::Write for LogBuffer {
 }
 
 fn capture_logs<T>(f: impl FnOnce() -> T) -> (T, String) {
+    // While a single dispatcher is registered, tracing caches a callsite's
+    // interest from the default subscriber of whichever thread hits it first,
+    // so a parallel test without a subscriber could disable these events.
+    // A second live dispatcher makes tracing combine all registered ones.
+    static SECOND_DISPATCHER: OnceLock<Dispatch> = OnceLock::new();
+    SECOND_DISPATCHER.get_or_init(|| Dispatch::new(NoSubscriber::default()));
+
     let buffer = LogBuffer::default();
     let writer = buffer.clone();
     let subscriber = tracing_subscriber::fmt()

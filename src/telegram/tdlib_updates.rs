@@ -14,7 +14,10 @@ use tdlib_rs::types::Message as TdMessage;
 /// Message-carrying variants use `Box` to keep the enum size reasonable
 /// since raw TDLib types are large structs.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Fields reserved for future granular update handling
+#[allow(
+    dead_code,
+    reason = "fields reserved for future granular update handling"
+)]
 pub enum TdLibUpdate {
     /// A new chat was discovered by TDLib. Carries the full Chat object
     /// for cache population. Guaranteed to arrive before the chat ID
@@ -107,7 +110,7 @@ pub enum TdLibUpdate {
 
 impl TdLibUpdate {
     /// Returns the chat_id affected by this update, if any.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "used only by tests")]
     pub fn chat_id(&self) -> Option<i64> {
         match self {
             TdLibUpdate::NewChat { chat } => Some(chat.id),

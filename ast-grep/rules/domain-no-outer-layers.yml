@@ -1,0 +1,15 @@
+id: domain-no-outer-layers
+language: rust
+severity: error
+message: domain/ must not depend on other layers
+note: |
+  domain/ holds pure types and depends on nothing (docs/ARCHITECTURE.md).
+  Move the shared item into domain/ and let the outer layer import it from there.
+files:
+  - src/domain/**/*.rs
+rule:
+  any:
+    - kind: scoped_identifier
+      regex: ^crate::(app|cli|infra|telegram|ui|usecases)$
+    - kind: use_declaration
+      regex: crate::\{[^;]*\b(app|cli|infra|telegram|ui|usecases)\b

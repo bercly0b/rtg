@@ -1,8 +1,6 @@
 use crate::domain::chat::ChatSummary;
+use crate::domain::chat_list_state::DEFAULT_CHAT_PAGE_SIZE;
 
-pub const DEFAULT_CHAT_PAGE_SIZE: usize = 50;
-
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListChatsQuery {
     pub limit: usize,
@@ -29,14 +27,16 @@ impl ListChatsQuery {
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListChatsOutput {
     pub chats: Vec<ChatSummary>,
     pub all_loaded: bool,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "some variants are constructed only by tests")
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListChatsSourceError {
     Unauthorized,
@@ -45,7 +45,6 @@ pub enum ListChatsSourceError {
     Unknown,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub trait ListChatsSource {
     fn list_chats(
         &self,
@@ -80,7 +79,6 @@ where
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListChatsError {
     Unauthorized,
@@ -88,7 +86,6 @@ pub enum ListChatsError {
     DataContractViolation,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn list_chats(
     source: &dyn ListChatsSource,
     query: ListChatsQuery,

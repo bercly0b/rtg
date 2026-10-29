@@ -11,7 +11,6 @@ pub enum AuthStatus {
 }
 
 impl AuthStatus {
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn as_label(self) -> &'static str {
         match self {
             Self::NotStarted => "AUTH_NOT_STARTED",
@@ -33,7 +32,6 @@ pub enum ConnectivityHealth {
 }
 
 impl ConnectivityHealth {
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn as_label(self) -> &'static str {
         match self {
             Self::Unknown => "CONNECTIVITY_UNKNOWN",

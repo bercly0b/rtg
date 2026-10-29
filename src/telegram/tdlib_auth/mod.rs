@@ -289,7 +289,7 @@ impl TdLibAuthBackend {
     }
 
     /// Returns the current authentication status snapshot.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "not used yet")]
     pub fn auth_status_snapshot(&self) -> Option<AuthConnectivityStatus> {
         None
     }
@@ -308,13 +308,13 @@ impl TdLibAuthBackend {
     }
 
     /// Returns the underlying TDLib client.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "not used yet")]
     pub fn client(&self) -> &TdLibClient {
         &self.client
     }
 
     /// Returns mutable reference to the underlying TDLib client.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "not used yet")]
     pub fn client_mut(&mut self) -> &mut TdLibClient {
         &mut self.client
     }

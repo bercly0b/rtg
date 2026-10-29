@@ -1,0 +1,26 @@
+id: tdlib-only-in-telegram
+snapshots:
+  "fn f() { tdlib_rs::create_client(); }":
+    labels:
+    - source: tdlib_rs
+      style: primary
+      start: 9
+      end: 17
+  "fn f(_: tdlib_rs::types::Chat) {}":
+    labels:
+    - source: tdlib_rs
+      style: primary
+      start: 8
+      end: 16
+  "use tdlib_rs::enums::Update;":
+    labels:
+    - source: tdlib_rs
+      style: primary
+      start: 4
+      end: 12
+  "use tdlib_rs::{enums, functions};":
+    labels:
+    - source: tdlib_rs
+      style: primary
+      start: 4
+      end: 12
