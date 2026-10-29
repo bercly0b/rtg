@@ -14,7 +14,7 @@
 
 </div>
 
-RTG is a fast, keyboard-driven TUI client built on top of
+RTG is a fast, keyboard-driven Telegram client for the terminal, built on top of
 [TDLib](https://core.telegram.org/tdlib). It strips Telegram down to its core —
 chats and messages. That's it. No stories. No ads. No notifications. Enjoy the
 silence.
@@ -23,7 +23,7 @@ The project is in early development — the core chat experience is in place and
 new features are landing regularly.
 
 <p align="center">
-  <img src="docs/assets/readme-demo.gif" alt="RTG demo" width="800">
+  <img src="docs/assets/readme-demo.gif" alt="RTG demo: browsing the Telegram chat list with vim-like keys, searching chats, reading messages and recording a voice message in the terminal" width="800">
 </p>
 
 ## Features
