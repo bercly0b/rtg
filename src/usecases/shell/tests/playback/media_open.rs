@@ -236,3 +236,33 @@ fn l_on_sticker_is_ignored() {
         .unwrap();
     assert!(o.state().command_popup().is_none());
 }
+
+#[test]
+fn l_with_missing_handler_binary_notifies_start_error() {
+    let tmp = std::env::temp_dir().join("rtg_test_photo_missing_handler.jpg");
+    std::fs::write(&tmp, b"fake").unwrap();
+    let path = tmp.to_str().unwrap();
+
+    let mut o = orchestrator_with_open_chat(
+        vec![chat(1, "Chat")],
+        1,
+        vec![photo_message_downloaded(10, path)],
+    );
+    o.open_handlers.insert(
+        "image/*".to_owned(),
+        "rtg-test-missing-binary {file_path}".to_owned(),
+    );
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
+        .unwrap();
+
+    assert!(o.state().command_popup().is_none());
+    assert!(o.recording_handle.is_none());
+    let notification = o.state().active_notification().unwrap_or_default();
+    assert!(
+        notification.starts_with("Open failed: failed to start `rtg-test-missing-binary`"),
+        "{notification}"
+    );
+
+    let _ = std::fs::remove_file(&tmp);
+}

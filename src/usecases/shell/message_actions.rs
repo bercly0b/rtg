@@ -73,7 +73,9 @@ pub(super) fn open_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx
                 tracing::info!(cmd_template, "command started");
             }
             Err(err) => {
+                let err = format!("{err:#}");
                 tracing::error!(%err, "failed to start command");
+                ctx.state.set_notification(format!("Open failed: {err}"));
             }
         }
     }

@@ -1,4 +1,4 @@
-use tdlib_rs::enums::MessageContent;
+use tdlib_rs::enums::{MessageContent, MessageSender};
 use tdlib_rs::types::Message as TdMessage;
 
 use crate::domain::message::{ForwardInfo, Message, MessageMedia, ReplyInfo};
@@ -19,7 +19,8 @@ pub fn map_tdlib_message_to_domain(
     resolve_user_name: impl Fn(i64) -> Option<String>,
 ) -> Message {
     let is_service = is_service_content(&msg.content);
-    let text = extract_message_text(&msg.content, &resolve_user_name);
+    let text = extract_self_membership_text(msg)
+        .unwrap_or_else(|| extract_message_text(&msg.content, &resolve_user_name));
     let media = extract_message_media(&msg.content);
     let file_info = extract_file_info(&msg.content);
     let call_info = extract_call_info(&msg.content);
@@ -43,6 +44,24 @@ pub fn map_tdlib_message_to_domain(
         links,
         is_edited: msg.edit_date > 0,
         is_service,
+    }
+}
+
+/// Telegram reports a user joining or leaving a group on their own as the
+/// user adding or removing themselves; official clients word it as
+/// "joined"/"left" instead of "X added X".
+fn extract_self_membership_text(msg: &TdMessage) -> Option<String> {
+    let MessageSender::User(sender) = &msg.sender_id else {
+        return None;
+    };
+    match &msg.content {
+        MessageContent::MessageChatAddMembers(m) if m.member_user_ids == [sender.user_id] => {
+            Some("joined the group".to_owned())
+        }
+        MessageContent::MessageChatDeleteMember(m) if m.user_id == sender.user_id => {
+            Some("left the group".to_owned())
+        }
+        _ => None,
     }
 }
 

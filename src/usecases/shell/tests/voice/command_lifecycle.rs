@@ -59,10 +59,9 @@ fn command_exited_transitions_running_to_awaiting_on_success() {
     use crate::domain::command_popup_state::CommandPhase;
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-    simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", true);
+    let exited = simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", true);
 
-    o.handle_event(AppEvent::CommandExited { success: true })
-        .unwrap();
+    o.handle_event(exited).unwrap();
 
     let popup = o
         .state()
@@ -220,10 +219,9 @@ fn command_exited_with_failure_transitions_to_failed() {
     use crate::domain::command_popup_state::CommandPhase;
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-    simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
+    let exited = simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
 
-    o.handle_event(AppEvent::CommandExited { success: false })
-        .unwrap();
+    o.handle_event(exited).unwrap();
 
     let popup = o
         .state()
@@ -244,10 +242,9 @@ fn command_exited_with_failure_transitions_to_failed() {
 #[test]
 fn failed_phase_any_key_closes_popup() {
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-    simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
+    let exited = simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
 
-    o.handle_event(AppEvent::CommandExited { success: false })
-        .unwrap();
+    o.handle_event(exited).unwrap();
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("x", false)))
         .unwrap();
@@ -259,10 +256,9 @@ fn failed_phase_message_mentions_config_without_hardcoded_path() {
     use crate::domain::command_popup_state::CommandPhase;
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-    simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
+    let exited = simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
 
-    o.handle_event(AppEvent::CommandExited { success: false })
-        .unwrap();
+    o.handle_event(exited).unwrap();
 
     let popup = o.state().command_popup().unwrap();
     match popup.phase() {

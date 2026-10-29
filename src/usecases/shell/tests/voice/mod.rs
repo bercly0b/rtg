@@ -18,17 +18,19 @@ fn simulate_voice_recording_started(o: &mut TestOrchestrator, file_path: &str) {
 }
 
 /// Simulates voice recording with a real process for exit-code tests.
-/// `success`: if true, spawns `true` (exit 0); if false, spawns `false` (exit 1).
-fn simulate_voice_recording_with_process(o: &mut TestOrchestrator, file_path: &str, success: bool) {
-    use std::process::Command;
-
+/// `success`: if true, runs `true` (exit 0); if false, runs `false` (exit 1).
+///
+/// Returns the `CommandExited` event the process produced, for the test to
+/// feed into the orchestrator.
+fn simulate_voice_recording_with_process(
+    o: &mut TestOrchestrator,
+    file_path: &str,
+    success: bool,
+) -> AppEvent {
     let cmd = if success { "true" } else { "false" };
-    let child = Command::new(cmd)
-        .spawn()
+    let (handle, rx) = crate::usecases::voice_recording::start_command(cmd, file_path)
         .expect("failed to spawn test process");
-    let mut handle = crate::usecases::voice_recording::RecordingHandle::from_child(child);
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    let _ = handle.try_exit_success();
+    let exited = wait_for_command_exit(&rx);
 
     o.state.open_command_popup(
         "Recording Voice",
@@ -36,4 +38,22 @@ fn simulate_voice_recording_with_process(o: &mut TestOrchestrator, file_path: &s
     );
     o.recording_file_path = Some(file_path.to_owned());
     o.recording_handle = Some(handle);
+    exited
+}
+
+/// Drains a command's output and returns its exit as an `AppEvent`.
+fn wait_for_command_exit(
+    rx: &std::sync::mpsc::Receiver<crate::domain::events::CommandEvent>,
+) -> AppEvent {
+    use crate::domain::events::CommandEvent;
+
+    loop {
+        match rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("command must exit")
+        {
+            CommandEvent::OutputLine { .. } => {}
+            CommandEvent::Exited { success } => return AppEvent::CommandExited { success },
+        }
+    }
 }
