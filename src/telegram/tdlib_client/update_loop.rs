@@ -264,13 +264,7 @@ impl TdLibClient {
                             forward_update(
                                 &update_tx,
                                 TdLibUpdate::FileUpdated {
-                                    file_id: u.file.id,
-                                    size: u.file.size,
-                                    expected_size: u.file.expected_size,
-                                    local_path: u.file.local.path,
-                                    is_downloading_active: u.file.local.is_downloading_active,
-                                    is_downloading_completed: u.file.local.is_downloading_completed,
-                                    downloaded_size: u.file.local.downloaded_size,
+                                    file: Box::new(u.file),
                                 },
                             );
                         }

@@ -25,12 +25,12 @@ pub(super) fn make_orchestrator() -> TestOrchestrator {
 /// Helper: pre-populate the chat list as if a background load completed.
 pub(super) fn inject_chat_list(orchestrator: &mut TestOrchestrator, chats: Vec<ChatSummary>) {
     orchestrator
-        .handle_event(AppEvent::BackgroundTaskCompleted(
+        .handle_event(AppEvent::BackgroundTasksCompleted(vec![
             BackgroundTaskResult::ChatListLoaded {
                 result: Ok(chats),
                 all_loaded: false,
             },
-        ))
+        ]))
         .unwrap();
 }
 
@@ -42,12 +42,12 @@ pub(super) fn inject_forum_topics(
     topics: Vec<crate::domain::forum_topic::ForumTopicSummary>,
 ) {
     orchestrator
-        .handle_event(AppEvent::BackgroundTaskCompleted(
+        .handle_event(AppEvent::BackgroundTasksCompleted(vec![
             BackgroundTaskResult::ForumTopicsLoaded {
                 chat_id,
                 result: Ok(topics),
             },
-        ))
+        ]))
         .unwrap();
 }
 
@@ -55,14 +55,14 @@ pub(super) fn inject_forum_topics(
 #[allow(dead_code)]
 pub(super) fn inject_forum_topics_error(orchestrator: &mut TestOrchestrator, chat_id: i64) {
     orchestrator
-        .handle_event(AppEvent::BackgroundTaskCompleted(
+        .handle_event(AppEvent::BackgroundTasksCompleted(vec![
             BackgroundTaskResult::ForumTopicsLoaded {
                 chat_id,
-                result: Err(crate::domain::events::BackgroundError::new(
+                result: Err(crate::usecases::background::BackgroundError::new(
                     "FORUM_TOPICS_UNAVAILABLE",
                 )),
             },
-        ))
+        ]))
         .unwrap();
 }
 
@@ -93,13 +93,13 @@ pub(super) fn inject_topic_messages(
     messages: Vec<Message>,
 ) {
     orchestrator
-        .handle_event(AppEvent::BackgroundTaskCompleted(
+        .handle_event(AppEvent::BackgroundTasksCompleted(vec![
             BackgroundTaskResult::MessagesLoaded {
                 chat_id,
                 topic_id,
                 result: Ok(messages),
             },
-        ))
+        ]))
         .unwrap();
 }
 

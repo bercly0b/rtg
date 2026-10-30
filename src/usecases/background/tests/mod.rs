@@ -1,5 +1,6 @@
 mod error_mapping;
 mod file_ops;
+mod task_result;
 
 use crate::usecases::{
     background::TaskDispatcher,
@@ -80,9 +81,9 @@ mod forum_unread_counts {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use crate::domain::events::BackgroundTaskResult;
     use crate::domain::forum_topic::ForumTopicSummary;
     use crate::usecases::background::lifecycle::dispatch_forum_unread_counts;
+    use crate::usecases::background::BackgroundTaskResult;
     use crate::usecases::list_forum_topics::{ForumTopicsSource, ListForumTopicsSourceError};
 
     struct StubForumTopicsSource {

@@ -4,10 +4,7 @@ mod validation;
 use std::{io::IsTerminal, path::Path, sync::mpsc::Sender};
 
 use crate::{
-    domain::{
-        events::{BackgroundTaskResult, ConnectivityStatus},
-        shell_state::ShellState,
-    },
+    domain::{events::ConnectivityStatus, shell_state::ShellState},
     infra::{
         self,
         config::{FileConfigAdapter, TelegramConfig},
@@ -26,7 +23,7 @@ use crate::{
         StubConnectivityStatusSource,
     },
     usecases::{
-        background::ThreadTaskDispatcher,
+        background::{BackgroundTaskResult, ThreadTaskDispatcher},
         context::AppContext,
         contracts::ShellOrchestrator,
         guided_auth::{AuthBackendError, AuthTerminal, StdTerminal},

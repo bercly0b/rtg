@@ -1,18 +1,18 @@
 use std::sync::{mpsc::Sender, Arc};
 
-use crate::{
-    domain::events::{BackgroundError, BackgroundTaskResult},
-    usecases::{
-        chat_lifecycle::{ChatLifecycle, ChatReadMarker, FileDownloader, MessageDeleter},
-        chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
-        list_chats::{list_chats, ListChatsQuery, ListChatsSource},
-        list_forum_topics::{list_forum_topics, ForumTopicsSource, ListForumTopicsQuery},
-        message_info::{MessageInfoQuery, MessageInfoSource},
-        message_reactions::{AddReactionQuery, AvailableReactionsQuery, ReactionSource},
-    },
+use crate::usecases::{
+    chat_lifecycle::{ChatLifecycle, ChatReadMarker, FileDownloader, MessageDeleter},
+    chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
+    list_chats::{list_chats, ListChatsQuery, ListChatsSource},
+    list_forum_topics::{list_forum_topics, ForumTopicsSource, ListForumTopicsQuery},
+    message_info::{MessageInfoQuery, MessageInfoSource},
+    message_reactions::{AddReactionQuery, AvailableReactionsQuery, ReactionSource},
 };
 
-use super::error_mapping::{map_list_chats_error, map_list_forum_topics_error};
+use super::{
+    error_mapping::{map_list_chats_error, map_list_forum_topics_error},
+    BackgroundError, BackgroundTaskResult,
+};
 
 pub(super) fn dispatch_chat_list<C: ListChatsSource + Send + Sync + 'static>(
     source: &Arc<C>,

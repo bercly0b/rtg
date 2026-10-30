@@ -65,10 +65,12 @@ pub fn start(
 mod tests {
     use super::*;
     use crate::{
-        domain::events::AppEvent,
         infra::{contracts::ExternalOpener, stubs::StubStorageAdapter},
         ui::event_source::MockEventSource,
-        usecases::{background::tests::StubTaskDispatcher, shell::DefaultShellOrchestrator},
+        usecases::{
+            background::tests::StubTaskDispatcher, contracts::AppEvent,
+            shell::DefaultShellOrchestrator,
+        },
     };
 
     #[derive(Debug, Default)]

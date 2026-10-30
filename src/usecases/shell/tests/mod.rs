@@ -24,12 +24,16 @@ use crate::{
     domain::{
         chat::ChatSummary,
         chat_list_state::ChatListUiState,
-        events::{AppEvent, BackgroundError, BackgroundTaskResult, ConnectivityStatus, KeyInput},
+        events::{ConnectivityStatus, KeyInput},
         message::Message,
         open_chat_state::OpenChatUiState,
         shell_state::ShellState,
     },
     infra::{contracts::ExternalOpener, stubs::StubStorageAdapter},
+    usecases::{
+        background::{BackgroundError, BackgroundTaskResult},
+        contracts::AppEvent,
+    },
 };
 
 use dispatcher::*;

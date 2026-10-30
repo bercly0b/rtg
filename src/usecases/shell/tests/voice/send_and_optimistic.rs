@@ -242,9 +242,9 @@ fn voice_send_failed_removes_pending_message() {
     o.send_voice_recording();
     assert_eq!(o.state().open_chat().messages().len(), 2);
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::VoiceSendFailed { chat_id: 1 },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().open_chat().messages().len(), 1);
@@ -263,9 +263,9 @@ fn voice_send_failed_ignored_for_different_chat() {
     o.send_voice_recording();
     assert_eq!(o.state().open_chat().messages().len(), 2);
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::VoiceSendFailed { chat_id: 999 },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().open_chat().messages().len(), 2);
@@ -287,13 +287,13 @@ fn voice_send_success_replaces_pending_with_real_message() {
     voice_msg.media = crate::domain::message::MessageMedia::Voice;
     voice_msg.is_outgoing = true;
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageSentRefreshCompleted {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(10, "hi"), voice_msg]),
         },
-    ))
+    ]))
     .unwrap();
 
     let messages = o.state().open_chat().messages();

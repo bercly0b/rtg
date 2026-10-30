@@ -1,6 +1,9 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
-use crate::domain::events::{AppEvent, ConnectivityStatus, KeyInput};
+use crate::{
+    domain::events::{ConnectivityStatus, KeyInput},
+    usecases::contracts::AppEvent,
+};
 
 use super::super::{CrosstermEventSource, StubBackgroundResultSource, StubChatUpdatesSignalSource};
 use super::{
@@ -346,5 +349,41 @@ fn round_robin_between_chat_updates_and_connectivity_when_both_hot() {
             .iter()
             .any(|event| matches!(event, AppEvent::ConnectivityChanged(_))),
         "connectivity should not be starved when both sources are hot"
+    );
+}
+
+#[test]
+fn emits_all_pending_background_results_in_one_event() {
+    use std::sync::mpsc;
+
+    use super::super::ChannelBackgroundResultSource;
+    use crate::usecases::background::BackgroundTaskResult;
+
+    let (tx, rx) = mpsc::channel();
+    for chat_id in [1, 2] {
+        tx.send(BackgroundTaskResult::VoiceSendFailed { chat_id })
+            .expect("result should be sent");
+    }
+    let mut source = CrosstermEventSource::with_sources(
+        Box::new(super::super::StubConnectivityStatusSource),
+        Box::new(StubChatUpdatesSignalSource),
+        Box::new(ChannelBackgroundResultSource::new(rx)),
+    );
+    let mut terminal = TestTerminalEventSource::with_polls(vec![false, false]);
+
+    assert_eq!(
+        source
+            .next_event_with_terminal(&mut terminal)
+            .expect("background results should be readable"),
+        Some(AppEvent::BackgroundTasksCompleted(vec![
+            BackgroundTaskResult::VoiceSendFailed { chat_id: 1 },
+            BackgroundTaskResult::VoiceSendFailed { chat_id: 2 },
+        ]))
+    );
+    assert_eq!(
+        source
+            .next_event_with_terminal(&mut terminal)
+            .expect("next event should remain available"),
+        Some(AppEvent::Tick)
     );
 }

@@ -1,4 +1,5 @@
 mod audio_playback;
+mod file_download;
 mod media_open;
 
 use super::*;

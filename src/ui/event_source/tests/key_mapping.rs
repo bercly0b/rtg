@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-use crate::domain::events::{AppEvent, KeyInput};
+use crate::{domain::events::KeyInput, usecases::contracts::AppEvent};
 
 use super::super::map_key_event;
 

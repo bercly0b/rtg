@@ -119,13 +119,13 @@ fn messages_load_error_does_not_dispatch_mark_as_read() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Err(BackgroundError::new("MESSAGES_UNAVAILABLE")),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 0);

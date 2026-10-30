@@ -100,27 +100,7 @@ fn extract_photo_file_info(p: &tdlib_rs::types::MessagePhoto) -> Option<FileInfo
 
 /// Builds a `FileInfo` from a TDLib `File` and extracted metadata.
 fn build_file_info(file: &tdlib_rs::types::File, meta: FileMetadata) -> FileInfo {
-    let is_completed = file.local.is_downloading_completed && !file.local.path.is_empty();
-    let local_path = if is_completed {
-        Some(file.local.path.clone())
-    } else {
-        None
-    };
-
-    let download_status = if is_completed {
-        DownloadStatus::Completed
-    } else if file.local.is_downloading_active {
-        let total = effective_file_size(file);
-        let percent = ((file.local.downloaded_size as u64) * 100)
-            .checked_div(total)
-            .unwrap_or(0)
-            .min(99) as u8;
-        DownloadStatus::Downloading {
-            progress_percent: percent,
-        }
-    } else {
-        DownloadStatus::NotStarted
-    };
+    let (download_status, local_path) = map_download_state(file);
 
     let size = {
         let s = effective_file_size(file);
@@ -141,6 +121,29 @@ fn build_file_info(file: &tdlib_rs::types::File, meta: FileMetadata) -> FileInfo
         is_listened: meta.is_listened,
         download_status,
     }
+}
+
+/// Maps TDLib's local file state to the domain download status.
+///
+/// The local path is returned only for a completed download: TDLib also
+/// reports the path of a partially downloaded file.
+pub fn map_download_state(file: &tdlib_rs::types::File) -> (DownloadStatus, Option<String>) {
+    if file.local.is_downloading_completed && !file.local.path.is_empty() {
+        return (DownloadStatus::Completed, Some(file.local.path.clone()));
+    }
+
+    let status = if file.local.is_downloading_active {
+        let percent = (file.local.downloaded_size.max(0) as u64 * 100)
+            .checked_div(effective_file_size(file))
+            .unwrap_or(0)
+            .min(99) as u8;
+        DownloadStatus::Downloading {
+            progress_percent: percent,
+        }
+    } else {
+        DownloadStatus::NotStarted
+    };
+    (status, None)
 }
 
 /// Extracts call metadata from a `MessageCall` content.
@@ -170,7 +173,7 @@ pub(super) fn extract_call_info(content: &MessageContent) -> Option<CallInfo> {
 /// Returns the best known file size from TDLib's `File` struct.
 ///
 /// Guards against negative sentinel values from TDLib by clamping to 0.
-fn effective_file_size(file: &tdlib_rs::types::File) -> u64 {
+pub fn effective_file_size(file: &tdlib_rs::types::File) -> u64 {
     let size = file.size.max(0) as u64;
     if size > 0 {
         size
