@@ -76,7 +76,8 @@ fn command_popup_y_sends_voice_and_closes_popup() {
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
 
-    let tmp = std::env::temp_dir().join("rtg_test_send.oga");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_send.oga");
     std::fs::write(&tmp, b"fake audio").unwrap();
     let file_path = tmp.to_str().unwrap().to_owned();
 
@@ -95,8 +96,6 @@ fn command_popup_y_sends_voice_and_closes_popup() {
     assert!(o.state().command_popup().is_none());
     assert_eq!(o.dispatcher.voice_send_dispatch_count(), 1);
     assert_eq!(o.dispatcher.last_voice_send().unwrap().0, 1);
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
@@ -105,7 +104,8 @@ fn command_popup_n_discards_voice_and_closes_popup() {
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
 
-    let tmp = std::env::temp_dir().join("rtg_test_discard.oga");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_discard.oga");
     std::fs::write(&tmp, b"fake audio").unwrap();
     let file_path = tmp.to_str().unwrap().to_owned();
 
@@ -132,7 +132,8 @@ fn command_popup_esc_discards_voice_and_closes_popup() {
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
 
-    let tmp = std::env::temp_dir().join("rtg_test_esc.oga");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_esc.oga");
     std::fs::write(&tmp, b"fake audio").unwrap();
     let file_path = tmp.to_str().unwrap().to_owned();
 
