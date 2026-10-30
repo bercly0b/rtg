@@ -13,6 +13,7 @@ pub enum Action {
     ShowChatInfo,
     SearchChats,
     SelectFirstChat,
+    ShowChatFolders,
     // ForumTopicList
     SelectNextTopic,
     SelectPreviousTopic,
@@ -53,6 +54,7 @@ impl Action {
             Self::ShowChatInfo => "show_chat_info",
             Self::SearchChats => "search_chats",
             Self::SelectFirstChat => "select_first_chat",
+            Self::ShowChatFolders => "show_chat_folders",
             Self::SelectNextTopic => "select_next_topic",
             Self::SelectPreviousTopic => "select_previous_topic",
             Self::SelectFirstTopic => "select_first_topic",
@@ -90,6 +92,7 @@ impl Action {
             "show_chat_info" => Some(Self::ShowChatInfo),
             "search_chats" => Some(Self::SearchChats),
             "select_first_chat" => Some(Self::SelectFirstChat),
+            "show_chat_folders" => Some(Self::ShowChatFolders),
             "select_next_topic" => Some(Self::SelectNextTopic),
             "select_previous_topic" => Some(Self::SelectPreviousTopic),
             "select_first_topic" => Some(Self::SelectFirstTopic),
@@ -469,6 +472,11 @@ fn default_bindings() -> Vec<KeyBinding> {
             action: Action::SelectFirstChat,
             context: KeyContext::ChatList,
         },
+        KeyBinding {
+            pattern: KeyPattern::single("f"),
+            action: Action::ShowChatFolders,
+            context: KeyContext::ChatList,
+        },
         // ── ForumTopicList ──
         KeyBinding {
             pattern: KeyPattern::single("j"),
@@ -825,6 +833,7 @@ mod tests {
         let actions = [
             Action::SelectNextChat,
             Action::SelectFirstChat,
+            Action::ShowChatFolders,
             Action::DeleteMessage,
             Action::Quit,
             Action::ShowHelp,
@@ -966,6 +975,23 @@ mod tests {
         assert!(entries.iter().any(|e| e.action_name == "select_next_topic"));
         assert!(entries.iter().any(|e| e.action_name == "open_forum_topic"));
         assert!(entries.iter().any(|e| e.action_name == "back_from_forum"));
+    }
+
+    #[test]
+    fn f_shows_chat_folders_only_in_chat_list() {
+        let mut km = Keymap::default();
+        assert_eq!(
+            km.resolve("f", false, KeyContext::ChatList),
+            ResolveResult::Action(Action::ShowChatFolders)
+        );
+        assert_eq!(
+            km.resolve("f", false, KeyContext::ForumTopicList),
+            ResolveResult::Unmatched
+        );
+        assert_eq!(
+            km.resolve("f", false, KeyContext::Messages),
+            ResolveResult::Unmatched
+        );
     }
 
     #[test]

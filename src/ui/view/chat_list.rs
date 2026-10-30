@@ -32,21 +32,22 @@ pub(super) fn render_chat_list_panel(
     }
 
     let chat_list = state.chat_list();
+    let list_title = state.active_chat_folder_title().unwrap_or("Chats");
     match chat_list.ui_state() {
         ChatListUiState::Loading => {
-            render_chat_list_message(frame, area, "Chats", "Loading chats...", title_style)
+            render_chat_list_message(frame, area, list_title, "Loading chats...", title_style)
         }
         ChatListUiState::Empty => render_chat_list_message(
             frame,
             area,
-            "Chats",
+            list_title,
             "No chats yet. Press refresh to try again.",
             title_style,
         ),
         ChatListUiState::Error => render_chat_list_message(
             frame,
             area,
-            "Chats",
+            list_title,
             "Failed to load chats. Check connection and retry.",
             title_style,
         ),
@@ -57,7 +58,7 @@ pub(super) fn render_chat_list_panel(
             let items = layout.build_items(chats, inner_width);
             let chat_count = chats.len();
 
-            let title = format!("Chats ({})", chat_count);
+            let title = format!("{list_title} ({chat_count})");
             let highlight = if is_active {
                 styles::highlight_style()
             } else {

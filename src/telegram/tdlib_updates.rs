@@ -89,6 +89,12 @@ pub enum TdLibUpdate {
     /// chat list should re-resolve this chat's metadata so the forum flag
     /// becomes current.
     SupergroupMetadataChanged { chat_id: i64 },
+
+    /// The list of chat folders changed; also pushed once at startup.
+    ChatFolders {
+        chat_folders: Vec<tdlib_rs::types::ChatFolderInfo>,
+        main_chat_list_position: i32,
+    },
 }
 
 impl TdLibUpdate {
@@ -111,7 +117,9 @@ impl TdLibUpdate {
             TdLibUpdate::ForumTopicInfoChanged { chat_id, .. }
             | TdLibUpdate::ForumTopicChanged { chat_id, .. }
             | TdLibUpdate::SupergroupMetadataChanged { chat_id } => Some(*chat_id),
-            TdLibUpdate::UserStatus { .. } | TdLibUpdate::FileUpdated { .. } => None,
+            TdLibUpdate::UserStatus { .. }
+            | TdLibUpdate::FileUpdated { .. }
+            | TdLibUpdate::ChatFolders { .. } => None,
         }
     }
 
@@ -135,6 +143,7 @@ impl TdLibUpdate {
             TdLibUpdate::ForumTopicInfoChanged { .. } => "forum_topic_info",
             TdLibUpdate::ForumTopicChanged { .. } => "forum_topic",
             TdLibUpdate::SupergroupMetadataChanged { .. } => "supergroup_metadata",
+            TdLibUpdate::ChatFolders { .. } => "chat_folders",
         }
     }
 }

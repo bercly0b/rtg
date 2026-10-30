@@ -41,6 +41,7 @@ pub(super) fn dispatch_chat_list_action<D: TaskDispatcher>(
         Action::MarkChatAsRead => chat_list::mark_selected_chat_as_read(ctx),
         Action::ShowChatInfo => chat_list::show_chat_info_popup(ctx),
         Action::SearchChats => ctx.state.open_chat_search(),
+        Action::ShowChatFolders => chat_list::show_chat_folder_picker(ctx),
         Action::OpenChat if ctx.state.chat_list().selected_chat().is_some() => {
             // Pane management lives inside open_selected_chat — forum chats
             // need the ChatList pane to stay active, regular chats switch to

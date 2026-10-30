@@ -10,6 +10,7 @@ use super::{
     chat, chat_with_pinned,
 };
 use crate::domain::{
+    chat_folder::{ChatFolder, ChatFolders, ChatListKind},
     forum_topic::ForumTopicSummary,
     forum_topic_list_state::ForumTopicListState,
     shell_state::{ActivePane, ShellState},
@@ -299,4 +300,52 @@ fn forum_panel_loading_state_shows_forum_title_not_chats() {
         !rendered.contains("Chats"),
         "panel title in Loading state must not fall back to 'Chats', got: {rendered}"
     );
+}
+
+fn state_in_work_folder() -> ShellState {
+    let mut state = ShellState::default();
+    state.set_chat_folders(ChatFolders {
+        folders: vec![ChatFolder {
+            id: 3,
+            title: "Work".to_owned(),
+        }],
+        main_list_position: 0,
+    });
+    state.chat_list_mut().switch_to(ChatListKind::Folder(3));
+    state
+}
+
+#[test]
+fn main_chat_list_title_is_chats() {
+    let mut state = ShellState::default();
+    state
+        .chat_list_mut()
+        .set_ready(vec![chat(1, "Alice", 0, None)]);
+
+    let rendered = buffer_text(&render_chat_list(&state, ActivePane::ChatList));
+
+    assert!(rendered.contains("Chats (1)"), "got: {rendered}");
+}
+
+#[test]
+fn folder_chat_list_title_is_folder_name() {
+    let mut state = state_in_work_folder();
+    state
+        .chat_list_mut()
+        .set_ready(vec![chat(1, "Alice", 0, None), chat(2, "Bob", 0, None)]);
+
+    let rendered = buffer_text(&render_chat_list(&state, ActivePane::ChatList));
+
+    assert!(rendered.contains("Work (2)"), "got: {rendered}");
+    assert!(!rendered.contains("Chats ("), "got: {rendered}");
+}
+
+#[test]
+fn folder_chat_list_title_is_shown_while_loading() {
+    let state = state_in_work_folder();
+
+    let rendered = buffer_text(&render_chat_list(&state, ActivePane::ChatList));
+
+    assert!(rendered.contains("Work"), "got: {rendered}");
+    assert!(rendered.contains("Loading chats..."), "got: {rendered}");
 }
