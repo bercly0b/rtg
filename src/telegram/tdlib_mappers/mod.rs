@@ -15,6 +15,7 @@ mod user;
 pub use chat::{map_chat_to_summary, map_chat_type};
 #[allow(unused_imports, reason = "some re-exports are used only by tests")]
 pub use file_info::extract_file_info;
+pub use file_info::{effective_file_size, map_download_state};
 pub use forum_topic::map_forum_topic_to_summary;
 #[allow(unused_imports, reason = "some re-exports are used only by tests")]
 pub use message::{

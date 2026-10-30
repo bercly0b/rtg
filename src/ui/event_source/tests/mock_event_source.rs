@@ -1,6 +1,6 @@
 use crate::{
-    domain::events::{AppEvent, KeyInput},
-    usecases::contracts::AppEventSource,
+    domain::events::KeyInput,
+    usecases::contracts::{AppEvent, AppEventSource},
 };
 
 use super::super::MockEventSource;

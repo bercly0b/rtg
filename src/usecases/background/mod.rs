@@ -7,10 +7,11 @@ mod error_mapping;
 mod file_ops;
 mod lifecycle;
 mod messaging;
+mod task_result;
 
 use std::sync::{mpsc::Sender, Arc};
 
-use crate::domain::events::BackgroundTaskResult;
+pub use task_result::{BackgroundError, BackgroundTaskResult};
 
 use super::{
     chat_lifecycle::{ChatLifecycle, ChatReadMarker, FileDownloader, MessageDeleter},

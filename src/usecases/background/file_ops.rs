@@ -1,7 +1,9 @@
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
-use crate::domain::{command_template, events::BackgroundTaskResult};
+use crate::domain::command_template;
+
+use super::BackgroundTaskResult;
 
 pub(super) fn dispatch_open_file(
     tx: &Sender<BackgroundTaskResult>,

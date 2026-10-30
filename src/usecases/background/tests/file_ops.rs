@@ -1,6 +1,6 @@
 use std::{sync::mpsc, time::Duration};
 
-use crate::{domain::events::BackgroundTaskResult, usecases::background::file_ops};
+use crate::usecases::background::{file_ops, BackgroundTaskResult};
 
 fn open_file_failure(cmd_template: &str, file_path: &str) -> String {
     let (tx, rx) = mpsc::channel();

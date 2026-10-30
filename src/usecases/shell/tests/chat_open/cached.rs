@@ -61,12 +61,12 @@ fn cached_startup_background_result_updates_list() {
 
     o.handle_event(AppEvent::Tick).unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
             result: Ok(vec![chat(3, "Gamma"), chat(1, "Alpha"), chat(2, "Beta")]),
             all_loaded: false,
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(
@@ -193,7 +193,7 @@ fn background_messages_on_cached_ready_chat_uses_update_messages() {
         .unwrap();
     assert_eq!(o.state().open_chat().selected_index(), Some(0));
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
             topic_id: None,
@@ -205,7 +205,7 @@ fn background_messages_on_cached_ready_chat_uses_update_messages() {
                 message(12, "New"),
             ]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
@@ -221,13 +221,13 @@ fn background_messages_on_loading_chat_uses_set_ready() {
         .unwrap();
     assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(1, "A"), message(2, "B")]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);

@@ -108,19 +108,9 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                 file_id,
                 size,
                 local_path,
-                is_downloading_active,
-                is_downloading_completed,
-                downloaded_size,
+                download_status,
             } => {
-                handle_file_update(
-                    ctx,
-                    file_id,
-                    size,
-                    local_path,
-                    is_downloading_active,
-                    is_downloading_completed,
-                    downloaded_size,
-                );
+                handle_file_update(ctx, file_id, size, local_path, download_status);
             }
             ChatUpdate::ForumTopicChanged {
                 chat_id,
@@ -161,33 +151,11 @@ fn handle_file_update<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
     file_id: i32,
     size: u64,
-    local_path: String,
-    is_downloading_active: bool,
-    is_downloading_completed: bool,
-    downloaded_size: u64,
+    local_path: Option<String>,
+    download_status: DownloadStatus,
 ) {
     let Some(&(chat_id, message_id)) = ctx.active_downloads.get(&file_id) else {
         return;
-    };
-
-    let new_status = if is_downloading_completed && !local_path.is_empty() {
-        DownloadStatus::Completed
-    } else if is_downloading_active {
-        let percent = (downloaded_size * 100)
-            .checked_div(size)
-            .unwrap_or(0)
-            .min(99) as u8;
-        DownloadStatus::Downloading {
-            progress_percent: percent,
-        }
-    } else {
-        DownloadStatus::NotStarted
-    };
-
-    let new_local_path = if is_downloading_completed && !local_path.is_empty() {
-        Some(local_path)
-    } else {
-        None
     };
 
     // Update the message in the open chat view
@@ -195,8 +163,8 @@ fn handle_file_update<D: TaskDispatcher>(
         ctx.state
             .open_chat_mut()
             .update_message_file_info(message_id, |fi| {
-                fi.download_status = new_status;
-                if let Some(ref path) = new_local_path {
+                fi.download_status = download_status;
+                if let Some(ref path) = local_path {
                     fi.local_path = Some(path.clone());
                 }
                 if size > 0 {
@@ -209,8 +177,8 @@ fn handle_file_update<D: TaskDispatcher>(
     ctx.state
         .message_cache_mut()
         .update_file_info(chat_id, message_id, |fi| {
-            fi.download_status = new_status;
-            if let Some(ref path) = new_local_path {
+            fi.download_status = download_status;
+            if let Some(ref path) = local_path {
                 fi.local_path = Some(path.clone());
             }
             if size > 0 {
@@ -219,7 +187,7 @@ fn handle_file_update<D: TaskDispatcher>(
         });
 
     // Auto-save to downloads if this file_id was requested via S hotkey.
-    if let Some(ref path) = new_local_path {
+    if let Some(ref path) = local_path {
         if ctx.pending_saves.remove(&file_id) {
             let file_name = resolve_file_name(ctx, file_id, chat_id, message_id);
             ctx.dispatcher
@@ -228,18 +196,22 @@ fn handle_file_update<D: TaskDispatcher>(
     }
 
     // Clean up completed or failed/cancelled downloads
-    if is_downloading_completed {
-        ctx.active_downloads.remove(&file_id);
-        tracing::info!(file_id, chat_id, message_id, "file download completed");
-    } else if !is_downloading_active {
-        ctx.active_downloads.remove(&file_id);
-        ctx.pending_saves.remove(&file_id);
-        tracing::warn!(
-            file_id,
-            chat_id,
-            message_id,
-            "file download failed or cancelled"
-        );
+    match download_status {
+        DownloadStatus::Completed => {
+            ctx.active_downloads.remove(&file_id);
+            tracing::info!(file_id, chat_id, message_id, "file download completed");
+        }
+        DownloadStatus::NotStarted => {
+            ctx.active_downloads.remove(&file_id);
+            ctx.pending_saves.remove(&file_id);
+            tracing::warn!(
+                file_id,
+                chat_id,
+                message_id,
+                "file download failed or cancelled"
+            );
+        }
+        DownloadStatus::Downloading { .. } => {}
     }
 }
 

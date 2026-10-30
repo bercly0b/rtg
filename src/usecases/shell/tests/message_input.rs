@@ -221,13 +221,13 @@ fn message_sent_success_keeps_input_cleared() {
         .unwrap();
 
     // Successful send result arrives
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageSent {
             chat_id: 1,
             original_text: "Hi".to_owned(),
             result: Ok(()),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().message_input().text(), "");
@@ -249,13 +249,13 @@ fn message_sent_error_restores_text_in_input() {
     assert_eq!(o.state().message_input().text(), "");
 
     // Send failure result arrives — text should be restored
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageSent {
             chat_id: 1,
             original_text: "Test message".to_owned(),
             result: Err(BackgroundError::new("SEND_UNAVAILABLE")),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().message_input().text(), "Test message");
@@ -268,13 +268,13 @@ fn message_sent_refresh_updates_messages() {
     assert_eq!(o.state().open_chat().messages().len(), 1);
 
     // After a successful send, the refresh result arrives
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageSentRefreshCompleted {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(1, "Hello"), message(2, "Hi")]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().open_chat().messages().len(), 2);

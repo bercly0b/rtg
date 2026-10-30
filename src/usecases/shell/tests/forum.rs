@@ -459,7 +459,7 @@ fn stale_messages_from_previous_topic_are_discarded() {
 
 #[test]
 fn stale_older_messages_from_previous_topic_are_discarded() {
-    use crate::domain::events::BackgroundTaskResult;
+    use crate::usecases::background::BackgroundTaskResult;
 
     let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
@@ -484,13 +484,13 @@ fn stale_older_messages_from_previous_topic_are_discarded() {
     let messages_before = o.state().open_chat().messages().to_vec();
 
     // Topic 1's late OlderMessagesLoaded result arrives.
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::OlderMessagesLoaded {
             chat_id: 100,
             topic_id: Some(1),
             result: Ok(vec![message(1, "stale older from topic 1")]),
         },
-    ))
+    ]))
     .unwrap();
 
     // Topic 2's messages must be untouched.
@@ -499,7 +499,7 @@ fn stale_older_messages_from_previous_topic_are_discarded() {
 
 #[test]
 fn stale_post_send_refresh_from_previous_topic_is_discarded() {
-    use crate::domain::events::BackgroundTaskResult;
+    use crate::usecases::background::BackgroundTaskResult;
 
     let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
@@ -524,13 +524,13 @@ fn stale_post_send_refresh_from_previous_topic_is_discarded() {
     let messages_before = o.state().open_chat().messages().to_vec();
 
     // Refresh-after-send for topic 1 arrives late.
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageSentRefreshCompleted {
             chat_id: 100,
             topic_id: Some(1),
             result: Ok(vec![message(11, "stale refresh from topic 1")]),
         },
-    ))
+    ]))
     .unwrap();
 
     // Topic 2 must keep its own messages.
@@ -558,7 +558,7 @@ fn reload_topics_redispatches_load_from_error_state() {
 
 #[test]
 fn chat_scoped_result_is_discarded_when_topic_is_open() {
-    use crate::domain::events::BackgroundTaskResult;
+    use crate::usecases::background::BackgroundTaskResult;
 
     let mut o = orchestrator_with_chats(vec![forum_chat(100, "Topics")]);
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
@@ -572,13 +572,13 @@ fn chat_scoped_result_is_discarded_when_topic_is_open() {
     // A chat-scoped (topic_id=None) result arrives — could be from a previous
     // non-forum view of the same chat or a stray background path. The handler
     // must reject it.
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 100,
             topic_id: None,
             result: Ok(vec![message(99, "chat-wide stale")]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().open_chat().messages().to_vec(), messages_before);

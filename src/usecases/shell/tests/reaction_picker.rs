@@ -72,7 +72,7 @@ fn available_reactions_loaded_updates_picker_to_ready() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::AvailableReactionsLoaded {
             chat_id: 1,
             message_id: 10,
@@ -89,7 +89,7 @@ fn available_reactions_loaded_updates_picker_to_ready() {
                 },
             ]),
         },
-    ))
+    ]))
     .unwrap();
 
     match o.state().reaction_picker().unwrap() {
@@ -110,13 +110,13 @@ fn available_reactions_loaded_error_sets_error_state() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::AvailableReactionsLoaded {
             chat_id: 1,
             message_id: 10,
             result: Err(BackgroundError::new("REACTIONS_UNAVAILABLE")),
         },
-    ))
+    ]))
     .unwrap();
 
     assert!(matches!(
@@ -132,13 +132,13 @@ fn empty_reactions_closes_picker_and_shows_notification() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::AvailableReactionsLoaded {
             chat_id: 1,
             message_id: 10,
             result: Ok(vec![]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert!(o.state().reaction_picker().is_none());
@@ -157,7 +157,7 @@ fn j_k_navigates_in_ready_picker() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::AvailableReactionsLoaded {
             chat_id: 1,
             message_id: 10,
@@ -179,7 +179,7 @@ fn j_k_navigates_in_ready_picker() {
                 },
             ]),
         },
-    ))
+    ]))
     .unwrap();
 
     // Navigate down
@@ -224,7 +224,7 @@ fn enter_on_unchosen_reaction_dispatches_add_and_closes_picker() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::AvailableReactionsLoaded {
             chat_id: 1,
             message_id: 10,
@@ -241,7 +241,7 @@ fn enter_on_unchosen_reaction_dispatches_add_and_closes_picker() {
                 },
             ]),
         },
-    ))
+    ]))
     .unwrap();
 
     // Select the second reaction
@@ -267,7 +267,7 @@ fn enter_on_chosen_reaction_dispatches_remove_and_closes_picker() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::AvailableReactionsLoaded {
             chat_id: 1,
             message_id: 10,
@@ -284,7 +284,7 @@ fn enter_on_chosen_reaction_dispatches_remove_and_closes_picker() {
                 },
             ]),
         },
-    ))
+    ]))
     .unwrap();
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
@@ -308,7 +308,7 @@ fn stale_reactions_result_ignored() {
         .unwrap();
 
     // Stale result for a different message
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::AvailableReactionsLoaded {
             chat_id: 1,
             message_id: 99,
@@ -318,7 +318,7 @@ fn stale_reactions_result_ignored() {
                 is_chosen: false,
             }]),
         },
-    ))
+    ]))
     .unwrap();
 
     // Should still be in loading state for message 10

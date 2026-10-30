@@ -70,7 +70,7 @@ fn prefetch_result_populates_cache_only() {
     assert_eq!(o.prefetch_in_flight, Some(2));
 
     // Prefetch result arrives
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesPrefetched {
             chat_id: 2,
             result: Ok(vec![
@@ -78,7 +78,7 @@ fn prefetch_result_populates_cache_only() {
                 message(11, "Prefetched B"),
             ]),
         },
-    ))
+    ]))
     .unwrap();
 
     // Cache should have the data
@@ -107,12 +107,12 @@ fn prefetch_result_updates_open_chat_if_loading() {
     assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
 
     // Prefetch result arrives
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesPrefetched {
             chat_id: 2,
             result: Ok(vec![message(10, "Prefetched")]),
         },
-    ))
+    ]))
     .unwrap();
 
     // OpenChatState should be updated from cache
@@ -130,12 +130,12 @@ fn prefetch_error_clears_in_flight_without_cache() {
     assert_eq!(o.prefetch_in_flight, Some(2));
 
     // Prefetch fails
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesPrefetched {
             chat_id: 2,
             result: Err(BackgroundError::new("MESSAGES_UNAVAILABLE")),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.prefetch_in_flight, None);
@@ -170,12 +170,12 @@ fn prefetch_then_open_is_instant_from_cache() {
         .unwrap();
 
     // Prefetch completes
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesPrefetched {
             chat_id: 2,
             result: Ok(vec![message(10, "Prefetched msg")]),
         },
-    ))
+    ]))
     .unwrap();
 
     // Open chat 2 — should be instant from cache
@@ -201,12 +201,12 @@ fn k_navigation_also_triggers_prefetch() {
         .unwrap();
 
     // Clear the in-flight by injecting the result
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesPrefetched {
             chat_id: 2,
             result: Ok(vec![message(10, "Beta msg")]),
         },
-    ))
+    ]))
     .unwrap();
 
     // Navigate up with k to chat 2 (already cached)
@@ -237,12 +237,12 @@ fn prefetch_guard_allows_new_dispatch_after_result() {
     assert_eq!(o.dispatcher.prefetch_dispatch_count(), 1);
 
     // Prefetch completes
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesPrefetched {
             chat_id: 2,
             result: Ok(vec![message(10, "msg")]),
         },
-    ))
+    ]))
     .unwrap();
 
     // Navigate to chat 3 (should dispatch new prefetch)
@@ -269,12 +269,12 @@ fn prefetch_result_for_different_chat_does_not_affect_open_chat() {
     assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
 
     // Stale prefetch for chat 2 arrives
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesPrefetched {
             chat_id: 2,
             result: Ok(vec![message(10, "Prefetched for 2")]),
         },
-    ))
+    ]))
     .unwrap();
 
     // Chat 3 should still be Loading
@@ -291,12 +291,12 @@ fn prefetch_empty_result_does_not_populate_cache() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesPrefetched {
             chat_id: 2,
             result: Ok(vec![]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert!(!o.state().message_cache().has_messages(2));

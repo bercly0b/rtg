@@ -3,7 +3,10 @@ use std::sync::mpsc::Receiver;
 #[cfg(test)]
 use std::sync::mpsc;
 
-use crate::domain::events::{BackgroundTaskResult, ChatUpdate, CommandEvent, ConnectivityStatus};
+use crate::{
+    domain::events::{ChatUpdate, CommandEvent, ConnectivityStatus},
+    usecases::background::BackgroundTaskResult,
+};
 
 use super::{
     BackgroundResultSource, ChatUpdatesSignalSource, CommandOutputSource, ConnectivityStatusSource,
@@ -33,7 +36,7 @@ impl ChatUpdatesSignalSource for StubChatUpdatesSignalSource {
 pub struct StubBackgroundResultSource;
 
 impl BackgroundResultSource for StubBackgroundResultSource {
-    fn next_result(&mut self) -> Option<BackgroundTaskResult> {
+    fn pending_results(&mut self) -> Option<Vec<BackgroundTaskResult>> {
         None
     }
 }
@@ -128,8 +131,13 @@ impl ChannelBackgroundResultSource {
 }
 
 impl BackgroundResultSource for ChannelBackgroundResultSource {
-    fn next_result(&mut self) -> Option<BackgroundTaskResult> {
-        self.receiver.try_recv().ok()
+    fn pending_results(&mut self) -> Option<Vec<BackgroundTaskResult>> {
+        let results: Vec<_> = self.receiver.try_iter().collect();
+        if results.is_empty() {
+            None
+        } else {
+            Some(results)
+        }
     }
 }
 

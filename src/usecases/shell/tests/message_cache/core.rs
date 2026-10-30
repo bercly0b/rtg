@@ -32,13 +32,13 @@ fn stale_messages_result_still_cached() {
         .unwrap();
 
     // Messages arrive for chat 1 (now "stale" since user navigated away)
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(10, "cached even though stale")]),
         },
-    ))
+    ]))
     .unwrap();
 
     // Messages should still be in cache despite the stale discard
@@ -118,13 +118,13 @@ fn cache_updated_on_message_sent_refresh() {
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Alice")], 1, vec![message(1, "Hello")]);
 
     // Simulate sending a message and getting refresh result
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageSentRefreshCompleted {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(1, "Hello"), message(2, "My new message")]),
         },
-    ))
+    ]))
     .unwrap();
 
     // Cache should contain the updated messages
@@ -141,13 +141,13 @@ fn cache_not_populated_on_load_error() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Err(BackgroundError::new("NETWORK_ERROR")),
         },
-    ))
+    ]))
     .unwrap();
 
     assert!(!o.state().message_cache().has_messages(1));
