@@ -1,9 +1,6 @@
 use crate::{
-    domain::{
-        events::BackgroundTaskResult,
-        open_chat_state::{MessageSource, OpenChatUiState},
-    },
-    usecases::background::TaskDispatcher,
+    domain::open_chat_state::{MessageSource, OpenChatUiState},
+    usecases::background::{BackgroundTaskResult, TaskDispatcher},
 };
 
 use super::{chat_open, OrchestratorCtx};

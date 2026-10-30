@@ -1,10 +1,7 @@
 use std::sync::{mpsc::Sender, Arc};
 
 use crate::{
-    domain::{
-        events::{BackgroundError, BackgroundTaskResult},
-        message_input_state::OutgoingMessage,
-    },
+    domain::message_input_state::OutgoingMessage,
     usecases::{
         edit_message::{edit_message, EditMessageCommand, MessageEditor},
         load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
@@ -13,8 +10,9 @@ use crate::{
     },
 };
 
-use super::error_mapping::{
-    map_edit_message_error, map_load_messages_error, map_send_message_error,
+use super::{
+    error_mapping::{map_edit_message_error, map_load_messages_error, map_send_message_error},
+    BackgroundError, BackgroundTaskResult,
 };
 
 pub(super) fn dispatch_load_messages<M: MessagesSource + Send + Sync + 'static>(

@@ -83,11 +83,11 @@ fn l_on_not_downloaded_file_shows_notification() {
 fn open_file_failed_shows_notification() {
     let mut o = make_orchestrator();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::OpenFileFailed {
             stderr: "No application knows how to open this file".to_owned(),
         },
-    ))
+    ]))
     .unwrap();
 
     let notification = o
@@ -101,11 +101,11 @@ fn open_file_failed_shows_notification() {
 fn open_file_failed_empty_stderr_shows_config_hint() {
     let mut o = make_orchestrator();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::OpenFileFailed {
             stderr: String::new(),
         },
-    ))
+    ]))
     .unwrap();
 
     let notification = o

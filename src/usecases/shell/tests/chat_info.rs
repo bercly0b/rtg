@@ -71,7 +71,7 @@ fn chat_info_loaded_updates_popup_state() {
         .unwrap();
 
     // Simulate background task completion
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatInfoLoaded {
             chat_id: 1,
             result: Ok(ChatInfo {
@@ -82,7 +82,7 @@ fn chat_info_loaded_updates_popup_state() {
                 description: Some("Hello world".into()),
             }),
         },
-    ))
+    ]))
     .unwrap();
 
     match o.state().chat_info_popup().unwrap() {
@@ -103,12 +103,12 @@ fn chat_info_loaded_error_sets_error_state() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatInfoLoaded {
             chat_id: 1,
             result: Err(BackgroundError::new("CHAT_INFO_UNAVAILABLE")),
         },
-    ))
+    ]))
     .unwrap();
 
     match o.state().chat_info_popup().unwrap() {
@@ -125,7 +125,7 @@ fn chat_info_loaded_ignored_when_popup_closed() {
 
     let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
     // No popup open — result should be silently ignored
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatInfoLoaded {
             chat_id: 1,
             result: Ok(ChatInfo {
@@ -136,7 +136,7 @@ fn chat_info_loaded_ignored_when_popup_closed() {
                 description: None,
             }),
         },
-    ))
+    ]))
     .unwrap();
 
     assert!(o.state().chat_info_popup().is_none());
@@ -163,7 +163,7 @@ fn chat_info_loaded_stale_result_ignored() {
     assert_eq!(o.state().chat_info_popup().unwrap().title(), "Bob");
 
     // Stale result for Alice arrives — should be ignored
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatInfoLoaded {
             chat_id: 1,
             result: Ok(ChatInfo {
@@ -174,7 +174,7 @@ fn chat_info_loaded_stale_result_ignored() {
                 description: Some("Alice's bio".into()),
             }),
         },
-    ))
+    ]))
     .unwrap();
 
     // Popup should still show Bob (Loading state), not Alice's data

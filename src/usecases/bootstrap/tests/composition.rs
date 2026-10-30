@@ -1,8 +1,11 @@
 use crate::{
-    domain::events::{AppEvent, ConnectivityStatus},
+    domain::events::ConnectivityStatus,
     infra::config::{AppConfig, TelegramConfig},
     telegram::TelegramAdapter,
-    usecases::{context::AppContext, contracts::AppEventSource},
+    usecases::{
+        context::AppContext,
+        contracts::{AppEvent, AppEventSource},
+    },
 };
 
 use super::super::{compose_shell, compose_shell_with_factory};

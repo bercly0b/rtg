@@ -242,12 +242,12 @@ fn voice_send_failed_removes_pending_message() {
     o.send_voice_recording();
     assert_eq!(o.state().open_chat().messages().len(), 2);
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::VoiceSendFailed {
             chat_id: 1,
             pending_id: o.dispatcher.last_voice_send_pending_id().unwrap(),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().open_chat().messages().len(), 1);
@@ -266,12 +266,12 @@ fn voice_send_failed_ignored_for_different_chat() {
     o.send_voice_recording();
     assert_eq!(o.state().open_chat().messages().len(), 2);
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::VoiceSendFailed {
             chat_id: 999,
             pending_id: o.dispatcher.last_voice_send_pending_id().unwrap(),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().open_chat().messages().len(), 2);
@@ -311,14 +311,14 @@ fn text_send_failure_keeps_parallel_voice_pending() {
     let _tmp_dir = send_text_and_voice(&mut o, "rtg_test_text_fail_keeps_voice.oga");
 
     let (chat_id, topic_id, message) = o.dispatcher.last_send_message().unwrap();
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageSent {
             chat_id,
             topic_id,
             message,
             result: Err(BackgroundError::new("SEND_UNAVAILABLE")),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(
@@ -332,12 +332,12 @@ fn voice_send_failure_keeps_parallel_text_pending() {
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
     let _tmp_dir = send_text_and_voice(&mut o, "rtg_test_voice_fail_keeps_text.oga");
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::VoiceSendFailed {
             chat_id: 1,
             pending_id: o.dispatcher.last_voice_send_pending_id().unwrap(),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(
@@ -362,13 +362,13 @@ fn voice_send_success_replaces_pending_with_real_message() {
     voice_msg.media = crate::domain::message::MessageMedia::Voice;
     voice_msg.is_outgoing = true;
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageSentRefreshCompleted {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(10, "hi"), voice_msg]),
         },
-    ))
+    ]))
     .unwrap();
 
     let messages = o.state().open_chat().messages();

@@ -65,13 +65,13 @@ fn messages_loaded_dispatches_mark_as_read() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(10, "A"), message(20, "B"), message(30, "C")]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 1);
@@ -87,13 +87,13 @@ fn messages_loaded_does_not_mark_as_read_when_empty() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 0);
@@ -103,13 +103,13 @@ fn messages_loaded_does_not_mark_as_read_when_empty() {
 fn message_sent_refresh_dispatches_mark_as_read() {
     let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageSentRefreshCompleted {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(1, "Hello"), message(2, "My reply")]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 2);
@@ -161,13 +161,13 @@ fn stale_messages_do_not_dispatch_mark_as_read() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(10, "Stale")]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 0);
@@ -189,13 +189,13 @@ fn messages_loaded_does_not_mark_as_read_when_focus_on_chat_list() {
     assert_eq!(o.state().active_pane(), ActivePane::ChatList);
 
     // Messages arrive while focus is on ChatList — should NOT mark as read
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(10, "A"), message(20, "B")]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 0);
@@ -209,13 +209,13 @@ fn messages_loaded_marks_as_read_when_focus_on_messages() {
         .unwrap();
     assert_eq!(o.state().active_pane(), ActivePane::Messages);
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(10, "A"), message(20, "B")]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 1);
@@ -232,13 +232,13 @@ fn messages_loaded_marks_as_read_when_focus_on_message_input() {
 
     let prev_count = o.dispatcher.mark_as_read_dispatch_count();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(1, "Hello"), message(2, "New")]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), prev_count + 1);
@@ -277,12 +277,12 @@ fn prefetched_messages_do_not_mark_as_read_when_focus_on_chat_list() {
     assert_eq!(o.state().active_pane(), ActivePane::ChatList);
 
     // Prefetched messages arrive while focus is on ChatList — should NOT mark as read
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesPrefetched {
             chat_id: 1,
             result: Ok(vec![message(10, "A"), message(20, "B")]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 0);

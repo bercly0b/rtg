@@ -221,14 +221,14 @@ fn complete_send(
     (chat_id, topic_id, message): (i64, Option<i32>, OutgoingMessage),
     result: Result<(), BackgroundError>,
 ) {
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageSent {
             chat_id,
             topic_id,
             message,
             result,
         },
-    ))
+    ]))
     .unwrap();
 }
 
@@ -388,13 +388,13 @@ fn message_sent_refresh_updates_messages() {
     assert_eq!(o.state().open_chat().messages().len(), 1);
 
     // After a successful send, the refresh result arrives
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageSentRefreshCompleted {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(1, "Hello"), message(2, "Hi")]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().open_chat().messages().len(), 2);

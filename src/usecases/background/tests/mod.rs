@@ -1,5 +1,6 @@
 mod error_mapping;
 mod file_ops;
+mod task_result;
 
 use crate::domain::message_input_state::OutgoingMessage;
 use crate::usecases::{
@@ -87,9 +88,9 @@ mod forum_unread_counts {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use crate::domain::events::BackgroundTaskResult;
     use crate::domain::forum_topic::ForumTopicSummary;
     use crate::usecases::background::lifecycle::dispatch_forum_unread_counts;
+    use crate::usecases::background::BackgroundTaskResult;
     use crate::usecases::list_forum_topics::{ForumTopicsSource, ListForumTopicsSourceError};
 
     struct StubForumTopicsSource {
@@ -191,10 +192,10 @@ mod send_rollback {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use crate::domain::events::{BackgroundError, BackgroundTaskResult};
     use crate::domain::message::Message;
     use crate::domain::message_input_state::{OutgoingMessage, ReplyContext};
     use crate::usecases::background::messaging::{dispatch_send_message, dispatch_send_voice};
+    use crate::usecases::background::{BackgroundError, BackgroundTaskResult};
     use crate::usecases::load_messages::{MessagesSource, MessagesSourceError};
     use crate::usecases::send_message::{MessageSender, SendMessageSourceError};
     use crate::usecases::send_voice::VoiceNoteSender;
