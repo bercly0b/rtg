@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
-use super::types::{TdLibConfig, TdLibError, TDLIB_ERROR_ALL_CHATS_LOADED};
+use super::types::{AuthStateUpdate, TdLibConfig, TdLibError, TDLIB_ERROR_ALL_CHATS_LOADED};
 use super::update_loop::map_connection_state;
 use super::TdLibClient;
 use crate::domain::events::ConnectivityStatus;
@@ -58,27 +58,35 @@ fn tdlib_rs_error_converts_into_request_error() {
     ));
 }
 
+impl TdLibClient {
+    /// Builds a client with no TDLib behind it whose authorization states come
+    /// from `auth_state_rx`. It starts closed, so dropping it does not warn.
+    pub(crate) fn with_auth_states(auth_state_rx: mpsc::Receiver<AuthStateUpdate>) -> Self {
+        Self {
+            client_id: 0,
+            config: TdLibConfig {
+                api_id: 1,
+                api_hash: "hash".into(),
+                database_directory: PathBuf::from("/tmp/test_db"),
+                files_directory: PathBuf::from("/tmp/test_files"),
+                log_file: PathBuf::from("/tmp/test_logs/tdlib.log"),
+                verbose: false,
+            },
+            rt: Arc::new(tokio::runtime::Runtime::new().expect("runtime should build")),
+            auth_state_rx: Mutex::new(auth_state_rx),
+            update_rx: Mutex::new(None),
+            connectivity_rx: Mutex::new(None),
+            update_thread: Mutex::new(None),
+            is_closed: AtomicBool::new(true),
+            cache: TdLibCache::new(),
+        }
+    }
+}
+
 #[test]
 fn recv_auth_state_reports_poisoned_lock_as_internal_error() {
     let (_auth_state_tx, auth_state_rx) = mpsc::channel();
-    let client = TdLibClient {
-        client_id: 0,
-        config: TdLibConfig {
-            api_id: 1,
-            api_hash: "hash".into(),
-            database_directory: PathBuf::from("/tmp/test_db"),
-            files_directory: PathBuf::from("/tmp/test_files"),
-            log_file: PathBuf::from("/tmp/test_logs/tdlib.log"),
-            verbose: false,
-        },
-        rt: Arc::new(tokio::runtime::Runtime::new().expect("runtime should build")),
-        auth_state_rx: Mutex::new(auth_state_rx),
-        update_rx: Mutex::new(None),
-        connectivity_rx: Mutex::new(None),
-        update_thread: Mutex::new(None),
-        is_closed: AtomicBool::new(true),
-        cache: TdLibCache::new(),
-    };
+    let client = TdLibClient::with_auth_states(auth_state_rx);
     let _ = panic::catch_unwind(AssertUnwindSafe(|| {
         let _guard = client.auth_state_rx.lock();
         panic!("poison the auth state receiver lock");
@@ -87,6 +95,43 @@ fn recv_auth_state_reports_poisoned_lock_as_internal_error() {
     let result = client.recv_auth_state(Duration::from_millis(1));
 
     assert!(matches!(result, Err(TdLibError::Internal { .. })));
+}
+
+#[test]
+fn recv_latest_auth_state_returns_newest_queued_state_and_drains_queue() {
+    use tdlib_rs::enums::AuthorizationState;
+
+    let (auth_state_tx, auth_state_rx) = mpsc::channel();
+    let client = TdLibClient::with_auth_states(auth_state_rx);
+    auth_state_tx
+        .send(auth_state(AuthorizationState::LoggingOut))
+        .unwrap();
+    auth_state_tx
+        .send(auth_state(AuthorizationState::WaitPhoneNumber))
+        .unwrap();
+
+    let latest = client.recv_latest_auth_state().expect("lock is healthy");
+
+    assert!(matches!(
+        latest,
+        Some(AuthStateUpdate {
+            state: AuthorizationState::WaitPhoneNumber
+        })
+    ));
+    assert!(client
+        .recv_latest_auth_state()
+        .expect("lock is healthy")
+        .is_none());
+}
+
+#[test]
+fn recv_latest_auth_state_returns_none_when_nothing_is_queued() {
+    let (_auth_state_tx, auth_state_rx) = mpsc::channel();
+    let client = TdLibClient::with_auth_states(auth_state_rx);
+
+    let latest = client.recv_latest_auth_state().expect("lock is healthy");
+
+    assert!(latest.is_none());
 }
 
 #[test]

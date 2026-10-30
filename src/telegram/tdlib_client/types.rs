@@ -22,7 +22,6 @@ pub(super) const TDLIB_LOG_MAX_SIZE: i64 = 10 * 1024 * 1024; // 10 MB
 pub(super) const TDLIB_ERROR_ALL_CHATS_LOADED: i32 = 404;
 
 /// Configuration for TDLib client initialization.
-#[derive(Clone)]
 pub struct TdLibConfig {
     /// Telegram API ID from <https://my.telegram.org>
     pub api_id: i32,
