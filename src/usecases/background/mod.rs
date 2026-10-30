@@ -10,7 +10,7 @@ mod messaging;
 
 use std::sync::{mpsc::Sender, Arc};
 
-use crate::domain::events::BackgroundTaskResult;
+use crate::domain::{events::BackgroundTaskResult, message_input_state::OutgoingMessage};
 
 use super::{
     chat_lifecycle::{ChatLifecycle, ChatReadMarker, FileDownloader, MessageDeleter},
@@ -50,13 +50,9 @@ pub trait TaskDispatcher {
         topic_id: Option<i32>,
         from_message_id: i64,
     );
-    fn dispatch_send_message(
-        &self,
-        chat_id: i64,
-        topic_id: Option<i32>,
-        text: String,
-        reply_to_message_id: Option<i64>,
-    );
+    /// Sends a text message; `MessageSent` echoes `message` back so that a
+    /// failed send can be rolled back and retried.
+    fn dispatch_send_message(&self, chat_id: i64, topic_id: Option<i32>, message: OutgoingMessage);
     fn dispatch_edit_message(&self, chat_id: i64, message_id: i64, text: String);
 
     /// Informs TDLib that the user has opened a chat (fire-and-forget).
@@ -91,8 +87,15 @@ pub trait TaskDispatcher {
     /// Sends a recorded voice note to a chat or forum topic.
     ///
     /// Extracts audio duration via ffprobe, generates a waveform stub,
-    /// and calls the Telegram API.
-    fn dispatch_send_voice(&self, chat_id: i64, topic_id: Option<i32>, file_path: String);
+    /// and calls the Telegram API. On failure `VoiceSendFailed` carries
+    /// `pending_id` of the optimistic message to roll back.
+    fn dispatch_send_voice(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        file_path: String,
+        pending_id: i64,
+    );
 
     /// Triggers a file download in TDLib (fire-and-forget).
     ///
@@ -216,21 +219,14 @@ where
         );
     }
 
-    fn dispatch_send_message(
-        &self,
-        chat_id: i64,
-        topic_id: Option<i32>,
-        text: String,
-        reply_to_message_id: Option<i64>,
-    ) {
+    fn dispatch_send_message(&self, chat_id: i64, topic_id: Option<i32>, message: OutgoingMessage) {
         messaging::dispatch_send_message(
             &self.message_sender,
             &self.messages_source,
             &self.result_tx,
             chat_id,
             topic_id,
-            text,
-            reply_to_message_id,
+            message,
         );
     }
 
@@ -277,7 +273,13 @@ where
         lifecycle::dispatch_chat_subtitle(&self.subtitle_source, &self.result_tx, query);
     }
 
-    fn dispatch_send_voice(&self, chat_id: i64, topic_id: Option<i32>, file_path: String) {
+    fn dispatch_send_voice(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        file_path: String,
+        pending_id: i64,
+    ) {
         messaging::dispatch_send_voice(
             &self.message_sender,
             &self.messages_source,
@@ -285,6 +287,7 @@ where
             chat_id,
             topic_id,
             file_path,
+            pending_id,
         );
     }
 

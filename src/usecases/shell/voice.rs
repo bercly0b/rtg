@@ -196,14 +196,14 @@ pub(super) fn send_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<
     }
 
     // Optimistically show the voice message immediately
-    ctx.state.open_chat_mut().add_pending_message(
+    let pending_id = ctx.state.open_chat_mut().add_pending_message(
         String::new(),
         crate::domain::message::MessageMedia::Voice,
         None,
     );
     let topic_id = ctx.state.open_chat().topic_id();
     ctx.dispatcher
-        .dispatch_send_voice(chat_id, topic_id, file_path);
+        .dispatch_send_voice(chat_id, topic_id, file_path, pending_id);
 }
 
 /// Stops the playback process immediately. Unlike recording stop,

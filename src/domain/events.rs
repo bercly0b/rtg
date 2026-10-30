@@ -53,11 +53,13 @@ pub enum BackgroundTaskResult {
         topic_id: Option<i32>,
         result: Result<Vec<super::message::Message>, BackgroundError>,
     },
-    /// Message send operation completed; `chat_id` identifies the target chat,
-    /// `original_text` is kept for re-population on failure.
+    /// Message send operation completed; `chat_id` and `topic_id` identify the
+    /// target conversation, `message` is kept to roll back the pending message
+    /// and re-populate the input on failure.
     MessageSent {
         chat_id: i64,
-        original_text: String,
+        topic_id: Option<i32>,
+        message: super::message_input_state::OutgoingMessage,
         result: Result<(), BackgroundError>,
     },
     /// Messages refresh after a successful send completed.
@@ -85,8 +87,8 @@ pub enum BackgroundTaskResult {
         original_text: String,
         result: Result<(), BackgroundError>,
     },
-    /// Voice note send failed; the optimistic pending message should be removed.
-    VoiceSendFailed { chat_id: i64 },
+    /// Voice note send failed; the optimistic message `pending_id` should be removed.
+    VoiceSendFailed { chat_id: i64, pending_id: i64 },
     /// Chat subtitle (user status / member count) resolved.
     ChatSubtitleLoaded {
         chat_id: i64,

@@ -1,7 +1,10 @@
 use std::sync::{mpsc::Sender, Arc};
 
 use crate::{
-    domain::events::{BackgroundError, BackgroundTaskResult},
+    domain::{
+        events::{BackgroundError, BackgroundTaskResult},
+        message_input_state::OutgoingMessage,
+    },
     usecases::{
         edit_message::{edit_message, EditMessageCommand, MessageEditor},
         load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
@@ -113,16 +116,14 @@ pub(super) fn dispatch_send_message<
     tx: &Sender<BackgroundTaskResult>,
     chat_id: i64,
     topic_id: Option<i32>,
-    text: String,
-    reply_to_message_id: Option<i64>,
+    message: OutgoingMessage,
 ) {
     let sender = Arc::clone(sender);
     let messages_source = Arc::clone(messages_source);
     let tx = tx.clone();
     let tx_fallback = tx.clone();
-    let original_text = text.clone();
 
-    let fallback_text = original_text.clone();
+    let fallback_message = message.clone();
     let spawn_result = std::thread::Builder::new()
         .name("rtg-bg-send-msg".into())
         .spawn(move || {
@@ -130,8 +131,8 @@ pub(super) fn dispatch_send_message<
             let command = SendMessageCommand {
                 chat_id,
                 topic_id,
-                text,
-                reply_to_message_id,
+                text: message.text.clone(),
+                reply_to_message_id: message.reply_to.as_ref().map(|r| r.message_id),
             };
             let send_result = send_message(sender.as_ref(), command).map_err(|error| {
                 tracing::warn!(chat_id, error = ?error, "background: send message failed");
@@ -142,7 +143,8 @@ pub(super) fn dispatch_send_message<
 
             let _ = tx.send(BackgroundTaskResult::MessageSent {
                 chat_id,
-                original_text,
+                topic_id,
+                message,
                 result: send_result,
             });
 
@@ -156,7 +158,8 @@ pub(super) fn dispatch_send_message<
         tracing::error!(error = %error, "failed to spawn send message background thread");
         let _ = tx_fallback.send(BackgroundTaskResult::MessageSent {
             chat_id,
-            original_text: fallback_text,
+            topic_id,
+            message: fallback_message,
             result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
         });
     }
@@ -255,6 +258,7 @@ pub(super) fn dispatch_send_voice<
     chat_id: i64,
     topic_id: Option<i32>,
     file_path: String,
+    pending_id: i64,
 ) {
     let sender = Arc::clone(sender);
     let messages_source = Arc::clone(messages_source);
@@ -288,7 +292,10 @@ pub(super) fn dispatch_send_voice<
                 });
 
             if result.is_err() {
-                let _ = tx.send(BackgroundTaskResult::VoiceSendFailed { chat_id });
+                let _ = tx.send(BackgroundTaskResult::VoiceSendFailed {
+                    chat_id,
+                    pending_id,
+                });
                 return;
             }
 
@@ -297,7 +304,10 @@ pub(super) fn dispatch_send_voice<
 
     if let Err(error) = spawn_result {
         tracing::error!(error = %error, "failed to spawn send-voice background thread");
-        let _ = tx_fallback.send(BackgroundTaskResult::VoiceSendFailed { chat_id });
+        let _ = tx_fallback.send(BackgroundTaskResult::VoiceSendFailed {
+            chat_id,
+            pending_id,
+        });
     }
 }
 

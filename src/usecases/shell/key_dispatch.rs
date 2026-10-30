@@ -187,7 +187,7 @@ fn show_reaction_picker<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
         return;
     };
 
-    if msg.id == 0 {
+    if msg.is_pending() {
         return;
     }
 

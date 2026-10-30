@@ -132,6 +132,7 @@ mod tests {
         result: Result<(), SendMessageSourceError>,
         captured_chat_id: RefCell<Option<i64>>,
         captured_text: RefCell<Option<String>>,
+        captured_reply_to_message_id: RefCell<Option<i64>>,
     }
 
     impl StubSender {
@@ -140,6 +141,7 @@ mod tests {
                 result,
                 captured_chat_id: RefCell::new(None),
                 captured_text: RefCell::new(None),
+                captured_reply_to_message_id: RefCell::new(None),
             }
         }
     }
@@ -150,10 +152,11 @@ mod tests {
             chat_id: i64,
             _topic_id: Option<i32>,
             text: &str,
-            _reply_to_message_id: Option<i64>,
+            reply_to_message_id: Option<i64>,
         ) -> Result<(), SendMessageSourceError> {
             *self.captured_chat_id.borrow_mut() = Some(chat_id);
             *self.captured_text.borrow_mut() = Some(text.to_owned());
+            *self.captured_reply_to_message_id.borrow_mut() = reply_to_message_id;
             self.result.clone()
         }
     }
@@ -284,6 +287,23 @@ mod tests {
         );
 
         assert_eq!(*sender.captured_chat_id.borrow(), Some(123));
+    }
+
+    #[test]
+    fn passes_reply_to_message_id_to_sender() {
+        let sender = StubSender::with_result(Ok(()));
+
+        let _ = send_message(
+            &sender,
+            SendMessageCommand {
+                chat_id: 1,
+                topic_id: None,
+                text: "test".to_owned(),
+                reply_to_message_id: Some(77),
+            },
+        );
+
+        assert_eq!(*sender.captured_reply_to_message_id.borrow(), Some(77));
     }
 
     #[test]

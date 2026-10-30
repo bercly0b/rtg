@@ -79,6 +79,11 @@ pub struct OpenChatState {
     typing_state: TypingState,
     /// Whether all older messages have been loaded (no more history to fetch).
     all_messages_loaded: bool,
+    /// Id of the most recent pending message. Pending ids count down from -1,
+    /// so they never collide with TDLib message ids (always positive), and are
+    /// not reset on chat switch, so a late send failure from another chat
+    /// cannot remove a pending message of the current one.
+    last_pending_id: i64,
 }
 
 impl Default for OpenChatState {
@@ -97,6 +102,7 @@ impl Default for OpenChatState {
             message_source: MessageSource::None,
             typing_state: TypingState::default(),
             all_messages_loaded: false,
+            last_pending_id: 0,
         }
     }
 }
@@ -345,20 +351,23 @@ impl OpenChatState {
         };
     }
 
-    /// Adds a pending (optimistically displayed) message at the end of the list.
+    /// Adds a pending (optimistically displayed) message at the end of the list
+    /// and returns its unique pending id.
     ///
     /// The message is shown immediately with `MessageStatus::Sending`.
     /// It will be replaced by real messages when `set_ready()` is called
-    /// after the server confirms delivery.
+    /// after the server confirms delivery; if the send fails, pass the
+    /// returned id to `remove_message()` to roll back only this message.
     pub fn add_pending_message(
         &mut self,
         text: String,
         media: super::message::MessageMedia,
         reply_to: Option<ReplyInfo>,
-    ) {
+    ) -> i64 {
+        self.last_pending_id -= 1;
         let now_ms = chrono::Local::now().timestamp_millis();
         let pending = Message {
-            id: 0, // Temporary ID — will be replaced by server messages
+            id: self.last_pending_id,
             sender_name: String::new(),
             text,
             timestamp_ms: now_ms,
@@ -377,24 +386,11 @@ impl OpenChatState {
         self.messages.push(pending);
         self.selected_index = Some(self.messages.len() - 1);
         self.scroll_offset = ScrollOffset::BOTTOM;
+        self.last_pending_id
     }
 
-    /// Removes all pending (sending) messages from the list.
-    ///
-    /// Used when a send fails to roll back the optimistic display.
-    pub fn remove_pending_messages(&mut self) {
-        self.messages.retain(|m| m.status != MessageStatus::Sending);
-        // Fix selection after removal
-        if self.messages.is_empty() {
-            self.selected_index = None;
-        } else if let Some(idx) = self.selected_index {
-            if idx >= self.messages.len() {
-                self.selected_index = Some(self.messages.len() - 1);
-            }
-        }
-    }
-
-    /// Removes a message by ID from the current list (optimistic deletion).
+    /// Removes a message by ID from the current list (optimistic deletion or
+    /// rollback of a failed pending send).
     ///
     /// Adjusts `selected_index` so the cursor stays on a valid message.
     pub fn remove_message(&mut self, message_id: i64) {

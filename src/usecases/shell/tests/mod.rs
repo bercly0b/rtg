@@ -26,6 +26,7 @@ use crate::{
         chat_list_state::ChatListUiState,
         events::{AppEvent, BackgroundError, BackgroundTaskResult, ConnectivityStatus, KeyInput},
         message::Message,
+        message_input_state::{OutgoingMessage, ReplyContext},
         open_chat_state::OpenChatUiState,
         shell_state::ShellState,
     },

@@ -19,6 +19,22 @@ fn r_key_opens_reaction_picker_loading() {
 }
 
 #[test]
+fn r_key_ignores_pending_message() {
+    let mut o =
+        orchestrator_in_messages_pane(vec![chat(1, "Alice")], 1, vec![message(10, "hello")]);
+    o.state_mut().open_chat_mut().add_pending_message(
+        "Pending".to_owned(),
+        crate::domain::message::MessageMedia::None,
+        None,
+    );
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
+        .unwrap();
+
+    assert!(o.state().reaction_picker().is_none());
+}
+
+#[test]
 fn r_key_does_nothing_when_no_message_selected() {
     let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))

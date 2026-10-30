@@ -208,6 +208,35 @@ fn enter_sends_multiline_text_composed_with_shift_enter() {
     assert_eq!(o.dispatcher.last_send(), Some((1, "a\nb".to_owned(), None)));
 }
 
+fn type_text(o: &mut TestOrchestrator, text: &str) {
+    for c in text.chars() {
+        o.handle_event(AppEvent::InputKey(KeyInput::new(c.to_string(), false)))
+            .unwrap();
+    }
+}
+
+/// Feeds back the outcome of a dispatched send, echoing what was dispatched.
+fn complete_send(
+    o: &mut TestOrchestrator,
+    (chat_id, topic_id, message): (i64, Option<i32>, OutgoingMessage),
+    result: Result<(), BackgroundError>,
+) {
+    o.handle_event(AppEvent::BackgroundTaskCompleted(
+        BackgroundTaskResult::MessageSent {
+            chat_id,
+            topic_id,
+            message,
+            result,
+        },
+    ))
+    .unwrap();
+}
+
+fn fail_last_send(o: &mut TestOrchestrator) {
+    let sent = o.dispatcher.last_send_message().unwrap();
+    complete_send(o, sent, Err(BackgroundError::new("SEND_UNAVAILABLE")));
+}
+
 #[test]
 fn message_sent_success_keeps_input_cleared() {
     let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
@@ -221,14 +250,8 @@ fn message_sent_success_keeps_input_cleared() {
         .unwrap();
 
     // Successful send result arrives
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
-        BackgroundTaskResult::MessageSent {
-            chat_id: 1,
-            original_text: "Hi".to_owned(),
-            result: Ok(()),
-        },
-    ))
-    .unwrap();
+    let sent = o.dispatcher.last_send_message().unwrap();
+    complete_send(&mut o, sent, Ok(()));
 
     assert_eq!(o.state().message_input().text(), "");
 }
@@ -249,17 +272,114 @@ fn message_sent_error_restores_text_in_input() {
     assert_eq!(o.state().message_input().text(), "");
 
     // Send failure result arrives — text should be restored
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
-        BackgroundTaskResult::MessageSent {
-            chat_id: 1,
-            original_text: "Test message".to_owned(),
-            result: Err(BackgroundError::new("SEND_UNAVAILABLE")),
-        },
-    ))
-    .unwrap();
+    fail_last_send(&mut o);
 
     assert_eq!(o.state().message_input().text(), "Test message");
     assert_eq!(o.state().active_pane(), ActivePane::MessageInput);
+    assert_eq!(o.state().open_chat().messages().len(), 1);
+}
+
+#[test]
+fn enter_dispatches_and_shows_trimmed_text() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+        .unwrap();
+    type_text(&mut o, "  Hi  ");
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    assert_eq!(o.dispatcher.last_send(), Some((1, "Hi".to_owned(), None)));
+    assert_eq!(o.state().open_chat().messages().last().unwrap().text, "Hi");
+}
+
+#[test]
+fn failed_send_restores_trimmed_text() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+        .unwrap();
+    type_text(&mut o, "  Hi  ");
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    fail_last_send(&mut o);
+
+    assert_eq!(o.state().message_input().text(), "Hi");
+}
+
+#[test]
+fn failed_reply_send_restores_reply_and_retry_keeps_it() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(7, "Hello")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
+        .unwrap();
+    type_text(&mut o, "Yo");
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    assert!(o.state().message_input().reply_to().is_none());
+    let (_, _, sent) = o.dispatcher.last_send_message().unwrap();
+    assert_eq!(sent.reply_to.as_ref().map(|r| r.message_id), Some(7));
+
+    fail_last_send(&mut o);
+
+    assert_eq!(o.state().message_input().text(), "Yo");
+    assert_eq!(o.state().message_input().reply_to(), sent.reply_to.as_ref());
+    assert_eq!(o.state().open_chat().messages().len(), 1);
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    assert_eq!(
+        o.dispatcher.last_send(),
+        Some((1, "Yo".to_owned(), Some(7)))
+    );
+}
+
+#[test]
+fn failed_reply_send_from_another_chat_restores_text_without_reply() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+    let sent_in_chat_2 = OutgoingMessage {
+        pending_id: -1,
+        text: "Yo".to_owned(),
+        reply_to: Some(ReplyContext {
+            message_id: 7,
+            sender_name: "Bob".to_owned(),
+            text: "Hello".to_owned(),
+        }),
+    };
+
+    complete_send(
+        &mut o,
+        (2, None, sent_in_chat_2),
+        Err(BackgroundError::new("SEND_UNAVAILABLE")),
+    );
+
+    assert_eq!(o.state().message_input().text(), "Yo");
+    assert!(o.state().message_input().reply_to().is_none());
+}
+
+#[test]
+fn failed_send_removes_only_its_own_pending_message() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+        .unwrap();
+    type_text(&mut o, "First");
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    let first = o.dispatcher.last_send_message().unwrap();
+    type_text(&mut o, "Second");
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    complete_send(&mut o, first, Err(BackgroundError::new("SEND_UNAVAILABLE")));
+
+    let texts: Vec<_> = o
+        .state()
+        .open_chat()
+        .messages()
+        .iter()
+        .map(|m| m.text.as_str())
+        .collect();
+    assert_eq!(texts, vec!["Hello", "Second"]);
 }
 
 #[test]
