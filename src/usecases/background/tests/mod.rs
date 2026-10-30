@@ -13,7 +13,13 @@ use crate::usecases::{
 pub struct StubTaskDispatcher;
 
 impl TaskDispatcher for StubTaskDispatcher {
-    fn dispatch_chat_list(&self, _force: bool, _limit: usize) {}
+    fn dispatch_chat_list(
+        &self,
+        _list: crate::domain::chat_folder::ChatListKind,
+        _force: bool,
+        _limit: usize,
+    ) {
+    }
 
     fn dispatch_load_forum_topics(&self, _chat_id: i64) {}
 

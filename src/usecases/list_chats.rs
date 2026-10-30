@@ -1,8 +1,10 @@
 use crate::domain::chat::ChatSummary;
+use crate::domain::chat_folder::ChatListKind;
 use crate::domain::chat_list_state::DEFAULT_CHAT_PAGE_SIZE;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListChatsQuery {
+    pub list: ChatListKind,
     pub limit: usize,
     /// When `true`, bypasses the in-memory cache and reads directly from
     /// TDLib's SQLite — guarantees fresh data for user-initiated refreshes.
@@ -12,6 +14,7 @@ pub struct ListChatsQuery {
 impl Default for ListChatsQuery {
     fn default() -> Self {
         Self {
+            list: ChatListKind::Main,
             limit: DEFAULT_CHAT_PAGE_SIZE,
             force: false,
         }
@@ -48,6 +51,7 @@ pub enum ListChatsSourceError {
 pub trait ListChatsSource {
     fn list_chats(
         &self,
+        list: ChatListKind,
         limit: usize,
         force: bool,
     ) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError>;
@@ -59,10 +63,11 @@ where
 {
     fn list_chats(
         &self,
+        list: ChatListKind,
         limit: usize,
         force: bool,
     ) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError> {
-        (*self).list_chats(limit, force)
+        (*self).list_chats(list, limit, force)
     }
 }
 
@@ -72,10 +77,11 @@ where
 {
     fn list_chats(
         &self,
+        list: ChatListKind,
         limit: usize,
         force: bool,
     ) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError> {
-        (**self).list_chats(limit, force)
+        (**self).list_chats(list, limit, force)
     }
 }
 
@@ -92,7 +98,7 @@ pub fn list_chats(
 ) -> Result<ListChatsOutput, ListChatsError> {
     let limit = query.normalized_limit();
     let (chats, all_loaded) = source
-        .list_chats(limit, query.force)
+        .list_chats(query.list, limit, query.force)
         .map_err(map_source_error)?;
 
     Ok(ListChatsOutput { chats, all_loaded })
@@ -115,6 +121,7 @@ mod tests {
 
     struct StubSource {
         result: Result<Vec<ChatSummary>, ListChatsSourceError>,
+        captured_list: std::sync::Mutex<Option<ChatListKind>>,
         captured_limit: std::sync::Mutex<Option<usize>>,
     }
 
@@ -122,6 +129,7 @@ mod tests {
         fn with_result(result: Result<Vec<ChatSummary>, ListChatsSourceError>) -> Self {
             Self {
                 result,
+                captured_list: std::sync::Mutex::new(None),
                 captured_limit: std::sync::Mutex::new(None),
             }
         }
@@ -130,9 +138,11 @@ mod tests {
     impl ListChatsSource for StubSource {
         fn list_chats(
             &self,
+            list: ChatListKind,
             limit: usize,
             _force: bool,
         ) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError> {
+            *self.captured_list.lock().expect("list lock") = Some(list);
             *self.captured_limit.lock().expect("limit lock") = Some(limit);
             self.result.clone().map(|chats| (chats, false))
         }
@@ -190,6 +200,25 @@ mod tests {
         assert_eq!(
             *source.captured_limit.lock().expect("limit lock"),
             Some(999)
+        );
+    }
+
+    #[test]
+    fn passes_chat_list_through() {
+        let source = StubSource::with_result(Ok(vec![]));
+
+        let _ = list_chats(
+            &source,
+            ListChatsQuery {
+                list: ChatListKind::Folder(3),
+                ..ListChatsQuery::default()
+            },
+        )
+        .expect("list should succeed");
+
+        assert_eq!(
+            *source.captured_list.lock().expect("list lock"),
+            Some(ChatListKind::Folder(3))
         );
     }
 

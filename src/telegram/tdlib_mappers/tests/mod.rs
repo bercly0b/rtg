@@ -1,4 +1,5 @@
 mod chat;
+mod chat_folder;
 mod file_info;
 mod forum_topic;
 mod message;

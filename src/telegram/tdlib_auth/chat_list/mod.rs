@@ -1,6 +1,7 @@
 use tdlib_rs::types::Chat;
 
 use crate::domain::chat::ChatSummary;
+use crate::domain::chat_folder::ChatListKind;
 use crate::telegram::tdlib_cache::TdLibCache;
 use crate::telegram::tdlib_client::TdLibError;
 use crate::usecases::list_chats::ListChatsSourceError;
@@ -43,7 +44,7 @@ impl ChatDataResolver for crate::telegram::tdlib_client::TdLibClient {
 impl TdLibAuthBackend {
     /// Lists chat summaries from TDLib.
     ///
-    /// Fetches chats from the main chat list and maps them to domain `ChatSummary`.
+    /// Fetches chats from `list` and maps them to domain `ChatSummary`.
     /// When `force` is `true`, bypasses the in-memory cache and reads every chat
     /// directly from TDLib's SQLite via `get_chat()` — guarantees fresh data at
     /// the cost of ~1-2ms per chat.
@@ -62,6 +63,7 @@ impl TdLibAuthBackend {
     /// skipped.
     pub fn list_chat_summaries(
         &self,
+        list: ChatListKind,
         limit: usize,
         force: bool,
     ) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError> {
@@ -69,10 +71,14 @@ impl TdLibAuthBackend {
 
         let result = self
             .client
-            .get_chats(limit_i32)
+            .get_chats(
+                crate::telegram::tdlib_mappers::map_chat_list_kind(list),
+                limit_i32,
+            )
             .map_err(map_list_chats_error)?;
 
         tracing::debug!(
+            ?list,
             count = result.chat_ids.len(),
             all_loaded = result.all_loaded,
             force,

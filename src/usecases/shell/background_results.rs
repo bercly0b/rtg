@@ -10,7 +10,11 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
     result: BackgroundTaskResult,
 ) {
     match result {
-        BackgroundTaskResult::ChatListLoaded { result, all_loaded } => {
+        BackgroundTaskResult::ChatListLoaded {
+            list,
+            result,
+            all_loaded,
+        } => {
             *ctx.chat_list_in_flight = false;
             let was_pending = std::mem::take(ctx.chat_list_refresh_pending);
             let pending_force = std::mem::take(ctx.chat_list_pending_force);
@@ -24,6 +28,11 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
             };
 
             match result {
+                // The user switched chat lists while this request was in
+                // flight; the switch marked a refresh of the new list pending.
+                _ if list != ctx.state.chat_list().kind() => {
+                    tracing::debug!(?list, "background: discarding stale chat list result");
+                }
                 Ok(chats) => {
                     tracing::debug!(
                         chat_count = chats.len(),

@@ -1,3 +1,4 @@
+mod chat_folders;
 mod chat_info;
 mod chat_list;
 mod chat_open;
@@ -23,6 +24,7 @@ use super::*;
 use crate::{
     domain::{
         chat::ChatSummary,
+        chat_folder::ChatListKind,
         chat_list_state::ChatListUiState,
         events::{ConnectivityStatus, KeyInput},
         message::Message,

@@ -27,6 +27,7 @@ pub(super) fn inject_chat_list(orchestrator: &mut TestOrchestrator, chats: Vec<C
     orchestrator
         .handle_event(AppEvent::BackgroundTasksCompleted(vec![
             BackgroundTaskResult::ChatListLoaded {
+                list: ChatListKind::Main,
                 result: Ok(chats),
                 all_loaded: false,
             },

@@ -1,4 +1,5 @@
 use super::chat::ChatSummary;
+use super::chat_folder::ChatListKind;
 use super::selectable_list::SelectableList;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +16,7 @@ const LOAD_MORE_OFFSET: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatListState {
+    kind: ChatListKind,
     ui_state: ChatListUiState,
     list: SelectableList<ChatSummary>,
     all_chats_loaded: bool,
@@ -24,6 +26,7 @@ pub struct ChatListState {
 impl Default for ChatListState {
     fn default() -> Self {
         Self {
+            kind: ChatListKind::default(),
             ui_state: ChatListUiState::Loading,
             list: SelectableList::default(),
             all_chats_loaded: false,
@@ -47,6 +50,7 @@ impl ChatListState {
         let mut list = SelectableList::default();
         list.replace(chats, None);
         Self {
+            kind: ChatListKind::default(),
             ui_state: ChatListUiState::Ready,
             all_chats_loaded: false,
             total_limit,
@@ -60,6 +64,17 @@ impl ChatListState {
     allow(dead_code, reason = "some methods are used only by tests")
 )]
 impl ChatListState {
+    pub fn kind(&self) -> ChatListKind {
+        self.kind
+    }
+
+    /// Switches to another TDLib chat list. The chats of the previous list
+    /// are dropped, so the state is `Loading` until the new list arrives.
+    pub fn switch_to(&mut self, kind: ChatListKind) {
+        self.kind = kind;
+        self.set_loading();
+    }
+
     pub fn ui_state(&self) -> ChatListUiState {
         self.ui_state.clone()
     }
@@ -599,5 +614,26 @@ mod tests {
         let mut state = ChatListState::default();
         state.set_empty();
         assert!(state.all_chats_loaded());
+    }
+
+    #[test]
+    fn default_state_shows_main_list() {
+        assert_eq!(ChatListState::default().kind(), ChatListKind::Main);
+    }
+
+    #[test]
+    fn switch_to_drops_chats_and_resets_pagination() {
+        let mut state = ChatListState::with_initial_chats(vec![chat(1, "General")]);
+        state.request_more_chats();
+        state.set_all_chats_loaded(true);
+
+        state.switch_to(ChatListKind::Folder(3));
+
+        assert_eq!(state.kind(), ChatListKind::Folder(3));
+        assert_eq!(state.ui_state(), ChatListUiState::Loading);
+        assert!(state.chats().is_empty());
+        assert_eq!(state.selected_index(), None);
+        assert!(!state.all_chats_loaded());
+        assert_eq!(state.total_limit(), DEFAULT_CHAT_PAGE_SIZE);
     }
 }

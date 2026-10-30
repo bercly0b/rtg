@@ -9,6 +9,7 @@ type MarkAsReadRecord = (i64, Option<i32>, Vec<i64>);
 pub(super) struct RecordingDispatcher {
     dispatched_chat_list_count: RefCell<usize>,
     dispatched_chat_list_force: RefCell<Vec<bool>>,
+    dispatched_chat_lists: RefCell<Vec<ChatListKind>>,
     dispatched_messages: RefCell<Vec<(i64, Option<i32>)>>,
     dispatched_older_messages: RefCell<Vec<(i64, Option<i32>, i64)>>,
     dispatched_sends: RefCell<Vec<SendRecord>>,
@@ -31,6 +32,7 @@ impl RecordingDispatcher {
         Self {
             dispatched_chat_list_count: RefCell::new(0),
             dispatched_chat_list_force: RefCell::new(Vec::new()),
+            dispatched_chat_lists: RefCell::new(Vec::new()),
             dispatched_messages: RefCell::new(Vec::new()),
             dispatched_older_messages: RefCell::new(Vec::new()),
             dispatched_sends: RefCell::new(Vec::new()),
@@ -55,6 +57,10 @@ impl RecordingDispatcher {
 
     pub(super) fn last_chat_list_force(&self) -> Option<bool> {
         self.dispatched_chat_list_force.borrow().last().copied()
+    }
+
+    pub(super) fn last_chat_list(&self) -> Option<ChatListKind> {
+        self.dispatched_chat_lists.borrow().last().copied()
     }
 
     pub(super) fn messages_dispatch_count(&self) -> usize {
@@ -203,9 +209,10 @@ impl RecordingDispatcher {
 }
 
 impl TaskDispatcher for RecordingDispatcher {
-    fn dispatch_chat_list(&self, force: bool, _limit: usize) {
+    fn dispatch_chat_list(&self, list: ChatListKind, force: bool, _limit: usize) {
         *self.dispatched_chat_list_count.borrow_mut() += 1;
         self.dispatched_chat_list_force.borrow_mut().push(force);
+        self.dispatched_chat_lists.borrow_mut().push(list);
     }
 
     fn dispatch_load_forum_topics(&self, chat_id: i64) {

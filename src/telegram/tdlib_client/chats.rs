@@ -9,14 +9,18 @@ pub struct GetChatsResult {
 impl TdLibClient {
     /// Gets list of chat IDs from TDLib.
     ///
-    /// Returns up to `limit` chat IDs from the main chat list, sorted by TDLib's order.
+    /// Returns up to `limit` chat IDs from `chat_list`, sorted by TDLib's order.
     /// First attempts `loadChats` to fetch from the server, then reads local
     /// cache via `getChats`. If `loadChats` fails (e.g. no network), we still
     /// try `getChats` to return whatever is available from TDLib's local
     /// SQLite database — this keeps the chat list usable in offline scenarios.
     ///
     /// `all_loaded` is `true` when TDLib signals there are no more chats to fetch.
-    pub fn get_chats(&self, limit: i32) -> Result<GetChatsResult, TdLibError> {
+    pub fn get_chats(
+        &self,
+        chat_list: tdlib_rs::enums::ChatList,
+        limit: i32,
+    ) -> Result<GetChatsResult, TdLibError> {
         let client_id = self.client_id;
 
         self.block_on_request("getChats", async {
@@ -24,12 +28,8 @@ impl TdLibClient {
 
             // Try to load fresh chats from the server. Failures are non-fatal:
             // TDLib's local cache may still have chats from previous sessions.
-            if let Err(e) = tdlib_rs::functions::load_chats(
-                Some(tdlib_rs::enums::ChatList::Main),
-                limit,
-                client_id,
-            )
-            .await
+            if let Err(e) =
+                tdlib_rs::functions::load_chats(Some(chat_list.clone()), limit, client_id).await
             {
                 if e.code == TDLIB_ERROR_ALL_CHATS_LOADED {
                     tracing::debug!("load_chats returned 404: all chats already loaded");
@@ -44,12 +44,7 @@ impl TdLibClient {
             }
 
             // Read whatever chat IDs are available (server-fresh or locally cached).
-            let chats = tdlib_rs::functions::get_chats(
-                Some(tdlib_rs::enums::ChatList::Main),
-                limit,
-                client_id,
-            )
-            .await?;
+            let chats = tdlib_rs::functions::get_chats(Some(chat_list), limit, client_id).await?;
 
             match chats {
                 tdlib_rs::enums::Chats::Chats(c) => {

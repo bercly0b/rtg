@@ -4,6 +4,7 @@
 //! to RTG's simplified domain types for UI rendering.
 
 mod chat;
+mod chat_folder;
 mod file_info;
 mod forum_topic;
 mod message;
@@ -13,6 +14,7 @@ mod user;
 // Re-exports consumed by sibling modules (`tdlib_auth`, `tdlib_client`, `chat_updates`)
 // via `super::tdlib_mappers::*` paths.
 pub use chat::{map_chat_to_summary, map_chat_type};
+pub use chat_folder::{map_chat_folders, map_chat_list_kind};
 #[allow(unused_imports, reason = "some re-exports are used only by tests")]
 pub use file_info::extract_file_info;
 pub use file_info::{effective_file_size, map_download_state};

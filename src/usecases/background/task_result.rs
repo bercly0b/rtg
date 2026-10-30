@@ -1,7 +1,7 @@
 use crate::domain::{
-    chat::ChatSummary, chat_info_state::ChatInfo, chat_subtitle::ChatSubtitle,
-    forum_topic::ForumTopicSummary, message::Message, message_info_state::MessageInfo,
-    reaction_picker_state::AvailableReaction,
+    chat::ChatSummary, chat_folder::ChatListKind, chat_info_state::ChatInfo,
+    chat_subtitle::ChatSubtitle, forum_topic::ForumTopicSummary, message::Message,
+    message_info_state::MessageInfo, reaction_picker_state::AvailableReaction,
 };
 
 /// Result of an asynchronous background operation dispatched from the UI thread.
@@ -10,8 +10,10 @@ use crate::domain::{
 /// on a background thread to avoid blocking the TUI event loop.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackgroundTaskResult {
-    /// Chat list fetch completed.
+    /// Chat list fetch completed. `list` mirrors the request scope so the
+    /// handler can drop results for a list the user has switched away from.
     ChatListLoaded {
+        list: ChatListKind,
         result: Result<Vec<ChatSummary>, BackgroundError>,
         all_loaded: bool,
     },

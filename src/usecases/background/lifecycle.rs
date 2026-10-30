@@ -1,5 +1,6 @@
 use std::sync::{mpsc::Sender, Arc};
 
+use crate::domain::chat_folder::ChatListKind;
 use crate::usecases::{
     chat_lifecycle::{ChatLifecycle, ChatReadMarker, FileDownloader, MessageDeleter},
     chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
@@ -17,6 +18,7 @@ use super::{
 pub(super) fn dispatch_chat_list<C: ListChatsSource + Send + Sync + 'static>(
     source: &Arc<C>,
     tx: &Sender<BackgroundTaskResult>,
+    list: ChatListKind,
     force: bool,
     limit: usize,
 ) {
@@ -27,12 +29,13 @@ pub(super) fn dispatch_chat_list<C: ListChatsSource + Send + Sync + 'static>(
     let spawn_result = std::thread::Builder::new()
         .name("rtg-bg-chat-list".into())
         .spawn(move || {
-            tracing::debug!(force, limit, "background: fetching chat list");
-            let query = ListChatsQuery { force, limit };
+            tracing::debug!(?list, force, limit, "background: fetching chat list");
+            let query = ListChatsQuery { list, force, limit };
             let result = list_chats(source.as_ref(), query);
             match result {
                 Ok(output) => {
                     let _ = tx.send(BackgroundTaskResult::ChatListLoaded {
+                        list,
                         result: Ok(output.chats),
                         all_loaded: output.all_loaded,
                     });
@@ -40,6 +43,7 @@ pub(super) fn dispatch_chat_list<C: ListChatsSource + Send + Sync + 'static>(
                 Err(error) => {
                     tracing::warn!(error = ?error, "background: chat list fetch failed");
                     let _ = tx.send(BackgroundTaskResult::ChatListLoaded {
+                        list,
                         result: Err(BackgroundError::new(map_list_chats_error(&error))),
                         all_loaded: false,
                     });
@@ -50,6 +54,7 @@ pub(super) fn dispatch_chat_list<C: ListChatsSource + Send + Sync + 'static>(
     if let Err(error) = spawn_result {
         tracing::error!(error = %error, "failed to spawn chat list background thread");
         let _ = tx_fallback.send(BackgroundTaskResult::ChatListLoaded {
+            list,
             result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
             all_loaded: false,
         });

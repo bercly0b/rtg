@@ -424,6 +424,11 @@ where
                     return Ok(());
                 }
 
+                if self.state.chat_folder_picker().is_some() {
+                    chat_list::handle_chat_folder_picker_key(&mut self.as_ctx(), &key.key);
+                    return Ok(());
+                }
+
                 if self.state.help_visible() {
                     match key.key.as_str() {
                         "q" | "?" | "esc" => self.state.hide_help(),

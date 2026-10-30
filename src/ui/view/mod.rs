@@ -15,6 +15,7 @@ use ratatui::{
 
 use crate::domain::{chat::ChatType, keymap::HelpEntry, shell_state::ShellState};
 
+use super::chat_folder_picker_popup;
 use super::chat_info_popup;
 use super::chat_search_popup;
 use super::command_popup;
@@ -118,6 +119,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_entries: &[Hel
 
     if let Some(search_state) = state.chat_search() {
         chat_search_popup::render_chat_search_popup(frame, frame.area(), search_state);
+    }
+
+    if let Some(picker_state) = state.chat_folder_picker() {
+        chat_folder_picker_popup::render_chat_folder_picker(frame, frame.area(), picker_state);
     }
 }
 

@@ -79,6 +79,11 @@ pub enum ChatUpdate {
         topic_id: i32,
         unread_topic_count: Option<u32>,
     },
+    /// The list of the user's chat folders changed (TDLib also pushes it once
+    /// at startup).
+    ChatFoldersChanged {
+        folders: super::chat_folder::ChatFolders,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

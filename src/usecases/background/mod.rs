@@ -11,6 +11,8 @@ mod task_result;
 
 use std::sync::{mpsc::Sender, Arc};
 
+use crate::domain::chat_folder::ChatListKind;
+
 pub use task_result::{BackgroundError, BackgroundTaskResult};
 
 use super::{
@@ -35,7 +37,7 @@ use super::{
 /// `dispatch_mark_as_read`) are fire-and-forget: errors are logged
 /// but do not produce `BackgroundTaskResult`.
 pub trait TaskDispatcher {
-    fn dispatch_chat_list(&self, force: bool, limit: usize);
+    fn dispatch_chat_list(&self, list: ChatListKind, force: bool, limit: usize);
     /// Fetches the topic list for a forum supergroup chat in the background.
     fn dispatch_load_forum_topics(&self, chat_id: i64);
     /// Resolves unread-topic counts for forum chats whose chat-list badge is
@@ -181,8 +183,8 @@ where
     L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
     S: ChatSubtitleSource + MessageInfoSource + ReactionSource + Send + Sync + 'static,
 {
-    fn dispatch_chat_list(&self, force: bool, limit: usize) {
-        lifecycle::dispatch_chat_list(&self.chats_source, &self.result_tx, force, limit);
+    fn dispatch_chat_list(&self, list: ChatListKind, force: bool, limit: usize) {
+        lifecycle::dispatch_chat_list(&self.chats_source, &self.result_tx, list, force, limit);
     }
 
     fn dispatch_load_forum_topics(&self, chat_id: i64) {
