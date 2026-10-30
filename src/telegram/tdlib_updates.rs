@@ -3,7 +3,6 @@
 //! These events are dispatched from the TDLib update loop and can be consumed
 //! by the chat updates monitor to trigger UI refreshes and cache warming.
 
-use tdlib_rs::enums::MessageContent;
 use tdlib_rs::types::Message as TdMessage;
 
 /// Typed TDLib update events dispatched from the update loop.
@@ -14,10 +13,6 @@ use tdlib_rs::types::Message as TdMessage;
 /// Message-carrying variants use `Box` to keep the enum size reasonable
 /// since raw TDLib types are large structs.
 #[derive(Debug, Clone)]
-#[allow(
-    dead_code,
-    reason = "fields reserved for future granular update handling"
-)]
 pub enum TdLibUpdate {
     /// A new chat was discovered by TDLib. Carries the full Chat object
     /// for cache population. Guaranteed to arrive before the chat ID
@@ -31,12 +26,8 @@ pub enum TdLibUpdate {
         message: Box<TdMessage>,
     },
 
-    /// Message content changed. Carries the new content for cache updates.
-    MessageContentChanged {
-        chat_id: i64,
-        message_id: i64,
-        new_content: Box<MessageContent>,
-    },
+    /// Message content changed.
+    MessageContentChanged { chat_id: i64 },
 
     /// Messages were deleted.
     DeleteMessages { chat_id: i64, message_ids: Vec<i64> },
@@ -65,8 +56,8 @@ pub enum TdLibUpdate {
         is_cancel: bool,
     },
 
-    /// Message send succeeded (for sent message confirmation).
-    MessageSendSucceeded { chat_id: i64, old_message_id: i64 },
+    /// Message send succeeded.
+    MessageSendSucceeded { chat_id: i64 },
 
     /// Unread reaction count changed for a chat (affects chat list badge).
     ChatUnreadReactionCount { chat_id: i64 },
@@ -115,13 +106,13 @@ impl TdLibUpdate {
         match self {
             TdLibUpdate::NewChat { chat } => Some(chat.id),
             TdLibUpdate::NewMessage { chat_id, .. }
-            | TdLibUpdate::MessageContentChanged { chat_id, .. }
+            | TdLibUpdate::MessageContentChanged { chat_id }
             | TdLibUpdate::DeleteMessages { chat_id, .. }
             | TdLibUpdate::ChatLastMessage { chat_id }
             | TdLibUpdate::ChatPosition { chat_id }
             | TdLibUpdate::ChatReadInbox { chat_id }
             | TdLibUpdate::ChatReadOutbox { chat_id }
-            | TdLibUpdate::MessageSendSucceeded { chat_id, .. }
+            | TdLibUpdate::MessageSendSucceeded { chat_id }
             | TdLibUpdate::ChatUnreadReactionCount { chat_id }
             | TdLibUpdate::MessageInteractionInfoChanged { chat_id, .. } => Some(*chat_id),
             TdLibUpdate::ChatAction { chat_id, .. } => Some(*chat_id),
@@ -159,6 +150,7 @@ impl TdLibUpdate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tdlib_rs::enums::MessageContent;
 
     fn make_test_td_message(chat_id: i64) -> TdMessage {
         use tdlib_rs::enums::MessageSender;
@@ -230,10 +222,7 @@ mod tests {
 
     #[test]
     fn message_send_succeeded_has_chat_id() {
-        let update = TdLibUpdate::MessageSendSucceeded {
-            chat_id: 789,
-            old_message_id: 100,
-        };
+        let update = TdLibUpdate::MessageSendSucceeded { chat_id: 789 };
         assert_eq!(update.chat_id(), Some(789));
         assert_eq!(update.kind(), "message_send_succeeded");
     }

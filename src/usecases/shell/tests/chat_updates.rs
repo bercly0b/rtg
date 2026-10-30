@@ -29,6 +29,31 @@ fn chat_update_for_unrelated_chat_does_not_dispatch_message_refresh() {
 }
 
 #[test]
+fn repeated_updates_for_open_chat_in_one_batch_dispatch_one_refresh() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+    let before = o.dispatcher.messages_dispatch_count();
+
+    o.handle_event(AppEvent::ChatUpdateReceived {
+        updates: vec![
+            ChatUpdate::NewMessage {
+                chat_id: 1,
+                message: Box::new(message(2, "World")),
+            },
+            ChatUpdate::ChatMetadataChanged { chat_id: 1 },
+            ChatUpdate::ChatMetadataChanged { chat_id: 2 },
+            ChatUpdate::MessagesDeleted {
+                chat_id: 1,
+                message_ids: vec![1],
+            },
+        ],
+    })
+    .unwrap();
+
+    assert_eq!(o.dispatcher.messages_dispatch_count(), before + 1);
+    assert_eq!(o.dispatcher.last_load_messages(), Some((1, None)));
+}
+
+#[test]
 fn chat_update_debounces_while_messages_refresh_in_flight() {
     let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
     let before = o.dispatcher.messages_dispatch_count();

@@ -8,10 +8,8 @@
 /// These are best-effort operations — failures are logged but do not
 /// prevent the application from continuing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code, reason = "no adapter returns ChatNotFound yet")]
 pub enum ChatLifecycleError {
     Unavailable,
-    ChatNotFound,
 }
 
 /// Manages the TDLib `openChat`/`closeChat` lifecycle.
