@@ -6,14 +6,14 @@ use ratatui::{
     widgets::{Block, Padding, Paragraph},
     Frame,
 };
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::domain::{
     message_input_state::{EditContext, MessageInputState, ReplyContext},
     shell_state::ActivePane,
 };
 
-use super::styles;
+use super::{message_rendering::truncate_to_width, styles};
 
 /// Default placeholder text shown when the input is not focused and empty.
 pub const PLACEHOLDER_TEXT: &str = "Press 'i' to type a message...";
@@ -202,9 +202,9 @@ fn build_reply_preview_line(reply: &ReplyContext, available_width: usize) -> Lin
     };
 
     let content_prefix = format!("{}{}", bar, sender);
-    let max_text_width = available_width.saturating_sub(content_prefix.chars().count());
+    let max_text_width = available_width.saturating_sub(content_prefix.width());
     let first_line = reply.text.lines().next().unwrap_or("");
-    let text = truncate_with_ellipsis(first_line, max_text_width);
+    let text = truncate_to_width(first_line, max_text_width);
 
     let mut spans = vec![Span::styled(bar.to_owned(), styles::reply_bar_style())];
     if !sender.is_empty() {
@@ -222,10 +222,10 @@ fn build_reply_preview_line(reply: &ReplyContext, available_width: usize) -> Lin
 fn build_editing_preview_line(editing: &EditContext, available_width: usize) -> Line<'static> {
     let bar = "│ ";
     let label = "Editing: ";
-    let prefix_len = bar.chars().count() + label.chars().count();
-    let max_text_width = available_width.saturating_sub(prefix_len);
+    let prefix_width = bar.width() + label.width();
+    let max_text_width = available_width.saturating_sub(prefix_width);
     let first_line = editing.original_text.lines().next().unwrap_or("");
-    let text = truncate_with_ellipsis(first_line, max_text_width);
+    let text = truncate_to_width(first_line, max_text_width);
 
     Line::from(vec![
         Span::styled(bar.to_owned(), styles::reply_bar_style()),
@@ -235,25 +235,6 @@ fn build_editing_preview_line(editing: &EditContext, available_width: usize) -> 
         ),
         Span::styled(text, styles::reply_text_style()),
     ])
-}
-
-fn truncate_with_ellipsis(text: &str, max_len: usize) -> String {
-    if max_len == 0 {
-        return String::new();
-    }
-
-    let char_count = text.chars().count();
-    if char_count <= max_len {
-        return text.to_owned();
-    }
-
-    if max_len == 1 {
-        return "…".to_owned();
-    }
-
-    let mut out: String = text.chars().take(max_len - 1).collect();
-    out.push('…');
-    out
 }
 
 #[cfg(test)]
@@ -477,8 +458,56 @@ mod tests {
     }
 
     #[test]
-    fn truncate_with_ellipsis_truncates_long_text() {
-        assert_eq!(truncate_with_ellipsis("abcdef", 4), "abc…");
-        assert_eq!(truncate_with_ellipsis("abc", 4), "abc");
+    fn reply_preview_with_wide_text_fits_available_width() {
+        let reply = ReplyContext {
+            message_id: 1,
+            sender_name: "Alice".to_owned(),
+            text: "你好世界你好世界你好世界".to_owned(),
+        };
+
+        let line = build_reply_preview_line(&reply, 20);
+
+        assert_eq!(line.width(), 20);
+        assert!(line.to_string().ends_with('…'));
+    }
+
+    #[test]
+    fn reply_preview_counts_wide_sender_name_by_display_width() {
+        let reply = ReplyContext {
+            message_id: 1,
+            sender_name: "李小龙".to_owned(),
+            text: "abcdefghijklmnopqrstuvwxyz".to_owned(),
+        };
+
+        let line = build_reply_preview_line(&reply, 20);
+
+        assert_eq!(line.width(), 20);
+    }
+
+    #[test]
+    fn editing_preview_with_emoji_fits_available_width() {
+        let editing = EditContext {
+            chat_id: 1,
+            message_id: 1,
+            original_text: "🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉".to_owned(),
+        };
+
+        let line = build_editing_preview_line(&editing, 20);
+
+        assert_eq!(line.width(), 20);
+        assert!(line.to_string().ends_with('…'));
+    }
+
+    #[test]
+    fn editing_preview_keeps_short_text_intact() {
+        let editing = EditContext {
+            chat_id: 1,
+            message_id: 1,
+            original_text: "fix typo".to_owned(),
+        };
+
+        let line = build_editing_preview_line(&editing, 80);
+
+        assert_eq!(line.to_string(), "│ Editing: fix typo");
     }
 }
