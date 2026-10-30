@@ -30,6 +30,7 @@ use crate::{
         context::AppContext,
         contracts::ShellOrchestrator,
         guided_auth::{AuthBackendError, AuthTerminal, StdTerminal},
+        load_messages::CachedMessagesSource,
         shell::DefaultShellOrchestrator,
     },
 };
@@ -134,16 +135,9 @@ fn compose_shell_with_factory(
     );
 
     // Provide the cache source to the orchestrator for instant message display.
-    let cache_source: Option<
-        std::sync::Arc<dyn crate::usecases::load_messages::CachedMessagesSource>,
-    > = if context.config.telegram.is_configured() {
-        Some(std::sync::Arc::clone(&context.telegram)
-            as std::sync::Arc<
-                dyn crate::usecases::load_messages::CachedMessagesSource,
-            >)
-    } else {
-        None
-    };
+    let cache_source = context.config.telegram.is_configured().then(|| {
+        std::sync::Arc::clone(&context.telegram) as std::sync::Arc<dyn CachedMessagesSource>
+    });
 
     ShellComposition {
         event_source,

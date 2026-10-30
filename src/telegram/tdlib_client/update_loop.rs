@@ -138,11 +138,7 @@ impl TdLibClient {
                         Update::MessageContent(u) => {
                             forward_update(
                                 &update_tx,
-                                TdLibUpdate::MessageContentChanged {
-                                    chat_id: u.chat_id,
-                                    message_id: u.message_id,
-                                    new_content: Box::new(u.new_content),
-                                },
+                                TdLibUpdate::MessageContentChanged { chat_id: u.chat_id },
                             );
                         }
                         Update::DeleteMessages(u) => {
@@ -159,7 +155,6 @@ impl TdLibClient {
                                 &update_tx,
                                 TdLibUpdate::MessageSendSucceeded {
                                     chat_id: u.message.chat_id,
-                                    old_message_id: u.old_message_id,
                                 },
                             );
                         }

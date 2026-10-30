@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{
     domain::{chat::ChatType, events::ChatUpdate, message::DownloadStatus},
     usecases::{background::TaskDispatcher, chat_subtitle::ChatSubtitleQuery},
@@ -16,7 +18,7 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
     updates: Vec<ChatUpdate>,
 ) {
-    let mut reload_chat_ids = Vec::new();
+    let mut reload_chat_ids = HashSet::new();
     let mut should_refresh_chat_list = false;
 
     for update in updates {
@@ -25,9 +27,7 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                 tracing::debug!(chat_id, message_id = message.id, "caching pushed message");
                 maybe_auto_download(ctx, chat_id, &message);
                 ctx.state.message_cache_mut().add_message(chat_id, *message);
-                if !reload_chat_ids.contains(&chat_id) {
-                    reload_chat_ids.push(chat_id);
-                }
+                reload_chat_ids.insert(chat_id);
                 should_refresh_chat_list = true;
             }
             ChatUpdate::MessagesDeleted {
@@ -42,16 +42,12 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                 ctx.state
                     .message_cache_mut()
                     .remove_messages(chat_id, &message_ids);
-                if !reload_chat_ids.contains(&chat_id) {
-                    reload_chat_ids.push(chat_id);
-                }
+                reload_chat_ids.insert(chat_id);
                 should_refresh_chat_list = true;
             }
             ChatUpdate::ChatMetadataChanged { chat_id } => {
                 should_refresh_chat_list = true;
-                if !reload_chat_ids.contains(&chat_id) {
-                    reload_chat_ids.push(chat_id);
-                }
+                reload_chat_ids.insert(chat_id);
             }
             ChatUpdate::MessageReactionsChanged {
                 chat_id,
@@ -284,7 +280,7 @@ fn maybe_auto_download<D: TaskDispatcher>(
 
 pub(super) fn maybe_refresh_open_chat_messages<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
-    affected_chat_ids: &[i64],
+    affected_chat_ids: &HashSet<i64>,
 ) {
     use crate::domain::open_chat_state::OpenChatUiState;
 
