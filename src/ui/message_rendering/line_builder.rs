@@ -59,7 +59,7 @@ pub(super) fn build_message_lines(
         .collect();
 
     let content_start;
-    if sender.is_some() {
+    if let Some(sender) = sender {
         let header_line = build_message_header_line(time, show_time, sender, is_outgoing);
         lines.push(header_line);
 
@@ -269,7 +269,7 @@ fn append_file_meta_to_media_line(
 pub(super) fn build_message_header_line(
     time: &str,
     show_time: bool,
-    sender: Option<&str>,
+    sender: &str,
     is_outgoing: bool,
 ) -> Line<'static> {
     let time_span = if show_time {
@@ -278,14 +278,10 @@ pub(super) fn build_message_header_line(
         Span::raw(MESSAGE_INDENT.to_owned())
     };
 
-    let mut spans = vec![time_span];
+    let sender_span = Span::styled(
+        format!("{}:", sender),
+        styles::sender_name_style(sender, is_outgoing),
+    );
 
-    if let Some(name) = sender {
-        spans.push(Span::styled(
-            format!("{}:", name),
-            styles::sender_name_style(name, is_outgoing),
-        ));
-    }
-
-    Line::from(spans)
+    Line::from(vec![time_span, sender_span])
 }

@@ -35,7 +35,7 @@ impl ScrollOffset {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenChatUiState {
     Empty,
     Loading,
@@ -171,7 +171,7 @@ impl OpenChatState {
     }
 
     pub fn ui_state(&self) -> OpenChatUiState {
-        self.ui_state.clone()
+        self.ui_state
     }
 
     /// Returns the selected message index for scroll positioning.

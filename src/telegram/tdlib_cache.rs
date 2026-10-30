@@ -294,13 +294,6 @@ impl TdLibCache {
         let inner = self.inner.read().expect("cache read lock poisoned");
         inner.chats.len()
     }
-
-    /// Returns the number of cached users (for diagnostics).
-    #[cfg(test)]
-    pub fn user_count(&self) -> usize {
-        let inner = self.inner.read().expect("cache read lock poisoned");
-        inner.users.len()
-    }
 }
 
 #[cfg(test)]

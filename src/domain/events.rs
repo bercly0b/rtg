@@ -196,18 +196,6 @@ pub enum ConnectivityStatus {
     Disconnected,
 }
 
-impl ConnectivityStatus {
-    #[cfg_attr(not(test), allow(dead_code, reason = "not used yet"))]
-    pub fn as_label(self) -> &'static str {
-        match self {
-            Self::Connected => "connected",
-            Self::Connecting => "connecting",
-            Self::Updating => "updating",
-            Self::Disconnected => "disconnected",
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyInput {
     pub key: String,

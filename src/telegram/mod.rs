@@ -12,22 +12,11 @@ mod tdlib_mappers;
 mod tdlib_updates;
 mod trait_impls;
 
-// Re-export TDLib types for external use
-#[allow(
-    unused_imports,
-    reason = "public API of the telegram module, not used outside it yet"
-)]
-pub use tdlib_client::{TdLibClient, TdLibConfig, TdLibError};
-#[allow(
-    unused_imports,
-    reason = "public API of the telegram module, not used outside it yet"
-)]
-pub use tdlib_updates::TdLibUpdate;
-
 use std::sync::mpsc::{Receiver, Sender};
 
 use status_tracker::StatusTracker;
 use tdlib_auth::TdLibAuthBackend;
+use tdlib_client::TdLibError;
 
 pub use chat_updates::{ChatUpdatesMonitorStartError, TelegramChatUpdatesMonitor};
 pub use connectivity::{ConnectivityMonitorStartError, TelegramConnectivityMonitor};

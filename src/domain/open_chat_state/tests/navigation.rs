@@ -125,11 +125,6 @@ fn set_scroll_offset_persists_value() {
     assert_eq!(state.scroll_offset(), offset);
 }
 
-#[test]
-fn scroll_margin_constant_is_five() {
-    assert_eq!(SCROLL_MARGIN, 5);
-}
-
 // ── selected_message tests ──
 
 #[test]
