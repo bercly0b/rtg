@@ -84,6 +84,9 @@ pub struct OpenChatState {
     /// not reset on chat switch, so a late send failure from another chat
     /// cannot remove a pending message of the current one.
     last_pending_id: i64,
+    /// Newest message id already sent to mark-as-read. TDLib message ids are
+    /// positive, so 0 means none yet and pending ids never qualify.
+    last_acked_max_id: i64,
 }
 
 impl Default for OpenChatState {
@@ -103,6 +106,7 @@ impl Default for OpenChatState {
             typing_state: TypingState::default(),
             all_messages_loaded: false,
             last_pending_id: 0,
+            last_acked_max_id: 0,
         }
     }
 }
@@ -273,19 +277,46 @@ impl OpenChatState {
         chat_title: String,
         chat_type: ChatType,
     ) {
-        self.chat_id = Some(chat_id);
+        self.set_chat_identity(chat_id, chat_title, chat_type);
         self.topic_id = topic_id;
-        self.chat_title = chat_title;
-        self.chat_subtitle = ChatSubtitle::None;
-        self.chat_type = chat_type;
         self.messages.clear();
         self.ui_state = OpenChatUiState::Loading;
         self.selected_index = None;
         self.scroll_offset = ScrollOffset::ZERO;
         self.refreshing = false;
         self.message_source = MessageSource::None;
+    }
+
+    /// Switches to another chat and resets its per-chat data, leaving
+    /// `ui_state` and messages to the caller — e.g. `set_ready()` with
+    /// cached messages, without passing through `Loading`.
+    pub fn set_chat_identity(&mut self, chat_id: i64, chat_title: String, chat_type: ChatType) {
+        self.chat_id = Some(chat_id);
+        self.topic_id = None;
+        self.chat_title = chat_title;
+        self.chat_subtitle = ChatSubtitle::None;
+        self.chat_type = chat_type;
         self.typing_state.clear();
         self.all_messages_loaded = false;
+        self.last_acked_max_id = 0;
+    }
+
+    /// Returns ids of loaded messages newer than the last ones returned here
+    /// and records them as acknowledged.
+    ///
+    /// Telegram reads a chat up to a message id, so older messages never
+    /// need to be marked as read again.
+    pub fn take_unacked_message_ids(&mut self) -> Vec<i64> {
+        let ids: Vec<i64> = self
+            .messages
+            .iter()
+            .map(|m| m.id)
+            .filter(|&id| id > self.last_acked_max_id)
+            .collect();
+        if let Some(&max_id) = ids.iter().max() {
+            self.last_acked_max_id = max_id;
+        }
+        ids
     }
 
     /// Transitions to `Ready` with the given messages.
@@ -429,6 +460,7 @@ impl OpenChatState {
         self.message_source = MessageSource::None;
         self.typing_state.clear();
         self.all_messages_loaded = false;
+        self.last_acked_max_id = 0;
     }
 
     pub fn is_open(&self) -> bool {
