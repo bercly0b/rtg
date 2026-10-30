@@ -116,7 +116,8 @@ fn stopping_phase_transitions_to_awaiting_when_file_exists() {
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
 
-    let tmp = std::env::temp_dir().join("rtg_test_stopping_ok.oga");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_stopping_ok.oga");
     std::fs::write(&tmp, b"fake audio").unwrap();
     let file_path = tmp.to_str().unwrap().to_owned();
 
@@ -134,8 +135,6 @@ fn stopping_phase_transitions_to_awaiting_when_file_exists() {
         o.state().command_popup().unwrap().phase(),
         CommandPhase::AwaitingConfirmation { .. }
     ));
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
@@ -169,7 +168,8 @@ fn stopping_phase_transitions_to_failed_when_file_empty() {
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
 
-    let tmp = std::env::temp_dir().join("rtg_test_stopping_empty.oga");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_stopping_empty.oga");
     std::fs::write(&tmp, b"").unwrap();
     let file_path = tmp.to_str().unwrap().to_owned();
 
@@ -187,8 +187,6 @@ fn stopping_phase_transitions_to_failed_when_file_empty() {
         o.state().command_popup().unwrap().phase(),
         CommandPhase::Failed { .. }
     ));
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]

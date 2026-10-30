@@ -4,7 +4,8 @@ use super::*;
 fn l_on_voice_message_opens_playback_popup() {
     use crate::domain::command_popup_state::CommandPopupKind;
 
-    let tmp = std::env::temp_dir().join("rtg_test_playback.ogg");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_playback.ogg");
     std::fs::write(&tmp, b"fake").unwrap();
     let path = tmp.to_str().unwrap();
 
@@ -22,8 +23,6 @@ fn l_on_voice_message_opens_playback_popup() {
     let popup = o.state().command_popup().expect("popup should be open");
     assert_eq!(popup.title(), "Playing");
     assert_eq!(popup.kind(), CommandPopupKind::Playback);
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
@@ -54,7 +53,8 @@ fn l_on_text_message_does_nothing() {
 fn l_ignored_when_popup_already_open() {
     use crate::domain::command_popup_state::CommandPopupKind;
 
-    let tmp = std::env::temp_dir().join("rtg_test_playback_dup.ogg");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_playback_dup.ogg");
     std::fs::write(&tmp, b"fake").unwrap();
     let path = tmp.to_str().unwrap();
 
@@ -73,13 +73,12 @@ fn l_ignored_when_popup_already_open() {
         .unwrap();
 
     assert_eq!(o.state().command_popup().unwrap().title(), "Other");
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
 fn playback_popup_auto_closes_on_process_exit() {
-    let tmp = std::env::temp_dir().join("rtg_test_play_autoclose.ogg");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_play_autoclose.ogg");
     std::fs::write(&tmp, b"fake").unwrap();
     let path = tmp.to_str().unwrap();
 
@@ -98,13 +97,12 @@ fn playback_popup_auto_closes_on_process_exit() {
     o.handle_event(AppEvent::CommandExited { success: true })
         .unwrap();
     assert!(o.state().command_popup().is_none());
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
 fn q_closes_playback_popup_immediately() {
-    let tmp = std::env::temp_dir().join("rtg_test_play_q.ogg");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_play_q.ogg");
     std::fs::write(&tmp, b"fake").unwrap();
     let path = tmp.to_str().unwrap();
 
@@ -123,15 +121,14 @@ fn q_closes_playback_popup_immediately() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
         .unwrap();
     assert!(o.state().command_popup().is_none());
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
 fn l_on_audio_message_opens_playback_popup() {
     use crate::domain::command_popup_state::CommandPopupKind;
 
-    let tmp = std::env::temp_dir().join("rtg_test_play_audio.mp3");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_play_audio.mp3");
     std::fs::write(&tmp, b"fake").unwrap();
     let path = tmp.to_str().unwrap();
 
@@ -148,13 +145,12 @@ fn l_on_audio_message_opens_playback_popup() {
 
     let popup = o.state().command_popup().expect("popup should be open");
     assert_eq!(popup.kind(), CommandPopupKind::Playback);
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
 fn voice_with_wildcard_handler_opens_playback_popup() {
-    let tmp = std::env::temp_dir().join("rtg_test_play_wildcard.ogg");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_play_wildcard.ogg");
     std::fs::write(&tmp, b"fake").unwrap();
     let path = tmp.to_str().unwrap();
 
@@ -169,6 +165,4 @@ fn voice_with_wildcard_handler_opens_playback_popup() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
         .unwrap();
     assert!(o.state().command_popup().is_some());
-
-    let _ = std::fs::remove_file(&tmp);
 }

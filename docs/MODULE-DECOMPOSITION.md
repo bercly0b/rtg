@@ -140,6 +140,12 @@ mod feature_b;
 - **Orchestrator factories** (`make_orchestrator()`, etc.) live in
   `tests/mod.rs`.
 - Each test sub-module imports from `super::*` for shared infrastructure.
+- Once the shared infrastructure itself outgrows the size limit, move it
+  into sibling files that `tests/mod.rs` glob-imports (`use fixtures::*;`),
+  so test sub-modules still only need `super::*`. Example:
+  `src/usecases/shell/tests/` splits it into `fixtures.rs` (test doubles,
+  domain helpers), `dispatcher.rs` (`RecordingDispatcher`) and
+  `factories.rs` (orchestrator factories, event-injection helpers).
 
 ### Group tests by feature area
 
