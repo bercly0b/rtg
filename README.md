@@ -1,3 +1,7 @@
+<p align="center">
+  <b>English</b> | <a href="README.ru.md">Русский</a>
+</p>
+
 <h1 align="center">RTG</h1>
 
 <h3 align="center">
