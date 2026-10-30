@@ -1,7 +1,7 @@
 mod content_layout;
 mod content_spans;
 mod element_building;
-mod file_metadata;
+mod file_meta;
 mod forward;
 mod reactions;
 mod reply;

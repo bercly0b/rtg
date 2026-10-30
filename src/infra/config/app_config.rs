@@ -50,10 +50,20 @@ impl Default for LogConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TelegramConfig {
     pub api_id: i32,
     pub api_hash: String,
+}
+
+// Custom Debug implementation to redact sensitive api_hash field.
+impl std::fmt::Debug for TelegramConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TelegramConfig")
+            .field("api_id", &self.api_id)
+            .field("api_hash", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl TelegramConfig {
@@ -306,6 +316,23 @@ mod tests {
             api_hash: "   ".to_owned(),
         };
         assert!(!config.is_configured());
+    }
+
+    #[test]
+    fn telegram_config_debug_redacts_api_hash() {
+        let config = AppConfig {
+            telegram: TelegramConfig {
+                api_id: 12345,
+                api_hash: "secret_hash".to_owned(),
+            },
+            ..AppConfig::default()
+        };
+
+        let debug_output = format!("{config:?}");
+
+        assert!(debug_output.contains("12345"));
+        assert!(debug_output.contains("[REDACTED]"));
+        assert!(!debug_output.contains("secret_hash"));
     }
 
     #[test]

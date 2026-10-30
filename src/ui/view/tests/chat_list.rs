@@ -165,8 +165,8 @@ fn compute_visual_index_accounts_for_headers() {
     ];
     let layout = ChatListLayout::new(&chats);
 
-    assert_eq!(layout.visual_index(0), 1);
-    assert_eq!(layout.visual_index(1), 3);
+    assert_eq!(layout.visual_index(&chats, 0), Some(1));
+    assert_eq!(layout.visual_index(&chats, 1), Some(3));
 }
 
 #[test]
@@ -174,8 +174,8 @@ fn compute_visual_index_with_no_pinned() {
     let chats = vec![chat(1, "Chat1", 0, None), chat(2, "Chat2", 0, None)];
     let layout = ChatListLayout::new(&chats);
 
-    assert_eq!(layout.visual_index(0), 1);
-    assert_eq!(layout.visual_index(1), 2);
+    assert_eq!(layout.visual_index(&chats, 0), Some(1));
+    assert_eq!(layout.visual_index(&chats, 1), Some(2));
 }
 
 #[test]
@@ -186,8 +186,54 @@ fn compute_visual_index_with_all_pinned() {
     ];
     let layout = ChatListLayout::new(&chats);
 
-    assert_eq!(layout.visual_index(0), 1);
-    assert_eq!(layout.visual_index(1), 2);
+    assert_eq!(layout.visual_index(&chats, 0), Some(1));
+    assert_eq!(layout.visual_index(&chats, 1), Some(2));
+}
+
+#[test]
+fn compute_visual_index_uses_position_within_group_for_interleaved_pinned() {
+    let chats = vec![
+        chat(1, "Regular1", 0, None),
+        chat_with_pinned(2, "Pinned1", 0, None, true),
+        chat(3, "Regular2", 0, None),
+        chat_with_pinned(4, "Pinned2", 0, None, true),
+    ];
+    let layout = ChatListLayout::new(&chats);
+
+    // Rendered rows: Pinned header, Pinned1, Pinned2, All Chats header, Regular1, Regular2.
+    assert_eq!(layout.visual_index(&chats, 0), Some(4));
+    assert_eq!(layout.visual_index(&chats, 1), Some(1));
+    assert_eq!(layout.visual_index(&chats, 2), Some(5));
+    assert_eq!(layout.visual_index(&chats, 3), Some(2));
+}
+
+#[test]
+fn compute_visual_index_is_none_out_of_range() {
+    let chats = vec![chat(1, "Chat1", 0, None)];
+    let layout = ChatListLayout::new(&chats);
+
+    assert_eq!(layout.visual_index(&chats, 1), None);
+}
+
+#[test]
+fn interleaved_pinned_chat_is_highlighted_in_pinned_section() {
+    let mut state = ShellState::default();
+    state.chat_list_mut().set_ready(vec![
+        chat(1, "Regular", 0, None),
+        chat_with_pinned(2, "Pinned", 0, None, true),
+    ]);
+    state.chat_list_mut().select_next();
+
+    let buffer = render_chat_list(&state, ActivePane::ChatList);
+
+    let highlighted_row = (0..buffer.area.height)
+        .find(|&y| (0..buffer.area.width).any(|x| buffer[(x, y)].bg == Color::Gray))
+        .expect("a row is highlighted");
+    let row_text: String = (0..buffer.area.width)
+        .map(|x| buffer[(x, highlighted_row)].symbol())
+        .collect();
+    assert!(row_text.contains("Pinned"), "highlighted row: {row_text:?}");
+    assert!(!row_text.contains("--"), "header must not be highlighted");
 }
 
 #[test]

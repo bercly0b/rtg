@@ -78,7 +78,7 @@ pub(super) fn render_chat_list_panel(
             // the list stays scrolled to it instead of jumping to the top.
             let visual_index = chat_list
                 .selected_index()
-                .map(|idx| layout.visual_index(idx));
+                .and_then(|idx| layout.visual_index(chats, idx));
 
             let mut list_state = ListState::default();
             list_state.select(visual_index);
@@ -140,13 +140,21 @@ impl ChatListLayout {
         items
     }
 
-    pub fn visual_index(&self, chat_index: usize) -> usize {
-        if chat_index < self.pinned_count {
-            chat_index + 1
+    /// Maps an index into `chats` to its row in [`Self::build_items`], which
+    /// renders pinned and regular chats as separate groups whatever their
+    /// order in `chats`.
+    pub fn visual_index(&self, chats: &[ChatSummary], chat_index: usize) -> Option<usize> {
+        let is_pinned = chats.get(chat_index)?.is_pinned;
+        let position_in_group = chats[..chat_index]
+            .iter()
+            .filter(|c| c.is_pinned == is_pinned)
+            .count();
+        let group_start = if !is_pinned && self.has_pinned() {
+            self.pinned_count + 2
         } else {
-            let headers = if self.has_pinned() { 2 } else { 1 };
-            chat_index + headers
-        }
+            1
+        };
+        Some(group_start + position_in_group)
     }
 }
 
