@@ -285,6 +285,14 @@ fn private_chat_offline_no_bullet() {
 }
 
 #[test]
+fn online_bullet_is_measured_narrow_despite_ambiguous_width() {
+    // Pins the known limitation documented at the online indicator: the row
+    // layout budgets 1 column, while CJK terminals may draw 2.
+    assert_eq!("\u{2022}".width(), 1);
+    assert_eq!("\u{2022}".width_cjk(), 2);
+}
+
+#[test]
 fn private_chat_outgoing_delivered_shows_single_check() {
     let line = chat_list_item::chat_list_item_line(
         &private_chat_outgoing(1, "Jane", Some("See you tomorrow"), false),

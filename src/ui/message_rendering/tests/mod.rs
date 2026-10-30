@@ -1,5 +1,6 @@
 mod content_spans;
 mod element_building;
+mod file_meta;
 mod forward;
 mod rendering;
 mod reply;

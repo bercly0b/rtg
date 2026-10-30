@@ -47,6 +47,19 @@ impl TdLibAuthBackend {
     /// When `force` is `true`, bypasses the in-memory cache and reads every chat
     /// directly from TDLib's SQLite via `get_chat()` — guarantees fresh data at
     /// the cost of ~1-2ms per chat.
+    ///
+    /// # Errors
+    ///
+    /// - [`ListChatsSourceError::Unauthorized`] — TDLib rejected `getChats`
+    ///   because the session is not authorized (code 401 or an `unauthorized`
+    ///   message).
+    /// - [`ListChatsSourceError::Unavailable`] — `getChats` failed for any other
+    ///   reason; TDLib returned chat IDs but none of them resolved; or it
+    ///   returned no IDs without reporting that the whole list is loaded.
+    ///
+    /// A failed `loadChats` is not an error: the list falls back to the chats
+    /// TDLib already has locally. Chats that fail to resolve individually are
+    /// skipped.
     pub fn list_chat_summaries(
         &self,
         limit: usize,
