@@ -20,6 +20,18 @@ impl TdLibClient {
         })
     }
 
+    /// Drains the authorization state updates already queued, without
+    /// blocking, and returns the most recent one.
+    pub fn recv_latest_auth_state(&self) -> Result<Option<AuthStateUpdate>, TdLibError> {
+        let rx = self
+            .auth_state_rx
+            .lock()
+            .map_err(|_| TdLibError::Internal {
+                message: "auth state receiver lock poisoned".to_owned(),
+            })?;
+        Ok(rx.try_iter().last())
+    }
+
     /// Sends TDLib parameters to initialize the client.
     ///
     /// This should be called when receiving `AuthorizationState::WaitTdlibParameters`.
@@ -48,7 +60,7 @@ impl TdLibClient {
                 false, // use_test_dc
                 database_directory,
                 files_directory,
-                String::new(), // files_directory (deprecated parameter, use empty)
+                String::new(), // database_encryption_key (empty: database is not encrypted)
                 true,          // use_file_database
                 true,          // use_chat_info_database
                 true,          // use_message_database

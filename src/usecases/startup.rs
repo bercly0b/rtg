@@ -69,9 +69,9 @@ pub fn plan_startup(telegram: &mut TelegramAdapter) -> StartupPlan {
 /// user has actually authenticated, causing the old check to always return
 /// `true` after the first run.
 fn evaluate_session_state(telegram: &mut TelegramAdapter) -> StartupFlowState {
-    match telegram.is_authorized() {
-        Ok(true) => StartupFlowState::LaunchTui,
-        Ok(false) => StartupFlowState::GuidedAuth {
+    match telegram.refresh_authorization_status() {
+        Ok(()) if telegram.is_authorized_cached() => StartupFlowState::LaunchTui,
+        Ok(()) => StartupFlowState::GuidedAuth {
             reason: GuidedAuthReason::Missing,
         },
         Err(error) => {
