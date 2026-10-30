@@ -129,12 +129,12 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
             chat_id,
             message_ids,
         }),
-        TdLibUpdate::MessageContentChanged { chat_id, .. }
+        TdLibUpdate::MessageContentChanged { chat_id }
         | TdLibUpdate::ChatLastMessage { chat_id }
         | TdLibUpdate::ChatPosition { chat_id }
         | TdLibUpdate::ChatReadInbox { chat_id }
         | TdLibUpdate::ChatReadOutbox { chat_id }
-        | TdLibUpdate::MessageSendSucceeded { chat_id, .. }
+        | TdLibUpdate::MessageSendSucceeded { chat_id }
         | TdLibUpdate::ChatUnreadReactionCount { chat_id }
         | TdLibUpdate::SupergroupMetadataChanged { chat_id } => {
             Some(ChatUpdate::ChatMetadataChanged { chat_id })

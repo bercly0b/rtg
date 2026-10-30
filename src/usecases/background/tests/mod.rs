@@ -1,35 +1,15 @@
 mod error_mapping;
 mod file_ops;
 
-use std::sync::mpsc::{self, Sender};
-
-use crate::{
-    domain::events::BackgroundTaskResult,
-    usecases::{
-        background::TaskDispatcher,
-        chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery},
-        message_info::MessageInfoQuery,
-        message_reactions::AvailableReactionsQuery,
-    },
+use crate::usecases::{
+    background::TaskDispatcher,
+    chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery},
+    message_info::MessageInfoQuery,
+    message_reactions::AvailableReactionsQuery,
 };
 
-/// Stub dispatcher that records dispatched operations and delivers results
-/// through a test channel for assertions.
-pub struct StubTaskDispatcher {
-    result_tx: Sender<BackgroundTaskResult>,
-}
-
-impl StubTaskDispatcher {
-    pub fn new() -> (Self, mpsc::Receiver<BackgroundTaskResult>) {
-        let (tx, rx) = mpsc::channel();
-        (Self { result_tx: tx }, rx)
-    }
-
-    /// Manually inject a result as if a background task completed.
-    pub fn inject_result(&self, result: BackgroundTaskResult) {
-        let _ = self.result_tx.send(result);
-    }
-}
+/// Stub dispatcher that ignores every dispatched operation.
+pub struct StubTaskDispatcher;
 
 impl TaskDispatcher for StubTaskDispatcher {
     fn dispatch_chat_list(&self, _force: bool, _limit: usize) {}
