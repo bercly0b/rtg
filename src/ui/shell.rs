@@ -65,10 +65,12 @@ pub fn start(
 mod tests {
     use super::*;
     use crate::{
-        domain::events::AppEvent,
         infra::{contracts::ExternalOpener, stubs::StubStorageAdapter},
         ui::event_source::MockEventSource,
-        usecases::{background::tests::StubTaskDispatcher, shell::DefaultShellOrchestrator},
+        usecases::{
+            background::tests::StubTaskDispatcher, contracts::AppEvent,
+            shell::DefaultShellOrchestrator,
+        },
     };
 
     #[derive(Debug, Default)]
@@ -91,9 +93,11 @@ mod tests {
     #[test]
     fn orchestrator_stops_on_quit_from_source() {
         let mut source = MockEventSource::from(vec![AppEvent::QuitRequested]);
-        let (dispatcher, _rx) = StubTaskDispatcher::new();
-        let mut orchestrator =
-            DefaultShellOrchestrator::new(StubStorageAdapter::default(), NoopOpener, dispatcher);
+        let mut orchestrator = DefaultShellOrchestrator::new(
+            StubStorageAdapter::default(),
+            NoopOpener,
+            StubTaskDispatcher,
+        );
 
         if let Some(event) = source.next_event().expect("must read mock event") {
             orchestrator

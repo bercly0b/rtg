@@ -18,14 +18,12 @@ impl Default for RetryPolicy {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthCodeToken(pub String);
 
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignInOutcome {
     Authorized,
     PasswordRequired,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthBackendError {
     InvalidPhone,

@@ -1,0 +1,14 @@
+id: domain-no-outer-layers
+valid:
+  - use crate::domain::chat::ChatSummary;
+  - use super::selectable_list::SelectableList;
+  - use crate::{domain::chat::ChatType, test_support::chat};
+  - use chrono::Local;
+  - "fn f() -> crate::domain::status::Status { todo!() }"
+invalid:
+  - use crate::usecases::list_chats::DEFAULT_CHAT_PAGE_SIZE;
+  - use crate::infra::error::AppError;
+  - use crate::{domain::chat::ChatSummary, ui::styles};
+  - "use crate::{\n    domain::chat::ChatSummary,\n    telegram::TdLibClient,\n};"
+  - "fn f() { crate::telegram::connect(); }"
+  - "fn f(_: crate::usecases::shell::Shell) {}"

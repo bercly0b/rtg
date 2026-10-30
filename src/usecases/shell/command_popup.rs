@@ -57,7 +57,7 @@ pub(super) fn handle_command_popup_key<D: TaskDispatcher>(
 
 pub(super) fn handle_command_exited<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
-    _event_success: bool,
+    success: bool,
 ) {
     use crate::domain::command_popup_state::{CommandPhase, CommandPopupKind};
 
@@ -80,7 +80,7 @@ pub(super) fn handle_command_exited<D: TaskDispatcher>(
                 popup.set_phase(CommandPhase::Done);
             }
         }
-        CommandPopupKind::Recording => voice::handle_recording_exited(ctx, phase),
+        CommandPopupKind::Recording => voice::handle_recording_exited(ctx, phase, success),
     }
 }
 

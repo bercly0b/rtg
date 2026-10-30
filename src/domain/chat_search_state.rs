@@ -4,7 +4,10 @@ pub struct ChatSearchState {
     cursor_position: usize,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "some methods are used only by tests")
+)]
 impl ChatSearchState {
     pub fn query(&self) -> &str {
         &self.query

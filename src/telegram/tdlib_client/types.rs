@@ -22,7 +22,6 @@ pub(super) const TDLIB_LOG_MAX_SIZE: i64 = 10 * 1024 * 1024; // 10 MB
 pub(super) const TDLIB_ERROR_ALL_CHATS_LOADED: i32 = 404;
 
 /// Configuration for TDLib client initialization.
-#[derive(Clone)]
 pub struct TdLibConfig {
     /// Telegram API ID from <https://my.telegram.org>
     pub api_id: i32,
@@ -77,12 +76,25 @@ pub enum TdLibError {
     #[error("TDLib operation timed out: {message}")]
     Timeout { message: String },
 
+    /// Failure of the client's own runtime machinery, such as a poisoned lock.
+    #[error("TDLib client internal error: {message}")]
+    Internal { message: String },
+
     /// A panic raised inside `tdlib-rs` while decoding a TDLib response.
     #[error("TDLib response to {request} could not be decoded: {message}")]
     Decode {
         request: &'static str,
         message: String,
     },
+}
+
+impl From<tdlib_rs::types::Error> for TdLibError {
+    fn from(error: tdlib_rs::types::Error) -> Self {
+        Self::Request {
+            code: error.code,
+            message: error.message,
+        }
+    }
 }
 
 /// Authorization state change event.

@@ -16,6 +16,16 @@ pub struct ReplyContext {
     pub text: String,
 }
 
+/// A text message sent from the input and shown as the pending message
+/// `pending_id` until Telegram accepts it; on failure it is put back
+/// into the input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutgoingMessage {
+    pub pending_id: i64,
+    pub text: String,
+    pub reply_to: Option<ReplyContext>,
+}
+
 /// Context for an in-progress message edit.
 ///
 /// Stored while the user is editing a message and consumed when Enter is pressed.
@@ -114,7 +124,6 @@ impl MessageInputState {
     }
 
     /// Clears all text, reply context, edit context, and resets cursor.
-    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.text.clear();
         self.cursor_position = 0;
@@ -150,6 +159,14 @@ impl MessageInputState {
     /// Used by the send flow to extract reply_to before clearing input.
     pub fn take_reply_to(&mut self) -> Option<ReplyContext> {
         self.reply_to.take()
+    }
+
+    /// Puts a failed send back into the input, so that Enter retries it as it was:
+    /// same text and reply target, not an edit of another message.
+    pub fn restore_failed_send(&mut self, text: &str, reply_to: Option<ReplyContext>) {
+        self.set_text(text);
+        self.reply_to = reply_to;
+        self.editing = None;
     }
 
     pub fn editing(&self) -> Option<&EditContext> {
@@ -449,5 +466,33 @@ mod tests {
 
         assert_eq!(state.text(), "Hi");
         assert!(state.reply_to().is_none());
+    }
+
+    #[test]
+    fn restore_failed_send_brings_back_text_and_reply() {
+        let mut state = MessageInputState::default();
+
+        state.restore_failed_send("Hi", Some(sample_reply_context()));
+
+        assert_eq!(state.text(), "Hi");
+        assert_eq!(state.cursor_position(), 2);
+        assert_eq!(state.reply_to(), Some(&sample_reply_context()));
+    }
+
+    #[test]
+    fn restore_failed_send_without_reply_drops_newer_reply_and_edit() {
+        let mut state = MessageInputState::default();
+        state.set_editing(EditContext {
+            chat_id: 1,
+            message_id: 7,
+            original_text: "old".to_owned(),
+        });
+        state.set_reply_to(sample_reply_context());
+
+        state.restore_failed_send("Hi", None);
+
+        assert_eq!(state.text(), "Hi");
+        assert!(state.reply_to().is_none());
+        assert!(state.editing().is_none());
     }
 }

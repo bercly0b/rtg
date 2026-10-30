@@ -1,0 +1,45 @@
+# Dependency policy for `cargo deny check`, run by `mise run deny` as part of
+# `mise run quality`. Every exception names why it is accepted; drop it once
+# that no longer holds.
+#
+# A newly published RustSec advisory can fail a PR that did not touch
+# dependencies: update the crate (`cargo update -p <crate>`) or, if no fixed
+# version is reachable, add a narrow ignore below.
+
+[advisories]
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained, not vulnerable; pulled in by ratatui 0.29" },
+    # zip 8 and its zstd 0.13 come only from tdlib-rs (1.4.0 still requires
+    # zip 8), which uses them in its build script to unpack the TDLib archive
+    # it downloads from its own GitHub releases. It walks the entries itself
+    # and does not call the affected extract() APIs.
+    { id = "RUSTSEC-2026-0367", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
+    { id = "RUSTSEC-2026-0368", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
+    { id = "RUSTSEC-2026-0369", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
+    { id = "RUSTSEC-2026-0391", reason = "zstd 0.13 via zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
+    { id = "RUSTSEC-2026-0398", reason = "zstd-safe 7 via zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
+    { id = "RUSTSEC-2026-0403", reason = "zstd-safe 7 via zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
+]
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "bzip2-1.0.6",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+[bans]
+# Duplicate versions come from transitive dependencies we do not control.
+multiple-versions = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

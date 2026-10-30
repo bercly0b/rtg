@@ -1,9 +1,6 @@
 use crate::{
-    domain::{
-        events::BackgroundTaskResult,
-        open_chat_state::{MessageSource, OpenChatUiState},
-    },
-    usecases::background::TaskDispatcher,
+    domain::open_chat_state::{MessageSource, OpenChatUiState},
+    usecases::background::{BackgroundTaskResult, TaskDispatcher},
 };
 
 use super::{chat_open, OrchestratorCtx};
@@ -207,7 +204,8 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
         }
         BackgroundTaskResult::MessageSent {
             chat_id,
-            original_text,
+            topic_id,
+            message,
             result,
         } => match result {
             Ok(()) => {
@@ -219,8 +217,14 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                     code = error.code,
                     "background: send message failed"
                 );
-                ctx.state.open_chat_mut().remove_pending_messages();
-                ctx.state.message_input_mut().set_text(&original_text);
+                ctx.state.open_chat_mut().remove_message(message.pending_id);
+                // The reply target exists only in its own conversation; restored
+                // elsewhere, a retry would reply to an unrelated message id.
+                let still_open = ctx.state.open_chat().chat_id() == Some(chat_id)
+                    && ctx.state.open_chat().topic_id() == topic_id;
+                ctx.state
+                    .message_input_mut()
+                    .restore_failed_send(&message.text, message.reply_to.filter(|_| still_open));
             }
         },
         BackgroundTaskResult::MessageEdited {
@@ -298,10 +302,13 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 }
             }
         }
-        BackgroundTaskResult::VoiceSendFailed { chat_id } => {
+        BackgroundTaskResult::VoiceSendFailed {
+            chat_id,
+            pending_id,
+        } => {
             tracing::warn!(chat_id, "background: voice send failed, rolling back");
             if ctx.state.open_chat().chat_id() == Some(chat_id) {
-                ctx.state.open_chat_mut().remove_pending_messages();
+                ctx.state.open_chat_mut().remove_message(pending_id);
             }
         }
         BackgroundTaskResult::ChatSubtitleLoaded { chat_id, result } => {

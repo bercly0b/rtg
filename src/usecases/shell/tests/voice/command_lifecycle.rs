@@ -59,10 +59,9 @@ fn command_exited_transitions_running_to_awaiting_on_success() {
     use crate::domain::command_popup_state::CommandPhase;
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-    simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", true);
+    let exited = simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", true);
 
-    o.handle_event(AppEvent::CommandExited { success: true })
-        .unwrap();
+    o.handle_event(exited).unwrap();
 
     let popup = o
         .state()
@@ -117,7 +116,8 @@ fn stopping_phase_transitions_to_awaiting_when_file_exists() {
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
 
-    let tmp = std::env::temp_dir().join("rtg_test_stopping_ok.oga");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_stopping_ok.oga");
     std::fs::write(&tmp, b"fake audio").unwrap();
     let file_path = tmp.to_str().unwrap().to_owned();
 
@@ -135,8 +135,6 @@ fn stopping_phase_transitions_to_awaiting_when_file_exists() {
         o.state().command_popup().unwrap().phase(),
         CommandPhase::AwaitingConfirmation { .. }
     ));
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
@@ -170,7 +168,8 @@ fn stopping_phase_transitions_to_failed_when_file_empty() {
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
 
-    let tmp = std::env::temp_dir().join("rtg_test_stopping_empty.oga");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_stopping_empty.oga");
     std::fs::write(&tmp, b"").unwrap();
     let file_path = tmp.to_str().unwrap().to_owned();
 
@@ -188,8 +187,6 @@ fn stopping_phase_transitions_to_failed_when_file_empty() {
         o.state().command_popup().unwrap().phase(),
         CommandPhase::Failed { .. }
     ));
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
@@ -220,10 +217,9 @@ fn command_exited_with_failure_transitions_to_failed() {
     use crate::domain::command_popup_state::CommandPhase;
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-    simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
+    let exited = simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
 
-    o.handle_event(AppEvent::CommandExited { success: false })
-        .unwrap();
+    o.handle_event(exited).unwrap();
 
     let popup = o
         .state()
@@ -244,10 +240,9 @@ fn command_exited_with_failure_transitions_to_failed() {
 #[test]
 fn failed_phase_any_key_closes_popup() {
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-    simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
+    let exited = simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
 
-    o.handle_event(AppEvent::CommandExited { success: false })
-        .unwrap();
+    o.handle_event(exited).unwrap();
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("x", false)))
         .unwrap();
@@ -259,10 +254,9 @@ fn failed_phase_message_mentions_config_without_hardcoded_path() {
     use crate::domain::command_popup_state::CommandPhase;
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-    simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
+    let exited = simulate_voice_recording_with_process(&mut o, "/tmp/test.oga", false);
 
-    o.handle_event(AppEvent::CommandExited { success: false })
-        .unwrap();
+    o.handle_event(exited).unwrap();
 
     let popup = o.state().command_popup().unwrap();
     match popup.phase() {

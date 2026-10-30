@@ -7,7 +7,6 @@
 //! selected — selection-by-id logic stays in the owning state because the id
 //! types differ (`i64` for chats, `i32` for topics).
 
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectableList<T> {
     items: Vec<T>,
@@ -23,7 +22,6 @@ impl<T> Default for SelectableList<T> {
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 impl<T> SelectableList<T> {
     pub fn items(&self) -> &[T] {
         &self.items

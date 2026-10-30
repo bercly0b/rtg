@@ -1,0 +1,9 @@
+id: tui-only-in-ui
+valid:
+  - use crate::ui::shell::Shell;
+  - "// crossterm holds an open fd to /dev/tty"
+invalid:
+  - use ratatui::style::Color;
+  - use crossterm::event::KeyCode;
+  - "fn f() { crossterm::terminal::disable_raw_mode().ok(); }"
+  - "fn f(_: ratatui::layout::Rect) {}"

@@ -1,6 +1,8 @@
 [tools]
 rust = { version = "1.97.1", components = ["rustfmt", "clippy", "llvm-tools"] }
 "github:taiki-e/cargo-llvm-cov" = "0.9.1"
+ast-grep = "0.51.0"
+cargo-deny = "0.20.2"
 
 # ── Quality gate (mirrors CLAUDE.md rules) ──────────────────────────────────
 
@@ -16,9 +18,17 @@ run = "cargo clippy -- -D warnings"
 [tasks.check]
 run = "cargo check"
 
+[tasks.ast-grep]
+description = "Test ast-grep rules, then scan the code with them (layer boundaries)"
+run = ["ast-grep test", "ast-grep scan"]
+
+[tasks.deny]
+description = "Check dependencies for RustSec advisories, licences and sources (deny.toml)"
+run = "cargo deny check"
+
 [tasks.quality]
-description = "Run fmt, clippy, test and check in order"
-run = [{ task = "fmt" }, { task = "clippy" }, { task = "test" }, { task = "check" }]
+description = "Run fmt, clippy, ast-grep, deny, test and check in order"
+run = [{ task = "fmt" }, { task = "clippy" }, { task = "ast-grep" }, { task = "deny" }, { task = "test" }, { task = "check" }]
 
 # ── Test coverage ───────────────────────────────────────────────────────────
 #

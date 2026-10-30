@@ -2,11 +2,11 @@ use std::sync::mpsc::Receiver;
 
 use anyhow::Result;
 
-use crate::domain::{
-    events::{AppEvent, CommandEvent},
-    keymap::Keymap,
-    shell_state::ShellState,
-};
+use crate::domain::{events, events::CommandEvent, keymap::Keymap, shell_state::ShellState};
+
+use super::background::BackgroundTaskResult;
+
+pub type AppEvent = events::AppEvent<BackgroundTaskResult>;
 
 pub trait AppEventSource {
     fn next_event(&mut self) -> Result<Option<AppEvent>>;

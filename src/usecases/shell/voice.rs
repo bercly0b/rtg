@@ -7,7 +7,10 @@ const RECORDING_FAILED_MESSAGE: &str =
     "Recording failed. Override recording command via [voice] record_cmd in the config file (press any key)";
 
 pub(super) fn start_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
-    use crate::usecases::{external_command, voice_recording};
+    use crate::{
+        domain::command_popup_state::CommandPopupKind,
+        usecases::{external_command, voice_recording},
+    };
 
     if ctx.state.command_popup().is_some() {
         return; // already recording or popup active
@@ -20,14 +23,21 @@ pub(super) fn start_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx
             *ctx.command_handle = Some(handle);
             *ctx.recording_file_path = Some(file_path);
             *ctx.pending_command_rx = Some(rx);
-            ctx.state.open_command_popup(
-                "Recording Voice",
-                crate::domain::command_popup_state::CommandPopupKind::Recording,
-            );
+            ctx.state
+                .open_command_popup("Recording Voice", CommandPopupKind::Recording);
             tracing::info!("voice recording started");
         }
         Err(err) => {
+            let err = format!("{err:#}");
             tracing::error!(%err, "failed to start voice recording");
+            ctx.state
+                .open_command_popup("Recording Voice", CommandPopupKind::Recording);
+            if let Some(popup) = ctx.state.command_popup_mut() {
+                popup.push_line(err);
+                popup.set_phase(CommandPhase::Failed {
+                    message: RECORDING_FAILED_MESSAGE.into(),
+                });
+            }
         }
     }
 }
@@ -35,7 +45,7 @@ pub(super) fn start_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx
 /// Stops the recording process in a background thread to avoid blocking the UI.
 ///
 /// The handle is moved to the thread, which calls `stop()` and then drops it.
-/// The pipe readers will naturally send `CommandExited` when the process dies.
+/// The command's waiter thread sends `CommandExited` once the process is reaped.
 /// If the thread fails to spawn, `Drop` on the handle still terminates the process.
 pub(super) fn stop_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
     if let Some(mut handle) = ctx.command_handle.take() {
@@ -52,18 +62,14 @@ pub(super) fn stop_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<
 pub(super) fn handle_recording_exited<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
     phase: CommandPhase,
+    success: bool,
 ) {
     match phase {
         CommandPhase::Running => {
-            let process_succeeded = ctx
-                .command_handle
-                .as_mut()
-                .and_then(|h| h.try_exit_success())
-                .unwrap_or(false);
             *ctx.command_handle = None;
 
             if let Some(popup) = ctx.state.command_popup_mut() {
-                if process_succeeded {
+                if success {
                     popup.set_phase(CommandPhase::AwaitingConfirmation {
                         prompt: "Command finished. Send recording? (y/n)".into(),
                     });
@@ -116,14 +122,14 @@ pub(super) fn send_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<
     }
 
     // Optimistically show the voice message immediately
-    ctx.state.open_chat_mut().add_pending_message(
+    let pending_id = ctx.state.open_chat_mut().add_pending_message(
         String::new(),
         crate::domain::message::MessageMedia::Voice,
         None,
     );
     let topic_id = ctx.state.open_chat().topic_id();
     ctx.dispatcher
-        .dispatch_send_voice(chat_id, topic_id, file_path);
+        .dispatch_send_voice(chat_id, topic_id, file_path, pending_id);
 }
 
 pub(super) fn discard_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {

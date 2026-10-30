@@ -1,35 +1,17 @@
 mod error_mapping;
 mod file_ops;
+mod task_result;
 
-use std::sync::mpsc::{self, Sender};
-
-use crate::{
-    domain::events::BackgroundTaskResult,
-    usecases::{
-        background::TaskDispatcher,
-        chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery},
-        message_info::MessageInfoQuery,
-        message_reactions::AvailableReactionsQuery,
-    },
+use crate::domain::message_input_state::OutgoingMessage;
+use crate::usecases::{
+    background::TaskDispatcher,
+    chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery},
+    message_info::MessageInfoQuery,
+    message_reactions::AvailableReactionsQuery,
 };
 
-/// Stub dispatcher that records dispatched operations and delivers results
-/// through a test channel for assertions.
-pub struct StubTaskDispatcher {
-    result_tx: Sender<BackgroundTaskResult>,
-}
-
-impl StubTaskDispatcher {
-    pub fn new() -> (Self, mpsc::Receiver<BackgroundTaskResult>) {
-        let (tx, rx) = mpsc::channel();
-        (Self { result_tx: tx }, rx)
-    }
-
-    /// Manually inject a result as if a background task completed.
-    pub fn inject_result(&self, result: BackgroundTaskResult) {
-        let _ = self.result_tx.send(result);
-    }
-}
+/// Stub dispatcher that ignores every dispatched operation.
+pub struct StubTaskDispatcher;
 
 impl TaskDispatcher for StubTaskDispatcher {
     fn dispatch_chat_list(&self, _force: bool, _limit: usize) {}
@@ -52,8 +34,7 @@ impl TaskDispatcher for StubTaskDispatcher {
         &self,
         _chat_id: i64,
         _topic_id: Option<i32>,
-        _text: String,
-        _reply_to_message_id: Option<i64>,
+        _message: OutgoingMessage,
     ) {
     }
 
@@ -74,7 +55,14 @@ impl TaskDispatcher for StubTaskDispatcher {
 
     fn dispatch_chat_subtitle(&self, _query: ChatSubtitleQuery) {}
 
-    fn dispatch_send_voice(&self, _chat_id: i64, _topic_id: Option<i32>, _file_path: String) {}
+    fn dispatch_send_voice(
+        &self,
+        _chat_id: i64,
+        _topic_id: Option<i32>,
+        _file_path: String,
+        _pending_id: i64,
+    ) {
+    }
 
     fn dispatch_download_file(&self, _file_id: i32) {}
 
@@ -100,9 +88,9 @@ mod forum_unread_counts {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use crate::domain::events::BackgroundTaskResult;
     use crate::domain::forum_topic::ForumTopicSummary;
     use crate::usecases::background::lifecycle::dispatch_forum_unread_counts;
+    use crate::usecases::background::BackgroundTaskResult;
     use crate::usecases::list_forum_topics::{ForumTopicsSource, ListForumTopicsSourceError};
 
     struct StubForumTopicsSource {
@@ -195,5 +183,129 @@ mod forum_unread_counts {
             }
             other => panic!("expected ForumUnreadCountsLoaded, got: {other:?}"),
         }
+    }
+}
+
+// ── dispatch_send_message / dispatch_send_voice: rollback payload ──
+
+mod send_rollback {
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use crate::domain::message::Message;
+    use crate::domain::message_input_state::{OutgoingMessage, ReplyContext};
+    use crate::usecases::background::messaging::{dispatch_send_message, dispatch_send_voice};
+    use crate::usecases::background::{BackgroundError, BackgroundTaskResult};
+    use crate::usecases::load_messages::{MessagesSource, MessagesSourceError};
+    use crate::usecases::send_message::{MessageSender, SendMessageSourceError};
+    use crate::usecases::send_voice::VoiceNoteSender;
+
+    #[derive(Default)]
+    struct FailingSender {
+        reply_to_message_id: Mutex<Option<i64>>,
+    }
+
+    impl MessageSender for FailingSender {
+        fn send_message(
+            &self,
+            _chat_id: i64,
+            _topic_id: Option<i32>,
+            _text: &str,
+            reply_to_message_id: Option<i64>,
+        ) -> Result<(), SendMessageSourceError> {
+            *self.reply_to_message_id.lock().unwrap() = reply_to_message_id;
+            Err(SendMessageSourceError::Unavailable)
+        }
+    }
+
+    impl VoiceNoteSender for FailingSender {
+        fn send_voice_note(
+            &self,
+            _chat_id: i64,
+            _topic_id: Option<i32>,
+            _file_path: &str,
+            _duration: i32,
+            _waveform: &str,
+        ) -> Result<(), SendMessageSourceError> {
+            Err(SendMessageSourceError::Unavailable)
+        }
+    }
+
+    struct NoMessages;
+
+    impl MessagesSource for NoMessages {
+        fn list_messages(
+            &self,
+            _chat_id: i64,
+            _topic_id: Option<i32>,
+            _limit: usize,
+            _from_message_id: i64,
+        ) -> Result<Vec<Message>, MessagesSourceError> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[test]
+    fn failed_send_passes_reply_id_and_echoes_rollback_payload() {
+        let sender = Arc::new(FailingSender::default());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let message = OutgoingMessage {
+            pending_id: -5,
+            text: "Yo".to_owned(),
+            reply_to: Some(ReplyContext {
+                message_id: 7,
+                sender_name: "Bob".to_owned(),
+                text: "Hello".to_owned(),
+            }),
+        };
+
+        dispatch_send_message(
+            &sender,
+            &Arc::new(NoMessages),
+            &tx,
+            1,
+            Some(3),
+            message.clone(),
+        );
+
+        let result = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("send must always deliver a result");
+        assert_eq!(*sender.reply_to_message_id.lock().unwrap(), Some(7));
+        assert_eq!(
+            result,
+            BackgroundTaskResult::MessageSent {
+                chat_id: 1,
+                topic_id: Some(3),
+                message,
+                result: Err(BackgroundError::new("SEND_UNAVAILABLE")),
+            }
+        );
+    }
+
+    #[test]
+    fn failed_voice_send_echoes_pending_id() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        dispatch_send_voice(
+            &Arc::new(FailingSender::default()),
+            &Arc::new(NoMessages),
+            &tx,
+            1,
+            None,
+            "/nonexistent/rtg_test_voice.oga".to_owned(),
+            -9,
+        );
+
+        let result = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("voice send must report its failure");
+        assert_eq!(
+            result,
+            BackgroundTaskResult::VoiceSendFailed {
+                chat_id: 1,
+                pending_id: -9,
+            }
+        );
     }
 }

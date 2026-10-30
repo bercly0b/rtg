@@ -23,17 +23,8 @@ jobs:
       - name: Cargo cache (registry + target)
         uses: Swatinem/rust-cache@v2
 
-      - name: Gate 1 — mise run fmt
-        run: mise run fmt
-
-      - name: Gate 2 — mise run clippy
-        run: mise run clippy
-
-      - name: Gate 3 — mise run test
-        run: mise run test
-
-      - name: Gate 4 — mise run check
-        run: mise run check
+      - name: Quality gate — mise run quality
+        run: mise run quality
 
   coverage:
     runs-on: ubuntu-latest

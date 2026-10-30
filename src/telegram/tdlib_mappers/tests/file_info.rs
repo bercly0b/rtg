@@ -1,7 +1,7 @@
 use tdlib_rs::enums::MessageContent;
 
 use crate::domain::message::DownloadStatus;
-use crate::telegram::tdlib_mappers::extract_file_info;
+use crate::telegram::tdlib_mappers::{extract_file_info, map_download_state};
 
 use super::make_test_file;
 
@@ -192,4 +192,57 @@ fn extract_file_info_includes_file_name_for_document() {
     assert_eq!(fi.file_name, Some("report.pdf".to_owned()));
     assert_eq!(fi.duration, None);
     assert_eq!(fi.download_status, DownloadStatus::NotStarted);
+}
+
+#[test]
+fn map_download_state_returns_path_only_for_completed_download() {
+    let file = make_test_file(1, "/tmp/v.ogg", true);
+
+    assert_eq!(
+        map_download_state(&file),
+        (DownloadStatus::Completed, Some("/tmp/v.ogg".to_owned()))
+    );
+}
+
+#[test]
+fn map_download_state_reports_progress_without_partial_path() {
+    let mut file = make_test_file(1, "/tmp/partial.ogg", false);
+    file.size = 0;
+    file.expected_size = 2000;
+    file.local.is_downloading_active = true;
+    file.local.downloaded_size = 500;
+
+    assert_eq!(
+        map_download_state(&file),
+        (
+            DownloadStatus::Downloading {
+                progress_percent: 25
+            },
+            None
+        )
+    );
+}
+
+#[test]
+fn map_download_state_caps_progress_until_completed() {
+    let mut file = make_test_file(1, "/tmp/partial.ogg", false);
+    file.local.is_downloading_active = true;
+    file.local.downloaded_size = 1000;
+
+    assert_eq!(
+        map_download_state(&file).0,
+        DownloadStatus::Downloading {
+            progress_percent: 99
+        }
+    );
+}
+
+#[test]
+fn map_download_state_treats_completed_without_path_as_not_started() {
+    let file = make_test_file(1, "", true);
+
+    assert_eq!(
+        map_download_state(&file),
+        (DownloadStatus::NotStarted, None)
+    );
 }

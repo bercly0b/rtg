@@ -6,7 +6,7 @@ mod url;
 mod tests;
 
 pub use call_info::{build_call_metadata_display, CallDiscardReason, CallInfo};
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "some re-exports are used only by tests")]
 pub use file_info::{
     build_file_metadata_display, file_extension, format_duration, format_file_size, DownloadStatus,
     FileInfo,
@@ -119,5 +119,11 @@ impl Message {
             (Some(label), false) => format!("{}\n{}", label, self.text),
             (None, _) => self.text.clone(),
         }
+    }
+
+    /// Whether this is an optimistically displayed message that Telegram has
+    /// not accepted yet; its id is local and must not reach TDLib.
+    pub fn is_pending(&self) -> bool {
+        self.status == MessageStatus::Sending
     }
 }

@@ -1,4 +1,7 @@
-use crate::{domain::shell_state::ActivePane, usecases::background::TaskDispatcher};
+use crate::{
+    domain::{message_input_state::OutgoingMessage, shell_state::ActivePane},
+    usecases::background::TaskDispatcher,
+};
 
 use super::OrchestratorCtx;
 
@@ -85,21 +88,29 @@ fn try_send_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
 
     // Extract reply context before clearing input
     let reply_context = ctx.state.message_input_mut().take_reply_to();
-    let reply_to_message_id = reply_context.as_ref().map(|r| r.message_id);
-    let pending_reply_info = reply_context.map(|r| crate::domain::message::ReplyInfo {
-        sender_name: r.sender_name.clone(),
-        is_outgoing: r.sender_name == "You",
-        text: r.text,
-    });
+    let pending_reply_info = reply_context
+        .as_ref()
+        .map(|r| crate::domain::message::ReplyInfo {
+            sender_name: r.sender_name.clone(),
+            is_outgoing: r.sender_name == "You",
+            text: r.text.clone(),
+        });
 
     // Optimistically clear the input and show the message immediately
     ctx.state.message_input_mut().clear();
-    ctx.state.open_chat_mut().add_pending_message(
+    let pending_id = ctx.state.open_chat_mut().add_pending_message(
         trimmed.to_owned(),
         crate::domain::message::MessageMedia::None,
         pending_reply_info,
     );
     let topic_id = ctx.state.open_chat().topic_id();
-    ctx.dispatcher
-        .dispatch_send_message(chat_id, topic_id, text.clone(), reply_to_message_id);
+    ctx.dispatcher.dispatch_send_message(
+        chat_id,
+        topic_id,
+        OutgoingMessage {
+            pending_id,
+            text: trimmed.to_owned(),
+            reply_to: reply_context,
+        },
+    );
 }

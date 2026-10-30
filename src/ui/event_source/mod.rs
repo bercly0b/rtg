@@ -12,8 +12,11 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::{
-    domain::events::{AppEvent, BackgroundTaskResult, ChatUpdate, ConnectivityStatus, KeyInput},
-    usecases::contracts::AppEventSource,
+    domain::events::{ChatUpdate, ConnectivityStatus, KeyInput},
+    usecases::{
+        background::BackgroundTaskResult,
+        contracts::{AppEvent, AppEventSource},
+    },
 };
 
 pub use crate::domain::events::CommandEvent;
@@ -36,7 +39,7 @@ pub trait ChatUpdatesSignalSource {
 }
 
 pub trait BackgroundResultSource {
-    fn next_result(&mut self) -> Option<BackgroundTaskResult>;
+    fn pending_results(&mut self) -> Option<Vec<BackgroundTaskResult>>;
 }
 
 pub trait CommandOutputSource {
@@ -93,7 +96,7 @@ impl Default for CrosstermEventSource {
 }
 
 impl CrosstermEventSource {
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn new(connectivity_source: Box<dyn ConnectivityStatusSource>) -> Self {
         Self::with_sources(
             connectivity_source,
@@ -161,10 +164,10 @@ impl CrosstermEventSource {
 
         // Background task results have high priority — deliver them before
         // chat updates to keep the UI responsive after dispatched operations.
-        if let Some(result) = self.background_result_source.next_result() {
+        if let Some(results) = self.background_result_source.pending_results() {
             self.connectivity_streak = 0;
             self.chat_update_streak = 0;
-            return Ok(Some(AppEvent::BackgroundTaskCompleted(result)));
+            return Ok(Some(AppEvent::BackgroundTasksCompleted(results)));
         }
 
         let connectivity_ready = self.connectivity_streak < MAX_CONNECTIVITY_STREAK

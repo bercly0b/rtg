@@ -3,7 +3,7 @@ use ratatui::{
     layout::Rect,
     style::Style,
     text::{Line, Text},
-    widgets::StatefulWidget,
+    widgets::{Block, StatefulWidget},
 };
 
 use crate::ui::chat_message_list::rendering::render_items;
@@ -58,6 +58,23 @@ fn render_content_appears_in_buffer() {
 
     let cell = &buf[(0, 0)];
     assert_eq!(cell.symbol(), "H");
+}
+
+#[test]
+fn render_draws_block_and_places_content_inside_it() {
+    let text = Text::from(vec![Line::raw("Hi")]);
+    let widget = ChatMessageList::new(vec![text]).block(Block::bordered());
+
+    let area = Rect::new(0, 0, 10, 4);
+    let mut buf = Buffer::empty(area);
+    let mut state = ChatMessageListState::new(ScrollOffset::ZERO, Some(0));
+
+    widget.render(area, &mut buf, &mut state);
+
+    assert_eq!(buf[(0, 0)].symbol(), "┌");
+    assert_eq!(buf[(9, 3)].symbol(), "┘");
+    assert_eq!(buf[(1, 1)].symbol(), "H");
+    assert_eq!(buf[(2, 1)].symbol(), "i");
 }
 
 #[test]

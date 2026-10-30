@@ -3,11 +3,17 @@
 use super::command_template;
 
 /// Command to open files on macOS (delegates to Launch Services).
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "used outside tests only on its own platform")
+)]
 pub const MACOS_OPEN: &str = "open {file_path}";
 
 /// Command to open files on Linux (XDG desktop integration).
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "used outside tests only on its own platform")
+)]
 pub const LINUX_OPEN: &str = "xdg-open {file_path}";
 
 /// Default command to open files on macOS (delegates to Launch Services).

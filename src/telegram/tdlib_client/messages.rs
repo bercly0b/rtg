@@ -19,10 +19,7 @@ impl TdLibClient {
             )
             .await
             .map(|_| ())
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })
+            .map_err(TdLibError::from)
         })
     }
 
@@ -52,11 +49,7 @@ impl TdLibClient {
                 true, // only_local: read from cache only, no network
                 client_id,
             )
-            .await
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })?;
+            .await?;
 
             match messages {
                 tdlib_rs::enums::Messages::Messages(m) => {
@@ -90,11 +83,7 @@ impl TdLibClient {
                 limit,
                 client_id,
             )
-            .await
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })?;
+            .await?;
 
             match messages {
                 tdlib_rs::enums::Messages::Messages(m) => {
@@ -126,11 +115,7 @@ impl TdLibClient {
                 false, // only_local: fetch from server if needed
                 client_id,
             )
-            .await
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })?;
+            .await?;
 
             match messages {
                 tdlib_rs::enums::Messages::Messages(m) => {
@@ -193,11 +178,7 @@ impl TdLibClient {
                 input_content,
                 client_id,
             )
-            .await
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })?;
+            .await?;
 
             match message {
                 tdlib_rs::enums::Message::Message(m) => Ok(m),
@@ -248,11 +229,7 @@ impl TdLibClient {
                 input_content,
                 client_id,
             )
-            .await
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })?;
+            .await?;
 
             match message {
                 tdlib_rs::enums::Message::Message(m) => Ok(m),
@@ -286,10 +263,7 @@ impl TdLibClient {
             tdlib_rs::functions::edit_message_text(chat_id, message_id, input_content, client_id)
                 .await
                 .map(|_| ())
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })
+                .map_err(TdLibError::from)
         })
     }
 
@@ -301,12 +275,8 @@ impl TdLibClient {
         let client_id = self.client_id;
 
         self.block_on_request("getMessageProperties", async {
-            let props = tdlib_rs::functions::get_message_properties(chat_id, message_id, client_id)
-                .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })?;
+            let props =
+                tdlib_rs::functions::get_message_properties(chat_id, message_id, client_id).await?;
 
             match props {
                 tdlib_rs::enums::MessageProperties::MessageProperties(p) => Ok(p),
@@ -330,11 +300,7 @@ impl TdLibClient {
                 50,
                 client_id,
             )
-            .await
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })?;
+            .await?;
 
             match reactions {
                 tdlib_rs::enums::AddedReactions::AddedReactions(r) => Ok(r),
@@ -350,12 +316,8 @@ impl TdLibClient {
         let client_id = self.client_id;
 
         self.block_on_request("getMessageViewers", async {
-            let viewers = tdlib_rs::functions::get_message_viewers(chat_id, message_id, client_id)
-                .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })?;
+            let viewers =
+                tdlib_rs::functions::get_message_viewers(chat_id, message_id, client_id).await?;
 
             match viewers {
                 tdlib_rs::enums::MessageViewers::MessageViewers(v) => Ok(v),
@@ -373,10 +335,7 @@ impl TdLibClient {
         self.block_on_request("getMessageReadDate", async {
             tdlib_rs::functions::get_message_read_date(chat_id, message_id, client_id)
                 .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })
+                .map_err(TdLibError::from)
         })
     }
 
@@ -388,12 +347,7 @@ impl TdLibClient {
         let client_id = self.client_id;
 
         self.block_on_request("getMessage", async {
-            let msg = tdlib_rs::functions::get_message(chat_id, message_id, client_id)
-                .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })?;
+            let msg = tdlib_rs::functions::get_message(chat_id, message_id, client_id).await?;
 
             match msg {
                 tdlib_rs::enums::Message::Message(m) => Ok(m),
@@ -412,11 +366,7 @@ impl TdLibClient {
             let reactions = tdlib_rs::functions::get_message_available_reactions(
                 chat_id, message_id, 8, client_id,
             )
-            .await
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })?;
+            .await?;
 
             match reactions {
                 tdlib_rs::enums::AvailableReactions::AvailableReactions(r) => Ok(r),
@@ -442,14 +392,10 @@ impl TdLibClient {
                 client_id,
             )
             .await
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })
+            .map_err(TdLibError::from)
         })
     }
 
-    #[allow(dead_code)]
     pub fn remove_message_reaction(
         &self,
         chat_id: i64,
@@ -466,10 +412,7 @@ impl TdLibClient {
                 client_id,
             )
             .await
-            .map_err(|e| TdLibError::Request {
-                code: e.code,
-                message: e.message,
-            })
+            .map_err(TdLibError::from)
         })
     }
 
@@ -488,10 +431,7 @@ impl TdLibClient {
         self.block_on_request("deleteMessages", async {
             tdlib_rs::functions::delete_messages(chat_id, message_ids, revoke, client_id)
                 .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })
+                .map_err(TdLibError::from)
         })
     }
 }

@@ -4,7 +4,6 @@ use crate::domain::forum_topic::ForumTopicSummary;
 /// than a few dozen topics, so a single page suffices in v1.
 pub const DEFAULT_FORUM_TOPIC_PAGE_SIZE: usize = 100;
 
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListForumTopicsQuery {
     pub chat_id: i64,
@@ -27,13 +26,15 @@ impl ListForumTopicsQuery {
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListForumTopicsOutput {
     pub topics: Vec<ForumTopicSummary>,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "some variants are constructed only by tests")
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListForumTopicsSourceError {
     Unauthorized,
@@ -43,7 +44,6 @@ pub enum ListForumTopicsSourceError {
     Unknown,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub trait ForumTopicsSource {
     fn list_forum_topics(
         &self,
@@ -78,7 +78,6 @@ where
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListForumTopicsError {
     Unauthorized,
@@ -87,7 +86,6 @@ pub enum ListForumTopicsError {
     DataContractViolation,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn list_forum_topics(
     source: &dyn ForumTopicsSource,
     query: ListForumTopicsQuery,

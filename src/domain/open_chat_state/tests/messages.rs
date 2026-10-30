@@ -128,39 +128,93 @@ fn add_pending_message_appends_and_selects_it() {
 }
 
 #[test]
-fn remove_pending_messages_keeps_delivered() {
-    let mut state = OpenChatState::default();
-    state.set_loading(1, "Chat".to_owned(), ChatType::Private);
-    state.set_ready(vec![message(1, "A"), message(2, "B")]);
-
-    state.add_pending_message(
-        "Pending".to_owned(),
-        crate::domain::message::MessageMedia::None,
-        None,
-    );
-    assert_eq!(state.messages().len(), 3);
-
-    state.remove_pending_messages();
-
-    assert_eq!(state.messages().len(), 2);
-    assert_eq!(state.messages()[0].text, "A");
-    assert_eq!(state.messages()[1].text, "B");
-}
-
-#[test]
-fn remove_pending_messages_fixes_selection() {
+fn add_pending_message_returns_unique_negative_ids() {
     let mut state = OpenChatState::default();
     state.set_loading(1, "Chat".to_owned(), ChatType::Private);
     state.set_ready(vec![message(1, "A")]);
 
+    let text_id = state.add_pending_message(
+        "Text".to_owned(),
+        crate::domain::message::MessageMedia::None,
+        None,
+    );
+    let voice_id = state.add_pending_message(
+        String::new(),
+        crate::domain::message::MessageMedia::Voice,
+        None,
+    );
+
+    assert!(text_id < 0 && voice_id < 0);
+    assert_ne!(text_id, voice_id);
+    assert_eq!(state.messages()[1].id, text_id);
+    assert_eq!(state.messages()[2].id, voice_id);
+}
+
+#[test]
+fn pending_ids_stay_unique_across_chat_switch() {
+    let mut state = OpenChatState::default();
+    state.set_loading(1, "Chat".to_owned(), ChatType::Private);
+    state.set_ready(vec![message(1, "A")]);
+    let first_chat_id = state.add_pending_message(
+        "In chat 1".to_owned(),
+        crate::domain::message::MessageMedia::None,
+        None,
+    );
+
+    state.set_loading(2, "Other".to_owned(), ChatType::Private);
+    state.set_ready(vec![message(5, "B")]);
+    let second_chat_id = state.add_pending_message(
+        "In chat 2".to_owned(),
+        crate::domain::message::MessageMedia::None,
+        None,
+    );
+
+    assert_ne!(first_chat_id, second_chat_id);
+    state.remove_message(first_chat_id);
+    assert_eq!(state.messages().len(), 2);
+}
+
+#[test]
+fn removing_pending_message_keeps_other_pending_and_delivered() {
+    let mut state = OpenChatState::default();
+    state.set_loading(1, "Chat".to_owned(), ChatType::Private);
+    state.set_ready(vec![message(1, "A"), message(2, "B")]);
+
+    let failed_id = state.add_pending_message(
+        "Failed".to_owned(),
+        crate::domain::message::MessageMedia::None,
+        None,
+    );
     state.add_pending_message(
+        String::new(),
+        crate::domain::message::MessageMedia::Voice,
+        None,
+    );
+
+    state.remove_message(failed_id);
+
+    let texts: Vec<_> = state.messages().iter().map(|m| m.text.as_str()).collect();
+    assert_eq!(texts, vec!["A", "B", ""]);
+    assert_eq!(
+        state.messages()[2].media,
+        crate::domain::message::MessageMedia::Voice
+    );
+}
+
+#[test]
+fn removing_pending_message_fixes_selection() {
+    let mut state = OpenChatState::default();
+    state.set_loading(1, "Chat".to_owned(), ChatType::Private);
+    state.set_ready(vec![message(1, "A")]);
+
+    let pending_id = state.add_pending_message(
         "Pending".to_owned(),
         crate::domain::message::MessageMedia::None,
         None,
     );
     assert_eq!(state.selected_index(), Some(1)); // pending message selected
 
-    state.remove_pending_messages();
+    state.remove_message(pending_id);
 
     // Selection should clamp to last remaining message
     assert_eq!(state.selected_index(), Some(0));
@@ -211,7 +265,7 @@ fn add_pending_message_with_voice_media() {
         crate::domain::message::MessageStatus::Sending
     );
     assert!(pending.is_outgoing);
-    assert_eq!(pending.id, 0);
+    assert!(pending.is_pending());
     assert_eq!(state.selected_index(), Some(1));
     assert_eq!(state.scroll_offset(), ScrollOffset::BOTTOM);
 }

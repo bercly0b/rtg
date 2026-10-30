@@ -12,18 +12,16 @@ mod user;
 
 // Re-exports consumed by sibling modules (`tdlib_auth`, `tdlib_client`, `chat_updates`)
 // via `super::tdlib_mappers::*` paths.
-#[allow(unused_imports)]
 pub use chat::{map_chat_to_summary, map_chat_type};
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "some re-exports are used only by tests")]
 pub use file_info::extract_file_info;
-#[allow(unused_imports)]
+pub use file_info::{effective_file_size, map_download_state};
 pub use forum_topic::map_forum_topic_to_summary;
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "some re-exports are used only by tests")]
 pub use message::{
     extract_forward_info, extract_message_media, extract_message_preview, extract_message_text,
     extract_reply_info, map_tdlib_message_to_domain, sum_reaction_counts,
 };
-#[allow(unused_imports)]
 pub use user::{
     format_user_name, get_private_chat_user_id, get_sender_user_id, is_user_online,
     map_user_status_to_subtitle,

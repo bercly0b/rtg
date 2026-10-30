@@ -1,7 +1,6 @@
 use super::forum_topic::ForumTopicSummary;
 use super::selectable_list::SelectableList;
 
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ForumTopicListUiState {
     Loading,
@@ -16,7 +15,6 @@ pub enum ForumTopicListUiState {
 /// forum chat installs an instance of this state; leaving it drops the state
 /// without touching the root chat list — so the user returns to the same
 /// selection and scroll position they had before.
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForumTopicListState {
     ui_state: ForumTopicListUiState,
@@ -25,7 +23,6 @@ pub struct ForumTopicListState {
     list: SelectableList<ForumTopicSummary>,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 impl ForumTopicListState {
     /// Creates a fresh state in `Loading` for the given forum chat.
     pub fn loading(parent_chat_id: i64, parent_chat_title: String) -> Self {

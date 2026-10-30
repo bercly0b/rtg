@@ -1,12 +1,18 @@
 //! Default constants for voice recording configuration.
 
 /// Recording command for macOS (AVFoundation).
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "used outside tests only on its own platform")
+)]
 pub const MACOS_RECORD_CMD: &str =
     "ffmpeg -f avfoundation -i ':0' -c:a libopus -b:a 32k {file_path}";
 
 /// Recording command for Linux (ALSA).
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "used outside tests only on its own platform")
+)]
 pub const LINUX_RECORD_CMD: &str = "ffmpeg -f alsa -i hw:0 -c:a libopus -b:a 32k {file_path}";
 
 /// Default recording command for macOS (AVFoundation).

@@ -29,7 +29,7 @@ impl StatusTracker {
         }
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn subscribe(&self) -> mpsc::Receiver<AuthConnectivityStatus> {
         let (tx, rx) = mpsc::channel();
         if let Ok(mut state) = self.inner.lock() {
@@ -39,7 +39,6 @@ impl StatusTracker {
         rx
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn snapshot(&self) -> AuthConnectivityStatus {
         self.inner
             .lock()

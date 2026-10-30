@@ -12,6 +12,7 @@ use std::time::Duration;
 use crate::domain::events::ChatUpdate;
 use crate::domain::message::Message;
 
+use super::tdlib_mappers::{effective_file_size, map_download_state};
 use super::tdlib_updates::TdLibUpdate;
 
 const CHAT_UPDATES_MONITOR_STARTED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_STARTED";
@@ -129,12 +130,12 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
             chat_id,
             message_ids,
         }),
-        TdLibUpdate::MessageContentChanged { chat_id, .. }
+        TdLibUpdate::MessageContentChanged { chat_id }
         | TdLibUpdate::ChatLastMessage { chat_id }
         | TdLibUpdate::ChatPosition { chat_id }
         | TdLibUpdate::ChatReadInbox { chat_id }
         | TdLibUpdate::ChatReadOutbox { chat_id }
-        | TdLibUpdate::MessageSendSucceeded { chat_id, .. }
+        | TdLibUpdate::MessageSendSucceeded { chat_id }
         | TdLibUpdate::ChatUnreadReactionCount { chat_id }
         | TdLibUpdate::SupergroupMetadataChanged { chat_id } => {
             Some(ChatUpdate::ChatMetadataChanged { chat_id })
@@ -148,27 +149,13 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
             message_id,
             reaction_count,
         }),
-        TdLibUpdate::FileUpdated {
-            file_id,
-            size,
-            expected_size,
-            local_path,
-            is_downloading_active,
-            is_downloading_completed,
-            downloaded_size,
-        } => {
-            let effective_size = if size > 0 {
-                size.max(0) as u64
-            } else {
-                expected_size.max(0) as u64
-            };
+        TdLibUpdate::FileUpdated { file } => {
+            let (download_status, local_path) = map_download_state(&file);
             Some(ChatUpdate::FileUpdated {
-                file_id,
-                size: effective_size,
+                file_id: file.id,
+                size: effective_file_size(&file),
                 local_path,
-                is_downloading_active,
-                is_downloading_completed,
-                downloaded_size: downloaded_size.max(0) as u64,
+                download_status,
             })
         }
         TdLibUpdate::UserStatus { user_id } => Some(ChatUpdate::UserStatusChanged { user_id }),
@@ -300,7 +287,7 @@ impl MessageMapper for StubMessageMapper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::message::{MessageMedia, MessageStatus};
+    use crate::domain::message::{DownloadStatus, MessageMedia, MessageStatus};
     use std::sync::mpsc;
 
     fn make_test_td_message(id: i64, chat_id: i64, text: &str) -> tdlib_rs::types::Message {
@@ -627,6 +614,49 @@ mod tests {
                 })
             ),
             "expected ForumTopicChanged without count, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn map_file_updated_to_domain_download_state() {
+        let mapper = StubMessageMapper;
+        let update = TdLibUpdate::FileUpdated {
+            file: Box::new(tdlib_rs::types::File {
+                id: 7,
+                size: 0,
+                expected_size: 4000,
+                local: tdlib_rs::types::LocalFile {
+                    path: "/tmp/partial.mp4".to_owned(),
+                    can_be_downloaded: true,
+                    can_be_deleted: false,
+                    is_downloading_active: true,
+                    is_downloading_completed: false,
+                    download_offset: 0,
+                    downloaded_prefix_size: 1000,
+                    downloaded_size: 1000,
+                },
+                remote: tdlib_rs::types::RemoteFile {
+                    id: String::new(),
+                    unique_id: String::new(),
+                    is_uploading_active: false,
+                    is_uploading_completed: false,
+                    uploaded_size: 0,
+                },
+            }),
+        };
+
+        let result = map_update(update, &mapper);
+
+        assert_eq!(
+            result,
+            Some(ChatUpdate::FileUpdated {
+                file_id: 7,
+                size: 4000,
+                local_path: None,
+                download_status: DownloadStatus::Downloading {
+                    progress_percent: 25
+                },
+            })
         );
     }
 

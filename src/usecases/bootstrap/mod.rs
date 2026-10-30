@@ -4,10 +4,7 @@ mod validation;
 use std::{io::IsTerminal, path::Path, sync::mpsc::Sender};
 
 use crate::{
-    domain::{
-        events::{BackgroundTaskResult, ConnectivityStatus},
-        shell_state::ShellState,
-    },
+    domain::{events::ConnectivityStatus, shell_state::ShellState},
     infra::{
         self,
         config::{FileConfigAdapter, TelegramConfig},
@@ -26,10 +23,11 @@ use crate::{
         StubConnectivityStatusSource,
     },
     usecases::{
-        background::ThreadTaskDispatcher,
+        background::{BackgroundTaskResult, ThreadTaskDispatcher},
         context::AppContext,
         contracts::ShellOrchestrator,
         guided_auth::{AuthBackendError, AuthTerminal, StdTerminal},
+        load_messages::CachedMessagesSource,
         shell::DefaultShellOrchestrator,
     },
 };
@@ -57,7 +55,6 @@ pub fn compose_shell(context: &AppContext) -> ShellComposition {
     compose_shell_with_factory(context, &RealConnectivityMonitorFactory)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn compose_shell_with_factory(
     context: &AppContext,
     monitor_factory: &dyn ConnectivityMonitorFactory,
@@ -135,16 +132,9 @@ fn compose_shell_with_factory(
     );
 
     // Provide the cache source to the orchestrator for instant message display.
-    let cache_source: Option<
-        std::sync::Arc<dyn crate::usecases::load_messages::CachedMessagesSource>,
-    > = if context.config.telegram.is_configured() {
-        Some(std::sync::Arc::clone(&context.telegram)
-            as std::sync::Arc<
-                dyn crate::usecases::load_messages::CachedMessagesSource,
-            >)
-    } else {
-        None
-    };
+    let cache_source = context.config.telegram.is_configured().then(|| {
+        std::sync::Arc::clone(&context.telegram) as std::sync::Arc<dyn CachedMessagesSource>
+    });
 
     ShellComposition {
         event_source,
@@ -170,12 +160,10 @@ fn build_context(config_path: Option<&Path>) -> Result<AppContext, AppError> {
     build_context_with(&config_adapter)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn build_context_with(config_adapter: &dyn ConfigAdapter) -> Result<AppContext, AppError> {
     build_context_with_factories(config_adapter, &RealTelegramAdapterFactory)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn build_context_with_factories(
     config_adapter: &dyn ConfigAdapter,
     telegram_factory: &dyn TelegramAdapterFactory,
@@ -210,7 +198,10 @@ fn build_context_with_factories_inner(
     Ok(AppContext::new(config, telegram))
 }
 
-#[allow(clippy::wrong_self_convention)]
+#[allow(
+    clippy::wrong_self_convention,
+    reason = "factory method takes &self so tests can inject a fake factory"
+)]
 trait TelegramAdapterFactory {
     fn from_config(
         &self,

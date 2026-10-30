@@ -35,7 +35,7 @@ impl ScrollOffset {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenChatUiState {
     Empty,
     Loading,
@@ -79,6 +79,11 @@ pub struct OpenChatState {
     typing_state: TypingState,
     /// Whether all older messages have been loaded (no more history to fetch).
     all_messages_loaded: bool,
+    /// Id of the most recent pending message. Pending ids count down from -1,
+    /// so they never collide with TDLib message ids (always positive), and are
+    /// not reset on chat switch, so a late send failure from another chat
+    /// cannot remove a pending message of the current one.
+    last_pending_id: i64,
 }
 
 impl Default for OpenChatState {
@@ -97,19 +102,18 @@ impl Default for OpenChatState {
             message_source: MessageSource::None,
             typing_state: TypingState::default(),
             all_messages_loaded: false,
+            last_pending_id: 0,
         }
     }
 }
 
 impl OpenChatState {
-    #[allow(dead_code)]
     pub fn chat_id(&self) -> Option<i64> {
         self.chat_id
     }
 
     /// Returns the active forum topic id, if this state represents an open
     /// forum topic conversation.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn topic_id(&self) -> Option<i32> {
         self.topic_id
     }
@@ -173,7 +177,7 @@ impl OpenChatState {
     }
 
     pub fn ui_state(&self) -> OpenChatUiState {
-        self.ui_state.clone()
+        self.ui_state
     }
 
     /// Returns the selected message index for scroll positioning.
@@ -202,7 +206,7 @@ impl OpenChatState {
         self.refreshing = refreshing;
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn message_source(&self) -> MessageSource {
         self.message_source
     }
@@ -211,12 +215,12 @@ impl OpenChatState {
         self.message_source = source;
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn all_messages_loaded(&self) -> bool {
         self.all_messages_loaded
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn set_all_messages_loaded(&mut self, loaded: bool) {
         self.all_messages_loaded = loaded;
     }
@@ -347,20 +351,23 @@ impl OpenChatState {
         };
     }
 
-    /// Adds a pending (optimistically displayed) message at the end of the list.
+    /// Adds a pending (optimistically displayed) message at the end of the list
+    /// and returns its unique pending id.
     ///
     /// The message is shown immediately with `MessageStatus::Sending`.
     /// It will be replaced by real messages when `set_ready()` is called
-    /// after the server confirms delivery.
+    /// after the server confirms delivery; if the send fails, pass the
+    /// returned id to `remove_message()` to roll back only this message.
     pub fn add_pending_message(
         &mut self,
         text: String,
         media: super::message::MessageMedia,
         reply_to: Option<ReplyInfo>,
-    ) {
+    ) -> i64 {
+        self.last_pending_id -= 1;
         let now_ms = chrono::Local::now().timestamp_millis();
         let pending = Message {
-            id: 0, // Temporary ID — will be replaced by server messages
+            id: self.last_pending_id,
             sender_name: String::new(),
             text,
             timestamp_ms: now_ms,
@@ -379,24 +386,11 @@ impl OpenChatState {
         self.messages.push(pending);
         self.selected_index = Some(self.messages.len() - 1);
         self.scroll_offset = ScrollOffset::BOTTOM;
+        self.last_pending_id
     }
 
-    /// Removes all pending (sending) messages from the list.
-    ///
-    /// Used when a send fails to roll back the optimistic display.
-    pub fn remove_pending_messages(&mut self) {
-        self.messages.retain(|m| m.status != MessageStatus::Sending);
-        // Fix selection after removal
-        if self.messages.is_empty() {
-            self.selected_index = None;
-        } else if let Some(idx) = self.selected_index {
-            if idx >= self.messages.len() {
-                self.selected_index = Some(self.messages.len() - 1);
-            }
-        }
-    }
-
-    /// Removes a message by ID from the current list (optimistic deletion).
+    /// Removes a message by ID from the current list (optimistic deletion or
+    /// rollback of a failed pending send).
     ///
     /// Adjusts `selected_index` so the cursor stays on a valid message.
     pub fn remove_message(&mut self, message_id: i64) {
@@ -420,7 +414,7 @@ impl OpenChatState {
         self.message_source = MessageSource::None;
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "used only by tests")]
     pub fn clear(&mut self) {
         self.chat_id = None;
         self.topic_id = None;

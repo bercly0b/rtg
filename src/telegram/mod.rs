@@ -12,16 +12,11 @@ mod tdlib_mappers;
 mod tdlib_updates;
 mod trait_impls;
 
-// Re-export TDLib types for external use
-#[allow(unused_imports)]
-pub use tdlib_client::{TdLibClient, TdLibConfig, TdLibError};
-#[allow(unused_imports)]
-pub use tdlib_updates::TdLibUpdate;
-
 use std::sync::mpsc::{Receiver, Sender};
 
 use status_tracker::StatusTracker;
 use tdlib_auth::TdLibAuthBackend;
+use tdlib_client::TdLibError;
 
 pub use chat_updates::{ChatUpdatesMonitorStartError, TelegramChatUpdatesMonitor};
 pub use connectivity::{ConnectivityMonitorStartError, TelegramConnectivityMonitor};
@@ -95,7 +90,7 @@ impl TelegramAdapter {
         })
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn uses_real_backend(&self) -> bool {
         matches!(self.backend_kind, BackendKind::TdLib)
     }
@@ -137,35 +132,43 @@ impl TelegramAdapter {
         TelegramChatUpdatesMonitor::start(update_rx, updates_tx, mapper)
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn subscribe_status(&self) -> Receiver<AuthConnectivityStatus> {
         self.status_tracker.subscribe()
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn status_snapshot(&self) -> AuthConnectivityStatus {
         self.status_tracker.snapshot()
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn record_connectivity_status(&self, status: ConnectivityStatus) {
         self.status_tracker.on_connectivity_changed(status);
     }
 
-    /// Checks whether the TDLib client is fully authorized (session is valid).
+    /// Brings the cached TDLib authorization state up to date, waiting for
+    /// TDLib to report one if it is still starting. A no-op for stub backends.
+    pub fn refresh_authorization_status(&mut self) -> Result<(), AuthBackendError> {
+        match self.tdlib_backend.as_mut() {
+            Some(backend) => backend.refresh_authorization_status(),
+            None => Ok(()),
+        }
+    }
+
+    /// Checks whether TDLib last reported the session as authorized (`Ready`).
     ///
-    /// Returns `false` for stub backends or when TDLib is not yet authorized
-    /// (e.g. waiting for phone number, code, or password).
-    pub fn is_authorized(&mut self) -> Result<bool, AuthBackendError> {
+    /// Reads the cached state only; `refresh_authorization_status` brings it
+    /// up to date. Returns `false` for stub backends or when TDLib is not yet
+    /// authorized (e.g. waiting for phone number, code, or password).
+    pub fn is_authorized_cached(&self) -> bool {
         #[cfg(test)]
         if matches!(self.backend_kind, BackendKind::StubAuthorized) {
-            return Ok(true);
+            return true;
         }
 
-        match self.tdlib_backend.as_mut() {
-            Some(backend) => backend.is_authorized(),
-            None => Ok(false),
-        }
+        self.tdlib_backend
+            .as_ref()
+            .is_some_and(TdLibAuthBackend::is_authorized_cached)
     }
 
     /// Closes TDLib, blocking until it reports `AuthorizationState::Closed`
@@ -212,6 +215,34 @@ mod tests {
         assert_eq!(initial.connectivity.as_label(), "CONNECTIVITY_UNKNOWN");
         assert_eq!(initial.last_error, None);
         assert!(initial.updated_at_unix_ms > 0);
+    }
+
+    #[test]
+    fn slow_tdlib_start_with_a_stored_session_launches_tui() {
+        use crate::usecases::startup::{plan_startup, StartupFlowState};
+        use std::{sync::mpsc, thread, time::Duration};
+        use tdlib_client::AuthStateUpdate;
+        use tdlib_rs::enums::AuthorizationState;
+
+        let (auth_state_tx, auth_state_rx) = mpsc::channel();
+        let mut adapter = TelegramAdapter {
+            backend_kind: BackendKind::TdLib,
+            tdlib_backend: Some(TdLibAuthBackend::with_auth_states(auth_state_rx)),
+            status_tracker: StatusTracker::new(),
+        };
+        let tdlib = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(300));
+            auth_state_tx
+                .send(AuthStateUpdate {
+                    state: AuthorizationState::Ready,
+                })
+                .unwrap();
+        });
+
+        let plan = plan_startup(&mut adapter);
+
+        assert_eq!(plan.state, StartupFlowState::LaunchTui);
+        tdlib.join().unwrap();
     }
 
     #[test]

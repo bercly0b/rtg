@@ -16,7 +16,6 @@ use anyhow::Result;
 use crate::{
     domain::{
         chat_list_state::ChatListUiState,
-        events::AppEvent,
         keymap::{KeyContext, Keymap, ResolveResult},
         message_cache::DEFAULT_MIN_DISPLAY_MESSAGES,
         shell_state::{ActivePane, ShellState},
@@ -32,7 +31,9 @@ use crate::{
 };
 
 use super::{
-    background::TaskDispatcher, contracts::ShellOrchestrator, load_messages::CachedMessagesSource,
+    background::TaskDispatcher,
+    contracts::{AppEvent, ShellOrchestrator},
+    load_messages::CachedMessagesSource,
 };
 
 /// Default limit for cached message preloading.
@@ -139,7 +140,7 @@ where
     O: ExternalOpener,
     D: TaskDispatcher,
 {
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn new(storage: S, opener: O, dispatcher: D) -> Self {
         Self {
             state: ShellState::default(),
@@ -178,7 +179,10 @@ where
     ///
     /// `cache_source` provides synchronous access to TDLib's local cache
     /// for instant message display when opening chats.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "tracked in docs/REVIEW_BACKLOG.md (OrchestratorConfig)"
+    )]
     pub fn new_with_initial_state(
         storage: S,
         opener: O,
@@ -462,8 +466,10 @@ where
                 tracing::debug!(count = updates.len(), "orchestrator received chat updates");
                 chat_updates::handle_chat_updates(&mut self.as_ctx(), updates);
             }
-            AppEvent::BackgroundTaskCompleted(result) => {
-                background_results::handle_background_result(&mut self.as_ctx(), result);
+            AppEvent::BackgroundTasksCompleted(results) => {
+                for result in results {
+                    background_results::handle_background_result(&mut self.as_ctx(), result);
+                }
             }
         }
 

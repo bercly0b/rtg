@@ -100,7 +100,7 @@ impl MessageCache {
     }
 
     /// Returns whether a full network fetch has been completed for this chat.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "used only by tests")]
     pub fn is_fully_loaded(&self, chat_id: i64) -> bool {
         self.chats.get(&chat_id).is_some_and(|cm| cm.fully_loaded)
     }

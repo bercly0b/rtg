@@ -28,6 +28,34 @@ fn updates_connectivity_status_on_connectivity_event() {
     );
 }
 #[test]
+fn handles_every_batched_background_result_in_completion_order() {
+    let mut o = make_orchestrator();
+    o.handle_event(AppEvent::Tick).unwrap();
+
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
+        BackgroundTaskResult::ChatListLoaded {
+            result: Ok(vec![chat(1, "General")]),
+            all_loaded: false,
+        },
+        BackgroundTaskResult::ChatListLoaded {
+            result: Ok(vec![chat(1, "General"), chat(2, "Backend")]),
+            all_loaded: true,
+        },
+        BackgroundTaskResult::OpenFileFailed {
+            stderr: "no handler".to_owned(),
+        },
+    ]))
+    .unwrap();
+
+    assert_eq!(o.state().chat_list().chats().len(), 2);
+    assert!(o.state().chat_list().all_chats_loaded());
+    assert!(o
+        .state()
+        .active_notification()
+        .is_some_and(|n| n.contains("Open failed")));
+}
+
+#[test]
 fn integration_smoke_happy_path_startup_load_navigate_and_open_chat() {
     let mut o = make_orchestrator();
     assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Loading);
@@ -35,12 +63,12 @@ fn integration_smoke_happy_path_startup_load_navigate_and_open_chat() {
     // Tick dispatches chat list load
     o.handle_event(AppEvent::Tick).unwrap();
     // Simulate result
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
             result: Ok(vec![chat(1, "General"), chat(2, "Backend"), chat(3, "Ops")]),
             all_loaded: false,
         },
-    ))
+    ]))
     .unwrap();
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
@@ -70,12 +98,12 @@ fn integration_smoke_fallback_error_then_empty_list() {
     // Tick dispatches
     o.handle_event(AppEvent::Tick).unwrap();
     // Error result
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
             result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
             all_loaded: false,
         },
-    ))
+    ]))
     .unwrap();
     assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Error);
 
@@ -83,12 +111,12 @@ fn integration_smoke_fallback_error_then_empty_list() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("r", false)))
         .unwrap();
     // Empty list result
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
             result: Ok(vec![]),
             all_loaded: false,
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Empty);

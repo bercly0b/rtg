@@ -9,6 +9,11 @@ use super::TdLibClient;
 impl TdLibClient {
     /// Runs a TDLib request on the client runtime, contained by
     /// [`guard_request`].
+    ///
+    /// Blocks the calling thread until TDLib answers, so it must be called
+    /// from a plain thread, never from an async context: tokio's `block_on`
+    /// panics inside a runtime, and [`guard_request`] would then report that
+    /// misuse as a `Decode` error.
     pub(super) fn block_on_request<T>(
         &self,
         request: &'static str,

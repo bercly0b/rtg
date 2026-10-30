@@ -1,0 +1,26 @@
+id: tui-only-in-ui
+snapshots:
+  "fn f() { crossterm::terminal::disable_raw_mode().ok(); }":
+    labels:
+    - source: crossterm
+      style: primary
+      start: 9
+      end: 18
+  "fn f(_: ratatui::layout::Rect) {}":
+    labels:
+    - source: ratatui
+      style: primary
+      start: 8
+      end: 15
+  "use crossterm::event::KeyCode;":
+    labels:
+    - source: crossterm
+      style: primary
+      start: 4
+      end: 13
+  "use ratatui::style::Color;":
+    labels:
+    - source: ratatui
+      style: primary
+      start: 4
+      end: 11

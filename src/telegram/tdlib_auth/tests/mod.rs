@@ -10,10 +10,14 @@ use super::messages::{enrich_same_chat_reply_info, reply_sender_name_for_message
 
 #[test]
 fn parse_flood_wait_extracts_seconds() {
-    assert_eq!(parse_flood_wait_seconds("flood_wait_67"), Some(67));
-    assert_eq!(parse_flood_wait_seconds("FLOOD_WAIT_120"), Some(120));
-    assert_eq!(parse_flood_wait_seconds("no flood here"), None);
-    assert_eq!(parse_flood_wait_seconds("other error"), None);
+    assert_eq!(
+        parse_flood_wait_seconds(429, "too many requests: retry after 67"),
+        Some(67)
+    );
+    assert_eq!(parse_flood_wait_seconds(420, "flood_wait_120"), Some(120));
+    assert_eq!(parse_flood_wait_seconds(400, "no flood here"), None);
+    assert_eq!(parse_flood_wait_seconds(400, "retry after 30"), None);
+    assert_eq!(parse_flood_wait_seconds(400, "other error"), None);
 }
 
 #[test]
@@ -83,7 +87,7 @@ fn map_list_chats_error_returns_unauthorized_for_auth_error() {
 }
 
 #[test]
-fn map_tdlib_error_maps_request_to_transient() {
+fn map_tdlib_error_keeps_request_code_in_transient_message() {
     let error = TdLibError::Request {
         code: 400,
         message: "BAD_REQUEST".to_owned(),
@@ -92,7 +96,7 @@ fn map_tdlib_error_maps_request_to_transient() {
         map_tdlib_error(error),
         AuthBackendError::Transient {
             code: "AUTH_BACKEND_UNAVAILABLE",
-            message: "BAD_REQUEST".to_owned(),
+            message: "TDLib request error 400: BAD_REQUEST".to_owned(),
         }
     );
 }
@@ -325,4 +329,119 @@ fn reply_sender_name_for_outgoing_message_is_you() {
     };
 
     assert_eq!(reply_sender_name_for_message(&message), "You");
+}
+
+// ── Authorization state tracking ──
+
+mod auth_state {
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
+
+    use tdlib_rs::enums::AuthorizationState;
+
+    use crate::telegram::tdlib_auth::TdLibAuthBackend;
+    use crate::telegram::tdlib_client::{AuthStateUpdate, TdLibClient};
+
+    impl TdLibAuthBackend {
+        /// Builds an initialized backend over [`TdLibClient::with_auth_states`].
+        pub(crate) fn with_auth_states(auth_state_rx: mpsc::Receiver<AuthStateUpdate>) -> Self {
+            Self {
+                client: TdLibClient::with_auth_states(auth_state_rx),
+                current_code_token: None,
+                next_code_token_id: 1,
+                initialized: true,
+                last_auth_state: None,
+            }
+        }
+    }
+
+    fn update(state: AuthorizationState) -> AuthStateUpdate {
+        AuthStateUpdate { state }
+    }
+
+    #[test]
+    fn current_auth_state_skips_states_superseded_in_the_queue() {
+        let (auth_state_tx, auth_state_rx) = mpsc::channel();
+        let mut backend = TdLibAuthBackend::with_auth_states(auth_state_rx);
+        backend.last_auth_state = Some(AuthorizationState::Ready);
+        auth_state_tx
+            .send(update(AuthorizationState::LoggingOut))
+            .unwrap();
+        auth_state_tx
+            .send(update(AuthorizationState::WaitPhoneNumber))
+            .unwrap();
+
+        let state = backend.current_auth_state().expect("states are queued");
+
+        assert!(matches!(state, AuthorizationState::WaitPhoneNumber));
+    }
+
+    /// A rejected request (invalid phone, wrong code) leaves TDLib's state
+    /// unchanged and emits no update, so a retry must not wait for one.
+    #[test]
+    fn current_auth_state_keeps_the_latest_state_across_calls() {
+        let (_auth_state_tx, auth_state_rx) = mpsc::channel();
+        let mut backend = TdLibAuthBackend::with_auth_states(auth_state_rx);
+        backend.last_auth_state = Some(AuthorizationState::WaitPhoneNumber);
+
+        for _ in 0..2 {
+            let state = backend.current_auth_state().expect("state is cached");
+            assert!(matches!(state, AuthorizationState::WaitPhoneNumber));
+        }
+    }
+
+    #[test]
+    fn wait_for_auth_state_returns_the_latest_of_several_queued_states() {
+        let (auth_state_tx, auth_state_rx) = mpsc::channel();
+        let mut backend = TdLibAuthBackend::with_auth_states(auth_state_rx);
+        auth_state_tx
+            .send(update(AuthorizationState::LoggingOut))
+            .unwrap();
+        auth_state_tx
+            .send(update(AuthorizationState::WaitPhoneNumber))
+            .unwrap();
+
+        let state = backend.wait_for_auth_state().expect("states are queued");
+
+        assert!(matches!(state, AuthorizationState::WaitPhoneNumber));
+        assert!(matches!(
+            backend.last_auth_state,
+            Some(AuthorizationState::WaitPhoneNumber)
+        ));
+    }
+
+    /// TDLib opening a large database can take longer than the 100 ms the
+    /// startup check used to wait before assuming there is no session.
+    #[test]
+    fn refresh_authorization_status_waits_for_a_slow_tdlib_start() {
+        let (auth_state_tx, auth_state_rx) = mpsc::channel();
+        let mut backend = TdLibAuthBackend::with_auth_states(auth_state_rx);
+        let tdlib = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(300));
+            auth_state_tx
+                .send(update(AuthorizationState::Ready))
+                .unwrap();
+        });
+
+        backend
+            .refresh_authorization_status()
+            .expect("TDLib reports its state within the timeout");
+
+        assert!(backend.is_authorized_cached());
+        tdlib.join().unwrap();
+    }
+
+    #[test]
+    fn is_authorized_cached_is_true_only_for_ready() {
+        let (_auth_state_tx, auth_state_rx) = mpsc::channel();
+        let mut backend = TdLibAuthBackend::with_auth_states(auth_state_rx);
+        assert!(!backend.is_authorized_cached());
+
+        backend.last_auth_state = Some(AuthorizationState::WaitPhoneNumber);
+        assert!(!backend.is_authorized_cached());
+
+        backend.last_auth_state = Some(AuthorizationState::Ready);
+        assert!(backend.is_authorized_cached());
+    }
 }

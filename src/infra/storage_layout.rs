@@ -71,7 +71,7 @@ impl StorageLayout {
     ///
     /// Returns `true` if the TDLib database directory exists and contains
     /// at least one file. Used by logout/cleanup tests to verify data removal.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn tdlib_session_exists(&self) -> bool {
         let db_dir = self.tdlib_database_dir();
         db_dir.is_dir()

@@ -113,6 +113,33 @@ fn reply_with_empty_sender_omits_name() {
 }
 
 #[test]
+fn empty_reply_renders_placeholders() {
+    let messages = vec![msg_with_reply(1, "Bob", "OK", FEB_14_2026_10AM, "", "")];
+
+    let elements = build_message_list_elements(&messages);
+    let text = element_to_text(&elements[1], 80);
+
+    assert_eq!(text.lines[1].to_string(), "      │ Unknown: [Message]");
+}
+
+#[test]
+fn reply_with_empty_text_renders_message_placeholder() {
+    let messages = vec![msg_with_reply(
+        1,
+        "Bob",
+        "OK",
+        FEB_14_2026_10AM,
+        "Alice",
+        "",
+    )];
+
+    let elements = build_message_list_elements(&messages);
+    let text = element_to_text(&elements[1], 80);
+
+    assert_eq!(text.lines[1].to_string(), "      │ Alice: [Message]");
+}
+
+#[test]
 fn grouped_message_with_reply_shows_reply_line() {
     let messages = vec![
         msg(1, "Alice", "First", FEB_14_2026_10AM, false),

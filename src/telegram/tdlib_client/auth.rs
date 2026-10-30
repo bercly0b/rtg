@@ -9,12 +9,27 @@ impl TdLibClient {
         &self,
         timeout: std::time::Duration,
     ) -> Result<AuthStateUpdate, TdLibError> {
-        let rx = self.auth_state_rx.lock().map_err(|_| TdLibError::Init {
-            message: "auth state receiver lock poisoned".to_owned(),
-        })?;
+        let rx = self
+            .auth_state_rx
+            .lock()
+            .map_err(|_| TdLibError::Internal {
+                message: "auth state receiver lock poisoned".to_owned(),
+            })?;
         rx.recv_timeout(timeout).map_err(|_| TdLibError::Timeout {
             message: "waiting for authorization state".to_owned(),
         })
+    }
+
+    /// Drains the authorization state updates already queued, without
+    /// blocking, and returns the most recent one.
+    pub fn recv_latest_auth_state(&self) -> Result<Option<AuthStateUpdate>, TdLibError> {
+        let rx = self
+            .auth_state_rx
+            .lock()
+            .map_err(|_| TdLibError::Internal {
+                message: "auth state receiver lock poisoned".to_owned(),
+            })?;
+        Ok(rx.try_iter().last())
     }
 
     /// Sends TDLib parameters to initialize the client.
@@ -45,7 +60,7 @@ impl TdLibClient {
                 false, // use_test_dc
                 database_directory,
                 files_directory,
-                String::new(), // files_directory (deprecated parameter, use empty)
+                String::new(), // database_encryption_key (empty: database is not encrypted)
                 true,          // use_file_database
                 true,          // use_chat_info_database
                 true,          // use_message_database
@@ -71,10 +86,7 @@ impl TdLibClient {
         self.rt.block_on(async {
             tdlib_rs::functions::set_authentication_phone_number(phone, None, client_id)
                 .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })
+                .map_err(TdLibError::from)
         })
     }
 
@@ -86,10 +98,7 @@ impl TdLibClient {
         self.rt.block_on(async {
             tdlib_rs::functions::check_authentication_code(code, client_id)
                 .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })
+                .map_err(TdLibError::from)
         })
     }
 
@@ -101,10 +110,7 @@ impl TdLibClient {
         self.rt.block_on(async {
             tdlib_rs::functions::check_authentication_password(password, client_id)
                 .await
-                .map_err(|e| TdLibError::Request {
-                    code: e.code,
-                    message: e.message,
-                })
+                .map_err(TdLibError::from)
         })
     }
 }

@@ -55,13 +55,13 @@ fn older_messages_loaded_prepends_to_open_chat() {
     let mut o = orchestrator_with_open_chat(chats, 1, messages);
 
     let older = vec![message(1, "one"), message(5, "five")];
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::OlderMessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Ok(older),
         },
-    ))
+    ]))
     .unwrap();
 
     let msgs = o.state().open_chat().messages();
@@ -78,13 +78,13 @@ fn older_messages_empty_result_sets_all_loaded() {
     let messages = vec![message(10, "ten")];
     let mut o = orchestrator_with_open_chat(chats, 1, messages);
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::OlderMessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert!(o.state().open_chat().all_messages_loaded());
@@ -97,13 +97,13 @@ fn older_messages_for_wrong_chat_is_discarded() {
     let mut o = orchestrator_with_open_chat(chats, 1, messages);
 
     let older = vec![message(1, "one")];
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::OlderMessagesLoaded {
             chat_id: 999,
             topic_id: None,
             result: Ok(older),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().open_chat().messages().len(), 1);
@@ -115,13 +115,13 @@ fn older_messages_error_does_not_crash() {
     let messages = vec![message(10, "ten")];
     let mut o = orchestrator_with_open_chat(chats, 1, messages);
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::OlderMessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Err(BackgroundError::new("TEST_ERROR")),
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().open_chat().messages().len(), 1);
@@ -142,13 +142,13 @@ fn can_dispatch_again_after_older_messages_complete() {
 
     // Complete the request with only 2 older messages — keeps selected_index near top
     let older = vec![message(-2, "old2"), message(-1, "old1")];
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::OlderMessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Ok(older),
         },
-    ))
+    ]))
     .unwrap();
 
     // selected_index shifted by 2, now at index 2 — still within SCROLL_MARGIN (5)
