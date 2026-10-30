@@ -113,10 +113,10 @@ impl<'a> ChatMessageList<'a> {
 impl<'a> StatefulWidget for ChatMessageList<'a> {
     type State = ChatMessageListState;
 
-    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let inner = if let Some(block) = &self.block {
+    fn render(mut self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        let inner = if let Some(block) = self.block.take() {
             let inner = block.inner(area);
-            block.clone().render(area, buf);
+            block.render(area, buf);
             inner
         } else {
             area

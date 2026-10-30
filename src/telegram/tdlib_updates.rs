@@ -56,7 +56,7 @@ pub enum TdLibUpdate {
         is_cancel: bool,
     },
 
-    /// Message send succeeded (for sent message confirmation).
+    /// Message send succeeded.
     MessageSendSucceeded { chat_id: i64 },
 
     /// Unread reaction count changed for a chat (affects chat list badge).
@@ -150,9 +150,10 @@ impl TdLibUpdate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tdlib_rs::enums::MessageContent;
 
     fn make_test_td_message(chat_id: i64) -> TdMessage {
-        use tdlib_rs::enums::{MessageContent, MessageSender};
+        use tdlib_rs::enums::MessageSender;
         TdMessage {
             id: 1,
             sender_id: MessageSender::User(tdlib_rs::types::MessageSenderUser { user_id: 1 }),

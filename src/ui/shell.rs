@@ -91,9 +91,11 @@ mod tests {
     #[test]
     fn orchestrator_stops_on_quit_from_source() {
         let mut source = MockEventSource::from(vec![AppEvent::QuitRequested]);
-        let (dispatcher, _rx) = StubTaskDispatcher::new();
-        let mut orchestrator =
-            DefaultShellOrchestrator::new(StubStorageAdapter::default(), NoopOpener, dispatcher);
+        let mut orchestrator = DefaultShellOrchestrator::new(
+            StubStorageAdapter::default(),
+            NoopOpener,
+            StubTaskDispatcher,
+        );
 
         if let Some(event) = source.next_event().expect("must read mock event") {
             orchestrator
