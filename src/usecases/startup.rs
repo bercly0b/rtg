@@ -1,9 +1,7 @@
 use std::{
-    fs::{File, OpenOptions},
+    fs::{File, OpenOptions, TryLockError},
     path::PathBuf,
 };
-
-use fs2::FileExt;
 
 use crate::{
     infra::error::AppError, telegram::TelegramAdapter, usecases::guided_auth::AuthBackendError,
@@ -15,6 +13,12 @@ pub enum StartupFlowState {
     GuidedAuth { reason: GuidedAuthReason },
 }
 
+/// Why startup routes to guided auth.
+///
+/// A single variant for now: TDLib only reports whether the session is
+/// authorized, so `Missing` covers every case. It stays an enum so the logged
+/// `code()` / `user_message()` pair is tied to a typed reason, and a new reason
+/// (e.g. a revoked session) is one more variant rather than a signature change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GuidedAuthReason {
     Missing,
@@ -115,12 +119,9 @@ pub(crate) fn acquire_instance_lock(path: PathBuf) -> Result<InstanceLockGuard, 
             source,
         })?;
 
-    file.try_lock_exclusive().map_err(|source| {
-        if source.kind() == fs2::lock_contended_error().kind() {
-            AppError::InstanceBusy { path }
-        } else {
-            AppError::InstanceLockCreate { path, source }
-        }
+    file.try_lock().map_err(|error| match error {
+        TryLockError::WouldBlock => AppError::InstanceBusy { path },
+        TryLockError::Error(source) => AppError::InstanceLockCreate { path, source },
     })?;
 
     Ok(InstanceLockGuard { _file: file })
