@@ -6,6 +6,8 @@
 
 use std::collections::VecDeque;
 
+use unicode_width::UnicodeWidthStr;
+
 /// Maximum number of output lines kept in the buffer.
 /// Older lines are discarded when this limit is exceeded.
 const MAX_OUTPUT_LINES: usize = 200;
@@ -51,6 +53,9 @@ pub enum CommandPhase {
 pub struct CommandPopupState {
     title: String,
     output_lines: VecDeque<String>,
+    /// Display width of the widest line ever shown, including lines since
+    /// replaced or evicted, so the popup does not narrow while it is open.
+    widest_line_width: usize,
     phase: CommandPhase,
     kind: CommandPopupKind,
 }
@@ -61,6 +66,7 @@ impl CommandPopupState {
         Self {
             title: title.into(),
             output_lines: VecDeque::new(),
+            widest_line_width: 0,
             phase: CommandPhase::Running,
             kind,
         }
@@ -87,17 +93,27 @@ impl CommandPopupState {
         if self.output_lines.len() >= MAX_OUTPUT_LINES {
             self.output_lines.pop_front();
         }
+        self.widest_line_width = self.widest_line_width.max(line.width());
         self.output_lines.push_back(line);
     }
 
     /// Replaces the last visible output line, or appends when buffer is empty.
     pub fn replace_last_line(&mut self, line: String) {
         if let Some(last) = self.output_lines.back_mut() {
+            self.widest_line_width = self.widest_line_width.max(line.width());
             *last = line;
             return;
         }
 
         self.push_line(line);
+    }
+
+    pub fn line_count(&self) -> usize {
+        self.output_lines.len()
+    }
+
+    pub fn widest_line_width(&self) -> usize {
+        self.widest_line_width
     }
 
     /// Returns the last N lines that should be visible in the popup viewport.
@@ -279,6 +295,64 @@ mod tests {
 
         let viewer = CommandPopupState::new("View", CommandPopupKind::Viewer);
         assert_eq!(viewer.kind(), CommandPopupKind::Viewer);
+    }
+
+    #[test]
+    fn line_count_counts_buffered_lines() {
+        let mut state = test_popup("Test");
+        assert_eq!(state.line_count(), 0);
+        state.push_line("line 1".into());
+        state.push_line("line 2".into());
+        state.replace_last_line("line 2 updated".into());
+        assert_eq!(state.line_count(), 2);
+    }
+
+    #[test]
+    fn widest_line_width_is_zero_without_output() {
+        assert_eq!(test_popup("Test").widest_line_width(), 0);
+    }
+
+    #[test]
+    fn widest_line_width_follows_widest_pushed_line() {
+        let mut state = test_popup("Test");
+        state.push_line("abc".into());
+        state.push_line("abcdef".into());
+        state.push_line("ab".into());
+        assert_eq!(state.widest_line_width(), 6);
+    }
+
+    #[test]
+    fn widest_line_width_measures_display_width() {
+        let mut state = test_popup("Test");
+        state.push_line("Привет 👍".into());
+        assert_eq!(state.widest_line_width(), 9);
+    }
+
+    #[test]
+    fn widest_line_width_grows_on_wider_replacement() {
+        let mut state = test_popup("Test");
+        state.push_line("size=1kB".into());
+        state.replace_last_line("size=1024kB".into());
+        assert_eq!(state.widest_line_width(), 11);
+    }
+
+    #[test]
+    fn widest_line_width_keeps_replaced_line() {
+        let mut state = test_popup("Test");
+        state.push_line("size=1024kB".into());
+        state.replace_last_line("done".into());
+        assert_eq!(state.widest_line_width(), 11);
+    }
+
+    #[test]
+    fn widest_line_width_keeps_evicted_line() {
+        let mut state = test_popup("Test");
+        state.push_line("x".repeat(50));
+        for _ in 0..MAX_OUTPUT_LINES {
+            state.push_line("short".into());
+        }
+        assert!(!state.all_lines().contains(&"x".repeat(50).as_str()));
+        assert_eq!(state.widest_line_width(), 50);
     }
 
     #[test]

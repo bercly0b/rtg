@@ -8,7 +8,7 @@ use unicode_width::UnicodeWidthStr;
 
 /// Keeps short states like "Loading..." from collapsing the popup and the
 /// width from jumping when the content arrives.
-const MIN_CONTENT_WIDTH: u16 = 30;
+pub(super) const MIN_CONTENT_WIDTH: u16 = 30;
 const MAX_CONTENT_WIDTH_PERCENT: u32 = 80;
 /// Rows kept free above and below a content-sized popup.
 const VERTICAL_MARGIN: u16 = 1;
@@ -63,14 +63,14 @@ pub fn content_sized_rect(
     centered(area, width, height)
 }
 
-fn centered(area: Rect, width: u16, height: u16) -> Rect {
+pub(super) fn centered(area: Rect, width: u16, height: u16) -> Rect {
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
 
     Rect::new(x, y, width, height)
 }
 
-fn saturating_u16(value: usize) -> u16 {
+pub(super) fn saturating_u16(value: usize) -> u16 {
     u16::try_from(value).unwrap_or(u16::MAX)
 }
 
