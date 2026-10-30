@@ -6,7 +6,7 @@ use super::*;
 
 /// Simulates the state after `start_voice_recording` succeeds:
 /// opens the command popup and sets a recording file path.
-/// Does NOT spawn an external process (recording_handle is None).
+/// Does NOT spawn an external process (command_handle is None).
 ///
 /// Use `simulate_voice_recording_with_process` when testing exit code paths.
 fn simulate_voice_recording_started(o: &mut TestOrchestrator, file_path: &str) {
@@ -28,7 +28,7 @@ fn simulate_voice_recording_with_process(
     success: bool,
 ) -> AppEvent {
     let cmd = if success { "true" } else { "false" };
-    let (handle, rx) = crate::usecases::voice_recording::start_command(cmd, file_path)
+    let (handle, rx) = crate::usecases::external_command::start_command(cmd, file_path)
         .expect("failed to spawn test process");
     let exited = wait_for_command_exit(&rx);
 
@@ -37,7 +37,7 @@ fn simulate_voice_recording_with_process(
         crate::domain::command_popup_state::CommandPopupKind::Recording,
     );
     o.recording_file_path = Some(file_path.to_owned());
-    o.recording_handle = Some(handle);
+    o.command_handle = Some(handle);
     exited
 }
 

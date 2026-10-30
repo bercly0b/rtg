@@ -9,7 +9,7 @@ use std::{
 #[cfg(unix)]
 const STOP_GRACE_PERIOD: Duration = Duration::from_secs(3);
 
-/// A child process shared between its [`RecordingHandle`] and the thread
+/// A child process shared between its [`CommandHandle`] and the thread
 /// that waits for it to exit.
 ///
 /// Only [`SharedChild::wait`] reaps the child, and only while holding the
@@ -130,25 +130,25 @@ impl SharedChild {
     }
 }
 
-/// Handle to a running recording process.
+/// Handle to a running external command process.
 ///
 /// Holds the child process so it can be killed on user request.
-pub struct RecordingHandle {
+pub struct CommandHandle {
     child: Arc<SharedChild>,
 }
 
-impl Drop for RecordingHandle {
+impl Drop for CommandHandle {
     fn drop(&mut self) {
         self.stop();
     }
 }
 
-impl RecordingHandle {
+impl CommandHandle {
     pub(super) fn new(child: Arc<SharedChild>) -> Self {
         Self { child }
     }
 
-    /// Gracefully stops the recording process. Does nothing once it has been
+    /// Gracefully stops the command process. Does nothing once it has been
     /// reaped.
     ///
     /// First sends SIGTERM to the child process only (not the group), giving

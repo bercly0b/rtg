@@ -253,7 +253,7 @@ fn l_with_missing_handler_binary_notifies_start_error() {
         .unwrap();
 
     assert!(o.state().command_popup().is_none());
-    assert!(o.recording_handle.is_none());
+    assert!(o.command_handle.is_none());
     let notification = o.state().active_notification().unwrap_or_default();
     assert!(
         notification.starts_with("Open failed: failed to start `rtg-test-missing-binary`"),

@@ -188,7 +188,7 @@ fn command_popup_q_stops_live_recording_process() {
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("v", false)))
         .unwrap();
-    assert!(o.recording_handle.is_some(), "recording must have started");
+    assert!(o.command_handle.is_some(), "recording must have started");
     let rx = o
         .take_pending_command_rx()
         .expect("command events receiver");
@@ -196,7 +196,7 @@ fn command_popup_q_stops_live_recording_process() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
         .unwrap();
     assert!(
-        o.recording_handle.is_none(),
+        o.command_handle.is_none(),
         "handle must move to the stop thread"
     );
     assert_eq!(
@@ -227,7 +227,7 @@ fn v_with_missing_record_binary_shows_start_error() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("v", false)))
         .unwrap();
 
-    assert!(o.recording_handle.is_none());
+    assert!(o.command_handle.is_none());
     assert!(o.recording_file_path.is_none());
     let popup = o.state().command_popup().expect("failure must be visible");
     assert!(

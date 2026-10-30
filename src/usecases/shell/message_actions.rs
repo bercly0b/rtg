@@ -63,9 +63,9 @@ pub(super) fn open_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx
             .dispatch_open_file(cmd_template.to_owned(), local_path);
     } else {
         // Custom handler -- run with a playback popup showing live output.
-        match crate::usecases::voice_recording::start_command(cmd_template, &local_path) {
+        match crate::usecases::external_command::start_command(cmd_template, &local_path) {
             Ok((handle, rx)) => {
-                *ctx.recording_handle = Some(handle);
+                *ctx.command_handle = Some(handle);
                 *ctx.recording_file_path = None;
                 *ctx.pending_command_rx = Some(rx);
                 ctx.state

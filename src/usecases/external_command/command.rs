@@ -12,7 +12,7 @@ use anyhow::Context;
 use crate::domain::{command_template, events::CommandEvent};
 
 use super::{
-    handle::{RecordingHandle, SharedChild},
+    handle::{CommandHandle, SharedChild},
     output::stream_output,
 };
 
@@ -39,7 +39,7 @@ const MAX_INHERITED_FD: libc::rlim_t = 65_536;
 pub fn start_command(
     cmd_template: &str,
     file_path: &str,
-) -> anyhow::Result<(RecordingHandle, mpsc::Receiver<CommandEvent>)> {
+) -> anyhow::Result<(CommandHandle, mpsc::Receiver<CommandEvent>)> {
     let resolved = command_template::resolve_argv(cmd_template, file_path)?;
 
     let mut cmd = Command::new(&resolved[0]);
@@ -109,7 +109,7 @@ pub fn start_command(
         return Err(err.into());
     }
 
-    Ok((RecordingHandle::new(child), rx))
+    Ok((CommandHandle::new(child), rx))
 }
 
 /// Exclusive upper bound for the descriptors to mark close-on-exec in the child.
