@@ -177,12 +177,6 @@ impl TdLibClient {
         self.client_id
     }
 
-    /// Returns the configuration used to create this client.
-    #[allow(dead_code, reason = "not used yet")]
-    pub fn config(&self) -> &TdLibConfig {
-        &self.config
-    }
-
     /// Returns the async runtime for executing TDLib operations.
     pub fn runtime(&self) -> &Arc<Runtime> {
         &self.rt
@@ -191,12 +185,6 @@ impl TdLibClient {
     /// Returns the shared TDLib cache populated by the update loop.
     pub fn cache(&self) -> &super::tdlib_cache::TdLibCache {
         &self.cache
-    }
-
-    /// Checks if the client has been closed.
-    #[allow(dead_code, reason = "not used yet")]
-    pub fn is_closed(&self) -> bool {
-        self.is_closed.load(Ordering::Acquire)
     }
 
     /// Graceful shutdown: sends `close`, waits for `AuthorizationState::Closed`

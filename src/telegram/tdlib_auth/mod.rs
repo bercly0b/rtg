@@ -20,7 +20,6 @@ use std::time::Duration;
 
 use tdlib_rs::enums::AuthorizationState;
 
-use crate::domain::status::AuthConnectivityStatus;
 use crate::infra::config::TelegramConfig;
 use crate::infra::storage_layout::StorageLayout;
 use crate::usecases::guided_auth::{AuthBackendError, AuthCodeToken, SignInOutcome};
@@ -288,12 +287,6 @@ impl TdLibAuthBackend {
         }
     }
 
-    /// Returns the current authentication status snapshot.
-    #[allow(dead_code, reason = "not used yet")]
-    pub fn auth_status_snapshot(&self) -> Option<AuthConnectivityStatus> {
-        None
-    }
-
     /// Closes TDLib, blocking until it reports `AuthorizationState::Closed`.
     pub fn close(&self) -> Result<(), TdLibError> {
         self.client.close()
@@ -305,18 +298,6 @@ impl TdLibAuthBackend {
         self.current_code_token = None;
         self.last_auth_state = None;
         self.client.close()
-    }
-
-    /// Returns the underlying TDLib client.
-    #[allow(dead_code, reason = "not used yet")]
-    pub fn client(&self) -> &TdLibClient {
-        &self.client
-    }
-
-    /// Returns mutable reference to the underlying TDLib client.
-    #[allow(dead_code, reason = "not used yet")]
-    pub fn client_mut(&mut self) -> &mut TdLibClient {
-        &mut self.client
     }
 
     /// Takes the typed update receiver from the underlying TDLib client.
