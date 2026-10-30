@@ -10,7 +10,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::domain::command_popup_state::{CommandPhase, CommandPopupState};
+use crate::domain::command_popup_state::{CommandPhase, CommandPopupKind, CommandPopupState};
 
 use super::{popup_utils, styles};
 
@@ -49,18 +49,24 @@ pub fn render_command_popup(frame: &mut Frame<'_>, area: Rect, state: &CommandPo
         .collect();
 
     lines.push(Line::from(""));
-    lines.push(footer_line(state.phase()));
+    lines.push(footer_line(state.phase(), state.kind()));
 
     let paragraph = Paragraph::new(lines).block(block);
     frame.render_widget(paragraph, popup_area);
 }
 
-fn footer_line(phase: &CommandPhase) -> Line<'static> {
+fn footer_line(phase: &CommandPhase, kind: CommandPopupKind) -> Line<'static> {
     match phase {
-        CommandPhase::Running => Line::from(Span::styled(
-            "Press q to stop".to_owned(),
-            styles::command_popup_footer_style(),
-        )),
+        CommandPhase::Running => {
+            let hint = match kind {
+                CommandPopupKind::Recording => "Press q to stop",
+                CommandPopupKind::Playback | CommandPopupKind::Viewer => "Press q or Esc to stop",
+            };
+            Line::from(Span::styled(
+                hint.to_owned(),
+                styles::command_popup_footer_style(),
+            ))
+        }
         CommandPhase::Stopping => Line::from(Span::styled(
             "Stopping...".to_owned(),
             styles::command_popup_footer_style(),
@@ -85,54 +91,77 @@ mod tests {
     use super::*;
 
     #[test]
-    fn footer_line_running_shows_stop_hint() {
-        let line = footer_line(&CommandPhase::Running);
+    fn footer_line_running_recording_shows_q_only_stop_hint() {
+        let line = footer_line(&CommandPhase::Running, CommandPopupKind::Recording);
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(text, "Press q to stop");
     }
 
     #[test]
+    fn footer_line_running_playback_mentions_esc() {
+        let line = footer_line(&CommandPhase::Running, CommandPopupKind::Playback);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "Press q or Esc to stop");
+    }
+
+    #[test]
+    fn footer_line_running_viewer_mentions_esc() {
+        let line = footer_line(&CommandPhase::Running, CommandPopupKind::Viewer);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "Press q or Esc to stop");
+    }
+
+    #[test]
     fn footer_line_awaiting_shows_prompt() {
-        let line = footer_line(&CommandPhase::AwaitingConfirmation {
-            prompt: "Send recording? (y/n)".into(),
-        });
+        let line = footer_line(
+            &CommandPhase::AwaitingConfirmation {
+                prompt: "Send recording? (y/n)".into(),
+            },
+            CommandPopupKind::Recording,
+        );
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(text, "Send recording? (y/n)");
     }
 
     #[test]
     fn footer_line_uses_footer_style() {
-        let line = footer_line(&CommandPhase::Running);
+        let line = footer_line(&CommandPhase::Running, CommandPopupKind::Recording);
         assert_eq!(line.spans[0].style, styles::command_popup_footer_style());
     }
 
     #[test]
     fn footer_line_stopping_shows_wait_hint() {
-        let line = footer_line(&CommandPhase::Stopping);
+        let line = footer_line(&CommandPhase::Stopping, CommandPopupKind::Recording);
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(text, "Stopping...");
     }
 
     #[test]
     fn footer_line_stopping_uses_footer_style() {
-        let line = footer_line(&CommandPhase::Stopping);
+        let line = footer_line(&CommandPhase::Stopping, CommandPopupKind::Recording);
         assert_eq!(line.spans[0].style, styles::command_popup_footer_style());
     }
 
     #[test]
     fn footer_line_failed_shows_error_message() {
-        let line = footer_line(&CommandPhase::Failed {
-            message: "Recording failed".into(),
-        });
+        let line = footer_line(
+            &CommandPhase::Failed {
+                message: "Recording failed".into(),
+            },
+            CommandPopupKind::Recording,
+        );
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(text, "Recording failed");
     }
 
     #[test]
     fn footer_line_failed_uses_error_style() {
-        let line = footer_line(&CommandPhase::Failed {
-            message: "err".into(),
-        });
+        let line = footer_line(
+            &CommandPhase::Failed {
+                message: "err".into(),
+            },
+            CommandPopupKind::Recording,
+        );
         assert_eq!(line.spans[0].style, styles::command_popup_error_style());
     }
 
@@ -163,14 +192,14 @@ mod tests {
 
     #[test]
     fn footer_line_done_shows_close_hint() {
-        let line = footer_line(&CommandPhase::Done);
+        let line = footer_line(&CommandPhase::Done, CommandPopupKind::Viewer);
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(text, "Press any key to close");
     }
 
     #[test]
     fn footer_line_done_uses_footer_style() {
-        let line = footer_line(&CommandPhase::Done);
+        let line = footer_line(&CommandPhase::Done, CommandPopupKind::Viewer);
         assert_eq!(line.spans[0].style, styles::command_popup_footer_style());
     }
 }

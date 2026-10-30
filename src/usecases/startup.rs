@@ -73,9 +73,9 @@ pub fn plan_startup(telegram: &mut TelegramAdapter) -> StartupPlan {
 /// user has actually authenticated, causing the old check to always return
 /// `true` after the first run.
 fn evaluate_session_state(telegram: &mut TelegramAdapter) -> StartupFlowState {
-    match telegram.is_authorized() {
-        Ok(true) => StartupFlowState::LaunchTui,
-        Ok(false) => StartupFlowState::GuidedAuth {
+    match telegram.refresh_authorization_status() {
+        Ok(()) if telegram.is_authorized_cached() => StartupFlowState::LaunchTui,
+        Ok(()) => StartupFlowState::GuidedAuth {
             reason: GuidedAuthReason::Missing,
         },
         Err(error) => {
@@ -137,7 +137,6 @@ mod tests {
     use std::{
         env,
         fs::{self},
-        time::{SystemTime, UNIX_EPOCH},
     };
 
     fn make_layout() -> (StorageLayout, tempfile::TempDir) {
@@ -208,14 +207,8 @@ mod tests {
     fn logout_reset_results_in_disconnected_state_and_clean_relogin_path() {
         let _guard = env_lock();
 
-        let root = env::temp_dir().join(format!(
-            "rtg-logout-relogin-startup-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock should be valid")
-                .as_nanos()
-        ));
-        let xdg = root.join("xdg");
+        let root = tempfile::tempdir().expect("temp dir should be creatable");
+        let xdg = root.path().join("xdg");
         fs::create_dir_all(&xdg).expect("xdg dir should be creatable");
 
         let old_xdg = env::var_os("XDG_CONFIG_HOME");
@@ -256,8 +249,6 @@ mod tests {
                 unsafe { env::remove_var("XDG_CONFIG_HOME") }
             }
         }
-
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

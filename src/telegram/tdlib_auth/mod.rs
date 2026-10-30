@@ -44,7 +44,8 @@ pub struct TdLibAuthBackend {
     next_code_token_id: u64,
     /// Whether we've completed initialization (set_tdlib_parameters)
     initialized: bool,
-    /// Cached last known authorization state for race condition prevention.
+    /// Latest authorization state received from TDLib; `None` until TDLib
+    /// reports one after `set_tdlib_parameters`.
     last_auth_state: Option<AuthorizationState>,
 }
 
@@ -141,44 +142,65 @@ impl TdLibAuthBackend {
         }
     }
 
-    /// Waits for the next authorization state, with timeout.
+    /// Waits for TDLib to report a new authorization state, with timeout.
+    ///
+    /// Returns the most recent state when TDLib has queued several.
     fn wait_for_auth_state(&mut self) -> Result<AuthorizationState, AuthBackendError> {
-        let update = self
+        let next = self
             .client
             .recv_auth_state(AUTH_STATE_TIMEOUT)
             .map_err(map_tdlib_error)?;
-        self.last_auth_state = Some(update.state.clone());
-        Ok(update.state)
+        let latest = self
+            .client
+            .recv_latest_auth_state()
+            .map_err(map_tdlib_error)?
+            .unwrap_or(next);
+        self.last_auth_state = Some(latest.state.clone());
+        Ok(latest.state)
     }
 
-    /// Takes the cached auth state if available, otherwise waits for next state.
-    fn take_or_wait_for_auth_state(&mut self) -> Result<AuthorizationState, AuthBackendError> {
-        if let Some(state) = self.last_auth_state.take() {
-            return Ok(state);
+    /// Returns TDLib's current authorization state.
+    ///
+    /// Drains the queued updates first, so a state superseded while nobody was
+    /// reading is never acted on. With nothing queued the latest received state
+    /// is still current — a rejected request does not change it — and only
+    /// before TDLib has reported any state does this wait for one.
+    fn current_auth_state(&mut self) -> Result<AuthorizationState, AuthBackendError> {
+        if let Some(update) = self
+            .client
+            .recv_latest_auth_state()
+            .map_err(map_tdlib_error)?
+        {
+            self.last_auth_state = Some(update.state);
         }
-        self.wait_for_auth_state()
+
+        match &self.last_auth_state {
+            Some(state) => Ok(state.clone()),
+            None => self.wait_for_auth_state(),
+        }
     }
 
-    /// Checks if we're already authorized (from cached session).
-    pub fn is_authorized(&mut self) -> Result<bool, AuthBackendError> {
-        if let Some(ref state) = self.last_auth_state {
-            return Ok(matches!(state, AuthorizationState::Ready));
-        }
+    /// Whether the latest authorization state received from TDLib is `Ready`.
+    ///
+    /// Reads the cached state only; `refresh_authorization_status` brings it
+    /// up to date.
+    pub fn is_authorized_cached(&self) -> bool {
+        matches!(self.last_auth_state, Some(AuthorizationState::Ready))
+    }
 
-        match self.client.recv_auth_state(Duration::from_millis(100)) {
-            Ok(update) => {
-                let is_ready = matches!(update.state, AuthorizationState::Ready);
-                self.last_auth_state = Some(update.state);
-                Ok(is_ready)
-            }
-            Err(TdLibError::Timeout { .. }) => Ok(false),
-            Err(other) => Err(map_tdlib_error(other)),
-        }
+    /// Brings the cached authorization state up to date.
+    ///
+    /// Right after startup TDLib is still opening its database and has not
+    /// reported a state yet; this waits for it (up to `AUTH_STATE_TIMEOUT`)
+    /// rather than mistaking a slow start for a missing session.
+    pub fn refresh_authorization_status(&mut self) -> Result<(), AuthBackendError> {
+        self.current_auth_state()?;
+        Ok(())
     }
 
     /// Requests a login code for the given phone number.
     pub fn request_login_code(&mut self, phone: &str) -> Result<AuthCodeToken, AuthBackendError> {
-        let state = self.take_or_wait_for_auth_state()?;
+        let state = self.current_auth_state()?;
 
         match state {
             AuthorizationState::WaitPhoneNumber => {
@@ -219,7 +241,7 @@ impl TdLibAuthBackend {
             });
         }
 
-        let state = self.take_or_wait_for_auth_state()?;
+        let state = self.current_auth_state()?;
 
         match state {
             AuthorizationState::WaitCode(_) => {

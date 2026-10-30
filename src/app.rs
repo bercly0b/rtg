@@ -204,21 +204,15 @@ mod tests {
     fn logout_succeeds_when_telegram_bootstrap_fails() {
         let _guard = env_lock();
 
-        let root = env::temp_dir().join(format!(
-            "rtg-app-logout-bootstrap-fail-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock should be valid")
-                .as_nanos()
-        ));
-        let xdg = root.join("xdg");
+        let root = tempfile::tempdir().expect("temp dir should be creatable");
+        let xdg = root.path().join("xdg");
         fs::create_dir_all(&xdg).expect("xdg dir should be creatable");
 
         let old_xdg = env::var_os("XDG_CONFIG_HOME");
         // SAFETY: env is guarded by process-wide test mutex.
         unsafe { env::set_var("XDG_CONFIG_HOME", &xdg) };
 
-        let config_path = root.join("invalid-config.toml");
+        let config_path = root.path().join("invalid-config.toml");
         fs::write(&config_path, "[telegram]\napi_id = 1\n")
             .expect("invalid config fixture should be writable");
 
@@ -248,22 +242,14 @@ mod tests {
                 unsafe { env::remove_var("XDG_CONFIG_HOME") }
             }
         }
-
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
     fn run_returns_instance_busy_when_another_instance_holds_the_lock() {
         let _guard = env_lock();
 
-        let root = env::temp_dir().join(format!(
-            "rtg-app-instance-busy-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock should be valid")
-                .as_nanos()
-        ));
-        let xdg = root.join("xdg");
+        let root = tempfile::tempdir().expect("temp dir should be creatable");
+        let xdg = root.path().join("xdg");
         fs::create_dir_all(&xdg).expect("xdg dir should be creatable");
 
         let old_xdg = env::var_os("XDG_CONFIG_HOME");
@@ -280,7 +266,7 @@ mod tests {
         // Telegram config left unconfigured; bootstrap would otherwise route to
         // stub/guided-auth. We expect the early lock check to fail before
         // reaching bootstrap at all.
-        let config_path = root.join("config.toml");
+        let config_path = root.path().join("config.toml");
         fs::write(&config_path, "").expect("empty config fixture should be writable");
 
         let cli = Cli {
@@ -302,7 +288,6 @@ mod tests {
         }
 
         drop(held_lock);
-        let _ = fs::remove_dir_all(root);
 
         let err = result.expect_err("second instance must fail while lock is held");
         let app_err = err

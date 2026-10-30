@@ -1,8 +1,12 @@
+mod content_layout;
 mod content_spans;
 mod element_building;
+mod file_meta;
 mod forward;
-mod rendering;
+mod reactions;
 mod reply;
+mod service_messages;
+mod status_rendering;
 mod text_utils;
 
 use crate::domain::message::{ForwardInfo, Message, MessageMedia, MessageStatus, ReplyInfo};

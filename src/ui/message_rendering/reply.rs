@@ -7,10 +7,15 @@ use ratatui::text::{Line, Span};
 use crate::domain::message::ReplyInfo;
 use crate::ui::styles;
 
+const UNKNOWN_SENDER_PLACEHOLDER: &str = "Unknown";
+const MISSING_TEXT_PLACEHOLDER: &str = "[Message]";
+
 /// Builds a reply preview line: `indent + "│ " + SenderName + ": " + truncated text`.
 ///
 /// The reply text is truncated to fit within `content_width` on a single line
-/// with an ellipsis (`…`) appended when truncated.
+/// with an ellipsis (`…`) appended when truncated. A reply whose original
+/// message could not be resolved (e.g. it was deleted) renders as
+/// `Unknown: [Message]` instead of a bare bar.
 pub(super) fn build_reply_line(
     reply: &ReplyInfo,
     indent: &str,
@@ -21,14 +26,22 @@ pub(super) fn build_reply_line(
     let bar = "│ ";
     let bar_width = UnicodeWidthStr::width(bar);
 
-    let sender_part = if reply.sender_name.is_empty() {
+    let (sender_name, reply_text) = match (
+        reply.sender_name.as_str(),
+        reply.text.lines().next().unwrap_or(""),
+    ) {
+        ("", "") => (UNKNOWN_SENDER_PLACEHOLDER, MISSING_TEXT_PLACEHOLDER),
+        (sender, "") => (sender, MISSING_TEXT_PLACEHOLDER),
+        (sender, text) => (sender, text),
+    };
+
+    let sender_part = if sender_name.is_empty() {
         String::new()
     } else {
-        format!("{}: ", reply.sender_name)
+        format!("{}: ", sender_name)
     };
     let sender_width = UnicodeWidthStr::width(sender_part.as_str());
 
-    let reply_text = reply.text.lines().next().unwrap_or("");
     let available = content_width
         .saturating_sub(bar_width)
         .saturating_sub(sender_width);
@@ -42,7 +55,7 @@ pub(super) fn build_reply_line(
     if !sender_part.is_empty() {
         spans.push(Span::styled(
             sender_part,
-            styles::reply_sender_style(&reply.sender_name, reply.is_outgoing),
+            styles::reply_sender_style(sender_name, reply.is_outgoing),
         ));
     }
 
@@ -54,7 +67,7 @@ pub(super) fn build_reply_line(
 /// Truncates text to fit within `max_width` terminal columns.
 ///
 /// If the text exceeds the width, it is cut and `…` is appended.
-pub(super) fn truncate_to_width(text: &str, max_width: usize) -> String {
+pub(in crate::ui) fn truncate_to_width(text: &str, max_width: usize) -> String {
     use unicode_width::UnicodeWidthChar;
 
     if max_width == 0 {
