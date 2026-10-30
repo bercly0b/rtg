@@ -47,17 +47,29 @@ fn chat_updates_source_drains_burst_into_single_batch() {
 fn background_result_source_drains_all_pending_results_in_order() {
     let (tx, rx) = mpsc::channel();
     for chat_id in [1, 2, 3] {
-        tx.send(BackgroundTaskResult::VoiceSendFailed { chat_id })
-            .expect("result should be sent");
+        tx.send(BackgroundTaskResult::VoiceSendFailed {
+            chat_id,
+            pending_id: -1,
+        })
+        .expect("result should be sent");
     }
     let mut source = ChannelBackgroundResultSource::new(rx);
 
     assert_eq!(
         source.pending_results(),
         Some(vec![
-            BackgroundTaskResult::VoiceSendFailed { chat_id: 1 },
-            BackgroundTaskResult::VoiceSendFailed { chat_id: 2 },
-            BackgroundTaskResult::VoiceSendFailed { chat_id: 3 },
+            BackgroundTaskResult::VoiceSendFailed {
+                chat_id: 1,
+                pending_id: -1
+            },
+            BackgroundTaskResult::VoiceSendFailed {
+                chat_id: 2,
+                pending_id: -1
+            },
+            BackgroundTaskResult::VoiceSendFailed {
+                chat_id: 3,
+                pending_id: -1
+            },
         ])
     );
     assert_eq!(source.pending_results(), None);

@@ -120,4 +120,10 @@ impl Message {
             (None, _) => self.text.clone(),
         }
     }
+
+    /// Whether this is an optimistically displayed message that Telegram has
+    /// not accepted yet; its id is local and must not reach TDLib.
+    pub fn is_pending(&self) -> bool {
+        self.status == MessageStatus::Sending
+    }
 }

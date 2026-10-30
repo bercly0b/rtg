@@ -66,7 +66,7 @@ fn dd_on_empty_chat_does_nothing() {
 fn dd_does_not_delete_pending_messages() {
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hello")]);
 
-    // Switch to message input and send a message (creates pending msg with id=0)
+    // Switch to message input and send a message (creates a pending message)
     o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
         .unwrap();
     // Type "test" + enter
@@ -80,11 +80,11 @@ fn dd_does_not_delete_pending_messages() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("esc", false)))
         .unwrap();
 
-    // Select the last message (pending, id=0)
+    // Select the last message (pending)
     let selected = o.state().open_chat().selected_message().unwrap();
-    assert_eq!(selected.id, 0); // pending
+    assert!(selected.is_pending());
 
-    // dd should not dispatch delete for id=0
+    // dd should not dispatch delete for a pending message
     o.handle_event(AppEvent::InputKey(KeyInput::new("d", false)))
         .unwrap();
     o.handle_event(AppEvent::InputKey(KeyInput::new("d", false)))
@@ -254,7 +254,7 @@ fn r_key_does_nothing_when_no_message_selected() {
 fn r_key_ignores_pending_messages() {
     let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
 
-    // Add a pending message (id=0) and select it
+    // Add a pending message and select it
     o.state_mut().open_chat_mut().add_pending_message(
         "Pending".to_owned(),
         crate::domain::message::MessageMedia::None,
@@ -268,4 +268,20 @@ fn r_key_ignores_pending_messages() {
     // Should not set reply context for pending message
     assert_eq!(o.state().active_pane(), ActivePane::Messages);
     assert!(o.state().message_input().reply_to().is_none());
+}
+
+#[test]
+fn e_key_ignores_pending_messages() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+    o.state_mut().open_chat_mut().add_pending_message(
+        "Pending".to_owned(),
+        crate::domain::message::MessageMedia::None,
+        None,
+    );
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("e", false)))
+        .unwrap();
+
+    assert_eq!(o.state().active_pane(), ActivePane::Messages);
+    assert!(o.state().message_input().editing().is_none());
 }

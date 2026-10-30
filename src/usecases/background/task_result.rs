@@ -1,7 +1,7 @@
 use crate::domain::{
     chat::ChatSummary, chat_info_state::ChatInfo, chat_subtitle::ChatSubtitle,
     forum_topic::ForumTopicSummary, message::Message, message_info_state::MessageInfo,
-    reaction_picker_state::AvailableReaction,
+    message_input_state::OutgoingMessage, reaction_picker_state::AvailableReaction,
 };
 
 /// Result of an asynchronous background operation dispatched from the UI thread.
@@ -32,11 +32,13 @@ pub enum BackgroundTaskResult {
         topic_id: Option<i32>,
         result: Result<Vec<Message>, BackgroundError>,
     },
-    /// Message send operation completed; `chat_id` identifies the target chat,
-    /// `original_text` is kept for re-population on failure.
+    /// Message send operation completed; `chat_id` and `topic_id` identify the
+    /// target conversation, `message` is kept to roll back the pending message
+    /// and re-populate the input on failure.
     MessageSent {
         chat_id: i64,
-        original_text: String,
+        topic_id: Option<i32>,
+        message: OutgoingMessage,
         result: Result<(), BackgroundError>,
     },
     /// Messages refresh after a successful send completed.
@@ -64,8 +66,8 @@ pub enum BackgroundTaskResult {
         original_text: String,
         result: Result<(), BackgroundError>,
     },
-    /// Voice note send failed; the optimistic pending message should be removed.
-    VoiceSendFailed { chat_id: i64 },
+    /// Voice note send failed; the optimistic message `pending_id` should be removed.
+    VoiceSendFailed { chat_id: i64, pending_id: i64 },
     /// Chat subtitle (user status / member count) resolved.
     ChatSubtitleLoaded {
         chat_id: i64,

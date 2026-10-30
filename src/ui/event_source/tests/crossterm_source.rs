@@ -361,8 +361,11 @@ fn emits_all_pending_background_results_in_one_event() {
 
     let (tx, rx) = mpsc::channel();
     for chat_id in [1, 2] {
-        tx.send(BackgroundTaskResult::VoiceSendFailed { chat_id })
-            .expect("result should be sent");
+        tx.send(BackgroundTaskResult::VoiceSendFailed {
+            chat_id,
+            pending_id: -1,
+        })
+        .expect("result should be sent");
     }
     let mut source = CrosstermEventSource::with_sources(
         Box::new(super::super::StubConnectivityStatusSource),
@@ -376,8 +379,14 @@ fn emits_all_pending_background_results_in_one_event() {
             .next_event_with_terminal(&mut terminal)
             .expect("background results should be readable"),
         Some(AppEvent::BackgroundTasksCompleted(vec![
-            BackgroundTaskResult::VoiceSendFailed { chat_id: 1 },
-            BackgroundTaskResult::VoiceSendFailed { chat_id: 2 },
+            BackgroundTaskResult::VoiceSendFailed {
+                chat_id: 1,
+                pending_id: -1
+            },
+            BackgroundTaskResult::VoiceSendFailed {
+                chat_id: 2,
+                pending_id: -1
+            },
         ]))
     );
     assert_eq!(

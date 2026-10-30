@@ -88,10 +88,10 @@ pub(super) fn delete_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorC
     let Some(msg) = ctx.state.open_chat().selected_message() else {
         return;
     };
-    let message_id = msg.id;
-    if message_id == 0 {
-        return; // Pending messages have id=0, skip
+    if msg.is_pending() {
+        return;
     }
+    let message_id = msg.id;
 
     // Optimistically remove from UI
     ctx.state.open_chat_mut().remove_message(message_id);
@@ -112,7 +112,7 @@ pub(super) fn reply_to_selected_message<D: TaskDispatcher>(ctx: &mut Orchestrato
     };
 
     // Don't reply to pending (unsent) messages
-    if msg.id == 0 {
+    if msg.is_pending() {
         return;
     }
 
@@ -145,7 +145,7 @@ pub(super) fn edit_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx
         return;
     };
 
-    if msg.id == 0 {
+    if msg.is_pending() {
         return;
     }
 

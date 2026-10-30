@@ -223,7 +223,7 @@ fn voice_send_creates_pending_message_with_voice_media() {
         crate::domain::message::MessageStatus::Sending
     );
     assert!(pending.is_outgoing);
-    assert_eq!(pending.id, 0);
+    assert_eq!(Some(pending.id), o.dispatcher.last_voice_send_pending_id());
     assert_eq!(
         o.state().open_chat().scroll_offset(),
         crate::domain::open_chat_state::ScrollOffset::BOTTOM
@@ -243,7 +243,10 @@ fn voice_send_failed_removes_pending_message() {
     assert_eq!(o.state().open_chat().messages().len(), 2);
 
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
-        BackgroundTaskResult::VoiceSendFailed { chat_id: 1 },
+        BackgroundTaskResult::VoiceSendFailed {
+            chat_id: 1,
+            pending_id: o.dispatcher.last_voice_send_pending_id().unwrap(),
+        },
     ]))
     .unwrap();
 
@@ -264,11 +267,83 @@ fn voice_send_failed_ignored_for_different_chat() {
     assert_eq!(o.state().open_chat().messages().len(), 2);
 
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
-        BackgroundTaskResult::VoiceSendFailed { chat_id: 999 },
+        BackgroundTaskResult::VoiceSendFailed {
+            chat_id: 999,
+            pending_id: o.dispatcher.last_voice_send_pending_id().unwrap(),
+        },
     ]))
     .unwrap();
 
     assert_eq!(o.state().open_chat().messages().len(), 2);
+}
+
+fn send_text_and_voice(o: &mut TestOrchestrator, file_name: &str) -> tempfile::TempDir {
+    o.handle_event(AppEvent::InputKey(KeyInput::new("i", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("x", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join(file_name);
+    std::fs::write(&tmp, b"fake audio").unwrap();
+    o.recording_file_path = Some(tmp.to_str().unwrap().into());
+    o.send_voice_recording();
+
+    assert_eq!(o.state().open_chat().messages().len(), 3);
+    tmp_dir
+}
+
+fn pending_media(o: &TestOrchestrator) -> Vec<crate::domain::message::MessageMedia> {
+    o.state()
+        .open_chat()
+        .messages()
+        .iter()
+        .filter(|m| m.is_pending())
+        .map(|m| m.media)
+        .collect()
+}
+
+#[test]
+fn text_send_failure_keeps_parallel_voice_pending() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+    let _tmp_dir = send_text_and_voice(&mut o, "rtg_test_text_fail_keeps_voice.oga");
+
+    let (chat_id, topic_id, message) = o.dispatcher.last_send_message().unwrap();
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
+        BackgroundTaskResult::MessageSent {
+            chat_id,
+            topic_id,
+            message,
+            result: Err(BackgroundError::new("SEND_UNAVAILABLE")),
+        },
+    ]))
+    .unwrap();
+
+    assert_eq!(
+        pending_media(&o),
+        vec![crate::domain::message::MessageMedia::Voice]
+    );
+}
+
+#[test]
+fn voice_send_failure_keeps_parallel_text_pending() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+    let _tmp_dir = send_text_and_voice(&mut o, "rtg_test_voice_fail_keeps_text.oga");
+
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
+        BackgroundTaskResult::VoiceSendFailed {
+            chat_id: 1,
+            pending_id: o.dispatcher.last_voice_send_pending_id().unwrap(),
+        },
+    ]))
+    .unwrap();
+
+    assert_eq!(
+        pending_media(&o),
+        vec![crate::domain::message::MessageMedia::None]
+    );
 }
 
 #[test]

@@ -2,7 +2,8 @@ use super::*;
 
 // ── Recording task dispatcher for tests ──
 
-type SendRecord = (i64, Option<i32>, String, Option<i64>);
+type SendRecord = (i64, Option<i32>, OutgoingMessage);
+type VoiceSendRecord = (i64, Option<i32>, String, i64);
 type MarkAsReadRecord = (i64, Option<i32>, Vec<i64>);
 
 /// Records what the orchestrator dispatched and allows inspection.
@@ -20,7 +21,7 @@ pub(super) struct RecordingDispatcher {
     dispatched_forum_topics: RefCell<Vec<i64>>,
     dispatched_forum_unread_counts: RefCell<Vec<Vec<i64>>>,
     dispatched_deletes: RefCell<Vec<(i64, i64)>>,
-    dispatched_voice_sends: RefCell<Vec<(i64, Option<i32>, String)>>,
+    dispatched_voice_sends: RefCell<Vec<VoiceSendRecord>>,
     dispatched_subtitles: RefCell<Vec<ChatSubtitleQuery>>,
     dispatched_add_reactions: RefCell<Vec<(i64, i64, String)>>,
     dispatched_remove_reactions: RefCell<Vec<(i64, i64, String)>>,
@@ -107,14 +108,29 @@ impl RecordingDispatcher {
     }
 
     pub(super) fn last_send(&self) -> Option<(i64, String, Option<i64>)> {
-        self.dispatched_sends
-            .borrow()
-            .last()
-            .map(|(c, _, t, r)| (*c, t.clone(), *r))
+        self.dispatched_sends.borrow().last().map(|(c, _, m)| {
+            (
+                *c,
+                m.text.clone(),
+                m.reply_to.as_ref().map(|r| r.message_id),
+            )
+        })
     }
 
     #[allow(dead_code)]
     pub(super) fn last_send_full(&self) -> Option<(i64, Option<i32>, String, Option<i64>)> {
+        self.dispatched_sends.borrow().last().map(|(c, tid, m)| {
+            (
+                *c,
+                *tid,
+                m.text.clone(),
+                m.reply_to.as_ref().map(|r| r.message_id),
+            )
+        })
+    }
+
+    /// The last dispatched send as `MessageSent` would echo it back.
+    pub(super) fn last_send_message(&self) -> Option<(i64, Option<i32>, OutgoingMessage)> {
         self.dispatched_sends.borrow().last().cloned()
     }
 
@@ -177,12 +193,22 @@ impl RecordingDispatcher {
         self.dispatched_voice_sends
             .borrow()
             .last()
-            .map(|(c, _, f)| (*c, f.clone()))
+            .map(|(c, _, f, _)| (*c, f.clone()))
     }
 
     #[allow(dead_code)]
     pub(super) fn last_voice_send_full(&self) -> Option<(i64, Option<i32>, String)> {
-        self.dispatched_voice_sends.borrow().last().cloned()
+        self.dispatched_voice_sends
+            .borrow()
+            .last()
+            .map(|(c, tid, f, _)| (*c, *tid, f.clone()))
+    }
+
+    pub(super) fn last_voice_send_pending_id(&self) -> Option<i64> {
+        self.dispatched_voice_sends
+            .borrow()
+            .last()
+            .map(|(_, _, _, pending_id)| *pending_id)
     }
 
     pub(super) fn subtitle_dispatch_count(&self) -> usize {
@@ -235,16 +261,10 @@ impl TaskDispatcher for RecordingDispatcher {
             .push((chat_id, topic_id, from_message_id));
     }
 
-    fn dispatch_send_message(
-        &self,
-        chat_id: i64,
-        topic_id: Option<i32>,
-        text: String,
-        reply_to_message_id: Option<i64>,
-    ) {
+    fn dispatch_send_message(&self, chat_id: i64, topic_id: Option<i32>, message: OutgoingMessage) {
         self.dispatched_sends
             .borrow_mut()
-            .push((chat_id, topic_id, text, reply_to_message_id));
+            .push((chat_id, topic_id, message));
     }
 
     fn dispatch_open_chat(&self, chat_id: i64) {
@@ -283,10 +303,16 @@ impl TaskDispatcher for RecordingDispatcher {
         self.dispatched_subtitles.borrow_mut().push(query);
     }
 
-    fn dispatch_send_voice(&self, chat_id: i64, topic_id: Option<i32>, file_path: String) {
+    fn dispatch_send_voice(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        file_path: String,
+        pending_id: i64,
+    ) {
         self.dispatched_voice_sends
             .borrow_mut()
-            .push((chat_id, topic_id, file_path));
+            .push((chat_id, topic_id, file_path, pending_id));
     }
 
     fn dispatch_download_file(&self, _file_id: i32) {
