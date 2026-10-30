@@ -1,5 +1,8 @@
+/// Generic over the background task result `B`: those results belong to
+/// `usecases` (see `usecases::contracts::AppEvent`), which the domain must
+/// not depend on.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AppEvent {
+pub enum AppEvent<B> {
     Tick,
     QuitRequested,
     InputKey(KeyInput),
@@ -7,7 +10,9 @@ pub enum AppEvent {
     ChatUpdateReceived {
         updates: Vec<ChatUpdate>,
     },
-    BackgroundTaskCompleted(BackgroundTaskResult),
+    /// All background task results that accumulated since the last event,
+    /// in completion order.
+    BackgroundTasksCompleted(Vec<B>),
     /// A line of output from a running external command (e.g. ffmpeg).
     ///
     /// `replace_last=true` means the line came from a carriage-return update
@@ -20,117 +25,6 @@ pub enum AppEvent {
     CommandExited {
         success: bool,
     },
-}
-
-/// Result of an asynchronous background operation dispatched from the UI thread.
-///
-/// These variants carry the outcome of Telegram API calls that were executed
-/// on a background thread to avoid blocking the TUI event loop.
-///
-/// Uses domain-level types only; error details are represented as simple strings
-/// to keep the domain layer independent of the usecases layer.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BackgroundTaskResult {
-    /// Chat list fetch completed.
-    ChatListLoaded {
-        result: Result<Vec<super::chat::ChatSummary>, BackgroundError>,
-        all_loaded: bool,
-    },
-    /// Forum topic list fetch completed for a specific forum chat.
-    ForumTopicsLoaded {
-        chat_id: i64,
-        result: Result<Vec<super::forum_topic::ForumTopicSummary>, BackgroundError>,
-    },
-    /// Unread-topic counts resolved for forum chats whose chat-list badge was
-    /// unknown. Chats whose fetch failed are absent; the next chat-list load
-    /// re-dispatches the warm-up for them.
-    ForumUnreadCountsLoaded { counts: Vec<(i64, u32)> },
-    /// Messages fetch for a specific chat completed. `topic_id` mirrors the
-    /// request scope so handlers can drop results from a topic the user is
-    /// no longer viewing.
-    MessagesLoaded {
-        chat_id: i64,
-        topic_id: Option<i32>,
-        result: Result<Vec<super::message::Message>, BackgroundError>,
-    },
-    /// Message send operation completed; `chat_id` identifies the target chat,
-    /// `original_text` is kept for re-population on failure.
-    MessageSent {
-        chat_id: i64,
-        original_text: String,
-        result: Result<(), BackgroundError>,
-    },
-    /// Messages refresh after a successful send completed.
-    MessageSentRefreshCompleted {
-        chat_id: i64,
-        topic_id: Option<i32>,
-        result: Result<Vec<super::message::Message>, BackgroundError>,
-    },
-    /// Background prefetch of messages for a chat the user is hovering.
-    /// Results go only into `MessageCache`, not `OpenChatState`.
-    MessagesPrefetched {
-        chat_id: i64,
-        result: Result<Vec<super::message::Message>, BackgroundError>,
-    },
-    /// Older messages loaded for scroll-up pagination.
-    OlderMessagesLoaded {
-        chat_id: i64,
-        topic_id: Option<i32>,
-        result: Result<Vec<super::message::Message>, BackgroundError>,
-    },
-    /// Message edit operation completed.
-    MessageEdited {
-        chat_id: i64,
-        message_id: i64,
-        original_text: String,
-        result: Result<(), BackgroundError>,
-    },
-    /// Voice note send failed; the optimistic pending message should be removed.
-    VoiceSendFailed { chat_id: i64 },
-    /// Chat subtitle (user status / member count) resolved.
-    ChatSubtitleLoaded {
-        chat_id: i64,
-        result: Result<super::chat_subtitle::ChatSubtitle, BackgroundError>,
-    },
-    /// Chat info (title, status, description) resolved for the info popup.
-    ChatInfoLoaded {
-        chat_id: i64,
-        result: Result<super::chat_info_state::ChatInfo, BackgroundError>,
-    },
-    /// Message info (reactions, viewers, read/edit dates) resolved for the info popup.
-    MessageInfoLoaded {
-        chat_id: i64,
-        message_id: i64,
-        result: Result<super::message_info_state::MessageInfo, BackgroundError>,
-    },
-    /// Available reactions loaded for the reaction picker popup.
-    AvailableReactionsLoaded {
-        chat_id: i64,
-        message_id: i64,
-        result: Result<Vec<super::reaction_picker_state::AvailableReaction>, BackgroundError>,
-    },
-    /// Platform default file opener failed (non-zero exit code).
-    /// The orchestrator should display the error as a notification.
-    OpenFileFailed { stderr: String },
-    /// File was successfully saved to the downloads directory.
-    FileSaved { file_id: i32, file_name: String },
-    /// File save to downloads directory failed.
-    FileSaveFailed { file_id: i32, error: String },
-}
-
-/// Lightweight error type for background task failures.
-///
-/// Kept simple to avoid domain→usecases dependency; the orchestrator maps
-/// usecase-level errors into this type when dispatching background work.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BackgroundError {
-    pub code: &'static str,
-}
-
-impl BackgroundError {
-    pub fn new(code: &'static str) -> Self {
-        Self { code }
-    }
 }
 
 /// A granular update from Telegram about a specific chat.
@@ -168,13 +62,12 @@ pub enum ChatUpdate {
         is_cancel: bool,
     },
     /// File download progress or completion update from TDLib.
+    /// `local_path` is set only once the download has completed.
     FileUpdated {
         file_id: i32,
         size: u64,
-        local_path: String,
-        is_downloading_active: bool,
-        is_downloading_completed: bool,
-        downloaded_size: u64,
+        local_path: Option<String>,
+        download_status: super::message::DownloadStatus,
     },
     /// A forum topic's metadata or unread state changed. The orchestrator
     /// should refresh the topic list when this matches the open forum.

@@ -30,12 +30,12 @@ fn chat_list_loaded_result_sets_ready_state() {
 #[test]
 fn chat_list_loaded_error_sets_error_state() {
     let mut o = make_orchestrator();
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
             result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
             all_loaded: false,
         },
-    ))
+    ]))
     .unwrap();
 
     assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Error);
@@ -55,12 +55,12 @@ fn chat_list_reload_preserves_selection_by_current_chat_id() {
 
     // Simulate a background reload where chat order changed
     // (e.g. chat 3 got a new message and moved to the top)
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
             result: Ok(vec![chat(3, "Ops"), chat(1, "General"), chat(2, "Backend")]),
             all_loaded: false,
         },
-    ))
+    ]))
     .unwrap();
 
     // Selection should follow chat_id 2 ("Backend"), now at index 2
@@ -104,7 +104,7 @@ fn chat_list_reload_cursor_follows_current_selection_not_dispatch_time() {
     );
 
     // Background result arrives with reordered chats
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
             result: Ok(vec![
                 chat(5, "Epsilon"),
@@ -115,7 +115,7 @@ fn chat_list_reload_cursor_follows_current_selection_not_dispatch_time() {
             ]),
             all_loaded: false,
         },
-    ))
+    ]))
     .unwrap();
 
     // Selection must stay on "Delta" (chat_id=4), now at index 2
@@ -140,12 +140,12 @@ fn chat_list_reload_falls_back_when_selected_chat_disappears() {
     );
 
     // Background refresh arrives without chat 3
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
             result: Ok(vec![chat(1, "Alpha"), chat(2, "Beta")]),
             all_loaded: false,
         },
-    ))
+    ]))
     .unwrap();
 
     // Should fall back to first chat
@@ -246,12 +246,12 @@ fn user_refresh_shows_notification_on_failure() {
     );
 
     // Inject a failure
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
             result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
             all_loaded: false,
         },
-    ))
+    ]))
     .unwrap();
     assert_eq!(
         o.state().active_notification(),
@@ -527,12 +527,12 @@ fn pending_flag_cleared_on_error_result_and_re_dispatches() {
     assert!(o.chat_list_refresh_pending);
 
     // Error result still triggers re-dispatch
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
             result: Err(BackgroundError::new("FAIL")),
             all_loaded: false,
         },
-    ))
+    ]))
     .unwrap();
     assert_eq!(o.dispatcher.chat_list_dispatch_count(), 2);
     assert!(!o.chat_list_refresh_pending);
@@ -736,9 +736,9 @@ fn badge_warmup_not_redispatched_while_in_flight() {
 
     // Sweep completes (fetch failed: no counts) — the guard clears, so the
     // next list load may retry.
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ForumUnreadCountsLoaded { counts: vec![] },
-    ))
+    ]))
     .unwrap();
     inject_chat_list(&mut o, vec![unread_forum_without_badge(1, "Forum")]);
     assert_eq!(o.dispatcher.forum_unread_counts_dispatch_count(), 2);
@@ -755,11 +755,11 @@ fn forum_unread_counts_loaded_patches_badges() {
         ],
     );
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ForumUnreadCountsLoaded {
             counts: vec![(1, 3), (2, 0)],
         },
-    ))
+    ]))
     .unwrap();
 
     let badges: Vec<Option<u32>> = o

@@ -1,17 +1,15 @@
 use std::sync::{mpsc::Sender, Arc};
 
-use crate::{
-    domain::events::{BackgroundError, BackgroundTaskResult},
-    usecases::{
-        edit_message::{edit_message, EditMessageCommand, MessageEditor},
-        load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
-        send_message::{send_message, MessageSender, SendMessageCommand},
-        send_voice::VoiceNoteSender,
-    },
+use crate::usecases::{
+    edit_message::{edit_message, EditMessageCommand, MessageEditor},
+    load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
+    send_message::{send_message, MessageSender, SendMessageCommand},
+    send_voice::VoiceNoteSender,
 };
 
-use super::error_mapping::{
-    map_edit_message_error, map_load_messages_error, map_send_message_error,
+use super::{
+    error_mapping::{map_edit_message_error, map_load_messages_error, map_send_message_error},
+    BackgroundError, BackgroundTaskResult,
 };
 
 pub(super) fn dispatch_load_messages<M: MessagesSource + Send + Sync + 'static>(

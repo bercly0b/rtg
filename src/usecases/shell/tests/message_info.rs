@@ -84,7 +84,7 @@ fn message_info_loaded_updates_popup_state() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageInfoLoaded {
             chat_id: 1,
             message_id: 10,
@@ -100,7 +100,7 @@ fn message_info_loaded_updates_popup_state() {
                 edit_date: Some(1700000000),
             }),
         },
-    ))
+    ]))
     .unwrap();
 
     match o.state().message_info_popup().unwrap() {
@@ -123,13 +123,13 @@ fn message_info_loaded_error_sets_error_state() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
         .unwrap();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageInfoLoaded {
             chat_id: 1,
             message_id: 10,
             result: Err(BackgroundError::new("MESSAGE_INFO_UNAVAILABLE")),
         },
-    ))
+    ]))
     .unwrap();
 
     assert!(matches!(
@@ -145,7 +145,7 @@ fn message_info_loaded_ignored_when_popup_closed() {
     let mut o =
         orchestrator_in_messages_pane(vec![chat(1, "Alice")], 1, vec![message(10, "hello")]);
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageInfoLoaded {
             chat_id: 1,
             message_id: 10,
@@ -158,7 +158,7 @@ fn message_info_loaded_ignored_when_popup_closed() {
                 edit_date: None,
             }),
         },
-    ))
+    ]))
     .unwrap();
 
     assert!(o.state().message_info_popup().is_none());
@@ -179,7 +179,7 @@ fn message_info_loaded_stale_result_ignored() {
     assert_eq!(o.state().message_info_popup().unwrap().ids(), Some((1, 20)));
 
     // Stale result for message 10 arrives while popup is open for message 20
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageInfoLoaded {
             chat_id: 1,
             message_id: 10,
@@ -192,7 +192,7 @@ fn message_info_loaded_stale_result_ignored() {
                 edit_date: None,
             }),
         },
-    ))
+    ]))
     .unwrap();
 
     // Popup should still be in Loading state for message 20

@@ -58,14 +58,8 @@ mod tests {
     fn logout_removes_tdlib_data() {
         let _guard = env_lock();
 
-        let root = env::temp_dir().join(format!(
-            "rtg-logout-test-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock should be valid")
-                .as_nanos()
-        ));
-        let xdg = root.join("xdg");
+        let root = tempfile::tempdir().expect("temp dir should be creatable");
+        let xdg = root.path().join("xdg");
         fs::create_dir_all(&xdg).expect("xdg dir should be creatable");
 
         let old_xdg = env::var_os("XDG_CONFIG_HOME");
@@ -104,8 +98,6 @@ mod tests {
                 unsafe { env::remove_var("XDG_CONFIG_HOME") }
             }
         }
-
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -115,14 +107,8 @@ mod tests {
         let mut adapter = TelegramAdapter::stub();
         adapter.record_connectivity_status(crate::domain::events::ConnectivityStatus::Connected);
 
-        let root = env::temp_dir().join(format!(
-            "rtg-logout-test-empty-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock should be valid")
-                .as_nanos()
-        ));
-        let xdg = root.join("xdg");
+        let root = tempfile::tempdir().expect("temp dir should be creatable");
+        let xdg = root.path().join("xdg");
         fs::create_dir_all(&xdg).expect("xdg dir should be creatable");
 
         let old_xdg = env::var_os("XDG_CONFIG_HOME");
@@ -146,8 +132,6 @@ mod tests {
                 unsafe { env::remove_var("XDG_CONFIG_HOME") }
             }
         }
-
-        let _ = fs::remove_dir_all(root);
     }
 
     /// Runs `test` with `XDG_CONFIG_HOME` pointed at a fresh temp dir that

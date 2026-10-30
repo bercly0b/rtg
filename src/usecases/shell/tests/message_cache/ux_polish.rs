@@ -132,13 +132,13 @@ fn message_sent_refresh_clears_refreshing_and_sets_live() {
         .set_message_source(MessageSource::Cache);
 
     // Message sent refresh arrives
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessageSentRefreshCompleted {
             chat_id: 1,
             topic_id: None,
             result: Ok(vec![message(1, "Hello"), message(2, "New msg")]),
         },
-    ))
+    ]))
     .unwrap();
 
     assert!(!o.state().open_chat().is_refreshing());
@@ -176,13 +176,13 @@ fn background_load_error_clears_refreshing() {
     assert!(o.state().open_chat().is_refreshing());
 
     // Background load fails
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesLoaded {
             chat_id: 1,
             topic_id: None,
             result: Err(BackgroundError::new("MESSAGES_UNAVAILABLE")),
         },
-    ))
+    ]))
     .unwrap();
 
     // Error state should have refreshing cleared
@@ -206,12 +206,12 @@ fn prefetch_below_threshold_does_not_populate_open_chat() {
     assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
 
     // Prefetch result with too few messages
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::MessagesPrefetched {
             chat_id: 2,
             result: Ok(vec![message(10, "sparse")]),
         },
-    ))
+    ]))
     .unwrap();
 
     // Should still be Loading (1 < 5 threshold)

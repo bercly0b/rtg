@@ -2,7 +2,8 @@ use super::*;
 
 #[test]
 fn l_on_photo_with_custom_handler_opens_playback_popup() {
-    let tmp = std::env::temp_dir().join("rtg_test_photo_custom.jpg");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_photo_custom.jpg");
     std::fs::write(&tmp, b"fake").unwrap();
     let path = tmp.to_str().unwrap();
 
@@ -26,13 +27,12 @@ fn l_on_photo_with_custom_handler_opens_playback_popup() {
         popup.kind(),
         crate::domain::command_popup_state::CommandPopupKind::Playback
     );
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
 fn l_on_photo_without_handler_dispatches_open_no_popup() {
-    let tmp = std::env::temp_dir().join("rtg_test_photo_default.jpg");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_photo_default.jpg");
     std::fs::write(&tmp, b"fake").unwrap();
     let path = tmp.to_str().unwrap();
 
@@ -45,13 +45,12 @@ fn l_on_photo_without_handler_dispatches_open_no_popup() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
         .unwrap();
     assert!(o.state().command_popup().is_none());
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
 fn l_on_video_without_handler_dispatches_open_no_popup() {
-    let tmp = std::env::temp_dir().join("rtg_test_video_default.mp4");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_video_default.mp4");
     std::fs::write(&tmp, b"fake").unwrap();
     let path = tmp.to_str().unwrap();
 
@@ -64,8 +63,6 @@ fn l_on_video_without_handler_dispatches_open_no_popup() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
         .unwrap();
     assert!(o.state().command_popup().is_none());
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
@@ -86,11 +83,11 @@ fn l_on_not_downloaded_file_shows_notification() {
 fn open_file_failed_shows_notification() {
     let mut o = make_orchestrator();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::OpenFileFailed {
             stderr: "No application knows how to open this file".to_owned(),
         },
-    ))
+    ]))
     .unwrap();
 
     let notification = o
@@ -104,11 +101,11 @@ fn open_file_failed_shows_notification() {
 fn open_file_failed_empty_stderr_shows_config_hint() {
     let mut o = make_orchestrator();
 
-    o.handle_event(AppEvent::BackgroundTaskCompleted(
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::OpenFileFailed {
             stderr: String::new(),
         },
-    ))
+    ]))
     .unwrap();
 
     let notification = o
@@ -120,7 +117,8 @@ fn open_file_failed_empty_stderr_shows_config_hint() {
 
 #[test]
 fn l_on_video_with_custom_handler_opens_playback_popup() {
-    let tmp = std::env::temp_dir().join("rtg_test_video_mpv.mp4");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_video_mpv.mp4");
     std::fs::write(&tmp, b"fake").unwrap();
     let path = tmp.to_str().unwrap();
 
@@ -144,13 +142,12 @@ fn l_on_video_with_custom_handler_opens_playback_popup() {
         popup.kind(),
         crate::domain::command_popup_state::CommandPopupKind::Playback
     );
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
 fn l_on_document_with_custom_handler_opens_playback_popup() {
-    let tmp = std::env::temp_dir().join("rtg_test_doc.pdf");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_doc.pdf");
     std::fs::write(&tmp, b"fake").unwrap();
     let path = tmp.to_str().unwrap();
 
@@ -195,8 +192,6 @@ fn l_on_document_with_custom_handler_opens_playback_popup() {
         .command_popup()
         .expect("playback popup should open for document with custom handler");
     assert_eq!(popup.title(), "Playing");
-
-    let _ = std::fs::remove_file(&tmp);
 }
 
 #[test]
@@ -239,7 +234,8 @@ fn l_on_sticker_is_ignored() {
 
 #[test]
 fn l_with_missing_handler_binary_notifies_start_error() {
-    let tmp = std::env::temp_dir().join("rtg_test_photo_missing_handler.jpg");
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let tmp = tmp_dir.path().join("rtg_test_photo_missing_handler.jpg");
     std::fs::write(&tmp, b"fake").unwrap();
     let path = tmp.to_str().unwrap();
 
@@ -263,6 +259,4 @@ fn l_with_missing_handler_binary_notifies_start_error() {
         notification.starts_with("Open failed: failed to start `rtg-test-missing-binary`"),
         "{notification}"
     );
-
-    let _ = std::fs::remove_file(&tmp);
 }

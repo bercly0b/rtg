@@ -70,15 +70,7 @@ pub enum TdLibUpdate {
     },
 
     /// File download progress or completion update.
-    FileUpdated {
-        file_id: i32,
-        size: i64,
-        expected_size: i64,
-        local_path: String,
-        is_downloading_active: bool,
-        is_downloading_completed: bool,
-        downloaded_size: i64,
-    },
+    FileUpdated { file: Box<tdlib_rs::types::File> },
 
     /// Forum topic metadata (name, icon, closed/hidden flags) changed.
     ForumTopicInfoChanged { chat_id: i64, topic_id: i32 },
