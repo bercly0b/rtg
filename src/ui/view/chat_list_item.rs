@@ -53,6 +53,10 @@ pub(super) fn chat_list_item_line(chat: &ChatSummary, width: usize) -> Line<'sta
         ""
     };
 
+    // Known limitation: U+2022 has East Asian Ambiguous width. `unicode-width`
+    // counts it as 1 column, but terminals configured for CJK locales may draw
+    // it 2 cells wide, overflowing the row by one cell. Revisit (e.g. detect
+    // the locale or pick a narrow glyph) if CJK users report it.
     let online_indicator =
         if chat.chat_type == ChatType::Private && !chat.is_bot && chat.is_online == Some(true) {
             " \u{2022}" // bullet

@@ -24,6 +24,7 @@ use crate::domain::message::{
 use super::styles;
 
 use line_builder::build_message_lines;
+pub(super) use reply::truncate_to_width;
 use text_utils::{effective_sender_name, format_date, format_time, timestamp_to_date};
 
 /// Represents a visual element in the messages list.
@@ -39,6 +40,8 @@ pub enum MessageListElement {
         is_outgoing: bool,
         content: String,
         status: MessageStatus,
+        /// Media kind; its label is the content line `file_meta` is appended to.
+        media: MessageMedia,
         /// File metadata line (e.g. "download=yes, size=15.5KB, duration=0:03").
         file_meta: Option<String>,
         /// Reply preview: sender name and text of the replied-to message.
@@ -85,6 +88,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
                 is_outgoing: message.is_outgoing,
                 content: message.display_content(),
                 status: message.status,
+                media: message.media,
                 file_meta: None,
                 reply_info: None,
                 forward_info: None,
@@ -132,6 +136,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             is_outgoing: message.is_outgoing,
             content: message.display_content(),
             status: message.status,
+            media: message.media,
             file_meta,
             reply_info: message.reply_to.clone(),
             forward_info: message.forward_info.clone(),
@@ -197,6 +202,7 @@ pub fn element_to_text(
             is_outgoing: _,
             content,
             status: _,
+            media: _,
             file_meta: _,
             reply_info: _,
             forward_info: _,
@@ -228,6 +234,7 @@ pub fn element_to_text(
             is_outgoing,
             content,
             status,
+            media,
             file_meta,
             reply_info,
             forward_info,
@@ -243,6 +250,7 @@ pub fn element_to_text(
                 *is_outgoing,
                 content,
                 *status,
+                media.display_label(),
                 file_meta.as_deref(),
                 reply_info.as_ref(),
                 forward_info.as_ref(),

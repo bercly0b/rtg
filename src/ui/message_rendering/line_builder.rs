@@ -27,6 +27,7 @@ pub(super) fn build_message_lines(
     is_outgoing: bool,
     content: &str,
     status: MessageStatus,
+    media_label: Option<&str>,
     file_meta: Option<&str>,
     reply_info: Option<&ReplyInfo>,
     forward_info: Option<&ForwardInfo>,
@@ -57,6 +58,7 @@ pub(super) fn build_message_lines(
         })
         .collect();
 
+    let content_start;
     if sender.is_some() {
         let header_line = build_message_header_line(time, show_time, sender, is_outgoing);
         lines.push(header_line);
@@ -67,6 +69,7 @@ pub(super) fn build_message_lines(
         if let Some(fwd) = forward_info {
             lines.push(build_forward_line(fwd, indent, content_width));
         }
+        content_start = lines.len();
 
         if content.is_empty() {
             lines.push(Line::from(vec![
@@ -91,6 +94,7 @@ pub(super) fn build_message_lines(
         if let Some(fwd) = forward_info {
             lines.push(build_forward_line(fwd, indent, content_width));
         }
+        content_start = lines.len();
 
         let time_span = if show_time {
             Span::styled(format!("{:>5} ", time), styles::message_time_style())
@@ -111,7 +115,7 @@ pub(super) fn build_message_lines(
 
     // Append file metadata on the same line as the media label
     if let Some(meta) = file_meta {
-        append_file_meta_to_media_line(&mut lines, meta);
+        append_file_meta_to_media_line(&mut lines[content_start..], media_label, meta);
     }
 
     if reaction_count > 0 {
@@ -240,26 +244,25 @@ fn append_reaction_indicator(lines: &mut [Line<'static>], reaction_count: u32) {
     }
 }
 
-fn append_file_meta_to_media_line(lines: &mut [Line<'static>], meta: &str) {
-    for line in lines.iter_mut() {
-        let has_media_bracket = line.spans.iter().any(|span| {
-            let text = span.content.trim();
-            text.starts_with('[') && text.contains(']')
-        });
-        if has_media_bracket {
-            line.spans.push(Span::styled(
-                format!(" {}", meta),
-                styles::message_sending_style(),
-            ));
-            return;
+/// `lines` must hold only content lines: header, reply and forward lines may
+/// contain the same label as plain text (e.g. a reply quoting a `[Voice]`).
+fn append_file_meta_to_media_line(
+    lines: &mut [Line<'static>],
+    media_label: Option<&str>,
+    meta: &str,
+) {
+    let meta_span = Span::styled(format!(" {}", meta), styles::message_sending_style());
+    if let Some(label) = media_label {
+        for line in lines.iter_mut() {
+            if line.spans.iter().any(|span| span.content == label) {
+                line.spans.push(meta_span);
+                return;
+            }
         }
     }
-    // Fallback: append to the first content line (for media without bracket labels)
+    // Fallback: append to the last content line (for media without labels, e.g. stickers)
     if let Some(last_line) = lines.last_mut() {
-        last_line.spans.push(Span::styled(
-            format!(" {}", meta),
-            styles::message_sending_style(),
-        ));
+        last_line.spans.push(meta_span);
     }
 }
 
