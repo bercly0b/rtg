@@ -115,7 +115,57 @@ fn message_sent_refresh_dispatches_mark_as_read() {
     assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 2);
     let (mark_chat_id, mark_ids) = o.dispatcher.last_mark_as_read().unwrap();
     assert_eq!(mark_chat_id, 1);
-    assert_eq!(mark_ids, vec![1, 2]);
+    assert_eq!(mark_ids, vec![2]);
+}
+
+#[test]
+fn reload_marks_only_new_messages_as_read() {
+    let mut o = orchestrator_with_open_chat(
+        vec![chat(1, "General")],
+        1,
+        vec![message(10, "A"), message(20, "B")],
+    );
+
+    inject_messages(
+        &mut o,
+        1,
+        vec![message(10, "A"), message(20, "B"), message(30, "C")],
+    );
+
+    assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 2);
+    assert_eq!(o.dispatcher.last_mark_as_read(), Some((1, vec![30])));
+}
+
+#[test]
+fn reload_without_new_messages_does_not_mark_as_read() {
+    let mut o = orchestrator_with_open_chat(
+        vec![chat(1, "General")],
+        1,
+        vec![message(10, "A"), message(20, "B")],
+    );
+
+    inject_messages(&mut o, 1, vec![message(10, "A edited"), message(20, "B")]);
+
+    assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), 1);
+}
+
+#[test]
+fn switching_chat_marks_all_messages_of_new_chat() {
+    let mut o = orchestrator_with_open_chat(
+        vec![chat(1, "A"), chat(2, "B")],
+        1,
+        vec![message(10, "A"), message(20, "B")],
+    );
+    o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    inject_messages(&mut o, 2, vec![message(5, "Older id in another chat")]);
+
+    assert_eq!(o.dispatcher.last_mark_as_read(), Some((2, vec![5])));
 }
 
 #[test]
@@ -253,6 +303,8 @@ fn reopen_chat_marks_as_read_after_returning_focus() {
         .unwrap();
     assert_eq!(o.state().active_pane(), ActivePane::ChatList);
 
+    // A message arrives while focus is on the chat list — not marked yet.
+    inject_messages(&mut o, 1, vec![message(1, "Hello"), message(2, "New")]);
     let prev_count = o.dispatcher.mark_as_read_dispatch_count();
 
     // Reopen: enter sets focus to Messages first, then mark_open_chat_messages_as_read
@@ -261,6 +313,20 @@ fn reopen_chat_marks_as_read_after_returning_focus() {
         .unwrap();
 
     assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), prev_count + 1);
+    assert_eq!(o.dispatcher.last_mark_as_read(), Some((1, vec![2])));
+}
+
+#[test]
+fn reopen_chat_without_new_messages_does_not_mark_as_read() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+    let prev_count = o.dispatcher.mark_as_read_dispatch_count();
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    assert_eq!(o.dispatcher.mark_as_read_dispatch_count(), prev_count);
 }
 
 #[test]

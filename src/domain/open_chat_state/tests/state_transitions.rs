@@ -166,3 +166,29 @@ fn clear_resets_topic_id() {
 
     assert_eq!(state.topic_id(), None);
 }
+
+#[test]
+fn set_chat_identity_switches_chat_without_ui_transition() {
+    let mut state = OpenChatState::default();
+    state.set_loading_with_topic(1, Some(77), "Forum > Topic".to_owned(), ChatType::Group);
+    state.set_ready(vec![message(1, "A")]);
+    state.set_chat_subtitle(ChatSubtitle::Online);
+    state
+        .typing_state_mut()
+        .add_action(5, "Bob".to_owned(), "typing".to_owned());
+    state.set_all_messages_loaded(true);
+
+    state.set_chat_identity(2, "Other".to_owned(), ChatType::Private);
+
+    assert_eq!(state.chat_id(), Some(2));
+    assert_eq!(state.topic_id(), None);
+    assert_eq!(state.chat_title(), "Other");
+    assert_eq!(state.chat_type(), ChatType::Private);
+    assert_eq!(state.chat_subtitle(), &ChatSubtitle::None);
+    assert!(state
+        .typing_state()
+        .format_label(ChatType::Private)
+        .is_empty());
+    assert!(!state.all_messages_loaded());
+    assert_eq!(state.ui_state(), OpenChatUiState::Ready);
+}

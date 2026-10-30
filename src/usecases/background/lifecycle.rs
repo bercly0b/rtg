@@ -155,8 +155,11 @@ pub(super) fn dispatch_open_chat<L: ChatLifecycle + Send + Sync + 'static>(
         .name("rtg-bg-open-chat".into())
         .spawn(move || {
             tracing::debug!(chat_id, "background: opening chat in TDLib");
+            // Continuing is safe: the history load does not depend on the chat
+            // being open. Until the next open, TDLib only withholds
+            // supergroup/channel updates and leaves viewed messages unread.
             if let Err(e) = lifecycle.open_chat(chat_id) {
-                tracing::warn!(chat_id, error = ?e, "background: openChat failed");
+                tracing::error!(chat_id, error = ?e, "background: openChat failed");
             }
         })
     {
