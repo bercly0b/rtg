@@ -13,37 +13,35 @@ use super::{popup_utils, styles};
 
 /// Renders the chat info popup as an overlay on top of existing content.
 pub fn render_chat_info_popup(frame: &mut Frame<'_>, area: Rect, state: &ChatInfoPopupState) {
-    let title = format!(" Chat Info — {} ", state.title());
+    let title = " Chat Info ";
     let block = Block::default()
-        .title(title.as_str())
+        .title(title)
         .borders(Borders::ALL)
         .border_style(styles::chat_info_popup_border_style())
         .padding(Padding::new(2, 2, 1, 1));
 
     let lines = build_info_lines(state);
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
-    let popup_area = popup_utils::content_sized_rect(area, &title, &block, &paragraph);
+    let popup_area = popup_utils::content_sized_rect(area, title, &block, &paragraph);
 
     frame.render_widget(Clear, popup_area);
     frame.render_widget(paragraph.block(block), popup_area);
 }
 
 fn build_info_lines(state: &ChatInfoPopupState) -> Vec<Line<'static>> {
+    let mut lines = vec![build_field_line("Name", state.title())];
     match state {
-        ChatInfoPopupState::Loading { .. } => {
-            vec![Line::from(Span::styled(
-                "Loading...",
-                styles::chat_info_popup_value_style(),
-            ))]
-        }
-        ChatInfoPopupState::Error { .. } => {
-            vec![Line::from(Span::styled(
-                "Failed to load chat info",
-                styles::command_popup_error_style(),
-            ))]
-        }
-        ChatInfoPopupState::Loaded(info) => build_loaded_lines(info),
+        ChatInfoPopupState::Loading { .. } => lines.push(Line::from(Span::styled(
+            "Loading...",
+            styles::chat_info_popup_value_style(),
+        ))),
+        ChatInfoPopupState::Error { .. } => lines.push(Line::from(Span::styled(
+            "Failed to load chat info",
+            styles::command_popup_error_style(),
+        ))),
+        ChatInfoPopupState::Loaded(info) => lines.extend(build_loaded_lines(info)),
     }
+    lines
 }
 
 fn build_loaded_lines(info: &ChatInfo) -> Vec<Line<'static>> {
@@ -97,8 +95,9 @@ mod tests {
             title: "Alice".into(),
         };
         let lines = build_info_lines(&state);
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].spans[0].content.contains("Loading"));
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].spans[1].content, "Alice");
+        assert!(lines[1].spans[0].content.contains("Loading"));
     }
 
     #[test]
@@ -107,12 +106,13 @@ mod tests {
             title: "Alice".into(),
         };
         let lines = build_info_lines(&state);
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].spans[0].content.contains("Failed"));
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].spans[1].content, "Alice");
+        assert!(lines[1].spans[0].content.contains("Failed"));
     }
 
     #[test]
-    fn loaded_without_description_shows_status_and_footer() {
+    fn loaded_without_description_shows_name_status_and_footer() {
         let state = ChatInfoPopupState::Loaded(ChatInfo {
             title: "Alice".into(),
             chat_type: ChatType::Private,
@@ -121,9 +121,11 @@ mod tests {
             description: None,
         });
         let lines = build_info_lines(&state);
-        // Status line + empty + footer
-        assert_eq!(lines.len(), 3);
-        assert!(lines[0].spans[1].content.contains("online"));
+        // Name + Status + empty + footer
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[0].spans[0].content, "Name: ");
+        assert_eq!(lines[0].spans[1].content, "Alice");
+        assert!(lines[1].spans[1].content.contains("online"));
     }
 
     #[test]
@@ -136,11 +138,12 @@ mod tests {
             description: Some("A developer community".into()),
         });
         let lines = build_info_lines(&state);
-        // Status + empty + "Description" label + description text + empty + footer
-        assert_eq!(lines.len(), 6);
-        assert!(lines[0].spans[1].content.contains("42 members"));
-        assert!(lines[2].spans[0].content.contains("Description"));
-        assert!(lines[3].spans[0].content.contains("developer"));
+        // Name + Status + empty + "Description" label + description text + empty + footer
+        assert_eq!(lines.len(), 7);
+        assert_eq!(lines[0].spans[1].content, "Dev Chat");
+        assert!(lines[1].spans[1].content.contains("42 members"));
+        assert!(lines[3].spans[0].content.contains("Description"));
+        assert!(lines[4].spans[0].content.contains("developer"));
     }
 
     #[test]
@@ -153,8 +156,8 @@ mod tests {
             description: Some("Line 1\nLine 2\nLine 3".into()),
         });
         let lines = build_info_lines(&state);
-        // Status + empty + "Description" label + 3 desc lines + empty + footer
-        assert_eq!(lines.len(), 8);
+        // Name + Status + empty + "Description" label + 3 desc lines + empty + footer
+        assert_eq!(lines.len(), 9);
     }
 
     #[test]
@@ -167,10 +170,11 @@ mod tests {
             description: None,
         });
         let lines = build_info_lines(&state);
-        // Status + Username + empty + footer
-        assert_eq!(lines.len(), 4);
-        assert!(lines[1].spans[0].content.contains("Username"));
-        assert!(lines[1].spans[1].content.contains("@alice"));
+        // Name + Status + Username + empty + footer
+        assert_eq!(lines.len(), 5);
+        assert_eq!(lines[0].spans[1].content, "Alice");
+        assert!(lines[2].spans[0].content.contains("Username"));
+        assert!(lines[2].spans[1].content.contains("@alice"));
     }
 
     #[test]
@@ -236,8 +240,8 @@ mod tests {
             title: "Alice".into(),
         };
         let rect = rendered_popup_rect(&state, 100, 40);
-        // Minimum width; one text row plus borders and padding.
-        assert_eq!((rect.width, rect.height), (30, 5));
+        // Minimum width; name and loading rows plus borders and padding.
+        assert_eq!((rect.width, rect.height), (30, 6));
     }
 
     #[test]
@@ -251,7 +255,32 @@ mod tests {
         });
         let rect = rendered_popup_rect(&state, 100, 40);
         assert_eq!(rect.width, 80);
-        // Status, blank, label, 2 wrapped description rows, blank, footer.
-        assert_eq!(rect.height, 7 + 4);
+        // Name, status, blank, label, 2 wrapped description rows, blank, footer.
+        assert_eq!(rect.height, 8 + 4);
+    }
+
+    #[test]
+    fn title_shows_only_chat_info_label() {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let state = ChatInfoPopupState::Loaded(ChatInfo {
+            title: "Alice".into(),
+            chat_type: ChatType::Private,
+            status_line: "online".into(),
+            username: None,
+            description: None,
+        });
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
+        terminal
+            .draw(|frame| render_chat_info_popup(frame, frame.area(), &state))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let rect = popup_utils::rendered_border_rect(buffer).unwrap();
+        let top_border: String = (rect.x..rect.right())
+            .map(|x| buffer[(x, rect.y)].symbol())
+            .collect();
+
+        assert!(top_border.contains(" Chat Info "));
+        assert!(!top_border.contains("Alice"));
     }
 }
