@@ -205,12 +205,6 @@ impl TdLibClient {
         &self.cache
     }
 
-    /// Checks if the client has been closed.
-    #[allow(dead_code, reason = "not used yet")]
-    pub fn is_closed(&self) -> bool {
-        self.is_closed.load(Ordering::Acquire)
-    }
-
     /// Graceful shutdown: sends `close`, waits for `AuthorizationState::Closed`
     /// and joins the update loop thread.
     ///
