@@ -36,6 +36,24 @@ use types::{CLOSE_TIMEOUT, TDLIB_LOG_MAX_SIZE};
 /// - Authorization state channel
 /// - Typed update events channel
 /// - Proper shutdown via `close()` function
+///
+/// # Thread safety
+///
+/// The client is `Send + Sync` and is shared between the UI thread and
+/// background task threads (through `Arc<TelegramAdapter>`):
+///
+/// - Request methods take `&self` and block the calling thread on the client's
+///   own runtime until TDLib answers. Concurrent requests from different
+///   threads are independent: `tdlib-rs` matches every response to its request
+///   by `@extra`. They must not be called from an async context — see
+///   `block_on_request`.
+/// - Only the update loop thread calls `tdlib_rs::receive()`; it writes to the
+///   shared cache and the update channels, and delivers request responses.
+/// - Authorization states are read under a mutex, so one thread at a time
+///   consumes them. The update and connectivity receivers can each be taken
+///   once.
+/// - `close()` may be called from any thread and more than once: only the
+///   first call shuts TDLib down.
 pub struct TdLibClient {
     client_id: i32,
     config: TdLibConfig,
@@ -175,12 +193,6 @@ impl TdLibClient {
     /// Returns the TDLib client ID for sending requests.
     pub fn client_id(&self) -> i32 {
         self.client_id
-    }
-
-    /// Returns the configuration used to create this client.
-    #[allow(dead_code, reason = "not used yet")]
-    pub fn config(&self) -> &TdLibConfig {
-        &self.config
     }
 
     /// Returns the async runtime for executing TDLib operations.
