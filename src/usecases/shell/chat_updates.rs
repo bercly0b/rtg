@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::time::Instant;
 
 use crate::{
     domain::{chat::ChatType, events::ChatUpdate, message::DownloadStatus},
@@ -107,10 +108,18 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
             ChatUpdate::FileUpdated {
                 file_id,
                 size,
+                downloaded_size,
                 local_path,
                 download_status,
             } => {
-                handle_file_update(ctx, file_id, size, local_path, download_status);
+                handle_file_update(
+                    ctx,
+                    file_id,
+                    size,
+                    downloaded_size,
+                    local_path,
+                    download_status,
+                );
             }
             ChatUpdate::ForumTopicChanged {
                 chat_id,
@@ -155,6 +164,7 @@ fn handle_file_update<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
     file_id: i32,
     size: u64,
+    downloaded_size: u64,
     local_path: Option<String>,
     download_status: DownloadStatus,
 ) {
@@ -203,11 +213,13 @@ fn handle_file_update<D: TaskDispatcher>(
     match download_status {
         DownloadStatus::Completed => {
             ctx.active_downloads.remove(&file_id);
+            ctx.state.download_speed_mut().finish(file_id);
             tracing::info!(file_id, chat_id, message_id, "file download completed");
         }
         DownloadStatus::NotStarted => {
             ctx.active_downloads.remove(&file_id);
             ctx.pending_saves.remove(&file_id);
+            ctx.state.download_speed_mut().finish(file_id);
             tracing::warn!(
                 file_id,
                 chat_id,
@@ -215,7 +227,14 @@ fn handle_file_update<D: TaskDispatcher>(
                 "file download failed or cancelled"
             );
         }
-        DownloadStatus::Downloading { .. } => {}
+        DownloadStatus::Downloading { .. } => {
+            ctx.state.download_speed_mut().record_progress(
+                file_id,
+                size,
+                downloaded_size,
+                Instant::now(),
+            );
+        }
     }
 }
 

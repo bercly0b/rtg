@@ -1,5 +1,8 @@
+use std::time::{Duration, Instant};
+
 use unicode_width::UnicodeWidthStr;
 
+use crate::domain::download_speed::MIN_TRACKED_FILE_SIZE;
 use crate::domain::events::ConnectivityStatus;
 use crate::domain::shell_state::ShellState;
 
@@ -117,6 +120,80 @@ fn status_line_truncates_long_notification() {
 
     assert!(text.contains("? for help"));
     assert!(text.width() <= 40);
+}
+
+fn state_downloading(bytes_per_second: u64) -> ShellState {
+    let mut state = ShellState::default();
+    state.set_connectivity_status(ConnectivityStatus::Connected);
+    let start = Instant::now() - Duration::from_secs(2);
+    let meter = state.download_speed_mut();
+    meter.record_progress(1, MIN_TRACKED_FILE_SIZE, 0, start);
+    meter.record_progress(
+        1,
+        MIN_TRACKED_FILE_SIZE,
+        bytes_per_second,
+        start + Duration::from_secs(1),
+    );
+    state
+}
+
+#[test]
+fn status_line_shows_download_speed_after_connectivity_label() {
+    let state = state_downloading(1_500_000);
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(text.contains("Connected  \u{2193} 12.0 Mbit/s"), "{text}");
+}
+
+#[test]
+fn status_line_without_download_has_no_speed() {
+    let mut state = ShellState::default();
+    state.set_connectivity_status(ConnectivityStatus::Connected);
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(!text.contains("bit/s"));
+}
+
+#[test]
+fn status_line_shows_download_speed_with_notification() {
+    let mut state = state_downloading(1_500_000);
+    state.set_notification("A".repeat(200));
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(text.contains("Mbit/s  AAA"), "{text}");
+    assert!(text.ends_with("? for help "));
+    assert_eq!(text.width(), STATUS_WIDTH);
+}
+
+#[test]
+fn download_speed_below_one_megabit_is_shown_in_kilobits() {
+    assert_eq!(status_line::format_download_speed(0), "\u{2193} 0 Kbit/s");
+    assert_eq!(
+        status_line::format_download_speed(50_000),
+        "\u{2193} 400 Kbit/s"
+    );
+    assert_eq!(
+        status_line::format_download_speed(124_999),
+        "\u{2193} 999 Kbit/s"
+    );
+}
+
+#[test]
+fn download_speed_from_one_megabit_is_shown_in_megabits() {
+    assert_eq!(
+        status_line::format_download_speed(125_000),
+        "\u{2193} 1.0 Mbit/s"
+    );
+    assert_eq!(
+        status_line::format_download_speed(1_500_000),
+        "\u{2193} 12.0 Mbit/s"
+    );
 }
 
 // -- compute_input_height tests --

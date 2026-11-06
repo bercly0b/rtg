@@ -27,15 +27,28 @@ pub(super) fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
         }
     };
 
+    let download_speed = state
+        .download_speed()
+        .bytes_per_second(Instant::now())
+        .map(format_download_speed);
+
     let dot_text = " \u{25CF} ";
     let separator = "  ";
     let right_text = "? for help ";
-    let fixed_width = dot_text.width() + label.width() + right_text.width();
+    let speed_width = download_speed
+        .as_ref()
+        .map_or(0, |speed| separator.width() + speed.width());
+    let fixed_width = dot_text.width() + label.width() + speed_width + right_text.width();
 
     let mut spans: Vec<Span<'a>> = vec![
         Span::styled(dot_text, dot_style),
         Span::styled(label, styles::connectivity_label_style()),
     ];
+
+    if let Some(speed) = download_speed {
+        spans.push(Span::styled(separator, styles::status_bar_style()));
+        spans.push(Span::styled(speed, styles::connectivity_label_style()));
+    }
 
     if let Some(notification) = state.active_notification() {
         let budget = width.saturating_sub(fixed_width + separator.width());
@@ -56,6 +69,20 @@ pub(super) fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
     spans.push(Span::styled(right_text, styles::help_hint_style()));
 
     Line::from(spans)
+}
+
+/// Formats a download speed in bits per second (SI units), the way network
+/// speeds are usually quoted.
+pub(super) fn format_download_speed(bytes_per_second: u64) -> String {
+    let bits_per_second = bytes_per_second * 8;
+    if bits_per_second < 1_000_000 {
+        format!("\u{2193} {} Kbit/s", bits_per_second / 1_000)
+    } else {
+        format!(
+            "\u{2193} {:.1} Mbit/s",
+            bits_per_second as f64 / 1_000_000.0
+        )
+    }
 }
 
 /// Returns the Connecting label for the given animation phase.

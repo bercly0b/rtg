@@ -1,4 +1,7 @@
+use std::time::{Duration, Instant};
+
 use super::*;
+use crate::domain::download_speed::MIN_TRACKED_FILE_SIZE;
 use crate::domain::message::{DownloadStatus, FileInfo};
 
 fn orchestrator_downloading_voice(file_id: i32) -> TestOrchestrator {
@@ -21,10 +24,33 @@ fn file_updated(
         updates: vec![ChatUpdate::FileUpdated {
             file_id,
             size: 2000,
+            downloaded_size: 0,
             local_path: local_path.map(str::to_owned),
             download_status,
         }],
     }
+}
+
+fn large_file_progress(file_id: i32, downloaded_size: u64) -> AppEvent {
+    AppEvent::ChatUpdateReceived {
+        updates: vec![ChatUpdate::FileUpdated {
+            file_id,
+            size: MIN_TRACKED_FILE_SIZE,
+            downloaded_size,
+            local_path: None,
+            download_status: DownloadStatus::Downloading {
+                progress_percent: 0,
+            },
+        }],
+    }
+}
+
+/// The progress events in these tests arrive back to back; a minute later
+/// the stalled download has a measurable (decayed) speed.
+fn download_speed_a_minute_later(o: &TestOrchestrator) -> Option<u64> {
+    o.state()
+        .download_speed()
+        .bytes_per_second(Instant::now() + Duration::from_secs(60))
 }
 
 fn selected_file_info(o: &TestOrchestrator) -> FileInfo {
@@ -117,4 +143,56 @@ fn file_update_for_untracked_file_is_ignored() {
         selected_file_info(&o).download_status,
         DownloadStatus::NotStarted
     );
+}
+
+#[test]
+fn large_file_progress_feeds_download_speed() {
+    let mut o = orchestrator_downloading_voice(10);
+
+    o.handle_event(large_file_progress(10, 0)).unwrap();
+    o.handle_event(large_file_progress(10, 3_000_000)).unwrap();
+
+    assert!(download_speed_a_minute_later(&o).is_some_and(|bps| bps > 0));
+}
+
+#[test]
+fn completed_download_clears_download_speed() {
+    let mut o = orchestrator_downloading_voice(10);
+    o.handle_event(large_file_progress(10, 0)).unwrap();
+    o.handle_event(large_file_progress(10, 3_000_000)).unwrap();
+
+    o.handle_event(file_updated(
+        10,
+        Some("/tmp/voice.ogg"),
+        DownloadStatus::Completed,
+    ))
+    .unwrap();
+
+    assert_eq!(download_speed_a_minute_later(&o), None);
+}
+
+#[test]
+fn cancelled_download_clears_download_speed() {
+    let mut o = orchestrator_downloading_voice(10);
+    o.handle_event(large_file_progress(10, 0)).unwrap();
+    o.handle_event(large_file_progress(10, 3_000_000)).unwrap();
+
+    o.handle_event(file_updated(10, None, DownloadStatus::NotStarted))
+        .unwrap();
+
+    assert_eq!(download_speed_a_minute_later(&o), None);
+}
+
+#[test]
+fn untracked_file_progress_does_not_feed_download_speed() {
+    let mut o = orchestrator_with_open_chat(
+        vec![chat(1, "Chat")],
+        1,
+        vec![voice_message_not_downloaded(10)],
+    );
+
+    o.handle_event(large_file_progress(10, 0)).unwrap();
+    o.handle_event(large_file_progress(10, 3_000_000)).unwrap();
+
+    assert_eq!(download_speed_a_minute_later(&o), None);
 }
