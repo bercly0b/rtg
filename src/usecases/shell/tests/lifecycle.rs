@@ -128,3 +128,26 @@ fn integration_smoke_fallback_error_then_empty_list() {
     assert_eq!(o.state().chat_list().selected_index(), None);
     assert!(o.state().is_running());
 }
+
+#[test]
+fn config_key_overrides_rebind_actions() {
+    let mut o = DefaultShellOrchestrator::new_with_initial_state(
+        StubStorageAdapter::default(),
+        RecordingOpener::default(),
+        RecordingDispatcher::new(),
+        ShellState::default(),
+        None,
+        OrchestratorConfig {
+            key_overrides: std::collections::HashMap::from([(
+                "show_help".to_owned(),
+                "H".to_owned(),
+            )]),
+            ..OrchestratorConfig::default()
+        },
+    );
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("H", false)))
+        .unwrap();
+
+    assert!(o.state().help_visible());
+}

@@ -12,7 +12,7 @@ fn jk_navigation_dispatches_prefetch_for_uncached_chat() {
 
     assert_eq!(o.dispatcher.prefetch_dispatch_count(), 1);
     assert_eq!(o.dispatcher.last_prefetch_chat_id(), Some(2));
-    assert_eq!(o.prefetch_in_flight, Some(2));
+    assert_eq!(o.open_chat_sync.prefetch_in_flight, Some(2));
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn prefetch_result_populates_cache_only() {
     // Navigate down (triggers prefetch for chat 2)
     o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
         .unwrap();
-    assert_eq!(o.prefetch_in_flight, Some(2));
+    assert_eq!(o.open_chat_sync.prefetch_in_flight, Some(2));
 
     // Prefetch result arrives
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
@@ -89,7 +89,7 @@ fn prefetch_result_populates_cache_only() {
     assert!(!o.state().open_chat().is_open());
 
     // In-flight guard should be cleared
-    assert_eq!(o.prefetch_in_flight, None);
+    assert_eq!(o.open_chat_sync.prefetch_in_flight, None);
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn prefetch_error_clears_in_flight_without_cache() {
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
         .unwrap();
-    assert_eq!(o.prefetch_in_flight, Some(2));
+    assert_eq!(o.open_chat_sync.prefetch_in_flight, Some(2));
 
     // Prefetch fails
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
@@ -138,7 +138,7 @@ fn prefetch_error_clears_in_flight_without_cache() {
     ]))
     .unwrap();
 
-    assert_eq!(o.prefetch_in_flight, None);
+    assert_eq!(o.open_chat_sync.prefetch_in_flight, None);
     assert!(!o.state().message_cache().has_messages(2));
 }
 
@@ -149,14 +149,14 @@ fn open_selected_chat_clears_prefetch_in_flight() {
     // Trigger prefetch
     o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
         .unwrap();
-    assert_eq!(o.prefetch_in_flight, Some(2));
+    assert_eq!(o.open_chat_sync.prefetch_in_flight, Some(2));
 
     // Open the chat
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
         .unwrap();
 
     assert_eq!(
-        o.prefetch_in_flight, None,
+        o.open_chat_sync.prefetch_in_flight, None,
         "opening a chat should clear prefetch guard"
     );
 }

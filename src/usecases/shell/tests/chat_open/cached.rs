@@ -179,7 +179,7 @@ fn reopen_same_chat_still_loading_does_not_dispatch_again() {
     assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
     assert_eq!(o.state().active_pane(), ActivePane::Messages);
     assert_eq!(o.dispatcher.open_chat_dispatch_count(), 2);
-    assert_eq!(o.tdlib_opened_chat_id, Some(1));
+    assert_eq!(o.open_chat_sync.tdlib_opened_chat_id, Some(1));
 }
 
 #[test]
