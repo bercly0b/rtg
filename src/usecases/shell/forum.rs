@@ -4,7 +4,10 @@ use crate::domain::{
     shell_state::ActivePane,
 };
 
-use super::{chat_open, OrchestratorCtx};
+use super::{
+    chat_open::{self, OpenChatSync},
+    ShellCtx,
+};
 use crate::usecases::background::TaskDispatcher;
 
 /// Enters a forum chat: installs the topic-list panel in Loading and
@@ -14,18 +17,19 @@ use crate::usecases::background::TaskDispatcher;
 /// Leaves the root `ChatListState` untouched — `leave_forum` just drops the
 /// topic-list panel and the user returns to the same chat-list selection.
 pub(super) fn enter_forum<D: TaskDispatcher>(
-    ctx: &mut OrchestratorCtx<'_, D>,
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &mut OpenChatSync,
     chat_id: i64,
     chat_title: String,
 ) {
     tracing::debug!(chat_id, "entering forum chat");
 
     // Cancel any in-flight prefetch (we're not opening a regular chat).
-    *ctx.prefetch_in_flight = None;
+    sync.prefetch_in_flight = None;
 
-    chat_open::close_tdlib_chat_if_needed(ctx, chat_id);
+    chat_open::close_tdlib_chat_if_needed(ctx, sync, chat_id);
     ctx.dispatcher.dispatch_open_chat(chat_id);
-    *ctx.tdlib_opened_chat_id = Some(chat_id);
+    sync.tdlib_opened_chat_id = Some(chat_id);
 
     ctx.state.enter_forum(chat_id, chat_title);
     // Forum chats keep the left pane active — it now renders topics.
@@ -37,9 +41,9 @@ pub(super) fn enter_forum<D: TaskDispatcher>(
 ///
 /// Used when the user presses `h` from the topic list (`Action::BackFromForum`)
 /// — the root chat list reappears with selection preserved.
-pub(super) fn leave_forum<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn leave_forum<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>, sync: &mut OpenChatSync) {
     tracing::debug!("leaving forum");
-    chat_open::close_tdlib_chat(ctx);
+    chat_open::close_tdlib_chat(ctx, sync);
 
     // Reconcile the forum's root-list badge from the topic list we already hold,
     // so topics read while browsing are reflected immediately without a fetch.
@@ -69,7 +73,10 @@ pub(super) fn leave_forum<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
 ///
 /// The parent forum chat is already open in TDLib (set up by `enter_forum`);
 /// this only loads the topic-scoped history and switches focus.
-pub(super) fn open_selected_topic<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn open_selected_topic<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &mut OpenChatSync,
+) {
     let Some(forum_list) = ctx.state.forum_topic_list() else {
         tracing::debug!("open_selected_topic called without an active forum");
         return;
@@ -114,7 +121,7 @@ pub(super) fn open_selected_topic<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'
         .open_chat_mut()
         .set_message_source(MessageSource::None);
 
-    *ctx.messages_refresh_in_flight = true;
+    sync.messages_refresh_in_flight = true;
     ctx.dispatcher
         .dispatch_load_messages(chat_id, Some(topic_id));
     ctx.state.set_active_pane(ActivePane::Messages);
@@ -128,7 +135,7 @@ pub(super) fn open_selected_topic<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'
 /// `open_chat` is intentionally not cleared so that the topic's messages
 /// remain visible in the messages pane until the user opens a different
 /// chat or topic — mirroring the behavior of `h` on a regular chat.
-pub(super) fn back_to_topic_list<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn back_to_topic_list<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {
     tracing::debug!("returning from topic to topic list");
     ctx.state.set_active_pane(ActivePane::ChatList);
 }
@@ -137,7 +144,7 @@ pub(super) fn back_to_topic_list<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
 ///
 /// Bound to `R` in `KeyContext::ForumTopicList` so the user can recover from
 /// a transient load failure without leaving the forum.
-pub(super) fn reload_topics<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn reload_topics<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {
     let Some(list) = ctx.state.forum_topic_list_mut() else {
         return;
     };

@@ -3,7 +3,7 @@ use crate::{
     usecases::background::{BackgroundTaskResult, TaskDispatcher},
 };
 
-use super::{chat_open, OrchestratorCtx};
+use super::{chat_list, chat_open, popups, OrchestratorCtx};
 
 pub(super) fn handle_background_result<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
@@ -14,82 +14,22 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
             list,
             result,
             all_loaded,
-        } => {
-            *ctx.chat_list_in_flight = false;
-            let was_pending = std::mem::take(ctx.chat_list_refresh_pending);
-            let pending_force = std::mem::take(ctx.chat_list_pending_force);
-
-            // When a re-dispatch is about to happen, defer the user notification
-            // to the next completion — the pending result will be more up-to-date.
-            let user_requested = if was_pending {
-                false
-            } else {
-                std::mem::take(ctx.user_requested_chat_refresh)
-            };
-
-            match result {
-                // The user switched chat lists while this request was in
-                // flight; the switch marked a refresh of the new list pending.
-                _ if list != ctx.state.chat_list().kind() => {
-                    tracing::debug!(?list, "background: discarding stale chat list result");
-                }
-                Ok(chats) => {
-                    tracing::debug!(
-                        chat_count = chats.len(),
-                        all_loaded,
-                        "background: chat list loaded"
-                    );
-                    if user_requested {
-                        ctx.state.set_notification("Chat list refreshed");
-                    }
-                    // Forums reporting unread whose badge is unknown (topic
-                    // cache not seeded yet) get their counts resolved by a
-                    // background sweep so the list itself renders instantly.
-                    let warmup_ids: Vec<i64> = chats
-                        .iter()
-                        .filter(|c| {
-                            c.is_forum && c.unread_count > 0 && c.unread_topic_count.is_none()
-                        })
-                        .map(|c| c.chat_id)
-                        .collect();
-                    ctx.state.chat_list_mut().set_all_chats_loaded(all_loaded);
-                    ctx.state.chat_list_mut().set_ready(chats);
-                    if !warmup_ids.is_empty() && !*ctx.forum_warmup_in_flight {
-                        *ctx.forum_warmup_in_flight = true;
-                        ctx.dispatcher.dispatch_forum_unread_counts(warmup_ids);
-                    }
-                }
-                Err(error) => {
-                    tracing::warn!(code = error.code, "background: chat list load failed");
-                    if user_requested {
-                        ctx.state.set_notification("Chat list refresh failed");
-                    }
-                    ctx.state.chat_list_mut().set_error();
-                }
-            }
-
-            if was_pending {
-                tracing::debug!(
-                    pending_force,
-                    "re-dispatching chat list refresh (pending flag was set)"
-                );
-                super::chat_list::dispatch_chat_list_refresh(ctx, pending_force);
-            }
-        }
+        } => chat_list::handle_chat_list_loaded(
+            &mut ctx.shell,
+            ctx.chat_list_loads,
+            list,
+            result,
+            all_loaded,
+        ),
         BackgroundTaskResult::ForumUnreadCountsLoaded { counts } => {
-            *ctx.forum_warmup_in_flight = false;
-            tracing::debug!(
-                count = counts.len(),
-                "background: forum unread-topic counts loaded"
-            );
-            for (chat_id, count) in counts {
-                ctx.state
-                    .chat_list_mut()
-                    .set_forum_unread_topic_count(chat_id, count);
-            }
+            chat_list::handle_forum_unread_counts_loaded(
+                &mut ctx.shell,
+                ctx.chat_list_loads,
+                counts,
+            )
         }
         BackgroundTaskResult::ForumTopicsLoaded { chat_id, result } => {
-            let Some(forum_list) = ctx.state.forum_topic_list_mut() else {
+            let Some(forum_list) = ctx.shell.state.forum_topic_list_mut() else {
                 tracing::debug!(
                     chat_id,
                     "background: forum topics result with no open forum"
@@ -128,26 +68,27 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
             topic_id,
             result,
         } => {
-            *ctx.messages_refresh_in_flight = false;
+            ctx.open_chat_sync.messages_refresh_in_flight = false;
 
             // Cache only chat-scoped results — the per-chat MessageCache cannot
             // express topic scope, so writing topic history under chat_id would
             // poison reads for the parent chat.
             if topic_id.is_none() {
                 if let Ok(ref messages) = result {
-                    ctx.state
+                    ctx.shell
+                        .state
                         .message_cache_mut()
                         .put(chat_id, messages.clone(), true);
                 }
             }
 
-            if ctx.state.open_chat().chat_id() != Some(chat_id)
-                || ctx.state.open_chat().topic_id() != topic_id
+            if ctx.shell.state.open_chat().chat_id() != Some(chat_id)
+                || ctx.shell.state.open_chat().topic_id() != topic_id
             {
                 tracing::debug!(
                     chat_id,
                     ?topic_id,
-                    open_topic_id = ?ctx.state.open_chat().topic_id(),
+                    open_topic_id = ?ctx.shell.state.open_chat().topic_id(),
                     "background: discarding stale messages result (user navigated away)"
                 );
                 return;
@@ -160,15 +101,16 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                         message_count = messages.len(),
                         "background: messages loaded"
                     );
-                    if ctx.state.open_chat().ui_state() == OpenChatUiState::Ready {
-                        ctx.state.open_chat_mut().update_messages(messages);
+                    if ctx.shell.state.open_chat().ui_state() == OpenChatUiState::Ready {
+                        ctx.shell.state.open_chat_mut().update_messages(messages);
                     } else {
-                        ctx.state.open_chat_mut().set_ready(messages);
-                        ctx.state
+                        ctx.shell.state.open_chat_mut().set_ready(messages);
+                        ctx.shell
+                            .state
                             .open_chat_mut()
                             .set_message_source(MessageSource::Live);
                     }
-                    chat_open::mark_open_chat_messages_as_read(ctx);
+                    chat_open::mark_open_chat_messages_as_read(&mut ctx.shell);
                 }
                 Err(error) => {
                     tracing::warn!(
@@ -176,7 +118,7 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                         code = error.code,
                         "background: messages load failed"
                     );
-                    ctx.state.open_chat_mut().set_error();
+                    ctx.shell.state.open_chat_mut().set_error();
                 }
             }
         }
@@ -185,10 +127,10 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
             topic_id,
             result,
         } => {
-            *ctx.older_messages_in_flight = false;
+            ctx.open_chat_sync.older_messages_in_flight = false;
 
-            if ctx.state.open_chat().chat_id() != Some(chat_id)
-                || ctx.state.open_chat().topic_id() != topic_id
+            if ctx.shell.state.open_chat().chat_id() != Some(chat_id)
+                || ctx.shell.state.open_chat().topic_id() != topic_id
             {
                 return;
             }
@@ -200,7 +142,10 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                         message_count = messages.len(),
                         "background: older messages loaded"
                     );
-                    ctx.state.open_chat_mut().prepend_older_messages(messages);
+                    ctx.shell
+                        .state
+                        .open_chat_mut()
+                        .prepend_older_messages(messages);
                 }
                 Err(error) => {
                     tracing::warn!(
@@ -226,12 +171,16 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                     code = error.code,
                     "background: send message failed"
                 );
-                ctx.state.open_chat_mut().remove_message(message.pending_id);
+                ctx.shell
+                    .state
+                    .open_chat_mut()
+                    .remove_message(message.pending_id);
                 // The reply target exists only in its own conversation; restored
                 // elsewhere, a retry would reply to an unrelated message id.
-                let still_open = ctx.state.open_chat().chat_id() == Some(chat_id)
-                    && ctx.state.open_chat().topic_id() == topic_id;
-                ctx.state
+                let still_open = ctx.shell.state.open_chat().chat_id() == Some(chat_id)
+                    && ctx.shell.state.open_chat().topic_id() == topic_id;
+                ctx.shell
+                    .state
                     .message_input_mut()
                     .restore_failed_send(&message.text, message.reply_to.filter(|_| still_open));
             }
@@ -256,12 +205,13 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                     code = error.code,
                     "background: edit message failed"
                 );
-                if ctx.state.open_chat().chat_id() == Some(chat_id) {
-                    ctx.state
+                if ctx.shell.state.open_chat().chat_id() == Some(chat_id) {
+                    ctx.shell
+                        .state
                         .open_chat_mut()
                         .update_message_text(message_id, original_text);
                 }
-                ctx.state.set_notification("Edit failed");
+                ctx.shell.state.set_notification("Edit failed");
             }
         },
         BackgroundTaskResult::MessageSentRefreshCompleted {
@@ -269,20 +219,21 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
             topic_id,
             result,
         } => {
-            *ctx.messages_refresh_in_flight = false;
+            ctx.open_chat_sync.messages_refresh_in_flight = false;
 
             // Same caching rule as MessagesLoaded — topic-scoped refresh results
             // must not leak into the per-chat cache.
             if topic_id.is_none() {
                 if let Ok(ref messages) = result {
-                    ctx.state
+                    ctx.shell
+                        .state
                         .message_cache_mut()
                         .put(chat_id, messages.clone(), true);
                 }
             }
 
-            if ctx.state.open_chat().chat_id() != Some(chat_id)
-                || ctx.state.open_chat().topic_id() != topic_id
+            if ctx.shell.state.open_chat().chat_id() != Some(chat_id)
+                || ctx.shell.state.open_chat().topic_id() != topic_id
             {
                 return;
             }
@@ -294,12 +245,13 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                         message_count = messages.len(),
                         "background: messages refreshed after send"
                     );
-                    ctx.state.open_chat_mut().set_ready(messages);
-                    ctx.state.open_chat_mut().set_refreshing(false);
-                    ctx.state
+                    ctx.shell.state.open_chat_mut().set_ready(messages);
+                    ctx.shell.state.open_chat_mut().set_refreshing(false);
+                    ctx.shell
+                        .state
                         .open_chat_mut()
                         .set_message_source(MessageSource::Live);
-                    chat_open::mark_open_chat_messages_as_read(ctx);
+                    chat_open::mark_open_chat_messages_as_read(&mut ctx.shell);
                 }
                 Err(error) => {
                     tracing::warn!(
@@ -307,7 +259,7 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                         code = error.code,
                         "background: message refresh after send failed"
                     );
-                    ctx.state.open_chat_mut().set_refreshing(false);
+                    ctx.shell.state.open_chat_mut().set_refreshing(false);
                 }
             }
         }
@@ -316,16 +268,16 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
             pending_id,
         } => {
             tracing::warn!(chat_id, "background: voice send failed, rolling back");
-            if ctx.state.open_chat().chat_id() == Some(chat_id) {
-                ctx.state.open_chat_mut().remove_message(pending_id);
+            if ctx.shell.state.open_chat().chat_id() == Some(chat_id) {
+                ctx.shell.state.open_chat_mut().remove_message(pending_id);
             }
         }
         BackgroundTaskResult::ChatSubtitleLoaded { chat_id, result } => {
-            if ctx.state.open_chat().chat_id() == Some(chat_id) {
+            if ctx.shell.state.open_chat().chat_id() == Some(chat_id) {
                 match result {
                     Ok(subtitle) => {
                         tracing::debug!(chat_id, ?subtitle, "chat subtitle resolved");
-                        ctx.state.open_chat_mut().set_chat_subtitle(subtitle);
+                        ctx.shell.state.open_chat_mut().set_chat_subtitle(subtitle);
                     }
                     Err(e) => {
                         tracing::debug!(
@@ -338,32 +290,11 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
             }
         }
         BackgroundTaskResult::ChatInfoLoaded { chat_id, result } => {
-            use crate::domain::chat_info_state::ChatInfoPopupState;
-
-            let popup_chat_id = ctx.state.chat_info_popup().and_then(|p| p.chat_id());
-            if popup_chat_id == Some(chat_id) {
-                match result {
-                    Ok(info) => {
-                        tracing::debug!(chat_id, "chat info resolved for popup");
-                        ctx.state
-                            .set_chat_info_loaded(ChatInfoPopupState::Loaded(info));
-                    }
-                    Err(e) => {
-                        tracing::debug!(chat_id, code = e.code, "chat info resolution failed");
-                        let title = ctx
-                            .state
-                            .chat_info_popup()
-                            .map(|p| p.title().to_owned())
-                            .unwrap_or_default();
-                        ctx.state
-                            .set_chat_info_loaded(ChatInfoPopupState::Error { title });
-                    }
-                }
-            }
+            popups::handle_chat_info_loaded(&mut ctx.shell, chat_id, result)
         }
         BackgroundTaskResult::MessagesPrefetched { chat_id, result } => {
-            if *ctx.prefetch_in_flight == Some(chat_id) {
-                *ctx.prefetch_in_flight = None;
+            if ctx.open_chat_sync.prefetch_in_flight == Some(chat_id) {
+                ctx.open_chat_sync.prefetch_in_flight = None;
             }
 
             if let Ok(messages) = result {
@@ -373,30 +304,35 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                         count = messages.len(),
                         "background: prefetched messages cached"
                     );
-                    ctx.state.message_cache_mut().put(chat_id, messages, true);
+                    ctx.shell
+                        .state
+                        .message_cache_mut()
+                        .put(chat_id, messages, true);
                 }
             }
 
             // If the user opened this chat while the prefetch was in-flight
             // and the chat is still in Loading state, populate it from cache
             // (only if it meets the smart display threshold).
-            let min_msgs = ctx.min_display_messages;
-            if ctx.state.open_chat().chat_id() == Some(chat_id)
-                && ctx.state.open_chat().ui_state() == OpenChatUiState::Loading
+            let min_msgs = ctx.open_chat_sync.min_display_messages;
+            if ctx.shell.state.open_chat().chat_id() == Some(chat_id)
+                && ctx.shell.state.open_chat().ui_state() == OpenChatUiState::Loading
             {
                 if let Some(cached) = ctx
+                    .shell
                     .state
                     .message_cache_mut()
                     .get(chat_id)
                     .filter(|m| m.len() >= min_msgs)
                 {
                     let msgs = cached.to_vec();
-                    ctx.state.open_chat_mut().set_ready(msgs);
-                    ctx.state.open_chat_mut().set_refreshing(true);
-                    ctx.state
+                    ctx.shell.state.open_chat_mut().set_ready(msgs);
+                    ctx.shell.state.open_chat_mut().set_refreshing(true);
+                    ctx.shell
+                        .state
                         .open_chat_mut()
                         .set_message_source(MessageSource::Cache);
-                    chat_open::mark_open_chat_messages_as_read(ctx);
+                    chat_open::mark_open_chat_messages_as_read(&mut ctx.shell);
                 }
             }
         }
@@ -404,68 +340,12 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
             chat_id,
             message_id,
             result,
-        } => {
-            use crate::domain::message_info_state::MessageInfoPopupState;
-
-            let popup_ids = ctx.state.message_info_popup().and_then(|p| p.ids());
-            if popup_ids == Some((chat_id, message_id)) {
-                match result {
-                    Ok(info) => {
-                        tracing::debug!(chat_id, message_id, "message info resolved for popup");
-                        ctx.state
-                            .set_message_info_loaded(MessageInfoPopupState::Loaded(info));
-                    }
-                    Err(e) => {
-                        tracing::debug!(
-                            chat_id,
-                            message_id,
-                            code = e.code,
-                            "message info resolution failed"
-                        );
-                        ctx.state
-                            .set_message_info_loaded(MessageInfoPopupState::Error);
-                    }
-                }
-            }
-        }
+        } => popups::handle_message_info_loaded(&mut ctx.shell, chat_id, message_id, result),
         BackgroundTaskResult::AvailableReactionsLoaded {
             chat_id,
             message_id,
             result,
-        } => {
-            use crate::domain::reaction_picker_state::{ReactionPickerData, ReactionPickerState};
-
-            let picker_ids = ctx.state.reaction_picker().and_then(|p| p.ids());
-            if picker_ids == Some((chat_id, message_id)) {
-                match result {
-                    Ok(reactions) => {
-                        tracing::debug!(
-                            chat_id,
-                            message_id,
-                            count = reactions.len(),
-                            "available reactions loaded"
-                        );
-                        if reactions.is_empty() {
-                            ctx.state.close_reaction_picker();
-                            ctx.state.set_notification("No reactions available");
-                        } else {
-                            ctx.state.set_reaction_picker(ReactionPickerState::Ready(
-                                ReactionPickerData::new(reactions, chat_id, message_id),
-                            ));
-                        }
-                    }
-                    Err(e) => {
-                        tracing::debug!(
-                            chat_id,
-                            message_id,
-                            code = e.code,
-                            "available reactions load failed"
-                        );
-                        ctx.state.set_reaction_picker(ReactionPickerState::Error);
-                    }
-                }
-            }
-        }
+        } => popups::handle_available_reactions_loaded(&mut ctx.shell, chat_id, message_id, result),
         BackgroundTaskResult::OpenFileFailed { stderr } => {
             let hint = if stderr.is_empty() {
                 "Failed to open file. Configure [open] in ~/.config/rtg/config.toml".to_owned()
@@ -473,17 +353,21 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 format!("Open failed: {stderr}")
             };
             tracing::warn!(stderr, "background: open file failed");
-            ctx.state.set_notification(&hint);
+            ctx.shell.state.set_notification(&hint);
         }
         BackgroundTaskResult::FileSaved { file_id, file_name } => {
-            ctx.pending_saves.remove(&file_id);
+            ctx.downloads.pending_saves.remove(&file_id);
             tracing::info!(file_name, "background: file saved to downloads");
-            ctx.state.set_notification(format!("Saved: {file_name}"));
+            ctx.shell
+                .state
+                .set_notification(format!("Saved: {file_name}"));
         }
         BackgroundTaskResult::FileSaveFailed { file_id, error } => {
-            ctx.pending_saves.remove(&file_id);
+            ctx.downloads.pending_saves.remove(&file_id);
             tracing::warn!(error, "background: file save failed");
-            ctx.state.set_notification(format!("Save failed: {error}"));
+            ctx.shell
+                .state
+                .set_notification(format!("Save failed: {error}"));
         }
     }
 }

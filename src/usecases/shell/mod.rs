@@ -1,15 +1,18 @@
 mod background_results;
 mod chat_list;
 mod chat_open;
+mod chat_search;
 mod chat_updates;
 mod command_popup;
+mod file_updates;
 mod forum;
 mod key_dispatch;
 mod message_actions;
 mod message_input;
+mod popups;
 mod voice;
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
 
@@ -32,41 +35,67 @@ use crate::{
 
 use super::{
     background::TaskDispatcher,
-    contracts::{AppEvent, ShellOrchestrator},
+    contracts::{AppEvent, ShellEffect, ShellOrchestrator},
     load_messages::CachedMessagesSource,
 };
+use chat_list::ChatListLoads;
+use chat_open::OpenChatSync;
+use command_popup::MediaCommands;
+use file_updates::Downloads;
 
 /// Default limit for cached message preloading.
 const DEFAULT_CACHED_MESSAGES_LIMIT: usize = 50;
 
-/// Mutable context passed to free functions extracted from `DefaultShellOrchestrator`.
+/// Orchestrator settings that come from the app config.
+pub struct OrchestratorConfig {
+    /// Minimum number of cached messages required to display them immediately.
+    /// If the cache holds fewer messages, the UI shows Loading instead of a
+    /// sparse preview (eliminates the "1 message flash" artifact).
+    pub min_display_messages: usize,
+    /// Voice recording command template.
+    pub voice_record_cmd: String,
+    /// MIME-type → command mappings for opening message files.
+    pub open_handlers: HashMap<String, String>,
+    /// Maximum file size (in bytes) for auto-download.
+    pub max_auto_download_bytes: u64,
+    /// Action name → key pattern overrides of the default keymap.
+    pub key_overrides: HashMap<String, String>,
+}
+
+impl Default for OrchestratorConfig {
+    fn default() -> Self {
+        Self {
+            min_display_messages: DEFAULT_MIN_DISPLAY_MESSAGES,
+            voice_record_cmd: super::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
+            open_handlers: HashMap::new(),
+            max_auto_download_bytes: 10_000_000,
+            key_overrides: HashMap::new(),
+        }
+    }
+}
+
+/// What every handler gets: the state and the outputs to background tasks
+/// and to the shell loop.
 ///
-/// Groups all the borrowed orchestrator fields so that sub-module functions
-/// receive a single `&mut OrchestratorCtx` instead of 10+ individual parameters.
-pub(super) struct OrchestratorCtx<'a, D: TaskDispatcher> {
+/// Handlers take the orchestrator zones they touch (`ChatListLoads`,
+/// `OpenChatSync`, `Downloads`, `MediaCommands`) as separate arguments, so a
+/// signature states what a handler can change.
+struct ShellCtx<'a, D: TaskDispatcher> {
     pub state: &'a mut ShellState,
     pub dispatcher: &'a D,
-    pub chat_list_in_flight: &'a mut bool,
-    pub chat_list_refresh_pending: &'a mut bool,
-    pub chat_list_pending_force: &'a mut bool,
-    pub user_requested_chat_refresh: &'a mut bool,
-    pub forum_warmup_in_flight: &'a mut bool,
-    pub messages_refresh_in_flight: &'a mut bool,
-    pub older_messages_in_flight: &'a mut bool,
-    pub active_downloads: &'a mut std::collections::HashMap<i32, (i64, i64)>,
-    pub max_auto_download_bytes: u64,
-    pub command_handle: &'a mut Option<super::external_command::CommandHandle>,
-    pub recording_file_path: &'a mut Option<String>,
-    pub pending_command_rx:
-        &'a mut Option<std::sync::mpsc::Receiver<crate::domain::events::CommandEvent>>,
-    pub voice_record_cmd: &'a str,
-    pub tdlib_opened_chat_id: &'a mut Option<i64>,
-    pub prefetch_in_flight: &'a mut Option<i64>,
-    pub min_display_messages: usize,
-    pub pending_saves: &'a mut std::collections::HashSet<i32>,
-    pub cache_source: &'a Option<Arc<dyn CachedMessagesSource>>,
-    pub open_handlers: &'a std::collections::HashMap<String, String>,
-    pub opener: &'a dyn crate::infra::contracts::ExternalOpener,
+    pub effects: &'a mut Vec<ShellEffect>,
+}
+
+/// The whole orchestrator, borrowed. Only routers (`handle_event`,
+/// `key_dispatch`, `background_results`, `chat_updates`) take it, to hand
+/// each handler the zones it needs.
+struct OrchestratorCtx<'a, D: TaskDispatcher> {
+    pub shell: ShellCtx<'a, D>,
+    pub chat_list_loads: &'a mut ChatListLoads,
+    pub open_chat_sync: &'a mut OpenChatSync,
+    pub downloads: &'a mut Downloads,
+    pub media: &'a mut MediaCommands,
+    pub opener: &'a dyn ExternalOpener,
 }
 
 pub struct DefaultShellOrchestrator<S, O, D>
@@ -79,59 +108,16 @@ where
     storage: S,
     opener: O,
     dispatcher: D,
-    /// Synchronous cache source for instant message display.
-    cache_source: Option<Arc<dyn CachedMessagesSource>>,
-    /// Guards against dispatching duplicate chat list requests while one is in-flight.
-    chat_list_in_flight: bool,
-    /// When `true`, a refresh request arrived while one was already in-flight.
-    /// The in-flight result may be stale, so another refresh is dispatched
-    /// automatically when the current one completes.
-    chat_list_refresh_pending: bool,
-    /// Accumulated `force` flag for the pending refresh. OR-merged from all
-    /// refresh requests that arrived while in-flight: if any of them was
-    /// `force=true`, the pending re-dispatch will also be forced.
-    chat_list_pending_force: bool,
-    /// When `true`, the current in-flight chat list refresh was triggered by the user (R key)
-    /// so we should show a status-bar notification when it completes.
-    user_requested_chat_refresh: bool,
-    /// Guards against dispatching duplicate forum badge warm-up sweeps.
-    forum_warmup_in_flight: bool,
-    /// Guards against dispatching duplicate message refresh requests while one is in-flight.
-    messages_refresh_in_flight: bool,
-    /// Guards against dispatching duplicate older-messages pagination requests.
-    older_messages_in_flight: bool,
+    /// Effects queued for the shell loop, drained by `take_effects`.
+    effects: Vec<ShellEffect>,
+    chat_list_loads: ChatListLoads,
+    open_chat_sync: OpenChatSync,
+    downloads: Downloads,
+    media: MediaCommands,
     /// When `true`, the orchestrator was initialised with cached data and needs
     /// a background refresh on the first Tick to pick up server-side changes.
     initial_refresh_needed: bool,
-    /// Tracks the chat_id that is currently "opened" in TDLib via `openChat`.
-    /// Used to ensure proper `closeChat` pairing when navigating away.
-    tdlib_opened_chat_id: Option<i64>,
-    /// Guards against dispatching duplicate prefetch requests.
-    /// Holds the `chat_id` of the currently in-flight prefetch, if any.
-    prefetch_in_flight: Option<i64>,
-    /// Minimum number of cached messages required to display them immediately.
-    /// If the cache holds fewer messages, the UI shows Loading instead of a
-    /// sparse preview (eliminates the "1 message flash" artifact).
-    min_display_messages: usize,
     keymap: Keymap,
-    /// Handle to the running external command (voice recording, media playback).
-    command_handle: Option<super::external_command::CommandHandle>,
-    /// Path to the currently recorded voice file.
-    recording_file_path: Option<String>,
-    /// Pending command event receiver to be wired into the event source.
-    /// Set when a command starts, taken by the shell loop.
-    pending_command_rx: Option<std::sync::mpsc::Receiver<crate::domain::events::CommandEvent>>,
-    /// Voice recording command template (from config).
-    voice_record_cmd: String,
-    /// MIME-type → command mappings for opening message files (from config).
-    open_handlers: std::collections::HashMap<String, String>,
-    /// Tracks active downloads: file_id → (chat_id, message_id).
-    /// Used to route `updateFile` events to the correct message in the cache.
-    active_downloads: std::collections::HashMap<i32, (i64, i64)>,
-    /// Maximum file size (in bytes) for auto-download.
-    max_auto_download_bytes: u64,
-    /// File IDs pending save-to-downloads after download completes.
-    pending_saves: std::collections::HashSet<i32>,
 }
 
 impl<S, O, D> DefaultShellOrchestrator<S, O, D>
@@ -142,33 +128,14 @@ where
 {
     #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
     pub fn new(storage: S, opener: O, dispatcher: D) -> Self {
-        Self {
-            state: ShellState::default(),
+        Self::new_with_initial_state(
             storage,
             opener,
             dispatcher,
-            cache_source: None,
-            chat_list_in_flight: false,
-            chat_list_refresh_pending: false,
-            chat_list_pending_force: false,
-            user_requested_chat_refresh: false,
-            forum_warmup_in_flight: false,
-            messages_refresh_in_flight: false,
-            older_messages_in_flight: false,
-            initial_refresh_needed: false,
-            tdlib_opened_chat_id: None,
-            prefetch_in_flight: None,
-            min_display_messages: DEFAULT_MIN_DISPLAY_MESSAGES,
-            keymap: Keymap::default(),
-            command_handle: None,
-            recording_file_path: None,
-            pending_command_rx: None,
-            voice_record_cmd: super::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
-            open_handlers: std::collections::HashMap::new(),
-            active_downloads: std::collections::HashMap::new(),
-            max_auto_download_bytes: 10_000_000,
-            pending_saves: std::collections::HashSet::new(),
-        }
+            ShellState::default(),
+            None,
+            OrchestratorConfig::default(),
+        )
     }
 
     /// Creates an orchestrator pre-populated with an initial state.
@@ -179,21 +146,13 @@ where
     ///
     /// `cache_source` provides synchronous access to TDLib's local cache
     /// for instant message display when opening chats.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "tracked in docs/REVIEW_BACKLOG.md (OrchestratorConfig)"
-    )]
     pub fn new_with_initial_state(
         storage: S,
         opener: O,
         dispatcher: D,
         initial_state: ShellState,
         cache_source: Option<Arc<dyn CachedMessagesSource>>,
-        min_display_messages: usize,
-        voice_record_cmd: String,
-        open_handlers: std::collections::HashMap<String, String>,
-        max_auto_download_bytes: u64,
-        key_overrides: std::collections::HashMap<String, String>,
+        config: OrchestratorConfig,
     ) -> Self {
         let initial_refresh_needed = initial_state.chat_list().ui_state() == ChatListUiState::Ready;
         Self {
@@ -201,58 +160,32 @@ where
             storage,
             opener,
             dispatcher,
-            cache_source,
-            chat_list_in_flight: false,
-            chat_list_refresh_pending: false,
-            chat_list_pending_force: false,
-            user_requested_chat_refresh: false,
-            forum_warmup_in_flight: false,
-            messages_refresh_in_flight: false,
-            older_messages_in_flight: false,
+            effects: Vec::new(),
+            chat_list_loads: ChatListLoads::default(),
+            open_chat_sync: OpenChatSync::new(cache_source, config.min_display_messages),
+            downloads: Downloads::new(config.max_auto_download_bytes),
+            media: MediaCommands::new(config.voice_record_cmd, config.open_handlers),
             initial_refresh_needed,
-            tdlib_opened_chat_id: None,
-            prefetch_in_flight: None,
-            min_display_messages: min_display_messages.max(1),
-            keymap: if key_overrides.is_empty() {
+            keymap: if config.key_overrides.is_empty() {
                 Keymap::default()
             } else {
-                Keymap::with_overrides(&key_overrides)
+                Keymap::with_overrides(&config.key_overrides)
             },
-            command_handle: None,
-            recording_file_path: None,
-            pending_command_rx: None,
-            voice_record_cmd,
-            open_handlers,
-            active_downloads: std::collections::HashMap::new(),
-            max_auto_download_bytes,
-            pending_saves: std::collections::HashSet::new(),
         }
     }
 
     fn as_ctx(&mut self) -> OrchestratorCtx<'_, D> {
         OrchestratorCtx {
-            state: &mut self.state,
-            dispatcher: &self.dispatcher,
-            chat_list_in_flight: &mut self.chat_list_in_flight,
-            chat_list_refresh_pending: &mut self.chat_list_refresh_pending,
-            chat_list_pending_force: &mut self.chat_list_pending_force,
-            user_requested_chat_refresh: &mut self.user_requested_chat_refresh,
-            forum_warmup_in_flight: &mut self.forum_warmup_in_flight,
-            messages_refresh_in_flight: &mut self.messages_refresh_in_flight,
-            older_messages_in_flight: &mut self.older_messages_in_flight,
-            active_downloads: &mut self.active_downloads,
-            max_auto_download_bytes: self.max_auto_download_bytes,
-            command_handle: &mut self.command_handle,
-            recording_file_path: &mut self.recording_file_path,
-            pending_command_rx: &mut self.pending_command_rx,
-            voice_record_cmd: &self.voice_record_cmd,
-            tdlib_opened_chat_id: &mut self.tdlib_opened_chat_id,
-            prefetch_in_flight: &mut self.prefetch_in_flight,
-            min_display_messages: self.min_display_messages,
-            cache_source: &self.cache_source,
-            open_handlers: &self.open_handlers,
+            shell: ShellCtx {
+                state: &mut self.state,
+                dispatcher: &self.dispatcher,
+                effects: &mut self.effects,
+            },
+            chat_list_loads: &mut self.chat_list_loads,
+            open_chat_sync: &mut self.open_chat_sync,
+            downloads: &mut self.downloads,
+            media: &mut self.media,
             opener: &self.opener,
-            pending_saves: &mut self.pending_saves,
         }
     }
 
@@ -275,56 +208,15 @@ where
         key_dispatch::dispatch_forum_topic_list_action(&mut self.as_ctx(), action)
     }
 
-    fn handle_reaction_picker_key(&mut self, key: &str) {
-        use crate::domain::reaction_picker_state::ReactionPickerState;
-
-        match key {
-            "j" => {
-                if let Some(data) = self.state.reaction_picker_mut().and_then(|p| p.data_mut()) {
-                    data.select_next();
-                }
-            }
-            "k" => {
-                if let Some(data) = self.state.reaction_picker_mut().and_then(|p| p.data_mut()) {
-                    data.select_previous();
-                }
-            }
-            "enter" => {
-                let action = self.state.reaction_picker().and_then(|picker| {
-                    if let ReactionPickerState::Ready(data) = picker {
-                        data.selected_reaction()
-                            .map(|r| (data.chat_id, data.message_id, r.emoji.clone(), r.is_chosen))
-                    } else {
-                        None
-                    }
-                });
-
-                if let Some((chat_id, message_id, emoji, is_chosen)) = action {
-                    if is_chosen {
-                        self.dispatcher
-                            .dispatch_remove_reaction(chat_id, message_id, emoji);
-                    } else {
-                        self.dispatcher
-                            .dispatch_add_reaction(chat_id, message_id, emoji);
-                    }
-                    self.state.close_reaction_picker();
-                }
-            }
-            "esc" | "q" | "R" => {
-                self.state.close_reaction_picker();
-            }
-            _ => {}
-        }
-    }
-
     #[cfg(test)]
     fn send_voice_recording(&mut self) {
-        voice::send_voice_recording(&mut self.as_ctx());
+        let ctx = &mut self.as_ctx();
+        voice::send_voice_recording(&mut ctx.shell, ctx.media);
     }
 
     #[cfg(test)]
     fn discard_voice_recording(&mut self) {
-        voice::discard_voice_recording(&mut self.as_ctx());
+        voice::discard_voice_recording(&mut self.media);
     }
 }
 
@@ -349,17 +241,26 @@ where
     fn handle_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::Tick => {
-                if self.state.chat_list().ui_state() == ChatListUiState::Loading {
-                    chat_list::dispatch_chat_list_refresh(&mut self.as_ctx(), false);
-                } else if self.initial_refresh_needed {
-                    self.initial_refresh_needed = false;
-                    chat_list::dispatch_chat_list_refresh(&mut self.as_ctx(), false);
+                let refresh_chat_list =
+                    if self.state.chat_list().ui_state() == ChatListUiState::Loading {
+                        true
+                    } else {
+                        std::mem::take(&mut self.initial_refresh_needed)
+                    };
+                if refresh_chat_list {
+                    let ctx = &mut self.as_ctx();
+                    chat_list::dispatch_chat_list_refresh(
+                        &mut ctx.shell,
+                        ctx.chat_list_loads,
+                        false,
+                    );
                 }
                 self.state.open_chat_mut().typing_state_mut().expire_stale();
                 self.storage.save_last_action("tick")?;
             }
             AppEvent::QuitRequested => {
-                chat_open::close_tdlib_chat(&mut self.as_ctx());
+                let ctx = &mut self.as_ctx();
+                chat_open::close_tdlib_chat(&mut ctx.shell, ctx.open_chat_sync);
                 self.state.stop();
             }
             AppEvent::CommandOutputLine { text, replace_last } => {
@@ -373,73 +274,11 @@ where
             }
             AppEvent::CommandExited { success } => {
                 tracing::info!(success, "external command exited");
-                command_popup::handle_command_exited(&mut self.as_ctx(), success);
+                let ctx = &mut self.as_ctx();
+                command_popup::handle_command_exited(&mut ctx.shell, ctx.media, success);
             }
             AppEvent::InputKey(key) => {
-                if self.state.chat_search().is_some() {
-                    match key.key.as_str() {
-                        "esc" | "enter" => self.state.close_chat_search(),
-                        "backspace" => {
-                            let search = self.state.chat_search_mut().unwrap();
-                            search.delete_char_before();
-                            let q = search.query().to_owned();
-                            if !q.is_empty() {
-                                self.state.chat_list_mut().select_by_query(&q);
-                            }
-                        }
-                        k if k.chars().count() == 1 => {
-                            let ch = k.chars().next().unwrap();
-                            let search = self.state.chat_search_mut().unwrap();
-                            search.insert_char(ch);
-                            let q = search.query().to_owned();
-                            self.state.chat_list_mut().select_by_query(&q);
-                        }
-                        _ => {}
-                    }
-                    return Ok(());
-                }
-
-                if self.state.command_popup().is_some() {
-                    command_popup::handle_command_popup_key(&mut self.as_ctx(), &key.key);
-                    return Ok(());
-                }
-
-                if self.state.chat_info_popup().is_some() {
-                    match key.key.as_str() {
-                        "q" | "esc" | "I" => self.state.close_chat_info_popup(),
-                        _ => {}
-                    }
-                    return Ok(());
-                }
-
-                if self.state.message_info_popup().is_some() {
-                    match key.key.as_str() {
-                        "q" | "esc" | "I" => self.state.close_message_info_popup(),
-                        _ => {}
-                    }
-                    return Ok(());
-                }
-
-                if self.state.reaction_picker().is_some() {
-                    self.handle_reaction_picker_key(&key.key);
-                    return Ok(());
-                }
-
-                if self.state.chat_folder_picker().is_some() {
-                    chat_list::handle_chat_folder_picker_key(&mut self.as_ctx(), &key.key);
-                    return Ok(());
-                }
-
-                if self.state.help_visible() {
-                    match key.key.as_str() {
-                        "q" | "?" | "esc" => self.state.hide_help(),
-                        _ => {}
-                    }
-                    return Ok(());
-                }
-
-                if self.state.active_pane() == ActivePane::MessageInput {
-                    message_input::handle_message_input_key(&mut self.as_ctx(), &key.key);
+                if key_dispatch::dispatch_modal_key(&mut self.as_ctx(), &key.key) {
                     return Ok(());
                 }
 
@@ -481,10 +320,8 @@ where
         Ok(())
     }
 
-    fn take_pending_command_rx(
-        &mut self,
-    ) -> Option<std::sync::mpsc::Receiver<crate::domain::events::CommandEvent>> {
-        self.pending_command_rx.take()
+    fn take_effects(&mut self) -> Vec<ShellEffect> {
+        std::mem::take(&mut self.effects)
     }
 }
 

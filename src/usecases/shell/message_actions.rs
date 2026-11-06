@@ -1,8 +1,11 @@
 use anyhow::Result;
 
-use crate::usecases::background::TaskDispatcher;
+use crate::{
+    infra::contracts::ExternalOpener,
+    usecases::{background::TaskDispatcher, contracts::ShellEffect},
+};
 
-use super::OrchestratorCtx;
+use super::{command_popup::MediaCommands, file_updates::Downloads, ShellCtx};
 
 /// Opens the currently selected message using the configured handler.
 ///
@@ -14,7 +17,10 @@ use super::OrchestratorCtx;
 ///   If the OS has no app for the file type, a notification is shown.
 ///
 /// Silently ignores unsupported media types and messages without files.
-pub(super) fn open_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn open_selected_message<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    media: &mut MediaCommands,
+) {
     use crate::domain::command_popup_state::CommandPopupKind;
     use crate::domain::message::MessageMedia;
     use crate::domain::open_defaults::is_platform_default;
@@ -53,8 +59,10 @@ pub(super) fn open_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx
         }
     };
 
-    let cmd_template =
-        crate::domain::open_handler::resolve_open_command(&file_info.mime_type, ctx.open_handlers);
+    let cmd_template = crate::domain::open_handler::resolve_open_command(
+        &file_info.mime_type,
+        &media.open_handlers,
+    );
 
     if is_platform_default(cmd_template) {
         // No custom handler -- delegate to the OS default opener.
@@ -65,9 +73,9 @@ pub(super) fn open_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx
         // Custom handler -- run with a playback popup showing live output.
         match crate::usecases::external_command::start_command(cmd_template, &local_path) {
             Ok((handle, rx)) => {
-                *ctx.command_handle = Some(handle);
-                *ctx.recording_file_path = None;
-                *ctx.pending_command_rx = Some(rx);
+                media.command_handle = Some(handle);
+                media.recording_file_path = None;
+                ctx.effects.push(ShellEffect::StreamCommandOutput(rx));
                 ctx.state
                     .open_command_popup("Playing", CommandPopupKind::Playback);
                 tracing::info!(cmd_template, "command started");
@@ -81,7 +89,7 @@ pub(super) fn open_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx
     }
 }
 
-pub(super) fn delete_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn delete_selected_message<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {
     let Some(chat_id) = ctx.state.open_chat().chat_id() else {
         return;
     };
@@ -100,7 +108,7 @@ pub(super) fn delete_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorC
     ctx.dispatcher.dispatch_delete_message(chat_id, message_id);
 }
 
-pub(super) fn reply_to_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn reply_to_selected_message<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {
     use crate::domain::{message_input_state::ReplyContext, shell_state::ActivePane};
 
     if !ctx.state.open_chat().is_open() {
@@ -130,7 +138,7 @@ pub(super) fn reply_to_selected_message<D: TaskDispatcher>(ctx: &mut Orchestrato
     ctx.state.set_active_pane(ActivePane::MessageInput);
 }
 
-pub(super) fn edit_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn edit_selected_message<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {
     use crate::domain::{message_input_state::EditContext, shell_state::ActivePane};
 
     if !ctx.state.open_chat().is_open() {
@@ -167,7 +175,10 @@ pub(super) fn edit_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx
     ctx.state.set_active_pane(ActivePane::MessageInput);
 }
 
-pub(super) fn save_selected_message_file<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn save_selected_message_file<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    downloads: &mut Downloads,
+) {
     use crate::domain::message::DownloadStatus;
 
     let Some(chat_id) = ctx.state.open_chat().chat_id() else {
@@ -184,14 +195,14 @@ pub(super) fn save_selected_message_file<D: TaskDispatcher>(ctx: &mut Orchestrat
 
     match fi.download_status {
         DownloadStatus::Completed => {
-            if ctx.pending_saves.contains(&fi.file_id) {
+            if downloads.pending_saves.contains(&fi.file_id) {
                 ctx.state.set_notification("Save already in progress");
                 return;
             }
             let Some(ref local_path) = fi.local_path else {
                 return;
             };
-            ctx.pending_saves.insert(fi.file_id);
+            downloads.pending_saves.insert(fi.file_id);
             ctx.dispatcher
                 .dispatch_save_file(fi.file_id, local_path.clone(), fi.file_name.clone());
             ctx.state.set_notification("Saving file...");
@@ -200,27 +211,32 @@ pub(super) fn save_selected_message_file<D: TaskDispatcher>(ctx: &mut Orchestrat
             let file_id = fi.file_id;
             let message_id = msg.id;
 
-            if ctx.active_downloads.contains_key(&file_id) {
-                ctx.pending_saves.insert(file_id);
+            if downloads.active_downloads.contains_key(&file_id) {
+                downloads.pending_saves.insert(file_id);
                 ctx.state.set_notification("Will save after download...");
                 return;
             }
 
             tracing::info!(file_id, chat_id, message_id, "download + save triggered");
-            ctx.active_downloads.insert(file_id, (chat_id, message_id));
-            ctx.pending_saves.insert(file_id);
+            downloads
+                .active_downloads
+                .insert(file_id, (chat_id, message_id));
+            downloads.pending_saves.insert(file_id);
             ctx.dispatcher.dispatch_download_file(file_id);
             ctx.state
                 .set_notification("Downloading, will save when done...");
         }
         DownloadStatus::Downloading { .. } => {
-            ctx.pending_saves.insert(fi.file_id);
+            downloads.pending_saves.insert(fi.file_id);
             ctx.state.set_notification("Will save after download...");
         }
     }
 }
 
-pub(super) fn open_message_url<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) -> Result<()> {
+pub(super) fn open_message_url<D: TaskDispatcher>(
+    ctx: &ShellCtx<'_, D>,
+    opener: &dyn ExternalOpener,
+) -> Result<()> {
     use crate::domain::message::extract_first_url;
 
     let Some(msg) = ctx.state.open_chat().selected_message() else {
@@ -228,7 +244,7 @@ pub(super) fn open_message_url<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, 
     };
     let text = msg.display_content();
     if let Some(url) = extract_first_url(&text, &msg.links) {
-        ctx.opener.open(&url)?;
+        opener.open(&url)?;
     }
     Ok(())
 }

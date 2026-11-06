@@ -12,7 +12,7 @@ fn send_voice_skipped_when_no_file_path() {
 #[test]
 fn send_voice_skipped_when_file_does_not_exist() {
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-    o.recording_file_path = Some("/nonexistent/path/voice.oga".into());
+    o.media.recording_file_path = Some("/nonexistent/path/voice.oga".into());
 
     o.send_voice_recording();
 
@@ -26,7 +26,7 @@ fn send_voice_skipped_when_no_chat_open() {
     let tmp_dir = tempfile::tempdir().unwrap();
     let tmp = tmp_dir.path().join("rtg_test_nochat.oga");
     std::fs::write(&tmp, b"fake audio").unwrap();
-    o.recording_file_path = Some(tmp.to_str().unwrap().into());
+    o.media.recording_file_path = Some(tmp.to_str().unwrap().into());
 
     o.send_voice_recording();
 
@@ -42,7 +42,7 @@ fn send_voice_dispatches_with_correct_chat_id_and_path() {
     std::fs::write(&tmp, b"fake audio").unwrap();
     let file_path = tmp.to_str().unwrap().to_owned();
 
-    o.recording_file_path = Some(file_path.clone());
+    o.media.recording_file_path = Some(file_path.clone());
     o.send_voice_recording();
 
     assert_eq!(o.dispatcher.voice_send_dispatch_count(), 1);
@@ -66,12 +66,12 @@ fn discard_voice_removes_file() {
     let tmp_dir = tempfile::tempdir().unwrap();
     let tmp = tmp_dir.path().join("rtg_test_discard_file.oga");
     std::fs::write(&tmp, b"fake audio").unwrap();
-    o.recording_file_path = Some(tmp.to_str().unwrap().into());
+    o.media.recording_file_path = Some(tmp.to_str().unwrap().into());
 
     o.discard_voice_recording();
 
     assert!(!tmp.exists());
-    assert!(o.recording_file_path.is_none());
+    assert!(o.media.recording_file_path.is_none());
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn discard_voice_no_op_when_no_file_path() {
 
     o.discard_voice_recording();
 
-    assert!(o.recording_file_path.is_none());
+    assert!(o.media.recording_file_path.is_none());
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn send_voice_recording_is_idempotent() {
     let tmp_dir = tempfile::tempdir().unwrap();
     let tmp = tmp_dir.path().join("rtg_test_idempotent.oga");
     std::fs::write(&tmp, b"fake audio").unwrap();
-    o.recording_file_path = Some(tmp.to_str().unwrap().into());
+    o.media.recording_file_path = Some(tmp.to_str().unwrap().into());
 
     o.send_voice_recording();
     o.send_voice_recording();
@@ -209,7 +209,7 @@ fn voice_send_creates_pending_message_with_voice_media() {
     let tmp_dir = tempfile::tempdir().unwrap();
     let tmp = tmp_dir.path().join("rtg_test_voice_pending.oga");
     std::fs::write(&tmp, b"fake audio").unwrap();
-    o.recording_file_path = Some(tmp.to_str().unwrap().into());
+    o.media.recording_file_path = Some(tmp.to_str().unwrap().into());
 
     o.send_voice_recording();
 
@@ -237,7 +237,7 @@ fn voice_send_failed_removes_pending_message() {
     let tmp_dir = tempfile::tempdir().unwrap();
     let tmp = tmp_dir.path().join("rtg_test_voice_fail.oga");
     std::fs::write(&tmp, b"fake audio").unwrap();
-    o.recording_file_path = Some(tmp.to_str().unwrap().into());
+    o.media.recording_file_path = Some(tmp.to_str().unwrap().into());
 
     o.send_voice_recording();
     assert_eq!(o.state().open_chat().messages().len(), 2);
@@ -261,7 +261,7 @@ fn voice_send_failed_ignored_for_different_chat() {
     let tmp_dir = tempfile::tempdir().unwrap();
     let tmp = tmp_dir.path().join("rtg_test_voice_fail_other.oga");
     std::fs::write(&tmp, b"fake audio").unwrap();
-    o.recording_file_path = Some(tmp.to_str().unwrap().into());
+    o.media.recording_file_path = Some(tmp.to_str().unwrap().into());
 
     o.send_voice_recording();
     assert_eq!(o.state().open_chat().messages().len(), 2);
@@ -288,7 +288,7 @@ fn send_text_and_voice(o: &mut TestOrchestrator, file_name: &str) -> tempfile::T
     let tmp_dir = tempfile::tempdir().unwrap();
     let tmp = tmp_dir.path().join(file_name);
     std::fs::write(&tmp, b"fake audio").unwrap();
-    o.recording_file_path = Some(tmp.to_str().unwrap().into());
+    o.media.recording_file_path = Some(tmp.to_str().unwrap().into());
     o.send_voice_recording();
 
     assert_eq!(o.state().open_chat().messages().len(), 3);
@@ -353,7 +353,7 @@ fn voice_send_success_replaces_pending_with_real_message() {
     let tmp_dir = tempfile::tempdir().unwrap();
     let tmp = tmp_dir.path().join("rtg_test_voice_replace.oga");
     std::fs::write(&tmp, b"fake audio").unwrap();
-    o.recording_file_path = Some(tmp.to_str().unwrap().into());
+    o.media.recording_file_path = Some(tmp.to_str().unwrap().into());
 
     o.send_voice_recording();
     assert_eq!(o.state().open_chat().messages().len(), 2);
@@ -387,7 +387,7 @@ fn voice_send_success_replaces_pending_with_real_message() {
 #[test]
 fn voice_send_no_pending_when_file_missing() {
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-    o.recording_file_path = Some("/nonexistent/rtg_test_voice.oga".into());
+    o.media.recording_file_path = Some("/nonexistent/rtg_test_voice.oga".into());
 
     o.send_voice_recording();
 

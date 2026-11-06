@@ -89,7 +89,7 @@ Issues live in Linear (team ROZ, project `rtg`), accessed via the GraphQL API. S
 
 ### Triage labels
 
-Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) as ROZ team labels in Linear; applying a label also moves the issue to the matching state. See `docs/agents/triage-labels.md`.
+Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) as ROZ team labels in Linear; triage and grilling change labels only, never the issue's state. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 

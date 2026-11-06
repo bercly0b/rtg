@@ -14,7 +14,7 @@ fn simulate_voice_recording_started(o: &mut TestOrchestrator, file_path: &str) {
         "Recording Voice",
         crate::domain::command_popup_state::CommandPopupKind::Recording,
     );
-    o.recording_file_path = Some(file_path.to_owned());
+    o.media.recording_file_path = Some(file_path.to_owned());
 }
 
 /// Simulates voice recording with a real process for exit-code tests.
@@ -36,8 +36,8 @@ fn simulate_voice_recording_with_process(
         "Recording Voice",
         crate::domain::command_popup_state::CommandPopupKind::Recording,
     );
-    o.recording_file_path = Some(file_path.to_owned());
-    o.command_handle = Some(handle);
+    o.media.recording_file_path = Some(file_path.to_owned());
+    o.media.command_handle = Some(handle);
     exited
 }
 

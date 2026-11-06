@@ -38,7 +38,7 @@ Issue identifiers look like `ROZ-182`. `issue(id: ...)` accepts either the ident
 - **List issues**: `project(id: "643d1611-f48e-4543-ba99-00928d349223") { issues(first: 50, filter: {...}) { nodes { identifier title state { name } labels { nodes { name } } } } }`. Open only: `state: { type: { nin: ["completed", "canceled", "duplicate"] } }`. By label: `labels: { some: { name: { eq: "ready-for-agent" } } }`.
 - **Make an issue a sub-issue of a parent**: pass the parent's UUID as `parentId` in `issueCreate`, or `issueUpdate(id: "<child>", input: {parentId})` afterwards.
 - **Comment on an issue**: `commentCreate(input: {issueId, body})`.
-- **Apply / remove labels**: `issueUpdate(id, input: {addedLabelIds: [...], removedLabelIds: [...]})`. Look label ids up with `issueLabels(filter: {name: {in: ["needs-triage", "ready-for-agent"]}}) { nodes { id name } }`. Applying a triage label also moves the issue's state: see `docs/agents/triage-labels.md`.
+- **Apply / remove labels**: `issueUpdate(id, input: {addedLabelIds: [...], removedLabelIds: [...]})`. Look label ids up with `issueLabels(filter: {name: {in: ["needs-triage", "ready-for-agent"]}}) { nodes { id name } }`. For triage labels, see `docs/agents/triage-labels.md`.
 - **Change state**: `issueUpdate(id, input: {stateId})`. States are per-team; list them with `team(id: "ebfa7747-6e67-416e-ba4b-e2df75090c72") { states { nodes { id name } } }`. ROZ states: `Backlog`, `Planned`, `In Progress`, `Needs Info`, `In Review`, `Done`, `Canceled`, `Duplicate`.
 - **Close**: comment with the reason, then move to `Done` (or `Canceled` for won't-fix).
 

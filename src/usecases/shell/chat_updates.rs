@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
 use crate::{
-    domain::{chat::ChatType, events::ChatUpdate, message::DownloadStatus},
+    domain::{chat::ChatType, events::ChatUpdate},
     usecases::{background::TaskDispatcher, chat_subtitle::ChatSubtitleQuery},
 };
 
-use super::{chat_list, OrchestratorCtx};
+use super::{chat_list, chat_open::OpenChatSync, file_updates, OrchestratorCtx, ShellCtx};
 
 /// Processes push updates from TDLib for cache warming and UI refresh.
 ///
@@ -25,8 +25,11 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
         match update {
             ChatUpdate::NewMessage { chat_id, message } => {
                 tracing::debug!(chat_id, message_id = message.id, "caching pushed message");
-                maybe_auto_download(ctx, chat_id, &message);
-                ctx.state.message_cache_mut().add_message(chat_id, *message);
+                file_updates::maybe_auto_download(&mut ctx.shell, ctx.downloads, chat_id, &message);
+                ctx.shell
+                    .state
+                    .message_cache_mut()
+                    .add_message(chat_id, *message);
                 reload_chat_ids.insert(chat_id);
                 should_refresh_chat_list = true;
             }
@@ -39,7 +42,8 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                     count = message_ids.len(),
                     "removing deleted messages from cache"
                 );
-                ctx.state
+                ctx.shell
+                    .state
                     .message_cache_mut()
                     .remove_messages(chat_id, &message_ids);
                 reload_chat_ids.insert(chat_id);
@@ -54,13 +58,14 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                 message_id,
                 reaction_count,
             } => {
-                ctx.state.message_cache_mut().update_reaction_count(
+                ctx.shell.state.message_cache_mut().update_reaction_count(
                     chat_id,
                     message_id,
                     reaction_count,
                 );
-                if ctx.state.open_chat().chat_id() == Some(chat_id) {
-                    ctx.state
+                if ctx.shell.state.open_chat().chat_id() == Some(chat_id) {
+                    ctx.shell
+                        .state
                         .open_chat_mut()
                         .update_message_reaction_count(message_id, reaction_count);
                 }
@@ -68,10 +73,11 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
             ChatUpdate::UserStatusChanged { user_id } => {
                 // Re-resolve subtitle for the open private chat if it belongs
                 // to the user whose status changed.
-                if let Some(chat_id) = ctx.state.open_chat().chat_id() {
-                    let chat_type = ctx.state.open_chat().chat_type();
+                if let Some(chat_id) = ctx.shell.state.open_chat().chat_id() {
+                    let chat_type = ctx.shell.state.open_chat().chat_type();
                     if chat_type == ChatType::Private {
-                        ctx.dispatcher
+                        ctx.shell
+                            .dispatcher
                             .dispatch_chat_subtitle(ChatSubtitleQuery { chat_id, chat_type });
                         tracing::debug!(
                             user_id,
@@ -89,18 +95,19 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                 action_label,
                 is_cancel,
             } => {
-                if ctx.state.open_chat().chat_id() == Some(chat_id) {
+                if ctx.shell.state.open_chat().chat_id() == Some(chat_id) {
                     if is_cancel {
-                        ctx.state
+                        ctx.shell
+                            .state
                             .open_chat_mut()
                             .typing_state_mut()
                             .remove_action(sender_user_id);
                     } else {
-                        ctx.state.open_chat_mut().typing_state_mut().add_action(
-                            sender_user_id,
-                            sender_name,
-                            action_label,
-                        );
+                        ctx.shell
+                            .state
+                            .open_chat_mut()
+                            .typing_state_mut()
+                            .add_action(sender_user_id, sender_name, action_label);
                     }
                 }
             }
@@ -110,7 +117,14 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                 local_path,
                 download_status,
             } => {
-                handle_file_update(ctx, file_id, size, local_path, download_status);
+                file_updates::handle_file_update(
+                    &mut ctx.shell,
+                    ctx.downloads,
+                    file_id,
+                    size,
+                    local_path,
+                    download_status,
+                );
             }
             ChatUpdate::ForumTopicChanged {
                 chat_id,
@@ -122,145 +136,46 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                 // `None` means the cache isn't seeded for this chat yet, and the
                 // badge warm-up dispatched on chat-list load covers it.
                 if let Some(count) = unread_topic_count {
-                    ctx.state
+                    ctx.shell
+                        .state
                         .chat_list_mut()
                         .set_forum_unread_topic_count(chat_id, count);
                 }
                 // Only reload the topic panel when the user is browsing this very
                 // forum — no point refreshing topics they can't see right now.
-                if ctx.state.forum_topic_list().map(|f| f.parent_chat_id()) == Some(chat_id) {
-                    ctx.dispatcher.dispatch_load_forum_topics(chat_id);
+                if ctx
+                    .shell
+                    .state
+                    .forum_topic_list()
+                    .map(|f| f.parent_chat_id())
+                    == Some(chat_id)
+                {
+                    ctx.shell.dispatcher.dispatch_load_forum_topics(chat_id);
                 }
             }
             ChatUpdate::ChatFoldersChanged { folders } => {
                 tracing::debug!(count = folders.folders.len(), "chat folders changed");
-                ctx.state.set_chat_folders(folders);
+                ctx.shell.state.set_chat_folders(folders);
             }
         }
     }
 
     if should_refresh_chat_list {
-        chat_list::dispatch_chat_list_refresh(ctx, false);
+        chat_list::dispatch_chat_list_refresh(&mut ctx.shell, ctx.chat_list_loads, false);
     }
     if !reload_chat_ids.is_empty() {
-        maybe_refresh_open_chat_messages(ctx, &reload_chat_ids);
+        maybe_refresh_open_chat_messages(&mut ctx.shell, ctx.open_chat_sync, &reload_chat_ids);
     }
-}
-
-/// Handles a file download progress/completion update from TDLib.
-///
-/// Updates the `FileInfo` on the relevant message in both the open chat
-/// and the message cache.
-fn handle_file_update<D: TaskDispatcher>(
-    ctx: &mut OrchestratorCtx<'_, D>,
-    file_id: i32,
-    size: u64,
-    local_path: Option<String>,
-    download_status: DownloadStatus,
-) {
-    let Some(&(chat_id, message_id)) = ctx.active_downloads.get(&file_id) else {
-        return;
-    };
-
-    // Update the message in the open chat view
-    if ctx.state.open_chat().chat_id() == Some(chat_id) {
-        ctx.state
-            .open_chat_mut()
-            .update_message_file_info(message_id, |fi| {
-                fi.download_status = download_status;
-                if let Some(ref path) = local_path {
-                    fi.local_path = Some(path.clone());
-                }
-                if size > 0 {
-                    fi.size = Some(size);
-                }
-            });
-    }
-
-    // Update the message in the cache
-    ctx.state
-        .message_cache_mut()
-        .update_file_info(chat_id, message_id, |fi| {
-            fi.download_status = download_status;
-            if let Some(ref path) = local_path {
-                fi.local_path = Some(path.clone());
-            }
-            if size > 0 {
-                fi.size = Some(size);
-            }
-        });
-
-    // Auto-save to downloads if this file_id was requested via S hotkey.
-    if let Some(ref path) = local_path {
-        if ctx.pending_saves.remove(&file_id) {
-            let file_name = resolve_file_name(ctx, file_id, chat_id, message_id);
-            ctx.dispatcher
-                .dispatch_save_file(file_id, path.clone(), file_name);
-        }
-    }
-
-    // Clean up completed or failed/cancelled downloads
-    match download_status {
-        DownloadStatus::Completed => {
-            ctx.active_downloads.remove(&file_id);
-            tracing::info!(file_id, chat_id, message_id, "file download completed");
-        }
-        DownloadStatus::NotStarted => {
-            ctx.active_downloads.remove(&file_id);
-            ctx.pending_saves.remove(&file_id);
-            tracing::warn!(
-                file_id,
-                chat_id,
-                message_id,
-                "file download failed or cancelled"
-            );
-        }
-        DownloadStatus::Downloading { .. } => {}
-    }
-}
-
-/// Checks whether a new message should be auto-downloaded and triggers the download.
-fn maybe_auto_download<D: TaskDispatcher>(
-    ctx: &mut OrchestratorCtx<'_, D>,
-    chat_id: i64,
-    message: &crate::domain::message::Message,
-) {
-    let Some(ref fi) = message.file_info else {
-        return;
-    };
-
-    if fi.download_status != DownloadStatus::NotStarted {
-        return;
-    }
-
-    let size = fi.size.unwrap_or(0);
-    if size == 0 || size > ctx.max_auto_download_bytes {
-        return;
-    }
-
-    // Avoid duplicate downloads
-    if ctx.active_downloads.contains_key(&fi.file_id) {
-        return;
-    }
-
-    tracing::debug!(
-        file_id = fi.file_id,
-        size,
-        message_id = message.id,
-        "auto-downloading file"
-    );
-    ctx.active_downloads
-        .insert(fi.file_id, (chat_id, message.id));
-    ctx.dispatcher.dispatch_download_file(fi.file_id);
 }
 
 pub(super) fn maybe_refresh_open_chat_messages<D: TaskDispatcher>(
-    ctx: &mut OrchestratorCtx<'_, D>,
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &mut OpenChatSync,
     affected_chat_ids: &HashSet<i64>,
 ) {
     use crate::domain::open_chat_state::OpenChatUiState;
 
-    if *ctx.messages_refresh_in_flight {
+    if sync.messages_refresh_in_flight {
         return;
     }
 
@@ -280,21 +195,7 @@ pub(super) fn maybe_refresh_open_chat_messages<D: TaskDispatcher>(
         chat_id = open_id,
         "refreshing open chat messages from update"
     );
-    *ctx.messages_refresh_in_flight = true;
+    sync.messages_refresh_in_flight = true;
     let topic_id = ctx.state.open_chat().topic_id();
     ctx.dispatcher.dispatch_load_messages(open_id, topic_id);
-}
-
-fn resolve_file_name<D: TaskDispatcher>(
-    ctx: &mut OrchestratorCtx<'_, D>,
-    _file_id: i32,
-    chat_id: i64,
-    message_id: i64,
-) -> Option<String> {
-    ctx.state.message_cache_mut().get(chat_id).and_then(|msgs| {
-        msgs.iter()
-            .find(|m| m.id == message_id)
-            .and_then(|m| m.file_info.as_ref())
-            .and_then(|fi| fi.file_name.clone())
-    })
 }
