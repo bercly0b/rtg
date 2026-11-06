@@ -41,13 +41,8 @@ pub fn content_sized_rect(
     block: &Block<'_>,
     content: &Paragraph<'_>,
 ) -> Rect {
-    let unbounded = Rect::new(0, 0, u16::MAX, u16::MAX);
-    let inner = block.inner(unbounded);
-    let chrome_width = unbounded.width - inner.width;
-    let chrome_height = unbounded.height - inner.height;
-
-    let max_width = (u32::from(area.width) * MAX_CONTENT_WIDTH_PERCENT / 100) as u16;
-    let max_width = max_width.max(MIN_CONTENT_WIDTH).min(area.width);
+    let (chrome_width, chrome_height) = chrome_size(block);
+    let max_width = max_popup_width(area);
     let max_height = area.height.saturating_sub(2 * VERTICAL_MARGIN);
 
     let content_width = saturating_u16(content.line_width()).saturating_add(chrome_width);
@@ -61,6 +56,27 @@ pub fn content_sized_rect(
     let height = content_height.saturating_add(chrome_height).min(max_height);
 
     centered(area, width, height)
+}
+
+/// The widest content a content-sized popup framed by `block` can show
+/// without wrapping it.
+pub(super) fn max_content_width(area: Rect, block: &Block<'_>) -> u16 {
+    let (chrome_width, _) = chrome_size(block);
+    max_popup_width(area).saturating_sub(chrome_width)
+}
+
+fn max_popup_width(area: Rect) -> u16 {
+    let max_width = (u32::from(area.width) * MAX_CONTENT_WIDTH_PERCENT / 100) as u16;
+    max_width.max(MIN_CONTENT_WIDTH).min(area.width)
+}
+
+fn chrome_size(block: &Block<'_>) -> (u16, u16) {
+    let unbounded = Rect::new(0, 0, u16::MAX, u16::MAX);
+    let inner = block.inner(unbounded);
+    (
+        unbounded.width - inner.width,
+        unbounded.height - inner.height,
+    )
 }
 
 pub(super) fn centered(area: Rect, width: u16, height: u16) -> Rect {
@@ -258,5 +274,17 @@ mod tests {
         let content = wrapped(vec!["Loading...".into()]);
         let result = content_sized_rect(area, "", &popup_block(), &content);
         assert_eq!(result, Rect::new(10 + 35, 5 + 17, 30, 5));
+    }
+
+    #[test]
+    fn max_content_width_is_the_widest_popup_minus_its_frame() {
+        let area = Rect::new(0, 0, 100, 40);
+        let max_width = max_content_width(area, &popup_block());
+
+        let content = wrapped(vec!["x".repeat(usize::from(max_width))]);
+        let result = content_sized_rect(area, "", &popup_block(), &content);
+
+        assert_eq!(max_width, 80 - 6);
+        assert_eq!(result.height, 1 + 4);
     }
 }

@@ -1,13 +1,22 @@
-use tdlib_rs::types::{BasicGroupFullInfo, Chat, SupergroupFullInfo, User, UserFullInfo};
+use chrono::{DateTime, Local};
+use tdlib_rs::enums::NotificationSettingsScope;
+use tdlib_rs::types::{
+    BasicGroup, BasicGroupFullInfo, Chat, CountryInfo, ScopeNotificationSettings, SecretChat,
+    Supergroup, SupergroupFullInfo, User, UserFullInfo, VerificationStatus,
+};
 
 use crate::domain::chat::ChatType;
-use crate::domain::chat_info_state::ChatInfo;
+use crate::domain::chat_info_state::{Badge, ChatInfo};
 use crate::domain::chat_subtitle::ChatSubtitle;
 use crate::telegram::tdlib_client::{TdLibClient, TdLibError};
-use crate::usecases::chat_subtitle::ChatSubtitleError;
+use crate::usecases::chat_subtitle::{ChatInfoQuery, ChatSubtitleError};
 
 use super::TdLibAuthBackend;
 use crate::telegram::tdlib_mappers;
+
+mod chat_block;
+mod group_info;
+mod user_info;
 
 /// TDLib requests behind the chat info popup, separated from `TdLibClient`
 /// so the resolution logic can be unit-tested with a fake.
@@ -15,14 +24,22 @@ pub(super) trait ChatInfoResolver {
     fn get_chat(&self, chat_id: i64) -> Result<Chat, TdLibError>;
     fn get_user(&self, user_id: i64) -> Result<User, TdLibError>;
     fn get_user_full_info(&self, user_id: i64) -> Result<UserFullInfo, TdLibError>;
+    fn get_basic_group(&self, basic_group_id: i64) -> Result<BasicGroup, TdLibError>;
     fn get_basic_group_full_info(
         &self,
         basic_group_id: i64,
     ) -> Result<BasicGroupFullInfo, TdLibError>;
+    fn get_supergroup(&self, supergroup_id: i64) -> Result<Supergroup, TdLibError>;
     fn get_supergroup_full_info(
         &self,
         supergroup_id: i64,
     ) -> Result<SupergroupFullInfo, TdLibError>;
+    fn get_secret_chat(&self, secret_chat_id: i32) -> Result<SecretChat, TdLibError>;
+    fn get_scope_notification_settings(
+        &self,
+        scope: NotificationSettingsScope,
+    ) -> Result<ScopeNotificationSettings, TdLibError>;
+    fn get_countries(&self) -> Result<Vec<CountryInfo>, TdLibError>;
 }
 
 impl ChatInfoResolver for TdLibClient {
@@ -38,6 +55,10 @@ impl ChatInfoResolver for TdLibClient {
         self.get_user_full_info(user_id)
     }
 
+    fn get_basic_group(&self, basic_group_id: i64) -> Result<BasicGroup, TdLibError> {
+        self.get_basic_group(basic_group_id)
+    }
+
     fn get_basic_group_full_info(
         &self,
         basic_group_id: i64,
@@ -45,11 +66,30 @@ impl ChatInfoResolver for TdLibClient {
         self.get_basic_group_full_info(basic_group_id)
     }
 
+    fn get_supergroup(&self, supergroup_id: i64) -> Result<Supergroup, TdLibError> {
+        self.get_supergroup(supergroup_id)
+    }
+
     fn get_supergroup_full_info(
         &self,
         supergroup_id: i64,
     ) -> Result<SupergroupFullInfo, TdLibError> {
         self.get_supergroup_full_info(supergroup_id)
+    }
+
+    fn get_secret_chat(&self, secret_chat_id: i32) -> Result<SecretChat, TdLibError> {
+        self.get_secret_chat(secret_chat_id)
+    }
+
+    fn get_scope_notification_settings(
+        &self,
+        scope: NotificationSettingsScope,
+    ) -> Result<ScopeNotificationSettings, TdLibError> {
+        self.get_scope_notification_settings(scope)
+    }
+
+    fn get_countries(&self) -> Result<Vec<CountryInfo>, TdLibError> {
+        self.get_countries()
     }
 }
 
@@ -117,40 +157,48 @@ impl TdLibAuthBackend {
     }
 
     /// Resolves full chat info for the chat info popup.
-    pub fn resolve_chat_info(
-        &self,
-        chat_id: i64,
-        chat_type: ChatType,
-        title: String,
-    ) -> Result<ChatInfo, ChatSubtitleError> {
-        resolve_chat_info(&self.client, chat_id, chat_type, title)
+    pub fn resolve_chat_info(&self, query: &ChatInfoQuery) -> Result<ChatInfo, ChatSubtitleError> {
+        resolve_chat_info(&self.client, query, Local::now())
     }
 }
 
-/// Every request that feeds the status line is critical: if it fails the
-/// popup shows an error rather than an empty status or "0 members". Only the
-/// user bio may be missing, since the rest of a private chat's info is still
-/// accurate without it.
+/// Only the requests behind the header are critical: if one fails the popup
+/// shows an error rather than an empty status or "0 members". Every other
+/// request only fills rows, which show `—` when it fails.
 pub(super) fn resolve_chat_info(
     resolver: &dyn ChatInfoResolver,
-    chat_id: i64,
-    chat_type: ChatType,
-    title: String,
+    query: &ChatInfoQuery,
+    now: DateTime<Local>,
 ) -> Result<ChatInfo, ChatSubtitleError> {
     let chat = resolver
-        .get_chat(chat_id)
-        .map_err(|e| request_failed("getChat", chat_id, e))?;
+        .get_chat(query.chat_id)
+        .map_err(|e| request_failed("getChat", query.chat_id, e))?;
 
-    match chat_type {
-        ChatType::Private => resolve_private_info(resolver, &chat.r#type, title),
-        ChatType::Group => resolve_group_info(resolver, &chat.r#type, title),
-        ChatType::Channel => resolve_channel_info(resolver, &chat.r#type, title),
-    }
+    let (status_line, kind) = match query.chat_type {
+        ChatType::Private => user_info::resolve(resolver, &chat, now)?,
+        ChatType::Group => group_info::resolve_group(resolver, &chat, now)?,
+        ChatType::Channel => group_info::resolve_channel(resolver, &chat, now)?,
+    };
+
+    Ok(ChatInfo {
+        title: query.title.clone(),
+        status_line,
+        kind,
+        chat: chat_block::resolve(resolver, &chat, &query.folders, now),
+    })
 }
 
 fn request_failed(request: &'static str, id: i64, error: TdLibError) -> ChatSubtitleError {
     tracing::warn!(request, id, error = %error, "chat info request failed");
     ChatSubtitleError::Unavailable
+}
+
+fn optional<T>(request: &'static str, result: Result<T, TdLibError>) -> Option<T> {
+    result
+        .inspect_err(|error| {
+            tracing::debug!(request, error = %error, "chat info: optional request failed");
+        })
+        .ok()
 }
 
 fn unexpected_chat_type(
@@ -165,111 +213,34 @@ fn unexpected_chat_type(
     ChatSubtitleError::Unavailable
 }
 
-fn non_empty_description(description: String) -> Option<String> {
-    if description.trim().is_empty() {
-        None
-    } else {
-        Some(description)
+fn non_empty(text: &str) -> Option<String> {
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
+}
+
+fn non_zero(value: i32) -> Option<i32> {
+    (value != 0).then_some(value)
+}
+
+fn chat_title(resolver: &dyn ChatInfoResolver, chat_id: i64) -> Option<String> {
+    if chat_id == 0 {
+        return None;
     }
+    optional("getChat", resolver.get_chat(chat_id)).map(|chat| chat.title)
 }
 
-fn resolve_private_info(
-    resolver: &dyn ChatInfoResolver,
-    td_type: &tdlib_rs::enums::ChatType,
-    title: String,
-) -> Result<ChatInfo, ChatSubtitleError> {
-    use chrono::Local;
-
-    let Some(user_id) = tdlib_mappers::get_private_chat_user_id(td_type) else {
-        return Err(unexpected_chat_type(ChatType::Private, td_type));
+fn verification_badges(status: Option<&VerificationStatus>) -> Vec<Badge> {
+    let Some(status) = status else {
+        return Vec::new();
     };
-
-    let user = resolver
-        .get_user(user_id)
-        .map_err(|e| request_failed("getUser", user_id, e))?;
-
-    let is_bot = matches!(user.r#type, tdlib_rs::enums::UserType::Bot(_));
-    let status_line = if is_bot {
-        "bot".to_owned()
-    } else {
-        let subtitle = tdlib_mappers::map_user_status_to_subtitle(&user.status);
-        subtitle.format(Local::now())
-    };
-
-    let username = user
-        .usernames
-        .and_then(|u| u.active_usernames.into_iter().next())
-        .map(|u| format!("@{u}"));
-
-    let description = match resolver.get_user_full_info(user_id) {
-        Ok(info) => info
-            .bio
-            .and_then(|ft| non_empty_description(ft.text.trim().to_owned())),
-        Err(e) => {
-            tracing::debug!(user_id, error = %e, "chat info: user bio unavailable, showing without it");
-            None
-        }
-    };
-
-    Ok(ChatInfo {
-        title,
-        chat_type: ChatType::Private,
-        status_line,
-        username,
-        description,
-    })
-}
-
-fn resolve_group_info(
-    resolver: &dyn ChatInfoResolver,
-    td_type: &tdlib_rs::enums::ChatType,
-    title: String,
-) -> Result<ChatInfo, ChatSubtitleError> {
-    let (member_count, description) = match td_type {
-        tdlib_rs::enums::ChatType::BasicGroup(bg) => {
-            let info = resolver
-                .get_basic_group_full_info(bg.basic_group_id)
-                .map_err(|e| request_failed("getBasicGroupFullInfo", bg.basic_group_id, e))?;
-            (info.members.len() as i32, info.description)
-        }
-        tdlib_rs::enums::ChatType::Supergroup(sg) => {
-            let info = resolver
-                .get_supergroup_full_info(sg.supergroup_id)
-                .map_err(|e| request_failed("getSupergroupFullInfo", sg.supergroup_id, e))?;
-            (info.member_count, info.description)
-        }
-        _ => return Err(unexpected_chat_type(ChatType::Group, td_type)),
-    };
-
-    Ok(ChatInfo {
-        title,
-        chat_type: ChatType::Group,
-        status_line: ChatSubtitle::Members(member_count).format(chrono::Local::now()),
-        username: None,
-        description: non_empty_description(description),
-    })
-}
-
-fn resolve_channel_info(
-    resolver: &dyn ChatInfoResolver,
-    td_type: &tdlib_rs::enums::ChatType,
-    title: String,
-) -> Result<ChatInfo, ChatSubtitleError> {
-    let tdlib_rs::enums::ChatType::Supergroup(sg) = td_type else {
-        return Err(unexpected_chat_type(ChatType::Channel, td_type));
-    };
-
-    let info = resolver
-        .get_supergroup_full_info(sg.supergroup_id)
-        .map_err(|e| request_failed("getSupergroupFullInfo", sg.supergroup_id, e))?;
-
-    Ok(ChatInfo {
-        title,
-        chat_type: ChatType::Channel,
-        status_line: ChatSubtitle::Subscribers(info.member_count).format(chrono::Local::now()),
-        username: None,
-        description: non_empty_description(info.description),
-    })
+    [
+        (status.is_verified, Badge::Verified),
+        (status.is_scam, Badge::Scam),
+        (status.is_fake, Badge::Fake),
+    ]
+    .into_iter()
+    .filter_map(|(is_set, badge)| is_set.then_some(badge))
+    .collect()
 }
 
 #[cfg(test)]
