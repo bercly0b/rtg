@@ -1,3 +1,4 @@
+use tdlib_rs::enums::ChatList as TdChatList;
 use tdlib_rs::enums::ChatType as TdChatType;
 use tdlib_rs::types::Chat as TdChat;
 
@@ -6,6 +7,9 @@ use crate::domain::chat::{ChatSummary, ChatType, OutgoingReadStatus};
 use super::extract_message_preview;
 
 /// Maps a TDLib Chat to a domain ChatSummary.
+///
+/// `list` is the chat list the chat was fetched for: a chat's pin state is
+/// per list, so `is_pinned` reflects its position in `list` only.
 ///
 /// This requires the full `Chat` object from TDLib. For sender name resolution
 /// in group chats, an optional user lookup function can be provided.
@@ -16,6 +20,7 @@ use super::extract_message_preview;
 /// pass `false` otherwise.
 pub fn map_chat_to_summary(
     chat: &TdChat,
+    list: &TdChatList,
     sender_name: Option<String>,
     is_sender_online: Option<bool>,
     is_bot: bool,
@@ -25,7 +30,7 @@ pub fn map_chat_to_summary(
     let is_pinned = chat
         .positions
         .iter()
-        .any(|pos| matches!(&pos.list, tdlib_rs::enums::ChatList::Main) && pos.is_pinned);
+        .any(|pos| &pos.list == list && pos.is_pinned);
 
     let (last_message_preview, last_message_unix_ms, outgoing_status, last_message_id) =
         extract_last_message_info(chat);
