@@ -16,6 +16,7 @@ ignore = [
     { id = "RUSTSEC-2026-0367", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
     { id = "RUSTSEC-2026-0368", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
     { id = "RUSTSEC-2026-0369", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
+    { id = "RUSTSEC-2026-0429", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
     { id = "RUSTSEC-2026-0391", reason = "zstd 0.13 via zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
     { id = "RUSTSEC-2026-0398", reason = "zstd-safe 7 via zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
     { id = "RUSTSEC-2026-0403", reason = "zstd-safe 7 via zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
