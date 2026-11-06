@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::chat_subtitle::ChatSubtitle;
 
 // -- Cached startup tests --
 
@@ -159,7 +160,7 @@ fn reopen_same_ready_chat_skips_reload() {
 }
 
 #[test]
-fn reopen_same_chat_still_loading_dispatches_again() {
+fn reopen_same_chat_still_loading_does_not_dispatch_again() {
     let cache = StubCacheSource::empty();
     let mut o = make_orchestrator_with_cache(vec![chat(1, "Alpha")], cache);
 
@@ -173,7 +174,85 @@ fn reopen_same_chat_still_loading_dispatches_again() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
         .unwrap();
 
+    assert_eq!(o.dispatcher.messages_dispatch_count(), 1);
+    assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
+    assert_eq!(o.state().active_pane(), ActivePane::Messages);
+    assert_eq!(o.dispatcher.open_chat_dispatch_count(), 2);
+    assert_eq!(o.tdlib_opened_chat_id, Some(1));
+}
+
+#[test]
+fn reopen_same_chat_after_load_failure_dispatches_again() {
+    let cache = StubCacheSource::empty();
+    let mut o = make_orchestrator_with_cache(vec![chat(1, "Alpha")], cache);
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
+        BackgroundTaskResult::MessagesLoaded {
+            chat_id: 1,
+            topic_id: None,
+            result: Err(BackgroundError::new("MESSAGES_UNAVAILABLE")),
+        },
+    ]))
+    .unwrap();
+    assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Error);
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
     assert_eq!(o.dispatcher.messages_dispatch_count(), 2);
+    assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Loading);
+}
+
+#[test]
+fn reopen_same_loading_chat_still_receives_its_messages() {
+    let cache = StubCacheSource::empty();
+    let mut o = make_orchestrator_with_cache(vec![chat(1, "Alpha")], cache);
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    inject_messages(&mut o, 1, vec![message(10, "A"), message(11, "B")]);
+
+    assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
+    assert_eq!(o.state().open_chat().messages().len(), 2);
+}
+
+#[test]
+fn open_cached_chat_resets_previous_chat_identity() {
+    let cache = StubCacheSource::with_messages(vec![(2, vec![message(20, "Chat2 cached")])]);
+    let mut o = make_orchestrator_with_cache(vec![chat(1, "Alpha"), chat(2, "Beta")], cache);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
+        BackgroundTaskResult::ChatSubtitleLoaded {
+            chat_id: 1,
+            result: Ok(ChatSubtitle::Online),
+        },
+    ]))
+    .unwrap();
+    assert_eq!(o.state().open_chat().chat_subtitle(), &ChatSubtitle::Online);
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("h", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+
+    assert_eq!(o.state().open_chat().chat_id(), Some(2));
+    assert_eq!(o.state().open_chat().chat_title(), "Beta");
+    assert_eq!(o.state().open_chat().chat_subtitle(), &ChatSubtitle::None);
+    assert_eq!(o.state().open_chat().ui_state(), OpenChatUiState::Ready);
+    assert!(o.state().open_chat().is_refreshing());
+    assert_eq!(o.state().open_chat().message_source(), MessageSource::Cache);
 }
 
 #[test]

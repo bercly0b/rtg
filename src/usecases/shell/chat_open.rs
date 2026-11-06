@@ -33,17 +33,21 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
     // Cancel any in-flight prefetch — the user explicitly opened a chat.
     *ctx.prefetch_in_flight = None;
 
-    // If the same chat is already open and Ready, just switch focus — no reload.
-    // But always ensure the TDLib lifecycle is maintained.
-    if ctx.state.open_chat().chat_id() == Some(chat_id)
-        && ctx.state.open_chat().ui_state() == OpenChatUiState::Ready
-    {
-        tracing::debug!(chat_id, "chat already open and ready, skipping reload");
+    // If the same chat is already open and Ready, or its load is still in
+    // flight, just switch focus — no reload. But always ensure the TDLib
+    // lifecycle is maintained.
+    let loaded_or_loading = match ctx.state.open_chat().ui_state() {
+        OpenChatUiState::Ready => true,
+        OpenChatUiState::Loading => *ctx.messages_refresh_in_flight,
+        OpenChatUiState::Empty | OpenChatUiState::Error => false,
+    };
+    if ctx.state.open_chat().chat_id() == Some(chat_id) && loaded_or_loading {
+        tracing::debug!(chat_id, "chat already open, skipping reload");
         // Re-open in TDLib if it was closed (e.g. user pressed h then l)
         if *ctx.tdlib_opened_chat_id != Some(chat_id) {
             ctx.dispatcher.dispatch_open_chat(chat_id);
             *ctx.tdlib_opened_chat_id = Some(chat_id);
-            // Mark existing messages as read in the reopened chat
+            // Mark messages that arrived while the chat was closed as read
             mark_open_chat_messages_as_read(ctx);
         }
         return;
@@ -54,7 +58,8 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
     // Close the previously opened TDLib chat if switching to a different one.
     close_tdlib_chat_if_needed(ctx, chat_id);
 
-    // Open this chat in TDLib for update delivery and read tracking.
+    // Open this chat in TDLib for update delivery and read tracking. Not
+    // ordered with the history load below — see `TaskDispatcher::dispatch_open_chat`.
     ctx.dispatcher.dispatch_open_chat(chat_id);
     *ctx.tdlib_opened_chat_id = Some(chat_id);
 
@@ -77,7 +82,7 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
         );
         ctx.state
             .open_chat_mut()
-            .set_loading(chat_id, chat_title.clone(), chat_type);
+            .set_chat_identity(chat_id, chat_title.clone(), chat_type);
         ctx.state.open_chat_mut().set_ready(messages);
         ctx.state.open_chat_mut().set_refreshing(true);
         ctx.state
@@ -147,15 +152,19 @@ pub(super) fn close_tdlib_chat_if_needed<D: TaskDispatcher>(
 }
 
 /// Closes the currently TDLib-opened chat unconditionally.
+///
+/// Keeps `messages_refresh_in_flight`: the open chat state survives
+/// navigating away, so the in-flight load still lands in it and clears the
+/// flag itself — reopening the chat meanwhile must not load it again.
 pub(super) fn close_tdlib_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
     if let Some(chat_id) = ctx.tdlib_opened_chat_id.take() {
         tracing::debug!(chat_id, "closing TDLib chat on navigate away");
         ctx.dispatcher.dispatch_close_chat(chat_id);
-        *ctx.messages_refresh_in_flight = false;
     }
 }
 
-/// Dispatches a mark-as-read request for all messages currently loaded in the open chat.
+/// Dispatches a mark-as-read request for the loaded messages of the open chat
+/// that have not been marked yet.
 ///
 /// Only marks messages when the user is actively viewing the chat
 /// (Messages or MessageInput pane has focus). This prevents incoming
@@ -172,12 +181,11 @@ pub(super) fn mark_open_chat_messages_as_read<D: TaskDispatcher>(ctx: &mut Orche
         return;
     };
 
-    let messages = ctx.state.open_chat().messages();
-    if messages.is_empty() {
+    let message_ids = ctx.state.open_chat_mut().take_unacked_message_ids();
+    if message_ids.is_empty() {
         return;
     }
 
-    let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
     let topic_id = ctx.state.open_chat().topic_id();
     ctx.dispatcher
         .dispatch_mark_as_read(chat_id, topic_id, message_ids);
@@ -207,7 +215,7 @@ pub(super) fn try_show_cached_messages<D: TaskDispatcher>(
             );
             ctx.state
                 .open_chat_mut()
-                .set_loading(chat_id, chat_title.to_owned(), chat_type);
+                .set_chat_identity(chat_id, chat_title.to_owned(), chat_type);
             ctx.state.open_chat_mut().set_ready(messages);
             ctx.state.open_chat_mut().set_refreshing(true);
             ctx.state

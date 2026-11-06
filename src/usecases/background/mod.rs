@@ -59,6 +59,13 @@ pub trait TaskDispatcher {
     fn dispatch_edit_message(&self, chat_id: i64, message_id: i64, text: String);
 
     /// Informs TDLib that the user has opened a chat (fire-and-forget).
+    ///
+    /// Runs on its own thread, so TDLib may get `openChat` after the
+    /// `getChatHistory` of a `dispatch_load_messages` issued right after it.
+    /// That is fine: history does not depend on the chat being open — only
+    /// update delivery for supergroups/channels and `viewMessages` without
+    /// `force_read` do — while chaining both calls on one thread would delay
+    /// every history load by an `openChat` round trip.
     fn dispatch_open_chat(&self, chat_id: i64);
 
     /// Informs TDLib that the user has closed a chat (fire-and-forget).
