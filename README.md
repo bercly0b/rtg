@@ -83,9 +83,10 @@ Prerequisites:
 
 - [mise](https://mise.jdx.dev/installing-mise.html), activated in your shell —
   installs the Rust toolchain pinned in [`mise.toml`](mise.toml)
-- On Linux, the libc++ runtime used by the prebuilt TDLib:
+- On Linux, libc++: TDLib is linked into `rtg` statically, but its C++
+  runtime comes from the system:
   ```bash
-  sudo apt install libc++1 libc++abi1 libunwind8
+  sudo apt install libc++-dev libc++abi-dev
   ```
 
 TDLib (~50MB) is downloaded automatically on first build via the

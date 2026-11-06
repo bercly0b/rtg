@@ -4,10 +4,18 @@ on:
   push:
     tags:
       - 'v[0-9]*'
+  # Builds every release target for changes that can break the build;
+  # nothing is published from a pull request.
+  pull_request:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/release.yml
 
 jobs:
   verify:
     name: Verify version
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Repository checkout
@@ -26,6 +34,8 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     needs: verify
+    # `verify` is skipped on pull requests.
+    if: ${{ !cancelled() && !failure() }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -48,7 +58,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libc++-dev libc++abi-dev patchelf
+          sudo apt-get install -y libc++-dev libc++abi-dev
 
       - name: Tools bootstrap (mise.toml)
         uses: jdx/mise-action@v5
@@ -64,36 +74,20 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Fix rpath (macOS)
-        if: runner.os == 'macOS'
+      - name: Check the binary runs without libtdjson
         run: |
-          BIN="target/${{ matrix.target }}/release/rtg"
-          for rpath in $(otool -l "$BIN" | awk '/cmd LC_RPATH/{f=1} f && /^[[:space:]]+path /{print $2; f=0}'); do
-            install_name_tool -delete_rpath "$rpath" "$BIN" 2>/dev/null || true
-          done
-          install_name_tool -add_rpath "@executable_path/../lib" "$BIN"
-
-      - name: Fix rpath (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          patchelf --set-rpath '$ORIGIN/../lib' "target/${{ matrix.target }}/release/rtg"
+          cargo test --release --target ${{ matrix.target }} --test static_tdlib
+          "target/${{ matrix.target }}/release/rtg" --version
 
       - name: Package archive
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
           ARCHIVE="rtg-${VERSION}-${{ matrix.target }}"
-          mkdir -p "$ARCHIVE/bin" "$ARCHIVE/lib"
+          mkdir -p "$ARCHIVE/bin"
 
           cp "target/${{ matrix.target }}/release/rtg" "$ARCHIVE/bin/rtg"
           chmod +x "$ARCHIVE/bin/rtg"
-
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            TDLIB=$(find "target/${{ matrix.target }}/release/build" -name "libtdjson.[0-9]*.dylib" | head -1)
-          else
-            TDLIB=$(find "target/${{ matrix.target }}/release/build" -name "libtdjson.so.[0-9]*" | head -1)
-          fi
-          cp "$TDLIB" "$ARCHIVE/lib/"
 
           cp install.sh "$ARCHIVE/install.sh"
           chmod +x "$ARCHIVE/install.sh"
@@ -109,6 +103,7 @@ jobs:
   release:
     name: Publish GitHub Release
     needs: build
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write

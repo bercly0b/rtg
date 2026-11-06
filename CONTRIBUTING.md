@@ -12,8 +12,9 @@ and where to find more detailed docs.
   installs the Rust toolchain and `cargo-llvm-cov` pinned in
   [`mise.toml`](mise.toml) and runs the project tasks
 - Git
-- On Linux: libc++ runtime for the prebuilt TDLib
-  (`sudo apt install libc++1 libc++abi1 libunwind8`)
+- On Linux: libc++ — TDLib is linked in statically, but its C++ runtime
+  comes from the system
+  (`sudo apt install libc++-dev libc++abi-dev`)
 
 TDLib is downloaded automatically on first build via the `download-tdlib`
 feature of `tdlib-rs` — no manual install required.
