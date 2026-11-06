@@ -1,5 +1,6 @@
 //! UI layer: rendering and interaction entry points (CLI/TUI).
 
+mod chat_folder_picker_popup;
 mod chat_info_popup;
 pub(crate) mod chat_message_list;
 mod chat_search_popup;

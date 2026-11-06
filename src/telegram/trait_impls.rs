@@ -25,11 +25,12 @@ use super::TelegramAdapter;
 impl ListChatsSource for TelegramAdapter {
     fn list_chats(
         &self,
+        list: crate::domain::chat_folder::ChatListKind,
         limit: usize,
         force: bool,
     ) -> Result<(Vec<crate::domain::chat::ChatSummary>, bool), ListChatsSourceError> {
         match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.list_chat_summaries(limit, force),
+            Some(backend) => backend.list_chat_summaries(list, limit, force),
             None => Err(ListChatsSourceError::Unavailable),
         }
     }

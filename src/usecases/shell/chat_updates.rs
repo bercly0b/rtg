@@ -132,6 +132,10 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                     ctx.dispatcher.dispatch_load_forum_topics(chat_id);
                 }
             }
+            ChatUpdate::ChatFoldersChanged { folders } => {
+                tracing::debug!(count = folders.folders.len(), "chat folders changed");
+                ctx.state.set_chat_folders(folders);
+            }
         }
     }
 

@@ -12,7 +12,7 @@ use std::time::Duration;
 use crate::domain::events::ChatUpdate;
 use crate::domain::message::Message;
 
-use super::tdlib_mappers::{effective_file_size, map_download_state};
+use super::tdlib_mappers::{effective_file_size, map_chat_folders, map_download_state};
 use super::tdlib_updates::TdLibUpdate;
 
 const CHAT_UPDATES_MONITOR_STARTED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_STARTED";
@@ -188,6 +188,12 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
             topic_id,
             unread_topic_count,
         }),
+        TdLibUpdate::ChatFolders {
+            chat_folders,
+            main_chat_list_position,
+        } => Some(ChatUpdate::ChatFoldersChanged {
+            folders: map_chat_folders(&chat_folders, main_chat_list_position),
+        }),
     }
 }
 
@@ -287,6 +293,7 @@ impl MessageMapper for StubMessageMapper {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::chat_folder::{ChatFolder, ChatFolders};
     use crate::domain::message::{DownloadStatus, MessageMedia, MessageStatus};
     use std::sync::mpsc;
 
@@ -670,6 +677,40 @@ mod tests {
         assert!(
             matches!(result, Some(ChatUpdate::UserStatusChanged { user_id: 42 })),
             "expected UserStatusChanged, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn map_chat_folders_to_chat_folders_changed() {
+        let mapper = StubMessageMapper;
+        let update = TdLibUpdate::ChatFolders {
+            chat_folders: vec![tdlib_rs::types::ChatFolderInfo {
+                id: 3,
+                name: tdlib_rs::types::ChatFolderName {
+                    text: tdlib_rs::types::FormattedText {
+                        text: "Work".to_owned(),
+                        entities: vec![],
+                    },
+                    animate_custom_emoji: false,
+                },
+                ..Default::default()
+            }],
+            main_chat_list_position: 1,
+        };
+
+        let result = map_update(update, &mapper);
+
+        assert_eq!(
+            result,
+            Some(ChatUpdate::ChatFoldersChanged {
+                folders: ChatFolders {
+                    folders: vec![ChatFolder {
+                        id: 3,
+                        title: "Work".to_owned(),
+                    }],
+                    main_list_position: 1,
+                },
+            })
         );
     }
 }

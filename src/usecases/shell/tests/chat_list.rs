@@ -32,6 +32,7 @@ fn chat_list_loaded_error_sets_error_state() {
     let mut o = make_orchestrator();
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
+            list: ChatListKind::Main,
             result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
             all_loaded: false,
         },
@@ -57,6 +58,7 @@ fn chat_list_reload_preserves_selection_by_current_chat_id() {
     // (e.g. chat 3 got a new message and moved to the top)
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
+            list: ChatListKind::Main,
             result: Ok(vec![chat(3, "Ops"), chat(1, "General"), chat(2, "Backend")]),
             all_loaded: false,
         },
@@ -106,6 +108,7 @@ fn chat_list_reload_cursor_follows_current_selection_not_dispatch_time() {
     // Background result arrives with reordered chats
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
+            list: ChatListKind::Main,
             result: Ok(vec![
                 chat(5, "Epsilon"),
                 chat(1, "Alpha"),
@@ -142,6 +145,7 @@ fn chat_list_reload_falls_back_when_selected_chat_disappears() {
     // Background refresh arrives without chat 3
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
+            list: ChatListKind::Main,
             result: Ok(vec![chat(1, "Alpha"), chat(2, "Beta")]),
             all_loaded: false,
         },
@@ -248,6 +252,7 @@ fn user_refresh_shows_notification_on_failure() {
     // Inject a failure
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
+            list: ChatListKind::Main,
             result: Err(BackgroundError::new("CHAT_LIST_UNAVAILABLE")),
             all_loaded: false,
         },
@@ -529,6 +534,7 @@ fn pending_flag_cleared_on_error_result_and_re_dispatches() {
     // Error result still triggers re-dispatch
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatListLoaded {
+            list: ChatListKind::Main,
             result: Err(BackgroundError::new("FAIL")),
             all_loaded: false,
         },

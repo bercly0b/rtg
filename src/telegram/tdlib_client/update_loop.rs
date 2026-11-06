@@ -107,6 +107,16 @@ impl TdLibClient {
                             }
                         }
 
+                        Update::ChatFolders(u) => {
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::ChatFolders {
+                                    chat_folders: u.chat_folders,
+                                    main_chat_list_position: u.main_chat_list_position,
+                                },
+                            );
+                        }
+
                         // TDLib option updates (e.g. "my_id" for current user)
                         Update::Option(u) => {
                             if u.name == "my_id" {

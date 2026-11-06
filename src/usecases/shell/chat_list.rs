@@ -1,4 +1,7 @@
-use crate::{domain::chat_list_state::ChatListUiState, usecases::background::TaskDispatcher};
+use crate::{
+    domain::{chat_folder::ChatListKind, chat_list_state::ChatListUiState},
+    usecases::background::TaskDispatcher,
+};
 
 use super::OrchestratorCtx;
 
@@ -28,8 +31,55 @@ pub(super) fn dispatch_chat_list_refresh<D: TaskDispatcher>(
     }
 
     *ctx.chat_list_in_flight = true;
+    let list = ctx.state.chat_list().kind();
     let limit = ctx.state.chat_list().total_limit();
-    ctx.dispatcher.dispatch_chat_list(force, limit);
+    ctx.dispatcher.dispatch_chat_list(list, force, limit);
+}
+
+pub(super) fn show_chat_folder_picker<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+    if !ctx.state.open_chat_folder_picker() {
+        ctx.state.set_notification("No chat folders");
+    }
+}
+
+pub(super) fn handle_chat_folder_picker_key<D: TaskDispatcher>(
+    ctx: &mut OrchestratorCtx<'_, D>,
+    key: &str,
+) {
+    match key {
+        "j" => {
+            if let Some(picker) = ctx.state.chat_folder_picker_mut() {
+                picker.select_next();
+            }
+        }
+        "k" => {
+            if let Some(picker) = ctx.state.chat_folder_picker_mut() {
+                picker.select_previous();
+            }
+        }
+        "enter" => {
+            let selected = ctx
+                .state
+                .chat_folder_picker()
+                .and_then(|picker| picker.selected())
+                .map(|entry| entry.list);
+            ctx.state.close_chat_folder_picker();
+            if let Some(list) = selected {
+                switch_chat_list(ctx, list);
+            }
+        }
+        "esc" | "q" | "f" => ctx.state.close_chat_folder_picker(),
+        _ => {}
+    }
+}
+
+fn switch_chat_list<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>, list: ChatListKind) {
+    if ctx.state.chat_list().kind() == list {
+        return;
+    }
+    tracing::debug!(?list, "switching chat list");
+    ctx.state.chat_list_mut().switch_to(list);
+    dispatch_chat_list_refresh(ctx, false);
 }
 
 pub(super) fn mark_selected_chat_as_read<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
