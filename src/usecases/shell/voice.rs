@@ -1,12 +1,18 @@
-use crate::{domain::command_popup_state::CommandPhase, usecases::background::TaskDispatcher};
+use crate::{
+    domain::command_popup_state::CommandPhase,
+    usecases::{background::TaskDispatcher, contracts::ShellEffect},
+};
 
-use super::OrchestratorCtx;
+use super::{command_popup::MediaCommands, ShellCtx};
 
 // Generic on purpose: the config may live outside the default location (`--config`).
 const RECORDING_FAILED_MESSAGE: &str =
     "Recording failed. Override recording command via [voice] record_cmd in the config file (press any key)";
 
-pub(super) fn start_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn start_voice_recording<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    media: &mut MediaCommands,
+) {
     use crate::{
         domain::command_popup_state::CommandPopupKind,
         usecases::{external_command, voice_recording},
@@ -18,11 +24,11 @@ pub(super) fn start_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx
 
     let file_path = voice_recording::generate_voice_file_path();
 
-    match external_command::start_command(ctx.voice_record_cmd, &file_path) {
+    match external_command::start_command(&media.voice_record_cmd, &file_path) {
         Ok((handle, rx)) => {
-            *ctx.command_handle = Some(handle);
-            *ctx.recording_file_path = Some(file_path);
-            *ctx.pending_command_rx = Some(rx);
+            media.command_handle = Some(handle);
+            media.recording_file_path = Some(file_path);
+            ctx.effects.push(ShellEffect::StreamCommandOutput(rx));
             ctx.state
                 .open_command_popup("Recording Voice", CommandPopupKind::Recording);
             tracing::info!("voice recording started");
@@ -47,8 +53,8 @@ pub(super) fn start_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx
 /// The handle is moved to the thread, which calls `stop()` and then drops it.
 /// The command's waiter thread sends `CommandExited` once the process is reaped.
 /// If the thread fails to spawn, `Drop` on the handle still terminates the process.
-pub(super) fn stop_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
-    if let Some(mut handle) = ctx.command_handle.take() {
+pub(super) fn stop_voice_recording(media: &mut MediaCommands) {
+    if let Some(mut handle) = media.command_handle.take() {
         if std::thread::Builder::new()
             .name("rtg-rec-stop".into())
             .spawn(move || handle.stop())
@@ -60,13 +66,14 @@ pub(super) fn stop_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<
 }
 
 pub(super) fn handle_recording_exited<D: TaskDispatcher>(
-    ctx: &mut OrchestratorCtx<'_, D>,
+    ctx: &mut ShellCtx<'_, D>,
+    media: &mut MediaCommands,
     phase: CommandPhase,
     success: bool,
 ) {
     match phase {
         CommandPhase::Running => {
-            *ctx.command_handle = None;
+            media.command_handle = None;
 
             if let Some(popup) = ctx.state.command_popup_mut() {
                 if success {
@@ -77,12 +84,12 @@ pub(super) fn handle_recording_exited<D: TaskDispatcher>(
                     popup.set_phase(CommandPhase::Failed {
                         message: RECORDING_FAILED_MESSAGE.into(),
                     });
-                    discard_voice_recording(ctx);
+                    discard_voice_recording(media);
                 }
             }
         }
         CommandPhase::Stopping => {
-            let file_ok = ctx
+            let file_ok = media
                 .recording_file_path
                 .as_ref()
                 .map(|p| std::fs::metadata(p).map(|m| m.len() > 0).unwrap_or(false))
@@ -97,7 +104,7 @@ pub(super) fn handle_recording_exited<D: TaskDispatcher>(
                     popup.set_phase(CommandPhase::Failed {
                         message: RECORDING_FAILED_MESSAGE.into(),
                     });
-                    discard_voice_recording(ctx);
+                    discard_voice_recording(media);
                 }
             }
         }
@@ -107,8 +114,11 @@ pub(super) fn handle_recording_exited<D: TaskDispatcher>(
     }
 }
 
-pub(super) fn send_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
-    let Some(file_path) = ctx.recording_file_path.take() else {
+pub(super) fn send_voice_recording<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    media: &mut MediaCommands,
+) {
+    let Some(file_path) = media.recording_file_path.take() else {
         return;
     };
     let Some(chat_id) = ctx.state.open_chat().chat_id() else {
@@ -132,8 +142,8 @@ pub(super) fn send_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<
         .dispatch_send_voice(chat_id, topic_id, file_path, pending_id);
 }
 
-pub(super) fn discard_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
-    if let Some(file_path) = ctx.recording_file_path.take() {
+pub(super) fn discard_voice_recording(media: &mut MediaCommands) {
+    if let Some(file_path) = media.recording_file_path.take() {
         let _ = std::fs::remove_file(&file_path);
         tracing::info!(file_path, "voice recording discarded");
     }

@@ -31,9 +31,9 @@ the growth of that number over time:
 - The update loop forwards `updateFile` as `TdLibUpdate::FileUpdated`; the chat
   updates monitor maps it to `ChatUpdate::FileUpdated`, which carries
   `downloaded_size`.
-- The orchestrator feeds the progress of the downloads RTG started
-  (`active_downloads`) into `DownloadSpeedMeter` in `ShellState`, and stops
-  tracking a file when it completes or is cancelled.
+- The orchestrator's `file_updates` module feeds the progress of the downloads
+  RTG started (`Downloads::active_downloads`) into `DownloadSpeedMeter` in
+  `ShellState`, and stops tracking a file when it completes or is cancelled.
 - The first report of each file only sets its baseline, so bytes downloaded
   earlier (a resumed download) do not inflate the speed.
 

@@ -1,3 +1,4 @@
+use tdlib_rs::enums::ChatList as TdChatList;
 use tdlib_rs::types::Chat;
 
 use crate::domain::chat::ChatSummary;
@@ -68,13 +69,11 @@ impl TdLibAuthBackend {
         force: bool,
     ) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError> {
         let limit_i32 = i32::try_from(limit).unwrap_or(i32::MAX);
+        let td_list = crate::telegram::tdlib_mappers::map_chat_list_kind(list);
 
         let result = self
             .client
-            .get_chats(
-                crate::telegram::tdlib_mappers::map_chat_list_kind(list),
-                limit_i32,
-            )
+            .get_chats(td_list.clone(), limit_i32)
             .map_err(map_list_chats_error)?;
 
         tracing::debug!(
@@ -85,22 +84,29 @@ impl TdLibAuthBackend {
             "Fetched chat IDs from TDLib"
         );
 
-        resolve_chat_list(&self.client, result.chat_ids, result.all_loaded, force)
+        resolve_chat_list(
+            &self.client,
+            &td_list,
+            result.chat_ids,
+            result.all_loaded,
+            force,
+        )
     }
 }
 
-/// Resolves the chat IDs returned by `getChats` into summaries.
+/// Resolves the chat IDs returned by `getChats` for `list` into summaries.
 ///
 /// Reports `Unavailable` when TDLib returned IDs but none of them resolved,
 /// or returned no IDs without signalling that the whole list is loaded.
 pub(super) fn resolve_chat_list(
     resolver: &dyn ChatDataResolver,
+    list: &TdChatList,
     chat_ids: Vec<i64>,
     all_loaded: bool,
     force: bool,
 ) -> Result<(Vec<ChatSummary>, bool), ListChatsSourceError> {
     let requested_count = chat_ids.len();
-    let summaries = build_summaries_from_ids(resolver, chat_ids, force);
+    let summaries = build_summaries_from_ids(resolver, list, chat_ids, force);
 
     if requested_count > 0 && summaries.is_empty() {
         tracing::warn!(
@@ -118,7 +124,10 @@ pub(super) fn resolve_chat_list(
     Ok((summaries, all_loaded))
 }
 
-/// Builds domain `ChatSummary` list from raw TDLib chat IDs.
+/// Builds domain `ChatSummary` list from raw TDLib chat IDs of `list`.
+///
+/// `is_pinned` is taken from each chat's position in `list`, so a folder
+/// shows the chats pinned in that folder rather than in the main list.
 ///
 /// When `force` is `false` (default), uses the update-driven cache for
 /// lookups — fast in-memory reads. Falls back to `get_chat` (TDLib SQLite)
@@ -130,6 +139,7 @@ pub(super) fn resolve_chat_list(
 /// where stale data is unacceptable.
 pub(super) fn build_summaries_from_ids(
     resolver: &dyn ChatDataResolver,
+    list: &TdChatList,
     chat_ids: Vec<i64>,
     force: bool,
 ) -> Vec<ChatSummary> {
@@ -169,6 +179,7 @@ pub(super) fn build_summaries_from_ids(
             resolve_chat_metadata(resolver, &chat, cache);
         let mut summary = crate::telegram::tdlib_mappers::map_chat_to_summary(
             &chat,
+            list,
             sender_name,
             is_online,
             is_bot,

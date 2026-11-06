@@ -23,8 +23,12 @@ panel title shows the active folder's name ("Chats" for the main list).
   `Loading` until the new list arrives. `ChatListLoaded` carries the list it was
   fetched for. A result for a list the user has already switched away from is
   discarded, and the pending refresh then reloads the active list.
+- **Pinned chats**: TDLib keeps a separate `ChatPosition` per chat list, each
+  with its own `is_pinned`. The chat list fetch passes the requested list down
+  to `map_chat_to_summary`, which marks a chat pinned only by its position in
+  that list. A folder's "Pinned" section therefore shows the chats pinned in
+  the folder, not the ones pinned in the main list.
 
 ## Out of scope
 
-Pinned chats inside a folder, and falling back when the active folder is
-deleted, are tracked as separate issues.
+Falling back when the active folder is deleted is tracked as a separate issue.

@@ -31,7 +31,23 @@ pub enum ActivePane {
     MessageInput,
 }
 
+/// A status-bar message. Equality ignores `shown_at`, so states showing the
+/// same message compare equal whenever it was set.
 #[derive(Debug, Clone)]
+struct Notification {
+    text: String,
+    shown_at: Instant,
+}
+
+impl PartialEq for Notification {
+    fn eq(&self, other: &Self) -> bool {
+        self.text == other.text
+    }
+}
+
+impl Eq for Notification {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellState {
     running: bool,
     connectivity_status: ConnectivityStatus,
@@ -49,7 +65,7 @@ pub struct ShellState {
     active_pane: ActivePane,
     help_visible: bool,
     command_popup: Option<CommandPopupState>,
-    notification: Option<(String, Instant)>,
+    notification: Option<Notification>,
     chat_info_popup: Option<ChatInfoPopupState>,
     message_info_popup: Option<MessageInfoPopupState>,
     reaction_picker: Option<ReactionPickerState>,
@@ -358,23 +374,26 @@ impl ShellState {
     }
 
     pub fn set_notification(&mut self, text: impl Into<String>) {
-        self.notification = Some((text.into(), Instant::now()));
+        self.notification = Some(Notification {
+            text: text.into(),
+            shown_at: Instant::now(),
+        });
     }
 
     /// Returns the notification text if it hasn't expired yet.
     pub fn active_notification(&self) -> Option<&str> {
-        self.notification.as_ref().and_then(|(text, created_at)| {
-            if created_at.elapsed() < NOTIFICATION_TTL {
-                Some(text.as_str())
-            } else {
-                None
-            }
-        })
+        self.notification
+            .as_ref()
+            .filter(|n| n.shown_at.elapsed() < NOTIFICATION_TTL)
+            .map(|n| n.text.as_str())
     }
 
     #[cfg(test)]
     pub fn set_notification_at(&mut self, text: impl Into<String>, at: Instant) {
-        self.notification = Some((text.into(), at));
+        self.notification = Some(Notification {
+            text: text.into(),
+            shown_at: at,
+        });
     }
 }
 
@@ -598,6 +617,27 @@ mod tests {
         state.set_notification("First");
         state.set_notification("Second");
         assert_eq!(state.active_notification(), Some("Second"));
+    }
+
+    #[test]
+    fn states_with_same_notification_set_at_different_times_are_equal() {
+        let mut earlier = ShellState::default();
+        earlier.set_notification_at("Saved", Instant::now() - Duration::from_secs(1));
+        let mut later = ShellState::default();
+        later.set_notification("Saved");
+
+        assert_eq!(earlier, later);
+    }
+
+    #[test]
+    fn states_with_different_notifications_are_not_equal() {
+        let mut first = ShellState::default();
+        first.set_notification("Saved");
+        let mut second = ShellState::default();
+        second.set_notification("Save failed");
+
+        assert_ne!(first, second);
+        assert_ne!(first, ShellState::default());
     }
 
     #[test]

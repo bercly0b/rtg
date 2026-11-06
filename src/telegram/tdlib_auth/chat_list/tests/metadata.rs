@@ -10,7 +10,7 @@ fn private_chat_resolves_user_from_cache() {
         .with_cached_chat(make_test_chat(1, "Alice"))
         .with_cached_user(make_online_user(1, "Alice"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].is_online, Some(true));
@@ -27,7 +27,7 @@ fn private_chat_falls_back_to_get_user_on_cache_miss() {
         .with_cached_chat(make_test_chat(1, "Bob"))
         .with_tdlib_user(make_online_user(1, "Bob"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].is_online, Some(true));
@@ -40,7 +40,7 @@ fn private_chat_user_fallback_populates_cache() {
         .with_cached_chat(make_test_chat(1, "Charlie"))
         .with_tdlib_user(make_online_user(1, "Charlie"));
 
-    let _ = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
+    let _ = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1], NO_FORCE);
 
     assert!(
         resolver.cache.get_user(1).is_some(),
@@ -52,7 +52,7 @@ fn private_chat_user_fallback_populates_cache() {
 fn private_chat_missing_user_returns_none_online() {
     let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Unknown User"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].is_online, None);
@@ -71,7 +71,7 @@ fn group_chat_resolves_sender_name() {
         .with_cached_chat(group_chat)
         .with_cached_user(make_test_user(42, "Sender"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![100], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![100], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].last_message_sender.as_deref(), Some("Sender"));
@@ -85,7 +85,7 @@ fn group_chat_missing_sender_returns_none() {
 
     let resolver = FakeResolver::new().with_cached_chat(group_chat);
 
-    let summaries = build_summaries_from_ids(&resolver, vec![100], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![100], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].last_message_sender, None);
@@ -101,7 +101,7 @@ fn private_chat_detects_bot() {
         .with_cached_chat(make_test_chat(1, "Bot Chat"))
         .with_cached_user(make_bot_user(1, "HelpBot"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert!(summaries[0].is_bot);
@@ -121,7 +121,7 @@ fn supergroup_chat_carries_is_forum_from_cache() {
         .cache
         .upsert_supergroup(make_test_supergroup(100, true));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![10], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![10], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert!(summaries[0].is_forum);
@@ -132,7 +132,7 @@ fn supergroup_chat_is_forum_defaults_false_when_supergroup_missing() {
     let chat = make_supergroup_chat(10, 100, "No cache");
     let resolver = FakeResolver::new().with_cached_chat(chat);
 
-    let summaries = build_summaries_from_ids(&resolver, vec![10], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![10], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert!(!summaries[0].is_forum);
@@ -142,7 +142,7 @@ fn supergroup_chat_is_forum_defaults_false_when_supergroup_missing() {
 fn non_supergroup_chat_is_never_forum() {
     let resolver = FakeResolver::new().with_cached_chat(make_group_chat(11, "Plain group"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![11], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![11], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert!(!summaries[0].is_forum);
@@ -172,7 +172,7 @@ fn forum_badge_counts_unread_topics_from_cache() {
         ],
     );
 
-    let summaries = build_summaries_from_ids(&resolver, vec![10], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![10], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert!(summaries[0].is_forum);
@@ -192,7 +192,7 @@ fn unseeded_forum_leaves_count_none() {
         .cache
         .upsert_supergroup(make_test_supergroup(100, true));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![10], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![10], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].unread_topic_count, None);
@@ -210,7 +210,7 @@ fn seeded_read_forum_reports_zero_unread_topics() {
         .cache
         .seed_forum_topics(10, &[make_test_forum_topic(1, 0)]);
 
-    let summaries = build_summaries_from_ids(&resolver, vec![10], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![10], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].unread_topic_count, Some(0));
@@ -226,7 +226,7 @@ fn non_forum_chat_has_no_unread_topic_count() {
         .cache
         .seed_forum_topics(1, &[make_test_forum_topic(1, 1)]);
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1], NO_FORCE);
 
     assert_eq!(summaries[0].unread_count, 9);
     assert_eq!(summaries[0].unread_topic_count, None);

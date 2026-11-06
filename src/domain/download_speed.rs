@@ -15,7 +15,7 @@ const MIN_MEASURED_SPAN: Duration = Duration::from_secs(1);
 ///
 /// Fed with each file's running downloaded byte count; the speed is averaged
 /// over a sliding window so it does not jump on every progress update.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DownloadSpeedMeter {
     downloaded_by_file: HashMap<i32, u64>,
     received_total: u64,

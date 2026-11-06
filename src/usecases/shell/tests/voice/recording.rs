@@ -184,19 +184,22 @@ fn command_popup_q_stops_live_recording_process() {
     use crate::domain::command_popup_state::CommandPhase;
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-    o.voice_record_cmd = "sleep 60".to_owned();
+    o.media.voice_record_cmd = "sleep 60".to_owned();
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("v", false)))
         .unwrap();
-    assert!(o.command_handle.is_some(), "recording must have started");
-    let rx = o
-        .take_pending_command_rx()
-        .expect("command events receiver");
+    assert!(
+        o.media.command_handle.is_some(),
+        "recording must have started"
+    );
+    let Some(ShellEffect::StreamCommandOutput(rx)) = o.take_effects().pop() else {
+        panic!("command events receiver");
+    };
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
         .unwrap();
     assert!(
-        o.command_handle.is_none(),
+        o.media.command_handle.is_none(),
         "handle must move to the stop thread"
     );
     assert_eq!(
@@ -222,13 +225,13 @@ fn v_with_missing_record_binary_shows_start_error() {
     use crate::domain::command_popup_state::CommandPhase;
 
     let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
-    o.voice_record_cmd = "rtg-test-missing-binary {file_path}".to_owned();
+    o.media.voice_record_cmd = "rtg-test-missing-binary {file_path}".to_owned();
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("v", false)))
         .unwrap();
 
-    assert!(o.command_handle.is_none());
-    assert!(o.recording_file_path.is_none());
+    assert!(o.media.command_handle.is_none());
+    assert!(o.media.recording_file_path.is_none());
     let popup = o.state().command_popup().expect("failure must be visible");
     assert!(
         matches!(popup.phase(), CommandPhase::Failed { message } if message.contains("[voice] record_cmd")),
