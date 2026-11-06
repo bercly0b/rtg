@@ -1,10 +1,12 @@
 mod cache_lookup;
 mod failures;
 mod metadata;
+mod pinned;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use tdlib_rs::enums::ChatList;
 use tdlib_rs::types::{Chat, User};
 
 use crate::domain::chat::ChatType;
@@ -16,6 +18,7 @@ use crate::usecases::list_chats::ListChatsSourceError;
 use super::{build_summaries_from_ids, resolve_chat_list, ChatDataResolver};
 
 const NO_FORCE: bool = false;
+const MAIN_LIST: ChatList = ChatList::Main;
 
 // ---------------------------------------------------------------------------
 // Fake resolver

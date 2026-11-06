@@ -14,7 +14,8 @@ fn l_on_voice_message_opens_playback_popup() {
         1,
         vec![voice_message_downloaded(10, path)],
     );
-    o.open_handlers
+    o.media
+        .open_handlers
         .insert("audio/ogg".to_owned(), "true".to_owned());
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
@@ -63,7 +64,8 @@ fn l_ignored_when_popup_already_open() {
         1,
         vec![voice_message_downloaded(10, path)],
     );
-    o.open_handlers
+    o.media
+        .open_handlers
         .insert("audio/ogg".to_owned(), "true".to_owned());
 
     o.state
@@ -87,7 +89,8 @@ fn playback_popup_auto_closes_on_process_exit() {
         1,
         vec![voice_message_downloaded(10, path)],
     );
-    o.open_handlers
+    o.media
+        .open_handlers
         .insert("audio/ogg".to_owned(), "true".to_owned());
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
@@ -111,7 +114,8 @@ fn q_closes_playback_popup_immediately() {
         1,
         vec![voice_message_downloaded(10, path)],
     );
-    o.open_handlers
+    o.media
+        .open_handlers
         .insert("audio/ogg".to_owned(), "true".to_owned());
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
@@ -137,7 +141,8 @@ fn l_on_audio_message_opens_playback_popup() {
         1,
         vec![audio_message_downloaded(10, path)],
     );
-    o.open_handlers
+    o.media
+        .open_handlers
         .insert("audio/*".to_owned(), "true".to_owned());
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
@@ -159,7 +164,8 @@ fn voice_with_wildcard_handler_opens_playback_popup() {
         1,
         vec![voice_message_downloaded(10, path)],
     );
-    o.open_handlers
+    o.media
+        .open_handlers
         .insert("audio/*".to_owned(), "true".to_owned());
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))

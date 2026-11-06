@@ -8,7 +8,7 @@ use super::*;
 fn cache_hit_skips_get_chat() {
     let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Cached Chat"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].chat_id, 1);
@@ -24,7 +24,7 @@ fn cache_hit_skips_get_chat() {
 fn cache_miss_falls_back_to_get_chat() {
     let resolver = FakeResolver::new().with_tdlib_chat(make_test_chat(2, "TDLib Chat"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![2], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![2], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].chat_id, 2);
@@ -36,7 +36,7 @@ fn cache_miss_falls_back_to_get_chat() {
 fn cache_miss_fallback_populates_cache() {
     let resolver = FakeResolver::new().with_tdlib_chat(make_test_chat(3, "Backfilled"));
 
-    let _ = build_summaries_from_ids(&resolver, vec![3], NO_FORCE);
+    let _ = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![3], NO_FORCE);
 
     let cached = resolver.cache.get_chat(3);
     assert!(
@@ -52,7 +52,7 @@ fn mixed_cache_hit_and_miss() {
         .with_cached_chat(make_test_chat(1, "From Cache"))
         .with_tdlib_chat(make_test_chat(2, "From TDLib"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1, 2], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1, 2], NO_FORCE);
 
     assert_eq!(summaries.len(), 2);
     assert_eq!(summaries[0].title, "From Cache");
@@ -79,7 +79,7 @@ fn stale_cache_serves_cached_data_without_tdlib_call() {
 
     let resolver = FakeResolver::new().with_cached_chat(stale_chat);
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].unread_count, 5);
@@ -101,7 +101,7 @@ fn preserves_input_order() {
         .with_cached_chat(make_test_chat(1, "First"))
         .with_cached_chat(make_test_chat(2, "Second"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1, 2, 3], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1, 2, 3], NO_FORCE);
 
     let ids: Vec<i64> = summaries.iter().map(|s| s.chat_id).collect();
     assert_eq!(ids, vec![1, 2, 3]);
@@ -117,7 +117,7 @@ fn force_bypasses_cache_and_calls_get_chat() {
         .with_cached_chat(make_test_chat(1, "Stale Cache"))
         .with_tdlib_chat(make_test_chat(1, "Fresh TDLib"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1], true);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1], true);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].title, "Fresh TDLib");
@@ -132,7 +132,7 @@ fn force_bypasses_cache_and_calls_get_chat() {
 fn force_populates_cache_from_tdlib() {
     let resolver = FakeResolver::new().with_tdlib_chat(make_test_chat(1, "From TDLib"));
 
-    let _ = build_summaries_from_ids(&resolver, vec![1], true);
+    let _ = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1], true);
 
     let cached = resolver.cache.get_chat(1);
     assert!(cached.is_some(), "force path should populate cache");
@@ -143,7 +143,7 @@ fn force_populates_cache_from_tdlib() {
 fn force_skips_chat_on_tdlib_failure() {
     let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Cached Only"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1], true);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1], true);
 
     // Chat is in cache but NOT in tdlib_chats HashMap — force path fails
     assert!(
@@ -159,7 +159,7 @@ fn no_force_uses_cache_first() {
         .with_cached_chat(make_test_chat(1, "From Cache"))
         .with_tdlib_chat(make_test_chat(1, "From TDLib"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1], false);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1], false);
 
     assert_eq!(summaries[0].title, "From Cache");
     assert_eq!(
@@ -205,7 +205,7 @@ fn warm_cache_first_load_makes_no_tdlib_calls() {
         .cache
         .seed_forum_topics(3, &[make_test_forum_topic(1, 5)]);
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1, 2, 3], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1, 2, 3], NO_FORCE);
 
     assert_eq!(summaries.len(), 3, "all chats resolved from cache");
     assert_eq!(summaries[2].unread_topic_count, Some(1));

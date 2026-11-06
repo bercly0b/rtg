@@ -13,7 +13,7 @@ pub(super) fn make_orchestrator() -> TestOrchestrator {
     );
     // Use min threshold of 1 for existing tests — any cached message triggers display.
     // Tests for the threshold itself use make_orchestrator_with_threshold().
-    o.min_display_messages = 1;
+    o.open_chat_sync.min_display_messages = 1;
     // Default to a connected session so tests exercising server-bound
     // actions (refresh, send) don't have to inject this themselves. Tests
     // that need a different connectivity state inject it explicitly.
@@ -136,11 +136,11 @@ pub(super) fn make_orchestrator_with_cached_chats(chats: Vec<ChatSummary>) -> Te
         RecordingDispatcher::new(),
         state,
         None,
-        1, // No threshold in most tests — any cached message triggers instant display
-        crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
-        std::collections::HashMap::new(),
-        10_000_000,
-        std::collections::HashMap::new(),
+        // No threshold in most tests — any cached message triggers instant display.
+        OrchestratorConfig {
+            min_display_messages: 1,
+            ..OrchestratorConfig::default()
+        },
     )
 }
 
@@ -155,11 +155,11 @@ pub(super) fn make_orchestrator_with_cache(
         RecordingDispatcher::new(),
         state,
         Some(Arc::new(cache)),
-        1, // No threshold in most tests — any cached message triggers instant display
-        crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
-        std::collections::HashMap::new(),
-        10_000_000,
-        std::collections::HashMap::new(),
+        // No threshold in most tests — any cached message triggers instant display.
+        OrchestratorConfig {
+            min_display_messages: 1,
+            ..OrchestratorConfig::default()
+        },
     )
 }
 
@@ -174,11 +174,10 @@ pub(super) fn make_orchestrator_with_threshold(
         RecordingDispatcher::new(),
         state,
         None,
-        min_display_messages,
-        crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
-        std::collections::HashMap::new(),
-        10_000_000,
-        std::collections::HashMap::new(),
+        OrchestratorConfig {
+            min_display_messages,
+            ..OrchestratorConfig::default()
+        },
     )
 }
 
@@ -194,10 +193,9 @@ pub(super) fn make_orchestrator_with_cache_and_threshold(
         RecordingDispatcher::new(),
         state,
         Some(Arc::new(cache)),
-        min_display_messages,
-        crate::usecases::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
-        std::collections::HashMap::new(),
-        10_000_000,
-        std::collections::HashMap::new(),
+        OrchestratorConfig {
+            min_display_messages,
+            ..OrchestratorConfig::default()
+        },
     )
 }

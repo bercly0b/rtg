@@ -13,7 +13,7 @@ use super::*;
 fn double_miss_skips_chat() {
     let resolver = FakeResolver::new();
 
-    let summaries = build_summaries_from_ids(&resolver, vec![999], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![999], NO_FORCE);
 
     assert!(summaries.is_empty(), "unresolvable chat should be skipped");
     assert_eq!(
@@ -27,7 +27,7 @@ fn double_miss_skips_chat() {
 fn all_chats_fail_returns_empty_vec() {
     let resolver = FakeResolver::new();
 
-    let summaries = build_summaries_from_ids(&resolver, vec![10, 20, 30], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![10, 20, 30], NO_FORCE);
 
     assert!(summaries.is_empty());
     assert_eq!(resolver.get_chat_call_count(), 3);
@@ -37,7 +37,7 @@ fn all_chats_fail_returns_empty_vec() {
 fn partial_failure_returns_resolved_chats_only() {
     let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Good Chat"));
 
-    let summaries = build_summaries_from_ids(&resolver, vec![1, 2], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1, 2], NO_FORCE);
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].chat_id, 1);
@@ -52,7 +52,7 @@ fn unresolved_chats_log_one_summary_warning() {
     let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Good Chat"));
 
     let (summaries, logs) =
-        capture_logs(|| build_summaries_from_ids(&resolver, vec![1, 2, 3], NO_FORCE));
+        capture_logs(|| build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1, 2, 3], NO_FORCE));
 
     assert_eq!(summaries.len(), 1);
     let warnings = log_lines(&logs, "WARN");
@@ -70,7 +70,8 @@ fn unresolved_chats_log_one_summary_warning() {
 fn force_unresolved_chats_log_one_summary_warning() {
     let resolver = FakeResolver::new();
 
-    let (summaries, logs) = capture_logs(|| build_summaries_from_ids(&resolver, vec![1, 2], true));
+    let (summaries, logs) =
+        capture_logs(|| build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1, 2], true));
 
     assert!(summaries.is_empty());
     let warnings = log_lines(&logs, "WARN");
@@ -87,7 +88,8 @@ fn force_unresolved_chats_log_one_summary_warning() {
 fn resolved_chats_log_no_warning() {
     let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Good Chat"));
 
-    let (_, logs) = capture_logs(|| build_summaries_from_ids(&resolver, vec![1], NO_FORCE));
+    let (_, logs) =
+        capture_logs(|| build_summaries_from_ids(&resolver, &MAIN_LIST, vec![1], NO_FORCE));
 
     assert!(log_lines(&logs, "WARN").is_empty(), "{logs}");
 }
@@ -100,7 +102,7 @@ fn resolved_chats_log_no_warning() {
 fn empty_chat_ids_returns_empty_vec() {
     let resolver = FakeResolver::new();
 
-    let summaries = build_summaries_from_ids(&resolver, vec![], NO_FORCE);
+    let summaries = build_summaries_from_ids(&resolver, &MAIN_LIST, vec![], NO_FORCE);
 
     assert!(summaries.is_empty());
     assert_eq!(resolver.get_chat_call_count(), 0);
@@ -114,7 +116,7 @@ fn empty_chat_ids_returns_empty_vec() {
 fn unresolvable_chat_ids_report_unavailable() {
     let resolver = FakeResolver::new();
 
-    let result = resolve_chat_list(&resolver, vec![10, 20], true, NO_FORCE);
+    let result = resolve_chat_list(&resolver, &MAIN_LIST, vec![10, 20], true, NO_FORCE);
 
     assert_eq!(result, Err(ListChatsSourceError::Unavailable));
 }
@@ -123,7 +125,7 @@ fn unresolvable_chat_ids_report_unavailable() {
 fn zero_chat_ids_before_all_loaded_report_unavailable() {
     let resolver = FakeResolver::new();
 
-    let result = resolve_chat_list(&resolver, vec![], false, NO_FORCE);
+    let result = resolve_chat_list(&resolver, &MAIN_LIST, vec![], false, NO_FORCE);
 
     assert_eq!(result, Err(ListChatsSourceError::Unavailable));
 }
@@ -132,7 +134,7 @@ fn zero_chat_ids_before_all_loaded_report_unavailable() {
 fn zero_chat_ids_after_all_loaded_is_empty_list() {
     let resolver = FakeResolver::new();
 
-    let result = resolve_chat_list(&resolver, vec![], true, NO_FORCE);
+    let result = resolve_chat_list(&resolver, &MAIN_LIST, vec![], true, NO_FORCE);
 
     assert_eq!(result, Ok((vec![], true)));
 }
@@ -142,7 +144,8 @@ fn partially_resolved_chat_ids_return_resolved_chats() {
     let resolver = FakeResolver::new().with_cached_chat(make_test_chat(1, "Good Chat"));
 
     let (summaries, all_loaded) =
-        resolve_chat_list(&resolver, vec![1, 2], false, NO_FORCE).expect("partial list is ok");
+        resolve_chat_list(&resolver, &MAIN_LIST, vec![1, 2], false, NO_FORCE)
+            .expect("partial list is ok");
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].chat_id, 1);

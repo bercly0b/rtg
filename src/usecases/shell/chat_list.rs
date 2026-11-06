@@ -1,21 +1,42 @@
 use crate::{
-    domain::{chat_folder::ChatListKind, chat_list_state::ChatListUiState},
-    usecases::background::TaskDispatcher,
+    domain::{chat::ChatSummary, chat_folder::ChatListKind, chat_list_state::ChatListUiState},
+    usecases::background::{BackgroundError, TaskDispatcher},
 };
 
-use super::OrchestratorCtx;
+use super::{chat_open::OpenChatSync, ShellCtx};
+
+/// Bookkeeping of the background chat list loads.
+#[derive(Default)]
+pub(super) struct ChatListLoads {
+    /// Guards against dispatching duplicate chat list requests while one is in-flight.
+    pub in_flight: bool,
+    /// When `true`, a refresh request arrived while one was already in-flight.
+    /// The in-flight result may be stale, so another refresh is dispatched
+    /// automatically when the current one completes.
+    pub refresh_pending: bool,
+    /// Accumulated `force` flag for the pending refresh. OR-merged from all
+    /// refresh requests that arrived while in-flight: if any of them was
+    /// `force=true`, the pending re-dispatch will also be forced.
+    pub pending_force: bool,
+    /// When `true`, the current in-flight chat list refresh was triggered by the user (R key)
+    /// so we should show a status-bar notification when it completes.
+    pub user_requested_refresh: bool,
+    /// Guards against dispatching duplicate forum badge warm-up sweeps.
+    pub forum_warmup_in_flight: bool,
+}
 
 pub(super) fn dispatch_chat_list_refresh<D: TaskDispatcher>(
-    ctx: &mut OrchestratorCtx<'_, D>,
+    ctx: &mut ShellCtx<'_, D>,
+    loads: &mut ChatListLoads,
     force: bool,
 ) {
-    if *ctx.chat_list_in_flight {
+    if loads.in_flight {
         tracing::debug!(
             force,
             "chat list refresh already in-flight, marking pending"
         );
-        *ctx.chat_list_refresh_pending = true;
-        *ctx.chat_list_pending_force |= force;
+        loads.refresh_pending = true;
+        loads.pending_force |= force;
         return;
     }
 
@@ -30,20 +51,105 @@ pub(super) fn dispatch_chat_list_refresh<D: TaskDispatcher>(
         ctx.state.chat_list_mut().set_loading();
     }
 
-    *ctx.chat_list_in_flight = true;
+    loads.in_flight = true;
     let list = ctx.state.chat_list().kind();
     let limit = ctx.state.chat_list().total_limit();
     ctx.dispatcher.dispatch_chat_list(list, force, limit);
 }
 
-pub(super) fn show_chat_folder_picker<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn handle_chat_list_loaded<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    loads: &mut ChatListLoads,
+    list: ChatListKind,
+    result: Result<Vec<ChatSummary>, BackgroundError>,
+    all_loaded: bool,
+) {
+    loads.in_flight = false;
+    let was_pending = std::mem::take(&mut loads.refresh_pending);
+    let pending_force = std::mem::take(&mut loads.pending_force);
+
+    // When a re-dispatch is about to happen, defer the user notification
+    // to the next completion — the pending result will be more up-to-date.
+    let user_requested = if was_pending {
+        false
+    } else {
+        std::mem::take(&mut loads.user_requested_refresh)
+    };
+
+    match result {
+        // The user switched chat lists while this request was in
+        // flight; the switch marked a refresh of the new list pending.
+        _ if list != ctx.state.chat_list().kind() => {
+            tracing::debug!(?list, "background: discarding stale chat list result");
+        }
+        Ok(chats) => {
+            tracing::debug!(
+                chat_count = chats.len(),
+                all_loaded,
+                "background: chat list loaded"
+            );
+            if user_requested {
+                ctx.state.set_notification("Chat list refreshed");
+            }
+            // Forums reporting unread whose badge is unknown (topic
+            // cache not seeded yet) get their counts resolved by a
+            // background sweep so the list itself renders instantly.
+            let warmup_ids: Vec<i64> = chats
+                .iter()
+                .filter(|c| c.is_forum && c.unread_count > 0 && c.unread_topic_count.is_none())
+                .map(|c| c.chat_id)
+                .collect();
+            ctx.state.chat_list_mut().set_all_chats_loaded(all_loaded);
+            ctx.state.chat_list_mut().set_ready(chats);
+            if !warmup_ids.is_empty() && !loads.forum_warmup_in_flight {
+                loads.forum_warmup_in_flight = true;
+                ctx.dispatcher.dispatch_forum_unread_counts(warmup_ids);
+            }
+        }
+        Err(error) => {
+            tracing::warn!(code = error.code, "background: chat list load failed");
+            if user_requested {
+                ctx.state.set_notification("Chat list refresh failed");
+            }
+            ctx.state.chat_list_mut().set_error();
+        }
+    }
+
+    if was_pending {
+        tracing::debug!(
+            pending_force,
+            "re-dispatching chat list refresh (pending flag was set)"
+        );
+        dispatch_chat_list_refresh(ctx, loads, pending_force);
+    }
+}
+
+pub(super) fn handle_forum_unread_counts_loaded<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    loads: &mut ChatListLoads,
+    counts: Vec<(i64, u32)>,
+) {
+    loads.forum_warmup_in_flight = false;
+    tracing::debug!(
+        count = counts.len(),
+        "background: forum unread-topic counts loaded"
+    );
+    for (chat_id, count) in counts {
+        ctx.state
+            .chat_list_mut()
+            .set_forum_unread_topic_count(chat_id, count);
+    }
+}
+
+pub(super) fn show_chat_folder_picker<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {
     if !ctx.state.open_chat_folder_picker() {
         ctx.state.set_notification("No chat folders");
     }
 }
 
 pub(super) fn handle_chat_folder_picker_key<D: TaskDispatcher>(
-    ctx: &mut OrchestratorCtx<'_, D>,
+    ctx: &mut ShellCtx<'_, D>,
+    loads: &mut ChatListLoads,
     key: &str,
 ) {
     match key {
@@ -65,7 +171,7 @@ pub(super) fn handle_chat_folder_picker_key<D: TaskDispatcher>(
                 .map(|entry| entry.list);
             ctx.state.close_chat_folder_picker();
             if let Some(list) = selected {
-                switch_chat_list(ctx, list);
+                switch_chat_list(ctx, loads, list);
             }
         }
         "esc" | "q" | "f" => ctx.state.close_chat_folder_picker(),
@@ -73,16 +179,23 @@ pub(super) fn handle_chat_folder_picker_key<D: TaskDispatcher>(
     }
 }
 
-fn switch_chat_list<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>, list: ChatListKind) {
+fn switch_chat_list<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    loads: &mut ChatListLoads,
+    list: ChatListKind,
+) {
     if ctx.state.chat_list().kind() == list {
         return;
     }
     tracing::debug!(?list, "switching chat list");
     ctx.state.chat_list_mut().switch_to(list);
-    dispatch_chat_list_refresh(ctx, false);
+    dispatch_chat_list_refresh(ctx, loads, false);
 }
 
-pub(super) fn mark_selected_chat_as_read<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn mark_selected_chat_as_read<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &OpenChatSync,
+) {
     let Some(chat) = ctx.state.chat_list().selected_chat() else {
         return;
     };
@@ -101,7 +214,7 @@ pub(super) fn mark_selected_chat_as_read<D: TaskDispatcher>(ctx: &mut Orchestrat
     ctx.state.chat_list_mut().clear_selected_chat_unread();
 
     // If this chat is already opened in TDLib, just mark messages as read directly
-    if *ctx.tdlib_opened_chat_id == Some(chat_id) {
+    if sync.tdlib_opened_chat_id == Some(chat_id) {
         // Mark-from-chat-list is only triggered from the root list, never
         // from inside a forum topic — no topic_id to thread.
         ctx.dispatcher
@@ -110,23 +223,4 @@ pub(super) fn mark_selected_chat_as_read<D: TaskDispatcher>(ctx: &mut Orchestrat
         ctx.dispatcher
             .dispatch_mark_chat_as_read(chat_id, last_message_id);
     }
-}
-
-pub(super) fn show_chat_info_popup<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
-    let Some(chat) = ctx.state.chat_list().selected_chat() else {
-        return;
-    };
-
-    let chat_id = chat.chat_id;
-    let title = chat.title.clone();
-    let chat_type = chat.chat_type;
-
-    ctx.state.show_chat_info_loading(chat_id, &title);
-
-    ctx.dispatcher
-        .dispatch_chat_info(crate::usecases::chat_subtitle::ChatInfoQuery {
-            chat_id,
-            chat_type,
-            title,
-        });
 }

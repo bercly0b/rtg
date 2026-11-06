@@ -18,45 +18,50 @@ a **context struct** that borrows the relevant fields.
   full struct.
 - No coupling to a specific struct — logic is reusable.
 
-### `OrchestratorCtx` — concrete example
+### Shell orchestrator — concrete example
 
 The shell orchestrator (`src/usecases/shell/`) is the canonical instance of
-this pattern. `OrchestratorCtx` borrows the parts of `ShellState` and the
-dispatcher that the orchestrator's free functions touch:
+this pattern. Its bookkeeping is grouped into **zones** — plain structs, each
+defined in the module that owns the concern (`ChatListLoads` in `chat_list`,
+`OpenChatSync` in `chat_open`, `Downloads` in `file_updates`,
+`MediaCommands` in `command_popup`). Every handler gets a small base context
+and takes the zones it touches as separate arguments, so its signature states
+what it can change:
 
 ```rust
 // src/usecases/shell/mod.rs
-pub(super) struct OrchestratorCtx<'a, D: TaskDispatcher> {
+struct ShellCtx<'a, D: TaskDispatcher> {
     pub state: &'a mut ShellState,
     pub dispatcher: &'a D,
-    pub chat_list_in_flight: &'a mut bool,
-    // ... other borrowed fields
+    pub effects: &'a mut Vec<ShellEffect>,
 }
+
+// src/usecases/shell/chat_list.rs
+pub(super) fn dispatch_chat_list_refresh<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    loads: &mut ChatListLoads,
+    force: bool,
+) { /* ... */ }
 ```
 
-The owning struct exposes a builder method:
+Routers (`handle_event`, `key_dispatch`, `background_results`,
+`chat_updates`) take the root context — the base context plus every zone —
+and hand each handler the zones it needs. Disjoint field borrows make this
+work without cloning:
 
 ```rust
-impl<S, O, D> DefaultShellOrchestrator<S, O, D> {
-    fn as_ctx(&mut self) -> OrchestratorCtx<'_, D> {
-        OrchestratorCtx {
-            state: &mut self.state,
-            dispatcher: &self.dispatcher,
-            chat_list_in_flight: &mut self.chat_list_in_flight,
-            // ...
-        }
-    }
+struct OrchestratorCtx<'a, D: TaskDispatcher> {
+    pub shell: ShellCtx<'a, D>,
+    pub chat_list_loads: &'a mut ChatListLoads,
+    pub open_chat_sync: &'a mut OpenChatSync,
+    // ... other zones
 }
+
+chat_list::dispatch_chat_list_refresh(&mut ctx.shell, ctx.chat_list_loads, false);
 ```
 
-Methods on the orchestrator delegate to free functions in sub-modules
-(`chat_list`, `chat_open`, `voice`, `message_actions`, ...):
-
-```rust
-fn start_voice_recording(&mut self) {
-    voice::start_voice_recording(&mut self.as_ctx());
-}
-```
+The owning struct builds the root context with `as_ctx()`. Design rationale:
+[`features/shell-orchestrator-decomposition.md`](features/shell-orchestrator-decomposition.md).
 
 ### When this pattern doesn't fit
 

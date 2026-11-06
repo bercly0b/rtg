@@ -72,7 +72,7 @@ fn command_exited_transitions_running_to_awaiting_on_success() {
         "expected AwaitingConfirmation but got {:?}",
         popup.phase()
     );
-    assert!(o.command_handle.is_none());
+    assert!(o.media.command_handle.is_none());
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn stopping_phase_transitions_to_failed_when_file_missing() {
         CommandPhase::Failed { .. }
     ));
     assert!(
-        o.recording_file_path.is_none(),
+        o.media.recording_file_path.is_none(),
         "failed recording should discard file path"
     );
 }
@@ -230,9 +230,9 @@ fn command_exited_with_failure_transitions_to_failed() {
         "expected Failed phase but got {:?}",
         popup.phase()
     );
-    assert!(o.command_handle.is_none());
+    assert!(o.media.command_handle.is_none());
     assert!(
-        o.recording_file_path.is_none(),
+        o.media.recording_file_path.is_none(),
         "failed recording should discard file path"
     );
 }
@@ -275,19 +275,25 @@ fn failed_phase_message_mentions_config_without_hardcoded_path() {
 }
 
 #[test]
-fn take_pending_command_rx_returns_none_by_default() {
+fn take_effects_is_empty_by_default() {
     let mut o = make_orchestrator();
-    assert!(o.take_pending_command_rx().is_none());
+    assert!(o.take_effects().is_empty());
 }
 
 #[test]
-fn take_pending_command_rx_returns_receiver_once() {
-    let mut o = make_orchestrator();
-    let (_, rx) = std::sync::mpsc::channel::<crate::domain::events::CommandEvent>();
-    o.pending_command_rx = Some(rx);
+fn started_recording_queues_its_output_stream_once() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+    o.media.voice_record_cmd = "sleep 60".to_owned();
 
-    assert!(o.take_pending_command_rx().is_some());
-    assert!(o.take_pending_command_rx().is_none());
+    o.handle_event(AppEvent::InputKey(KeyInput::new("v", false)))
+        .unwrap();
+
+    let effects = o.take_effects();
+    assert!(
+        matches!(effects.as_slice(), [ShellEffect::StreamCommandOutput(_)]),
+        "unexpected effects {effects:?}"
+    );
+    assert!(o.take_effects().is_empty());
 }
 
 #[test]
