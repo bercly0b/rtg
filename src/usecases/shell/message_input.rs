@@ -3,12 +3,9 @@ use crate::{
     usecases::background::TaskDispatcher,
 };
 
-use super::OrchestratorCtx;
+use super::ShellCtx;
 
-pub(super) fn handle_message_input_key<D: TaskDispatcher>(
-    ctx: &mut OrchestratorCtx<'_, D>,
-    key: &str,
-) {
+pub(super) fn handle_message_input_key<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>, key: &str) {
     match key {
         "esc" => {
             if ctx.state.message_input().editing().is_some() {
@@ -44,7 +41,7 @@ pub(super) fn handle_message_input_key<D: TaskDispatcher>(
     }
 }
 
-fn try_edit_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+fn try_edit_message<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {
     let text = ctx.state.message_input().text().to_string();
     let trimmed = text.trim();
 
@@ -71,7 +68,7 @@ fn try_edit_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
         .dispatch_edit_message(edit_ctx.chat_id, edit_ctx.message_id, text);
 }
 
-fn try_send_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+fn try_send_message<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {
     let text = ctx.state.message_input().text().to_string();
     let trimmed = text.trim();
 

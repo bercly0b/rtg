@@ -28,7 +28,7 @@ use crate::{
         contracts::ShellOrchestrator,
         guided_auth::{AuthBackendError, AuthTerminal, StdTerminal},
         load_messages::CachedMessagesSource,
-        shell::DefaultShellOrchestrator,
+        shell::{DefaultShellOrchestrator, OrchestratorConfig},
     },
 };
 
@@ -144,11 +144,13 @@ fn compose_shell_with_factory(
             dispatcher,
             initial_state,
             cache_source,
-            cache_cfg.min_display_messages,
-            context.config.voice.record_cmd.clone(),
-            context.config.open.handlers.clone(),
-            context.config.download.max_auto_download_bytes(),
-            context.config.keys.overrides.clone(),
+            OrchestratorConfig {
+                min_display_messages: cache_cfg.min_display_messages,
+                voice_record_cmd: context.config.voice.record_cmd.clone(),
+                open_handlers: context.config.open.handlers.clone(),
+                max_auto_download_bytes: context.config.download.max_auto_download_bytes(),
+                key_overrides: context.config.keys.overrides.clone(),
+            },
         )),
         _connectivity_monitor: connectivity_monitor,
         _chat_updates_monitor: chat_updates_monitor,

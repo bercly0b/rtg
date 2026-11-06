@@ -1,15 +1,60 @@
+use std::sync::Arc;
+
 use crate::{
     domain::{
         chat::ChatType,
         open_chat_state::{MessageSource, OpenChatUiState},
         shell_state::ActivePane,
     },
-    usecases::{background::TaskDispatcher, chat_subtitle::ChatSubtitleQuery},
+    usecases::{
+        background::TaskDispatcher, chat_subtitle::ChatSubtitleQuery,
+        load_messages::CachedMessagesSource,
+    },
 };
 
-use super::{OrchestratorCtx, DEFAULT_CACHED_MESSAGES_LIMIT};
+use super::{ShellCtx, DEFAULT_CACHED_MESSAGES_LIMIT};
 
-pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+/// Keeps the open chat in sync with TDLib: which chat TDLib has open, which
+/// message loads are in flight, and where cached messages come from.
+pub(super) struct OpenChatSync {
+    /// Tracks the chat_id that is currently "opened" in TDLib via `openChat`.
+    /// Used to ensure proper `closeChat` pairing when navigating away.
+    pub tdlib_opened_chat_id: Option<i64>,
+    /// Guards against dispatching duplicate prefetch requests.
+    /// Holds the `chat_id` of the currently in-flight prefetch, if any.
+    pub prefetch_in_flight: Option<i64>,
+    /// Guards against dispatching duplicate message refresh requests while one is in-flight.
+    pub messages_refresh_in_flight: bool,
+    /// Guards against dispatching duplicate older-messages pagination requests.
+    pub older_messages_in_flight: bool,
+    /// Minimum number of cached messages required to display them immediately.
+    /// If the cache holds fewer messages, the UI shows Loading instead of a
+    /// sparse preview (eliminates the "1 message flash" artifact).
+    pub min_display_messages: usize,
+    /// Synchronous cache source for instant message display.
+    pub cache_source: Option<Arc<dyn CachedMessagesSource>>,
+}
+
+impl OpenChatSync {
+    pub(super) fn new(
+        cache_source: Option<Arc<dyn CachedMessagesSource>>,
+        min_display_messages: usize,
+    ) -> Self {
+        Self {
+            tdlib_opened_chat_id: None,
+            prefetch_in_flight: None,
+            messages_refresh_in_flight: false,
+            older_messages_in_flight: false,
+            min_display_messages: min_display_messages.max(1),
+            cache_source,
+        }
+    }
+}
+
+pub(super) fn open_selected_chat<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &mut OpenChatSync,
+) {
     let Some(selected) = ctx.state.chat_list().selected_chat() else {
         return;
     };
@@ -23,7 +68,7 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
     // the messages view. The active pane stays ChatList (left panel just
     // renders topics instead of chats) — see ui/view/chat_list.rs.
     if is_forum {
-        super::forum::enter_forum(ctx, chat_id, chat_title);
+        super::forum::enter_forum(ctx, sync, chat_id, chat_title);
         return;
     }
 
@@ -31,22 +76,22 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
     ctx.state.set_active_pane(ActivePane::Messages);
 
     // Cancel any in-flight prefetch — the user explicitly opened a chat.
-    *ctx.prefetch_in_flight = None;
+    sync.prefetch_in_flight = None;
 
     // If the same chat is already open and Ready, or its load is still in
     // flight, just switch focus — no reload. But always ensure the TDLib
     // lifecycle is maintained.
     let loaded_or_loading = match ctx.state.open_chat().ui_state() {
         OpenChatUiState::Ready => true,
-        OpenChatUiState::Loading => *ctx.messages_refresh_in_flight,
+        OpenChatUiState::Loading => sync.messages_refresh_in_flight,
         OpenChatUiState::Empty | OpenChatUiState::Error => false,
     };
     if ctx.state.open_chat().chat_id() == Some(chat_id) && loaded_or_loading {
         tracing::debug!(chat_id, "chat already open, skipping reload");
         // Re-open in TDLib if it was closed (e.g. user pressed h then l)
-        if *ctx.tdlib_opened_chat_id != Some(chat_id) {
+        if sync.tdlib_opened_chat_id != Some(chat_id) {
             ctx.dispatcher.dispatch_open_chat(chat_id);
-            *ctx.tdlib_opened_chat_id = Some(chat_id);
+            sync.tdlib_opened_chat_id = Some(chat_id);
             // Mark messages that arrived while the chat was closed as read
             mark_open_chat_messages_as_read(ctx);
         }
@@ -56,18 +101,18 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
     tracing::debug!(chat_id, chat_title = %chat_title, "opening chat (non-blocking)");
 
     // Close the previously opened TDLib chat if switching to a different one.
-    close_tdlib_chat_if_needed(ctx, chat_id);
+    close_tdlib_chat_if_needed(ctx, sync, chat_id);
 
     // Open this chat in TDLib for update delivery and read tracking. Not
     // ordered with the history load below — see `TaskDispatcher::dispatch_open_chat`.
     ctx.dispatcher.dispatch_open_chat(chat_id);
-    *ctx.tdlib_opened_chat_id = Some(chat_id);
+    sync.tdlib_opened_chat_id = Some(chat_id);
 
     // Try app-level message cache first (instant, no TDLib call).
     // Fall back to TDLib local cache if the app cache has no data.
     // Apply the smart threshold: if cache has fewer than min_display_messages,
     // show Loading instead of a sparse preview (eliminates the "1 message flash").
-    let min_msgs = ctx.min_display_messages;
+    let min_msgs = sync.min_display_messages;
     let showed_cache = if let Some(cached) = ctx
         .state
         .message_cache_mut()
@@ -90,7 +135,7 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
             .set_message_source(MessageSource::Cache);
         true
     } else {
-        try_show_cached_messages(ctx, chat_id, &chat_title, chat_type)
+        try_show_cached_messages(ctx, sync, chat_id, &chat_title, chat_type)
     };
 
     if !showed_cache {
@@ -100,7 +145,7 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
     }
 
     // Dispatch a full background load (pagination).
-    *ctx.messages_refresh_in_flight = true;
+    sync.messages_refresh_in_flight = true;
     let topic_id = ctx.state.open_chat().topic_id();
     ctx.dispatcher.dispatch_load_messages(chat_id, topic_id);
 
@@ -114,8 +159,11 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_
 /// Triggered by j/k navigation. Skips if:
 /// - Another prefetch is already in-flight (debounce)
 /// - The highlighted chat already has data in the message cache
-pub(super) fn maybe_prefetch_selected_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
-    if ctx.prefetch_in_flight.is_some() {
+pub(super) fn maybe_prefetch_selected_chat<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &mut OpenChatSync,
+) {
+    if sync.prefetch_in_flight.is_some() {
         return;
     }
 
@@ -130,7 +178,7 @@ pub(super) fn maybe_prefetch_selected_chat<D: TaskDispatcher>(ctx: &mut Orchestr
     }
 
     tracing::debug!(chat_id, "prefetching messages for highlighted chat");
-    *ctx.prefetch_in_flight = Some(chat_id);
+    sync.prefetch_in_flight = Some(chat_id);
     // Prefetch from the chat-list hover; never scoped to a forum topic.
     ctx.dispatcher.dispatch_prefetch_messages(chat_id, None);
 }
@@ -139,14 +187,15 @@ pub(super) fn maybe_prefetch_selected_chat<D: TaskDispatcher>(ctx: &mut Orchestr
 ///
 /// Called before opening a new chat or when navigating away.
 pub(super) fn close_tdlib_chat_if_needed<D: TaskDispatcher>(
-    ctx: &mut OrchestratorCtx<'_, D>,
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &mut OpenChatSync,
     next_chat_id: i64,
 ) {
-    if let Some(prev_id) = *ctx.tdlib_opened_chat_id {
+    if let Some(prev_id) = sync.tdlib_opened_chat_id {
         if prev_id != next_chat_id {
             tracing::debug!(prev_id, "closing previous TDLib chat");
             ctx.dispatcher.dispatch_close_chat(prev_id);
-            *ctx.tdlib_opened_chat_id = None;
+            sync.tdlib_opened_chat_id = None;
         }
     }
 }
@@ -156,8 +205,11 @@ pub(super) fn close_tdlib_chat_if_needed<D: TaskDispatcher>(
 /// Keeps `messages_refresh_in_flight`: the open chat state survives
 /// navigating away, so the in-flight load still lands in it and clears the
 /// flag itself — reopening the chat meanwhile must not load it again.
-pub(super) fn close_tdlib_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
-    if let Some(chat_id) = ctx.tdlib_opened_chat_id.take() {
+pub(super) fn close_tdlib_chat<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &mut OpenChatSync,
+) {
+    if let Some(chat_id) = sync.tdlib_opened_chat_id.take() {
         tracing::debug!(chat_id, "closing TDLib chat on navigate away");
         ctx.dispatcher.dispatch_close_chat(chat_id);
     }
@@ -169,7 +221,7 @@ pub(super) fn close_tdlib_chat<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, 
 /// Only marks messages when the user is actively viewing the chat
 /// (Messages or MessageInput pane has focus). This prevents incoming
 /// messages from being auto-read while the user is browsing the chat list.
-pub(super) fn mark_open_chat_messages_as_read<D: TaskDispatcher>(ctx: &mut OrchestratorCtx<'_, D>) {
+pub(super) fn mark_open_chat_messages_as_read<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {
     if !matches!(
         ctx.state.active_pane(),
         ActivePane::Messages | ActivePane::MessageInput
@@ -197,17 +249,18 @@ pub(super) fn mark_open_chat_messages_as_read<D: TaskDispatcher>(ctx: &mut Orche
 /// and the state was set to Ready. Sparse results below the threshold are
 /// ignored to avoid the "1 message flash" artifact.
 pub(super) fn try_show_cached_messages<D: TaskDispatcher>(
-    ctx: &mut OrchestratorCtx<'_, D>,
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &OpenChatSync,
     chat_id: i64,
     chat_title: &str,
     chat_type: ChatType,
 ) -> bool {
-    let Some(cache) = ctx.cache_source else {
+    let Some(cache) = &sync.cache_source else {
         return false;
     };
 
     match cache.list_cached_messages(chat_id, DEFAULT_CACHED_MESSAGES_LIMIT) {
-        Ok(messages) if messages.len() >= ctx.min_display_messages => {
+        Ok(messages) if messages.len() >= sync.min_display_messages => {
             tracing::debug!(
                 chat_id,
                 count = messages.len(),
