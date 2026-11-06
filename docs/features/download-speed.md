@@ -4,11 +4,13 @@ While a file of at least 5 MB is downloading, the status bar shows the download
 speed right after the connectivity label:
 
 ```
- ● Connected  ↓ 12.4 Mbit/s                                          ? for help
+ ● Connected  ↓ 6.6 MB/s                                             ? for help
 ```
 
-- **Units**: bits per second with SI prefixes, the way network speeds are
-  usually quoted: `Kbit/s` below 1 Mbit/s, `Mbit/s` (one decimal) from there.
+- **Units**: bytes per second with binary (1024) multiples, the same
+  calculation as tmux-net-speed and similar system monitors, so the two can be
+  compared side by side: `B/s`, `KB/s`, `MB/s`. Values up to 99 get one
+  decimal, truncated rather than rounded (`6.6 MB/s`, `512 KB/s`).
 - **Only large files**: smaller files (voice messages, photos, most
   auto-downloads) finish in a moment, and a speed reading would only flash in
   the status bar. The threshold is `MIN_TRACKED_FILE_SIZE` in

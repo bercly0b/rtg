@@ -71,17 +71,26 @@ pub(super) fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
     Line::from(spans)
 }
 
-/// Formats a download speed in bits per second (SI units), the way network
-/// speeds are usually quoted.
+/// Formats a download speed in bytes per second with binary (1024) multiples,
+/// the way tmux-net-speed and similar system monitors show it, so the numbers
+/// can be compared side by side. The decimal is truncated rather than rounded
+/// so a value never rounds up past its unit (e.g. to `100.0`).
 pub(super) fn format_download_speed(bytes_per_second: u64) -> String {
-    let bits_per_second = bytes_per_second * 8;
-    if bits_per_second < 1_000_000 {
-        format!("\u{2193} {} Kbit/s", bits_per_second / 1_000)
+    const UNITS: [&str; 3] = ["B", "KB", "MB"];
+
+    let mut unit = 0;
+    let mut divisor = 1;
+    while bytes_per_second / divisor >= 1_024 && unit < UNITS.len() - 1 {
+        divisor *= 1_024;
+        unit += 1;
+    }
+
+    let whole = bytes_per_second / divisor;
+    if unit == 0 || whole > 99 {
+        format!("\u{2193} {whole} {}/s", UNITS[unit])
     } else {
-        format!(
-            "\u{2193} {:.1} Mbit/s",
-            bits_per_second as f64 / 1_000_000.0
-        )
+        let tenth = bytes_per_second % divisor * 10 / divisor;
+        format!("\u{2193} {whole}.{tenth} {}/s", UNITS[unit])
     }
 }
 
