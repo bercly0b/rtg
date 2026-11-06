@@ -2,7 +2,8 @@
 
 Research notes for extending the chat info popup (`I` in the chat list). They
 list what TDLib can return about the other side of a chat, what each field
-costs to fetch, and what is worth showing. Nothing here is implemented yet.
+costs to fetch, and what is worth showing. The [Design](#design) section at
+the end records what was decided. Nothing here is implemented yet.
 
 Sources: the TDLib 1.8.61 schema bundled with `tdlib-rs` 1.3.0 (`tl/api.tl`)
 and the TDLib sources (`MessagesManager.cpp`, `DialogActionBar.cpp`,
@@ -23,7 +24,7 @@ and the TDLib sources (`MessagesManager.cpp`, `DialogActionBar.cpp`,
 fresh copy, otherwise they go to the server. Everything these calls return is
 already in our hands, but the popup reads only a few fields.
 
-## The "new contact" card of the native clients
+## Account info: the card native clients show for a stranger
 
 When someone who is not a contact starts a chat, the mobile clients show a card
 with the country of their phone number, when they joined Telegram, and when
@@ -103,37 +104,258 @@ How it behaves:
 | Creator | `basicGroupFullInfo.creator_user_id` | yes | Basic groups only |
 | Upgrade history | `supergroupFullInfo.upgraded_from_basic_group_id`, `basicGroup.upgraded_to_supergroup_id` | partly | |
 
-## Proposal
+## Design
 
-Ordered by value for the cost:
+Decisions from the design discussion on ROZ-172. The terms (chat info popup,
+info template, account info) are defined in [GLOSSARY.md](../../GLOSSARY.md).
 
-1. **No new requests**, read from what the popup already fetches:
-   - the user ID or chat ID;
-   - the new-contact card from `chat.action_bar`: phone country, registered
-     month and year, last name and photo change. Shown only while TDLib has
-     it, like the native clients;
-   - contact status and the verified / scam / fake flags;
-   - the phone number when it is visible, and all active usernames;
-   - birthdate, number of groups in common, personal channel;
-   - for groups and channels: admin count and linked chat.
-2. **Offline requests** (`getSupergroup`, `getBasicGroup`, `getChat` for a
-   linked chat): public `@username` link, the current user's role, joined
-   date.
-3. **Network requests**: the list of groups in common (`getGroupsInCommon`) and
-   country names (`getCountries`, once per session).
+### Principles
 
-Not worth showing in a terminal client: colours, custom emoji, sticker sets,
-boosts, gift settings, paid-reaction flags and other fields that only drive
-native UI.
+- **Info templates.** Each kind of chat has its own info template: User, Bot,
+  Group or Channel. Every popup of one kind shows the same blocks and rows in
+  the same order, so the user always knows where to look.
+- **Kinds.** A regular user's private chat, a secret chat, Saved Messages and a
+  deleted account use User. A bot uses Bot. A basic group, a supergroup and a
+  forum use Group. A channel uses Channel.
+- **Layout.** A header (the chat title and the status line, as in the open
+  chat's subtitle), then the blocks of the kind, then the common Chat block,
+  always last. There is no `Name:` row.
+- **Rows that are always shown.** A row is always shown when any chat of that
+  kind can have the value. When the value is missing the row stays and shows
+  a placeholder:
+  - `hidden` when the value is certainly hidden by privacy settings: a user's
+    phone number (every account has one, so an empty one is hidden) and a
+    last-seen status of `recently`, `within a week` or `within a month`;
+  - `—` when the value is not set or unknown.
+- **Blocks that are shown on condition.** A block that exists only for part of
+  the chats of a kind is shown only when it has data: Account info, Business,
+  Secret chat, Location.
+- **Requests.** Every request runs when the popup is opened with `I`, never in
+  advance for the chat list. The popup loads in one go: `Loading...`, then the
+  whole template.
+- **Failures.** Only the requests behind the header are critical: `getChat`,
+  `getUser`, `getBasicGroupFullInfo` and `getSupergroupFullInfo`. If one fails
+  the popup shows an error, as today. Any other failed request leaves its rows
+  at `—`, and a country falls back to its ISO code.
+- **Account info is not stored.** It is shown while TDLib keeps it in
+  `chat.action_bar`. Once TDLib drops it, its block disappears. RTG keeps no
+  copy of its own.
+- **No scrolling yet.** On a short terminal the bottom of the popup is cut off,
+  as today. Scrolling is a separate task.
 
-## Open questions
+Dates and times use the format of the message info popup (`2026-10-01 14:20`).
 
-- **Keep the card after it disappears?** TDLib cannot return `accountInfo` once
-  the action bar is gone. Keeping it would mean storing it ourselves, which
-  goes against following TDLib's model. The proposal is to show it only while
-  TDLib has it.
-- **Country format**: the bare code (`RU`), a flag (needs emoji support in the
-  terminal), or a name from `getCountries`.
-- **Chat list**: the same data could mark strangers or scam accounts directly
-  in the chat list. `chat.action_bar` comes with the chat and
-  `updateChatActionBar`, so the list would need no extra requests.
+### Chat block (every template)
+
+```
+ Chat
+   Chat ID       -1001234567890
+   Folders       Work, Friends, Archive
+   Muted         until 2026-11-08 18:00
+   Auto-delete   off
+```
+
+| Row | Source | Values |
+|-----|--------|--------|
+| Chat ID | `chat.id` | Groups and channels in the Bot API form (`-100…`) |
+| Folders | `chat.chat_lists`, folder titles from the folder list RTG already keeps | Folder titles, plus `Archive` for the archive list; `—` if none |
+| Muted | `chat.notification_settings`; when `use_default_mute_for` is set, `getScopeNotificationSettings` for the chat's scope | `no`, `yes` (muted with no end date), `until <date time>` |
+| Auto-delete | `chat.message_auto_delete_time` | `off` or the period |
+
+### User
+
+```
+ Alice Smith
+ last seen recently (you hide yours)
+
+ Profile
+   User ID       123456789
+   Username      @alice, @alice_dev, @alice (collectible)
+   Phone         hidden
+   Birthday      12 March 1990
+   Channel       Alice's notes
+   Badges        premium, verified
+   Bio           Rust dev, Berlin
+
+ You & them
+   Contact       not a contact
+   In common     3 groups
+   Messages      paid, 100 stars each
+   Blocked       no
+   Note          —
+
+ Account info                ← only while TDLib has it
+   Registered    March 2021
+   Phone from    Russia
+   Name changed  2026-10-01 14:20
+   Photo changed 2026-09-12 09:03
+
+ Business                    ← business accounts only
+   Address       Berlin, Main st. 1
+   Hours         open, closes in 3 h
+
+ Secret chat                 ← secret chats only
+   State         ready
+   Key           8f3a 91c2 4be0 …
+
+ Chat …
+```
+
+| Row | Source | Values |
+|-----|--------|--------|
+| Status line | `user.status` | As today. A status of `recently`, `within a week` or `within a month` with `by_my_privacy_settings` gets `(you hide yours)`. A deleted account shows `deleted account` |
+| User ID | `user.id` | |
+| Username | `user.usernames.active_usernames` | All of them; those in `collectible_usernames` get `(collectible)` |
+| Phone | `user.phone_number` | With a leading `+`; `hidden` when empty |
+| Birthday | `userFullInfo.birthdate` | Without the year when it is `0` |
+| Channel | `userFullInfo.personal_chat_id`, title via `getChat` | `—` when `0` |
+| Badges | `user.verification_status`, `is_premium`, `is_support` | `verified`, `scam`, `fake`, `premium`, `support`; `scam` and `fake` in red |
+| Bio | `userFullInfo.bio` | Multi-line, last in the block |
+| Contact | `user.is_contact`, `is_mutual_contact`, `is_close_friend` | `mutual`, `contact`, `not a contact`; `close friend` added |
+| In common | `userFullInfo.group_in_common_count` | The count only |
+| Messages | `userFullInfo.outgoing_paid_message_star_count` | `free` or `paid, N stars each` |
+| Blocked | `userFullInfo.block_list` | `no`, `yes`, `stories only` |
+| Note | `userFullInfo.note` | The current user's own note about the contact |
+| Account info rows | `chat.action_bar` = `chatActionBarReportAddBlock.account_info` | `Registered` from month and year; `Phone from` is the country name from `getCountries`, its code if that fails; name and photo change dates. `—` for any `0` or empty field |
+| Business rows | `userFullInfo.business_info` | Shown when it has a location or opening hours. `Hours` from `opening_hours` with `next_open_in` / `next_close_in` |
+| Secret chat rows | `getSecretChat` | `State`: `pending`, `ready`, `closed`. `Key`: the first 32 bytes of `key_hash` in hex |
+
+### Bot
+
+```
+ Weather Bot
+ bot · 120 345 monthly users
+
+ Bot
+   User ID       987654321
+   Username      @weather_bot
+   Commands      /start /help /settings
+   Groups        can join, reads all messages
+   Inline        yes, "Search city…"
+   Privacy       https://example.com/privacy
+   Badges        verified
+   Blocked       no
+   About         Short description…
+   Description   Long description…
+
+ Chat …
+```
+
+| Row | Source | Values |
+|-----|--------|--------|
+| Status line | `userTypeBot.active_user_count` | `bot · N monthly users`; `bot` when `0` |
+| User ID, Username, Badges, Blocked | as in User | |
+| Commands | `userFullInfo.bot_info.commands` | Command names, wrapped. To be revisited if it gets noisy on bots with many commands |
+| Groups | `userTypeBot.can_join_groups`, `can_read_all_group_messages` | `can join`, `can join, reads all messages` (privacy mode off), `cannot join` |
+| Inline | `userTypeBot.is_inline`, `inline_query_placeholder` | `yes, "<placeholder>"` or `no` |
+| Privacy | `bot_info.privacy_policy_url` | |
+| About | `bot_info.short_description` | |
+| Description | `bot_info.description` | Multi-line, last in the block |
+
+### Group
+
+```
+ Rust Talks
+ 1 234 members
+
+ Group
+   Link          t.me/rust_talks
+   Kind          supergroup, forum
+   Admins        12
+   Channel       Rust News
+   Slow mode     30 s
+   Joining       by request
+   History       hidden from new members
+   Forwarding    restricted
+   Invite link   —
+   Badges        —
+   Description   …
+
+ You
+   Role          admin "Moderator"
+   Joined        2024-05-01
+
+ Location                    ← location-based groups only
+   Address       …
+
+ Chat …
+```
+
+The member count stays in the header and is not repeated as a row.
+
+| Row | Source | Values |
+|-----|--------|--------|
+| Link | `supergroup.usernames` | `t.me/<username>`; `—` for a basic group or a private supergroup |
+| Kind | basic group or supergroup, `supergroup.is_forum`, `is_broadcast_group` | `basic group`, `supergroup`, plus `forum` or `broadcast group` |
+| Admins | `supergroupFullInfo.administrator_count`; for a basic group the owner and admins in `basicGroupFullInfo.members` | `—` when `0` |
+| Channel | `supergroupFullInfo.linked_chat_id`, title via `getChat` | |
+| Slow mode | `supergroupFullInfo.slow_mode_delay` | `off` or the delay; `—` for a basic group |
+| Joining | `supergroup.join_by_request`, `supergroup.usernames` | `by request`, `open` (public), `invite only` |
+| History | `supergroupFullInfo.is_all_history_available` | `visible to new members`, `hidden from new members`; `—` for a basic group |
+| Forwarding | `chat.has_protected_content` | `allowed`, `restricted` |
+| Invite link | `supergroupFullInfo.invite_link`, `basicGroupFullInfo.invite_link` | Only admins who may invite get it |
+| Badges | `supergroup.verification_status` | `verified`, `scam`, `fake` |
+| Description | `*FullInfo.description` | Multi-line, last in the block |
+| Role | `supergroup.status`, `basicGroup.status` | `owner`, `admin "<custom title>"`, `member`, `restricted until <date>`, `left`, `banned` |
+| Joined | `supergroup.date` | `—` for a basic group, or when the user is not a member (then the field holds the creation date) |
+| Location rows | `supergroupFullInfo.location` | Shown only when it is set |
+
+### Channel
+
+```
+ Rust News
+ 12 345 subscribers
+
+ Channel
+   Link          t.me/rust_news
+   Discussion    Rust Talks
+   Signatures    on
+   Forwarding    allowed
+   Admins        —
+   Badges        verified
+   Description   …
+
+ You
+   Role          subscriber
+   Joined        2023-01-10
+
+ Chat …
+```
+
+Rows shared with Group use the same sources. Specific to channels:
+
+| Row | Source | Values |
+|-----|--------|--------|
+| Discussion | `supergroupFullInfo.linked_chat_id`, title via `getChat` | |
+| Signatures | `supergroup.sign_messages` | `on`, `off` |
+| Admins | `supergroupFullInfo.administrator_count` | TDLib reports it only to admins, so subscribers see `—` |
+| Role | `supergroup.status` | `subscriber` instead of `member` |
+
+### Requests
+
+| Kind | Already made | Added |
+|------|--------------|-------|
+| User, Bot | `getChat`, `getUser`, `getUserFullInfo` | `getScopeNotificationSettings`; `getChat` for the personal channel; `getSecretChat` for a secret chat; `getCountries` only when account info is present |
+| Group | `getChat`, `getBasicGroupFullInfo` / `getSupergroupFullInfo` | `getBasicGroup` / `getSupergroup`; `getScopeNotificationSettings`; `getChat` for the linked chat |
+| Channel | `getChat`, `getSupergroupFullInfo` | `getSupergroup`; `getScopeNotificationSettings`; `getChat` for the linked chat |
+
+`getBasicGroup`, `getSupergroup`, `getSecretChat` and `getChat` are offline
+methods. `getScopeNotificationSettings` is usually answered from memory.
+`getCountries` may go to the server, and TDLib caches its result.
+
+### Not shown
+
+Colours, profile background and theme, emoji status, custom emoji, stories,
+gifts and gift settings, rating, boosts, paid reactions, the group sticker
+set, bot mini app settings, affiliate programs, and call flags (RTG has no
+calls). They either drive native UI only or belong to features a terminal
+client does not have.
+
+### Out of scope
+
+Each of these is a separate task:
+
+- marking strangers and scam accounts in the chat list;
+- a profile for a message's author in a group, reusing the User template;
+- scrolling in the chat info popup;
+- an approximate registration date estimated from the user ID (ROZ-190).
