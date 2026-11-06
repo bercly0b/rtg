@@ -4,9 +4,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+# Pinned: on ubuntu-26.04 libc++ no longer pulls in LLVM libunwind, so the
+# prebuilt TDLib fails to load (libunwind.so.1 not found).
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Repository checkout
@@ -27,7 +29,7 @@ jobs:
         run: mise run quality
 
   coverage:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       pull-requests: write
 
