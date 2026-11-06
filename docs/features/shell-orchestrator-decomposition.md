@@ -39,7 +39,7 @@ concern:
 What every handler needs is a small base context:
 
 ```rust
-pub(super) struct ShellCtx<'a, D: TaskDispatcher> {
+struct ShellCtx<'a, D: TaskDispatcher> {
     pub state: &'a mut ShellState,
     pub dispatcher: &'a D,
     pub effects: &'a mut Vec<ShellEffect>,

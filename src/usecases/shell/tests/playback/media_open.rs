@@ -12,7 +12,8 @@ fn l_on_photo_with_custom_handler_opens_playback_popup() {
         1,
         vec![photo_message_downloaded(10, path)],
     );
-    o.open_handlers
+    o.media
+        .open_handlers
         .insert("image/*".to_owned(), "true {file_path}".to_owned());
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
@@ -131,7 +132,8 @@ fn l_on_video_with_custom_handler_opens_playback_popup() {
         1,
         vec![video_message_downloaded(10, path)],
     );
-    o.open_handlers
+    o.media
+        .open_handlers
         .insert("video/*".to_owned(), "true {file_path}".to_owned());
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
@@ -185,7 +187,8 @@ fn l_on_document_with_custom_handler_opens_playback_popup() {
             is_service: false,
         }],
     );
-    o.open_handlers
+    o.media
+        .open_handlers
         .insert("application/pdf".to_owned(), "true {file_path}".to_owned());
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("l", false)))
@@ -248,7 +251,7 @@ fn l_with_missing_handler_binary_notifies_start_error() {
         1,
         vec![photo_message_downloaded(10, path)],
     );
-    o.open_handlers.insert(
+    o.media.open_handlers.insert(
         "image/*".to_owned(),
         "rtg-test-missing-binary {file_path}".to_owned(),
     );
@@ -257,7 +260,7 @@ fn l_with_missing_handler_binary_notifies_start_error() {
         .unwrap();
 
     assert!(o.state().command_popup().is_none());
-    assert!(o.command_handle.is_none());
+    assert!(o.media.command_handle.is_none());
     assert!(o.take_effects().is_empty());
     let notification = o.state().active_notification().unwrap_or_default();
     assert!(

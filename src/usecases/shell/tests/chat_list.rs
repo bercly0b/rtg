@@ -197,23 +197,23 @@ fn duplicate_chat_list_dispatch_is_guarded_but_sets_pending() {
     // First tick dispatches
     o.handle_event(AppEvent::Tick).unwrap();
     assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
-    assert!(o.chat_list_in_flight);
-    assert!(!o.chat_list_refresh_pending);
+    assert!(o.chat_list_loads.in_flight);
+    assert!(!o.chat_list_loads.refresh_pending);
 
     // Second tick should not dispatch again, but sets pending flag
     o.handle_event(AppEvent::Tick).unwrap();
     assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
-    assert!(o.chat_list_refresh_pending);
+    assert!(o.chat_list_loads.refresh_pending);
 }
 
 #[test]
 fn in_flight_guard_resets_after_result() {
     let mut o = make_orchestrator();
     o.handle_event(AppEvent::Tick).unwrap();
-    assert!(o.chat_list_in_flight);
+    assert!(o.chat_list_loads.in_flight);
 
     inject_chat_list(&mut o, vec![chat(1, "General")]);
-    assert!(!o.chat_list_in_flight);
+    assert!(!o.chat_list_loads.in_flight);
 
     // Now another dispatch should work
     o.handle_event(AppEvent::InputKey(KeyInput::new("R", false)))
@@ -472,7 +472,7 @@ fn pending_flag_triggers_re_dispatch_after_chat_list_loaded() {
     // First tick dispatches chat list load
     o.handle_event(AppEvent::Tick).unwrap();
     assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
-    assert!(o.chat_list_in_flight);
+    assert!(o.chat_list_loads.in_flight);
 
     // TDLib update arrives while in-flight — sets pending flag
     o.handle_event(AppEvent::ChatUpdateReceived {
@@ -484,7 +484,7 @@ fn pending_flag_triggers_re_dispatch_after_chat_list_loaded() {
         1,
         "should not dispatch while in-flight"
     );
-    assert!(o.chat_list_refresh_pending);
+    assert!(o.chat_list_loads.refresh_pending);
 
     // Background result arrives — triggers auto re-dispatch
     inject_chat_list(&mut o, vec![chat(1, "General")]);
@@ -494,7 +494,7 @@ fn pending_flag_triggers_re_dispatch_after_chat_list_loaded() {
         "pending flag should trigger another dispatch"
     );
     assert!(
-        !o.chat_list_refresh_pending,
+        !o.chat_list_loads.refresh_pending,
         "pending flag should be cleared"
     );
 }
@@ -506,7 +506,7 @@ fn no_extra_dispatch_when_pending_flag_is_not_set() {
     // First tick dispatches
     o.handle_event(AppEvent::Tick).unwrap();
     assert_eq!(o.dispatcher.chat_list_dispatch_count(), 1);
-    assert!(!o.chat_list_refresh_pending);
+    assert!(!o.chat_list_loads.refresh_pending);
 
     // Background result arrives without any pending updates
     inject_chat_list(&mut o, vec![chat(1, "General")]);
@@ -529,7 +529,7 @@ fn pending_flag_cleared_on_error_result_and_re_dispatches() {
         updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
     })
     .unwrap();
-    assert!(o.chat_list_refresh_pending);
+    assert!(o.chat_list_loads.refresh_pending);
 
     // Error result still triggers re-dispatch
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
@@ -541,7 +541,7 @@ fn pending_flag_cleared_on_error_result_and_re_dispatches() {
     ]))
     .unwrap();
     assert_eq!(o.dispatcher.chat_list_dispatch_count(), 2);
-    assert!(!o.chat_list_refresh_pending);
+    assert!(!o.chat_list_loads.refresh_pending);
 }
 
 // ── Force refresh: R key dispatches with force=true ──
@@ -609,8 +609,11 @@ fn r_during_inflight_preserves_force_on_pending_redispatch() {
         1,
         "should not dispatch while in-flight"
     );
-    assert!(o.chat_list_refresh_pending);
-    assert!(o.chat_list_pending_force, "force=true should be preserved");
+    assert!(o.chat_list_loads.refresh_pending);
+    assert!(
+        o.chat_list_loads.pending_force,
+        "force=true should be preserved"
+    );
 
     // First result arrives — triggers pending re-dispatch with force
     inject_chat_list(&mut o, vec![chat(1, "General")]);
@@ -662,9 +665,9 @@ fn auto_update_during_inflight_redispatches_without_force() {
         updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
     })
     .unwrap();
-    assert!(o.chat_list_refresh_pending);
+    assert!(o.chat_list_loads.refresh_pending);
     assert!(
-        !o.chat_list_pending_force,
+        !o.chat_list_loads.pending_force,
         "auto-update should not set force"
     );
 
