@@ -33,7 +33,7 @@ Issue identifiers look like `ROZ-182`. `issue(id: ...)` accepts either the ident
 ## Conventions
 
 - **Language**: write issue titles and descriptions in Russian, matching the existing rtg issues.
-- **Create an issue**: `issueCreate(input: {teamId, projectId, title, description})`. `description` is markdown. New issues land in `Backlog`.
+- **Create an issue**: `issueCreate(input: {teamId, projectId, title, description})`. `description` is markdown. New issues land in `Backlog` and stay there: never pass `stateId` when creating an issue. Only the user moves issues to `Planned`.
 - **Read an issue**: `issue(id: "ROZ-42") { id identifier title description url state { name } labels { nodes { name } } parent { identifier } children { nodes { identifier title state { name } } } comments { nodes { body user { name } } } }`.
 - **List issues**: `project(id: "643d1611-f48e-4543-ba99-00928d349223") { issues(first: 50, filter: {...}) { nodes { identifier title state { name } labels { nodes { name } } } } }`. Open only: `state: { type: { nin: ["completed", "canceled", "duplicate"] } }`. By label: `labels: { some: { name: { eq: "ready-for-agent" } } }`.
 - **Make an issue a sub-issue of a parent**: pass the parent's UUID as `parentId` in `issueCreate`, or `issueUpdate(id: "<child>", input: {parentId})` afterwards.
