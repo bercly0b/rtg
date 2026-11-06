@@ -80,3 +80,17 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
 
 1. Optimistic UI: display the result of a user action immediately without waiting for the server response; resolve the actual request in the background (e.g., show a sent message instantly, confirm delivery asynchronously).
 2. Performance and speed are a priority: prefer fast paths in architecture and implementation decisions; minimize latency visible to the user.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in Linear (team ROZ, project `rtg`), accessed via the GraphQL API. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) as ROZ team labels in Linear; applying a label also moves the issue to the matching state. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` + `docs/adr/`, created lazily. See `docs/agents/domain.md`.
