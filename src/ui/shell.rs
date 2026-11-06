@@ -4,7 +4,7 @@ use crate::{
     domain::keymap::{HelpEntry, KeyContext},
     usecases::{
         context::AppContext,
-        contracts::{AppEventSource, ShellOrchestrator},
+        contracts::{AppEventSource, ShellEffect, ShellOrchestrator},
     },
 };
 
@@ -45,10 +45,14 @@ pub fn start(
             orchestrator.handle_event(event)?;
         }
 
-        // Wire up command output channels when a new command starts.
-        if let Some(rx) = orchestrator.take_pending_command_rx() {
-            event_source.set_command_output_source(Box::new(ChannelCommandOutputSource::new(rx)));
-            had_command_popup = true;
+        for effect in orchestrator.take_effects() {
+            match effect {
+                ShellEffect::StreamCommandOutput(rx) => {
+                    event_source
+                        .set_command_output_source(Box::new(ChannelCommandOutputSource::new(rx)));
+                    had_command_popup = true;
+                }
+            }
         }
 
         // Clear the command output source once when the popup closes.

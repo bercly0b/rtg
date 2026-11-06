@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::usecases::background::TaskDispatcher;
+use crate::usecases::{background::TaskDispatcher, contracts::ShellEffect};
 
 use super::OrchestratorCtx;
 
@@ -67,7 +67,7 @@ pub(super) fn open_selected_message<D: TaskDispatcher>(ctx: &mut OrchestratorCtx
             Ok((handle, rx)) => {
                 *ctx.command_handle = Some(handle);
                 *ctx.recording_file_path = None;
-                *ctx.pending_command_rx = Some(rx);
+                ctx.effects.push(ShellEffect::StreamCommandOutput(rx));
                 ctx.state
                     .open_command_popup("Playing", CommandPopupKind::Playback);
                 tracing::info!(cmd_template, "command started");

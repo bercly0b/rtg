@@ -27,6 +27,10 @@ fn l_on_photo_with_custom_handler_opens_playback_popup() {
         popup.kind(),
         crate::domain::command_popup_state::CommandPopupKind::Playback
     );
+    assert!(matches!(
+        o.take_effects().as_slice(),
+        [ShellEffect::StreamCommandOutput(_)]
+    ));
 }
 
 #[test]
@@ -254,6 +258,7 @@ fn l_with_missing_handler_binary_notifies_start_error() {
 
     assert!(o.state().command_popup().is_none());
     assert!(o.command_handle.is_none());
+    assert!(o.take_effects().is_empty());
     let notification = o.state().active_notification().unwrap_or_default();
     assert!(
         notification.starts_with("Open failed: failed to start `rtg-test-missing-binary`"),

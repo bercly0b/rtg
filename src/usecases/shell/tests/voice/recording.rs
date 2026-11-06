@@ -189,9 +189,9 @@ fn command_popup_q_stops_live_recording_process() {
     o.handle_event(AppEvent::InputKey(KeyInput::new("v", false)))
         .unwrap();
     assert!(o.command_handle.is_some(), "recording must have started");
-    let rx = o
-        .take_pending_command_rx()
-        .expect("command events receiver");
+    let Some(ShellEffect::StreamCommandOutput(rx)) = o.take_effects().pop() else {
+        panic!("command events receiver");
+    };
 
     o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
         .unwrap();

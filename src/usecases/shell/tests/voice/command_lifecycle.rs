@@ -275,19 +275,25 @@ fn failed_phase_message_mentions_config_without_hardcoded_path() {
 }
 
 #[test]
-fn take_pending_command_rx_returns_none_by_default() {
+fn take_effects_is_empty_by_default() {
     let mut o = make_orchestrator();
-    assert!(o.take_pending_command_rx().is_none());
+    assert!(o.take_effects().is_empty());
 }
 
 #[test]
-fn take_pending_command_rx_returns_receiver_once() {
-    let mut o = make_orchestrator();
-    let (_, rx) = std::sync::mpsc::channel::<crate::domain::events::CommandEvent>();
-    o.pending_command_rx = Some(rx);
+fn started_recording_queues_its_output_stream_once() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "Chat")], 1, vec![message(10, "hi")]);
+    o.voice_record_cmd = "sleep 60".to_owned();
 
-    assert!(o.take_pending_command_rx().is_some());
-    assert!(o.take_pending_command_rx().is_none());
+    o.handle_event(AppEvent::InputKey(KeyInput::new("v", false)))
+        .unwrap();
+
+    let effects = o.take_effects();
+    assert!(
+        matches!(effects.as_slice(), [ShellEffect::StreamCommandOutput(_)]),
+        "unexpected effects {effects:?}"
+    );
+    assert!(o.take_effects().is_empty());
 }
 
 #[test]

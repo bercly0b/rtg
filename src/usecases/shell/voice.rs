@@ -1,4 +1,7 @@
-use crate::{domain::command_popup_state::CommandPhase, usecases::background::TaskDispatcher};
+use crate::{
+    domain::command_popup_state::CommandPhase,
+    usecases::{background::TaskDispatcher, contracts::ShellEffect},
+};
 
 use super::OrchestratorCtx;
 
@@ -22,7 +25,7 @@ pub(super) fn start_voice_recording<D: TaskDispatcher>(ctx: &mut OrchestratorCtx
         Ok((handle, rx)) => {
             *ctx.command_handle = Some(handle);
             *ctx.recording_file_path = Some(file_path);
-            *ctx.pending_command_rx = Some(rx);
+            ctx.effects.push(ShellEffect::StreamCommandOutput(rx));
             ctx.state
                 .open_command_popup("Recording Voice", CommandPopupKind::Recording);
             tracing::info!("voice recording started");

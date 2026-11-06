@@ -32,7 +32,7 @@ use crate::{
 
 use super::{
     background::TaskDispatcher,
-    contracts::{AppEvent, ShellOrchestrator},
+    contracts::{AppEvent, ShellEffect, ShellOrchestrator},
     load_messages::CachedMessagesSource,
 };
 
@@ -57,8 +57,7 @@ pub(super) struct OrchestratorCtx<'a, D: TaskDispatcher> {
     pub max_auto_download_bytes: u64,
     pub command_handle: &'a mut Option<super::external_command::CommandHandle>,
     pub recording_file_path: &'a mut Option<String>,
-    pub pending_command_rx:
-        &'a mut Option<std::sync::mpsc::Receiver<crate::domain::events::CommandEvent>>,
+    pub effects: &'a mut Vec<ShellEffect>,
     pub voice_record_cmd: &'a str,
     pub tdlib_opened_chat_id: &'a mut Option<i64>,
     pub prefetch_in_flight: &'a mut Option<i64>,
@@ -118,9 +117,8 @@ where
     command_handle: Option<super::external_command::CommandHandle>,
     /// Path to the currently recorded voice file.
     recording_file_path: Option<String>,
-    /// Pending command event receiver to be wired into the event source.
-    /// Set when a command starts, taken by the shell loop.
-    pending_command_rx: Option<std::sync::mpsc::Receiver<crate::domain::events::CommandEvent>>,
+    /// Effects queued for the shell loop, drained by `take_effects`.
+    effects: Vec<ShellEffect>,
     /// Voice recording command template (from config).
     voice_record_cmd: String,
     /// MIME-type → command mappings for opening message files (from config).
@@ -162,7 +160,7 @@ where
             keymap: Keymap::default(),
             command_handle: None,
             recording_file_path: None,
-            pending_command_rx: None,
+            effects: Vec::new(),
             voice_record_cmd: super::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
             open_handlers: std::collections::HashMap::new(),
             active_downloads: std::collections::HashMap::new(),
@@ -220,7 +218,7 @@ where
             },
             command_handle: None,
             recording_file_path: None,
-            pending_command_rx: None,
+            effects: Vec::new(),
             voice_record_cmd,
             open_handlers,
             active_downloads: std::collections::HashMap::new(),
@@ -244,7 +242,7 @@ where
             max_auto_download_bytes: self.max_auto_download_bytes,
             command_handle: &mut self.command_handle,
             recording_file_path: &mut self.recording_file_path,
-            pending_command_rx: &mut self.pending_command_rx,
+            effects: &mut self.effects,
             voice_record_cmd: &self.voice_record_cmd,
             tdlib_opened_chat_id: &mut self.tdlib_opened_chat_id,
             prefetch_in_flight: &mut self.prefetch_in_flight,
@@ -481,10 +479,8 @@ where
         Ok(())
     }
 
-    fn take_pending_command_rx(
-        &mut self,
-    ) -> Option<std::sync::mpsc::Receiver<crate::domain::events::CommandEvent>> {
-        self.pending_command_rx.take()
+    fn take_effects(&mut self) -> Vec<ShellEffect> {
+        std::mem::take(&mut self.effects)
     }
 }
 

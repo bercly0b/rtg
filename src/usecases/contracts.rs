@@ -12,15 +12,22 @@ pub trait AppEventSource {
     fn next_event(&mut self) -> Result<Option<AppEvent>>;
 }
 
+/// Work the orchestrator hands back to the shell loop because it belongs to
+/// the UI layer.
+#[derive(Debug)]
+pub enum ShellEffect {
+    /// An external command started: stream its output into the event source.
+    StreamCommandOutput(Receiver<CommandEvent>),
+}
+
 pub trait ShellOrchestrator {
     fn state(&self) -> &ShellState;
     fn state_mut(&mut self) -> &mut ShellState;
     fn keymap(&self) -> &Keymap;
     fn handle_event(&mut self, event: AppEvent) -> Result<()>;
 
-    /// Takes the pending command event receiver, if a new command was just started.
+    /// Drains the effects queued while handling events.
     ///
-    /// The shell loop calls this after each `handle_event` to wire the receiver
-    /// into the event source for real-time command output streaming.
-    fn take_pending_command_rx(&mut self) -> Option<Receiver<CommandEvent>>;
+    /// The shell loop calls this after each `handle_event` and performs them.
+    fn take_effects(&mut self) -> Vec<ShellEffect>;
 }
