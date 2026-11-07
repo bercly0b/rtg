@@ -25,6 +25,7 @@ pub mod selectable_list;
 pub mod shell_state;
 pub mod status;
 pub mod typing_state;
+pub mod update_check;
 pub mod voice_defaults;
 
 /// Returns the domain module name for smoke checks.

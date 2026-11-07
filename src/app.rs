@@ -66,6 +66,7 @@ fn run_session(context: &mut AppContext) -> Result<()> {
     match startup.state {
         usecases::startup::StartupFlowState::LaunchTui => {
             let mut shell = bootstrap::compose_shell(context);
+            shell.start_update_check(&context.config.updates);
             ui::shell::start(
                 context,
                 shell.event_source.as_mut(),
@@ -88,6 +89,7 @@ fn run_session(context: &mut AppContext) -> Result<()> {
 
             if matches!(auth_outcome, GuidedAuthOutcome::Authenticated) {
                 let mut shell = bootstrap::compose_shell(context);
+                shell.start_update_check(&context.config.updates);
                 if let Err(error) = ui::shell::start(
                     context,
                     shell.event_source.as_mut(),

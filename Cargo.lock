@@ -1682,6 +1682,7 @@ dependencies = [
  "ratatui",
  "rpassword",
  "serde",
+ "serde_json",
  "shell-words",
  "tdlib-rs",
  "tempfile",
@@ -1693,6 +1694,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "unicode-width 0.2.0",
+ "ureq",
 ]
 
 [[package]]

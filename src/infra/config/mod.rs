@@ -7,5 +7,5 @@ mod writer;
 pub use adapter::FileConfigAdapter;
 pub use app_config::{
     AppConfig, CacheConfig, DownloadConfig, KeysConfig, LogConfig, OpenConfig, TelegramConfig,
-    VoiceConfig,
+    UpdatesConfig, VoiceConfig,
 };

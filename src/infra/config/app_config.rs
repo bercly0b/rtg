@@ -13,6 +13,7 @@ pub struct AppConfig {
     pub open: OpenConfig,
     pub download: DownloadConfig,
     pub keys: KeysConfig,
+    pub updates: UpdatesConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -214,6 +215,18 @@ pub struct KeysConfig {
     pub overrides: std::collections::HashMap<String, String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UpdatesConfig {
+    /// Whether the TUI checks GitHub for a newer release once a day.
+    pub check: bool,
+}
+
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        Self { check: true }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,6 +354,11 @@ mod tests {
         assert_eq!(config.max_cached_chats, DEFAULT_MAX_CACHED_CHATS);
         assert_eq!(config.max_messages_per_chat, DEFAULT_MAX_MESSAGES_PER_CHAT);
         assert_eq!(config.min_display_messages, DEFAULT_MIN_DISPLAY_MESSAGES);
+    }
+
+    #[test]
+    fn update_check_is_enabled_by_default() {
+        assert!(AppConfig::default().updates.check);
     }
 
     #[test]
