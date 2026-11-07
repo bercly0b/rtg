@@ -10,7 +10,7 @@ use tdlib_rs::types::{
 use super::*;
 use crate::domain::chat_info_state::{
     AccountInfo, Badge, Birthdate, BlockState, BusinessHours, BusinessInfo, ChatInfoKind,
-    ContactStatus, MonthYear, SecretChatInfo, SecretChatState, UserInfo, Username,
+    ContactStatus, MonthYear, PhoneNumber, SecretChatInfo, SecretChatState, UserInfo, Username,
 };
 
 fn user_info(info: ChatInfo) -> UserInfo {
@@ -121,7 +121,7 @@ fn user_template_fills_every_row() {
                     is_collectible: true,
                 },
             ],
-            phone: Some("79001234567".into()),
+            phone: Some(PhoneNumber::Shown("79001234567".into())),
             birthdate: Some(Birthdate {
                 day: 12,
                 month: 3,
@@ -158,7 +158,7 @@ fn unset_values_resolve_to_none_and_an_empty_phone_to_hidden() {
         UserInfo {
             user_id: 1,
             usernames: vec![],
-            phone: None,
+            phone: Some(PhoneNumber::Hidden),
             birthdate: None,
             personal_channel: None,
             badges: vec![],
@@ -207,7 +207,7 @@ fn user_full_info_failure_leaves_its_rows_unknown() {
 
     let info = user_info(resolve(&resolver, 1, ChatType::Private).unwrap());
 
-    assert_eq!(info.phone.as_deref(), Some("79001234567"));
+    assert_eq!(info.phone, Some(PhoneNumber::Shown("79001234567".into())));
     assert_eq!(info.birthdate, None);
     assert_eq!(info.personal_channel, None);
     assert_eq!(info.bio, None);
@@ -261,6 +261,17 @@ fn deleted_account_status_line() {
 
     assert_eq!(info.status_line, "deleted account");
     assert!(matches!(info.kind, ChatInfoKind::User(_)));
+}
+
+#[test]
+fn deleted_account_phone_is_unknown_rather_than_hidden() {
+    let mut deleted = user(1);
+    deleted.r#type = tdlib_rs::enums::UserType::Deleted;
+    let resolver = resolver_with_user(deleted);
+
+    let info = user_info(resolve(&resolver, 1, ChatType::Private).unwrap());
+
+    assert_eq!(info.phone, None);
 }
 
 #[test]

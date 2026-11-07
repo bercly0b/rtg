@@ -6,7 +6,7 @@ use crate::domain::chat_info_state::{ChannelInfo, GroupInfo, GroupKind, Joining}
 fn group_with_description(description: String) -> ChatInfoKind {
     ChatInfoKind::Group(GroupInfo {
         link: None,
-        kind: GroupKind::BasicGroup,
+        kind: Some(GroupKind::BasicGroup),
         admins: None,
         linked_channel: None,
         slow_mode_delay: None,

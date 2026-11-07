@@ -8,7 +8,7 @@ const JOINED: i32 = 1_714_560_000;
 fn basic_group() -> GroupInfo {
     GroupInfo {
         link: None,
-        kind: GroupKind::BasicGroup,
+        kind: Some(GroupKind::BasicGroup),
         admins: None,
         linked_channel: None,
         slow_mode_delay: None,
@@ -28,7 +28,7 @@ fn basic_group() -> GroupInfo {
 fn group_template_shows_every_block_in_order() {
     let group = GroupInfo {
         link: Some("rust_talks".into()),
-        kind: GroupKind::Forum,
+        kind: Some(GroupKind::Forum),
         admins: Some(12),
         linked_channel: Some("Rust News".into()),
         slow_mode_delay: Some(30),
@@ -126,4 +126,15 @@ fn long_description_wraps_in_the_value_column() {
             continuation("word ".repeat(4).trim_end()),
         ]
     );
+}
+
+#[test]
+fn unknown_kind_shows_a_dash() {
+    let group = GroupInfo {
+        kind: None,
+        ..basic_group()
+    };
+    let state = loaded("3 members", ChatInfoKind::Group(group));
+
+    assert!(rendered_lines(&state).contains(&row("Kind", "—")));
 }

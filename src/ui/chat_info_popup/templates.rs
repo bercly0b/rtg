@@ -3,7 +3,7 @@
 
 use crate::domain::chat_info_state::{
     AccountInfo, Badge, BotInfo, BusinessInfo, ChannelInfo, ChatBlockInfo, ChatInfo, ChatInfoKind,
-    GroupInfo, MemberRole, SecretChatInfo, UserInfo,
+    GroupInfo, MemberRole, PhoneNumber, SecretChatInfo, UserInfo,
 };
 use crate::domain::message_info_state::format_unix_timestamp;
 
@@ -80,8 +80,9 @@ pub(super) fn blocks(info: &ChatInfo) -> Vec<InfoBlock> {
 
 fn user_blocks(user: &UserInfo) -> Vec<InfoBlock> {
     let phone = match &user.phone {
-        Some(phone) => Value::Text(format!("+{phone}")),
-        None => Value::Hidden,
+        Some(PhoneNumber::Shown(phone)) => Value::Text(format!("+{phone}")),
+        Some(PhoneNumber::Hidden) => Value::Hidden,
+        None => Value::Missing,
     };
     let mut blocks = vec![
         block(
@@ -186,7 +187,7 @@ fn group_blocks(group: &GroupInfo) -> Vec<InfoBlock> {
             "Group",
             vec![
                 row("Link", group.link.as_deref().map(format::link)),
-                row("Kind", format::group_kind(group.kind)),
+                row("Kind", group.kind.map(format::group_kind)),
                 row("Admins", group.admins.map(|n| n.to_string())),
                 row("Channel", group.linked_channel.clone()),
                 row(

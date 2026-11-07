@@ -8,8 +8,8 @@ use tdlib_rs::types::{Chat, User, UserFullInfo, UserTypeBot, Usernames};
 use crate::domain::chat::ChatType;
 use crate::domain::chat_info_state::{
     AccountInfo, Badge, Birthdate, BlockState, BotGroupAccess, BotInfo, BusinessHours,
-    BusinessInfo, ChatInfoKind, ContactStatus, MonthYear, SecretChatInfo, SecretChatState,
-    UserInfo, Username,
+    BusinessInfo, ChatInfoKind, ContactStatus, MonthYear, PhoneNumber, SecretChatInfo,
+    SecretChatState, UserInfo, Username,
 };
 use crate::telegram::tdlib_mappers;
 use crate::usecases::chat_subtitle::ChatSubtitleError;
@@ -47,8 +47,13 @@ pub(super) fn resolve(
     ))
 }
 
+/// TDLib asks to treat an unknown user like a deleted one.
+fn is_deleted(user: &User) -> bool {
+    matches!(user.r#type, UserType::Deleted | UserType::Unknown)
+}
+
 fn user_status_line(user: &User, now: DateTime<Local>) -> String {
-    if matches!(user.r#type, UserType::Deleted | UserType::Unknown) {
+    if is_deleted(user) {
         return "deleted account".to_owned();
     }
     let status = tdlib_mappers::map_user_status_to_subtitle(&user.status).format(now);
@@ -82,7 +87,7 @@ fn user_info(
     UserInfo {
         user_id: user.id,
         usernames: usernames(user.usernames.as_ref()),
-        phone: non_empty(&user.phone_number),
+        phone: phone_number(user),
         birthdate: full_info
             .and_then(|f| f.birthdate.as_ref())
             .map(|b| Birthdate {
@@ -111,6 +116,16 @@ fn user_info(
             .and_then(|f| f.business_info.as_ref())
             .and_then(business_info),
         secret_chat: secret_chat_info(resolver, chat),
+    }
+}
+
+/// Every account has a number, so an empty one is hidden, unless the
+/// account is gone.
+fn phone_number(user: &User) -> Option<PhoneNumber> {
+    match non_empty(&user.phone_number) {
+        Some(number) => Some(PhoneNumber::Shown(number)),
+        None if is_deleted(user) => None,
+        None => Some(PhoneNumber::Hidden),
     }
 }
 

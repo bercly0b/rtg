@@ -84,7 +84,7 @@ fn resolve_basic_group(
 
     let info = GroupInfo {
         link: None,
-        kind: GroupKind::BasicGroup,
+        kind: Some(GroupKind::BasicGroup),
         admins: non_zero(i32::try_from(admin_count).unwrap_or(i32::MAX)),
         linked_channel: None,
         slow_mode_delay: None,
@@ -116,7 +116,7 @@ fn resolve_supergroup(
 
     let info = GroupInfo {
         link: group.and_then(public_username),
-        kind: group.map_or(GroupKind::Supergroup, supergroup_kind),
+        kind: group.map(supergroup_kind),
         admins: non_zero(full_info.administrator_count),
         linked_channel: chat_title(resolver, full_info.linked_chat_id),
         slow_mode_delay: Some(full_info.slow_mode_delay),

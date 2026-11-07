@@ -98,7 +98,7 @@ fn supergroup_template_fills_every_row() {
         group_info(info),
         GroupInfo {
             link: Some("rust_talks".into()),
-            kind: GroupKind::Forum,
+            kind: Some(GroupKind::Forum),
             admins: Some(12),
             linked_channel: Some("Rust News".into()),
             slow_mode_delay: Some(30),
@@ -137,7 +137,7 @@ fn basic_group_template_counts_admins_among_members() {
         group_info(info),
         GroupInfo {
             link: None,
-            kind: GroupKind::BasicGroup,
+            kind: Some(GroupKind::BasicGroup),
             admins: Some(2),
             linked_channel: None,
             slow_mode_delay: None,
@@ -186,7 +186,7 @@ fn supergroup_failure_leaves_its_rows_unknown() {
     assert_eq!(info.status_line, "42 members");
     let info = group_info(info);
     assert_eq!(info.link, None);
-    assert_eq!(info.kind, GroupKind::Supergroup);
+    assert_eq!(info.kind, None);
     assert_eq!(
         info.linked_channel, None,
         "the linked chat request failed too"
@@ -228,7 +228,7 @@ fn broadcast_group_kind() {
 
     let info = group_info(resolve(&resolver, 6, ChatType::Group).unwrap());
 
-    assert_eq!(info.kind, GroupKind::BroadcastGroup);
+    assert_eq!(info.kind, Some(GroupKind::BroadcastGroup));
 }
 
 #[test]

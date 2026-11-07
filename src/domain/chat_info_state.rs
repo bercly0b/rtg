@@ -79,8 +79,7 @@ pub enum BlockState {
 pub struct UserInfo {
     pub user_id: i64,
     pub usernames: Vec<Username>,
-    /// `None` when hidden by privacy settings: every account has a number.
-    pub phone: Option<String>,
+    pub phone: Option<PhoneNumber>,
     pub birthdate: Option<Birthdate>,
     /// Title of the user's personal channel.
     pub personal_channel: Option<String>,
@@ -95,6 +94,14 @@ pub struct UserInfo {
     pub account_info: Option<AccountInfo>,
     pub business: Option<BusinessInfo>,
     pub secret_chat: Option<SecretChatInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PhoneNumber {
+    /// Digits without the leading `+`.
+    Shown(String),
+    /// Hidden by privacy settings: every account has a number.
+    Hidden,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,7 +191,7 @@ pub enum BotGroupAccess {
 pub struct GroupInfo {
     /// Public username.
     pub link: Option<String>,
-    pub kind: GroupKind,
+    pub kind: Option<GroupKind>,
     pub admins: Option<i32>,
     /// Title of the linked channel.
     pub linked_channel: Option<String>,
