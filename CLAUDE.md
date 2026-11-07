@@ -57,6 +57,13 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
    - after finishing a development task (implementation + tests/quality gate), create a git commit;
    - commit messages must be written in English.
 
+5. Changelog in every pull request (the required `changelog` check enforces it):
+   - a pull request with user-visible changes adds a fragment `changelog.d/<issue-or-branch>.md`:
+     one or more English list items written for users, e.g. `- Archive chats from the chat list.`;
+   - a pull request without user-visible changes (docs, refactoring, CI, tests) is opened
+     with the `no-changelog` label: `gh pr create --label no-changelog`;
+   - how fragments reach the release notes: [docs/RELEASES.md](docs/RELEASES.md).
+
 ## Documentation rules
 
 1. `docs/` is for project-wide, high-level documentation (module organization, hotkey conventions, architectural decisions, etc.).

@@ -111,7 +111,12 @@ Commit messages must be written in English.
    mise run quality
    ```
 
-3. Push your branch and open a pull request. Describe the change and link
+3. Describe user-visible changes in a changelog fragment,
+   `changelog.d/<your-branch>.md`, one English list item per change. A pull
+   request without user-visible changes gets the `no-changelog` label
+   instead. See [docs/RELEASES.md](docs/RELEASES.md#changelog).
+
+4. Push your branch and open a pull request. Describe the change and link
    any related issues.
 
 ### Pull request guidelines
