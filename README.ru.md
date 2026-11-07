@@ -59,6 +59,9 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bercly0b/rtg/releases/l
 
 На Linux `rtg` нужна среда выполнения libc++: `sudo apt install libc++1 libc++abi1`.
 
+Чтобы обновить `rtg`, установленный этим способом, выполните `rtg update`.
+Когда выходит новый релиз, RTG показывает его в строке состояния.
+
 Если вы ставили одну из прошлых версий через её `install.sh`, удалите старую
 копию из `/usr/local`:
 

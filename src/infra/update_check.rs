@@ -12,16 +12,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     domain::update_check::InstallChannel,
+    infra::self_update,
     usecases::update_check::{LastUpdateCheck, LatestReleaseSource, UpdateCheckCache},
 };
 
 const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/bercly0b/rtg/releases/latest";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// The install receipt the release installer (cargo-dist) writes; see
-/// `docs/RELEASES.md`.
-const RECEIPT_DIR: &str = "rtg-tui";
-const RECEIPT_FILE: &str = "rtg-tui-receipt.json";
 
 /// Reads the latest stable release from the GitHub API, which skips drafts
 /// and pre-releases.
@@ -111,18 +107,18 @@ impl UpdateCheckCache for FileUpdateCheckCache {
 
 /// Homebrew is recognised by where the running binary lives; otherwise the
 /// install receipt tells the release installer apart from `cargo install`,
-/// which uses the same directory.
+/// which uses the same directory. The receipt check is the one `rtg update`
+/// makes, so the status bar suggests `rtg update` only where it works.
 pub fn detect_install_channel() -> InstallChannel {
     let exe = env::current_exe().and_then(fs::canonicalize).ok();
-    let has_receipt = receipt_path().is_some_and(|path| path.is_file());
 
-    install_channel(exe.as_deref(), has_receipt)
+    install_channel(exe.as_deref(), self_update::is_release_install())
 }
 
-fn install_channel(exe: Option<&Path>, has_receipt: bool) -> InstallChannel {
+fn install_channel(exe: Option<&Path>, is_release_install: bool) -> InstallChannel {
     if exe.is_some_and(is_in_homebrew_cellar) {
         InstallChannel::Homebrew
-    } else if has_receipt {
+    } else if is_release_install {
         InstallChannel::ReleaseInstaller
     } else {
         InstallChannel::CratesIo
@@ -136,15 +132,6 @@ fn is_in_homebrew_cellar(exe: &Path) -> bool {
         .any(|component| component.as_os_str() == "Cellar")
 }
 
-fn receipt_path() -> Option<PathBuf> {
-    let config_home = env::var_os("XDG_CONFIG_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
-
-    Some(config_home.join(RECEIPT_DIR).join(RECEIPT_FILE))
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -155,7 +142,6 @@ mod tests {
     };
 
     use super::*;
-    use crate::test_support::env_lock;
 
     /// Serves one HTTP response on localhost and hands back the raw request.
     fn serve_once(status: &str, body: &str) -> (GitHubLatestRelease, JoinHandle<String>) {
@@ -290,37 +276,5 @@ mod tests {
 
         assert_eq!(install_channel(Some(exe), false), InstallChannel::CratesIo);
         assert_eq!(install_channel(None, false), InstallChannel::CratesIo);
-    }
-
-    #[test]
-    fn receipt_path_follows_xdg_config_home_then_home() {
-        let _guard = env_lock();
-        let old_xdg = env::var_os("XDG_CONFIG_HOME");
-
-        // SAFETY: env is guarded by the process-wide test mutex.
-        unsafe { env::set_var("XDG_CONFIG_HOME", "/xdg") };
-        let with_xdg = receipt_path();
-
-        // SAFETY: env is guarded by the process-wide test mutex.
-        unsafe { env::set_var("XDG_CONFIG_HOME", "") };
-        let with_empty_xdg = receipt_path();
-
-        // SAFETY: restoring env while the guard is held.
-        unsafe {
-            match old_xdg {
-                Some(value) => env::set_var("XDG_CONFIG_HOME", value),
-                None => env::remove_var("XDG_CONFIG_HOME"),
-            }
-        }
-
-        assert_eq!(
-            with_xdg,
-            Some(PathBuf::from("/xdg/rtg-tui/rtg-tui-receipt.json"))
-        );
-        let home = PathBuf::from(env::var_os("HOME").expect("HOME is set"));
-        assert_eq!(
-            with_empty_xdg,
-            Some(home.join(".config/rtg-tui/rtg-tui-receipt.json"))
-        );
     }
 }

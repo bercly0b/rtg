@@ -40,7 +40,7 @@ there is an update to show (`infra/update_check.rs`):
 | Install channel | Detected by | Command |
 |-----------------|-------------|---------|
 | Homebrew | the canonical path of the running binary goes through a Homebrew `Cellar` | `brew upgrade rtg-tui` |
-| Release installer | the install receipt exists: `$XDG_CONFIG_HOME/rtg-tui/rtg-tui-receipt.json`, or `~/.config/rtg-tui/rtg-tui-receipt.json` | `rtg update` |
+| Release installer | the install receipt is for the running binary — the check `rtg update` makes ([Self-update](self-update.md)) | `rtg update` |
 | crates.io | anything else | `cargo install --locked rtg-tui` |
 
 Homebrew is checked first because its binary path is unambiguous. The release

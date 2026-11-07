@@ -5,7 +5,7 @@ use anyhow::{anyhow, Context, Result};
 use crate::{
     cli::{Cli, Command},
     domain, infra,
-    infra::storage_layout::StorageLayout,
+    infra::{self_update::AxoReleaseInstall, storage_layout::StorageLayout},
     telegram::{self, TelegramAdapter},
     ui,
     usecases::{
@@ -13,6 +13,7 @@ use crate::{
         context::AppContext,
         guided_auth::{run_guided_auth, GuidedAuthOutcome, RetryPolicy, StdTerminal},
         logout::logout_and_reset,
+        self_update::{self_update, SelfUpdateError, SelfUpdated},
         startup::{acquire_instance_lock, InstanceLockGuard},
     },
 };
@@ -29,13 +30,19 @@ pub fn run(cli: Cli) -> Result<()> {
         "module boundaries loaded"
     );
 
+    let command = cli.command_or_default();
+
     // Acquire the single-instance lock before any TDLib initialization so a
     // second instance fails with a clear "another rtg instance is already
     // running" error instead of a low-level TDLib binlog lock failure mapped
-    // to AUTH_BACKEND_UNAVAILABLE.
-    let _instance_lock: InstanceLockGuard = acquire_runtime_lock()?;
+    // to AUTH_BACKEND_UNAVAILABLE. `rtg update` does not touch TDLib, and the
+    // TUI suggests it while running.
+    let _instance_lock: Option<InstanceLockGuard> = match command {
+        Command::Run | Command::Logout => Some(acquire_runtime_lock()?),
+        Command::Update => None,
+    };
 
-    match cli.command_or_default() {
+    match command {
         Command::Run => {
             let mut context = bootstrap::bootstrap(cli.config.as_deref())?;
             let session = run_session(&mut context);
@@ -53,9 +60,24 @@ pub fn run(cli: Cli) -> Result<()> {
             );
             println!("Logout completed. State is disconnected and ready for clean re-login.");
         }
+        Command::Update => match update()? {
+            SelfUpdated::AlreadyLatest => {
+                println!("rtg {} is the latest release.", env!("CARGO_PKG_VERSION"));
+            }
+            SelfUpdated::To { version } => println!("rtg is updated to {version}."),
+        },
     }
 
     Ok(())
+}
+
+fn update() -> Result<SelfUpdated, SelfUpdateError> {
+    match AxoReleaseInstall::detect()? {
+        Some(mut install) => self_update(&mut install),
+        None => Err(SelfUpdateError::OtherInstallChannel(
+            infra::update_check::detect_install_channel(),
+        )),
+    }
 }
 
 /// Runs startup planning, guided auth and the TUI. The shell (and with it the
@@ -298,6 +320,53 @@ mod tests {
         assert!(
             matches!(app_err, crate::infra::error::AppError::InstanceBusy { .. }),
             "expected InstanceBusy, got: {app_err:?}"
+        );
+    }
+
+    #[test]
+    fn update_runs_while_the_tui_holds_the_lock_and_names_the_channel_command() {
+        let _guard = env_lock();
+
+        let root = tempfile::tempdir().expect("temp dir should be creatable");
+        let xdg = root.path().join("xdg");
+        let receipts = root.path().join("receipts");
+        fs::create_dir_all(&xdg).expect("xdg dir should be creatable");
+        fs::create_dir_all(&receipts).expect("receipt dir should be creatable");
+
+        let old_xdg = env::var_os("XDG_CONFIG_HOME");
+        // SAFETY: env is guarded by process-wide test mutex.
+        unsafe {
+            env::set_var("XDG_CONFIG_HOME", &xdg);
+            env::set_var("AXOUPDATER_CONFIG_PATH", &receipts);
+        }
+
+        let layout = crate::infra::storage_layout::StorageLayout::resolve().expect("layout");
+        layout.ensure_dirs().expect("layout dirs should be created");
+        let held_lock = acquire_instance_lock(layout.instance_lock_file())
+            .expect("first lock should be acquirable in a fresh tempdir");
+
+        let result = run(Cli {
+            config: None,
+            command: Some(crate::cli::Command::Update),
+        });
+
+        // SAFETY: restoring env while guard is held.
+        unsafe {
+            env::remove_var("AXOUPDATER_CONFIG_PATH");
+            match old_xdg {
+                Some(value) => env::set_var("XDG_CONFIG_HOME", value),
+                None => env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+        drop(held_lock);
+
+        let err = result.expect_err("a test binary has no install receipt");
+        assert!(
+            matches!(
+                err.downcast_ref::<SelfUpdateError>(),
+                Some(SelfUpdateError::OtherInstallChannel(_))
+            ),
+            "expected OtherInstallChannel, got: {err:?}"
         );
     }
 }
