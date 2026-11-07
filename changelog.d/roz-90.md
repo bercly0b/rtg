@@ -1,0 +1,1 @@
+- Install RTG with Homebrew: `brew install bercly0b/rtg/rtg`.
