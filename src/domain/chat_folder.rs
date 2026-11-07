@@ -5,6 +5,9 @@ use super::selectable_list::SelectableList;
 /// Folder picker title of the main chat list, which TDLib does not name.
 pub const MAIN_CHAT_LIST_TITLE: &str = "All chats";
 
+/// Title of the archive chat list, which TDLib does not name.
+pub const ARCHIVE_CHAT_LIST_TITLE: &str = "Archive";
+
 /// Which TDLib chat list the chat list panel shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChatListKind {

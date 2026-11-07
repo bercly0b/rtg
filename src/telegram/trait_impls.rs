@@ -211,9 +211,7 @@ impl ChatSubtitleSource for TelegramAdapter {
         query: &ChatInfoQuery,
     ) -> Result<crate::domain::chat_info_state::ChatInfo, ChatSubtitleError> {
         match self.tdlib_backend.as_ref() {
-            Some(backend) => {
-                backend.resolve_chat_info(query.chat_id, query.chat_type, query.title.clone())
-            }
+            Some(backend) => backend.resolve_chat_info(query),
             None => Err(ChatSubtitleError::Unavailable),
         }
     }

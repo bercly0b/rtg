@@ -175,6 +175,84 @@ impl TdLibClient {
         })
     }
 
+    /// Gets a basic group by ID; an offline request.
+    pub fn get_basic_group(
+        &self,
+        basic_group_id: i64,
+    ) -> Result<tdlib_rs::types::BasicGroup, TdLibError> {
+        let client_id = self.client_id;
+
+        self.block_on_request("getBasicGroup", async {
+            let group = tdlib_rs::functions::get_basic_group(basic_group_id, client_id).await?;
+
+            match group {
+                tdlib_rs::enums::BasicGroup::BasicGroup(g) => Ok(g),
+            }
+        })
+    }
+
+    /// Gets a supergroup or channel by ID; an offline request.
+    pub fn get_supergroup(
+        &self,
+        supergroup_id: i64,
+    ) -> Result<tdlib_rs::types::Supergroup, TdLibError> {
+        let client_id = self.client_id;
+
+        self.block_on_request("getSupergroup", async {
+            let group = tdlib_rs::functions::get_supergroup(supergroup_id, client_id).await?;
+
+            match group {
+                tdlib_rs::enums::Supergroup::Supergroup(g) => Ok(g),
+            }
+        })
+    }
+
+    /// Gets a secret chat by ID; an offline request.
+    pub fn get_secret_chat(
+        &self,
+        secret_chat_id: i32,
+    ) -> Result<tdlib_rs::types::SecretChat, TdLibError> {
+        let client_id = self.client_id;
+
+        self.block_on_request("getSecretChat", async {
+            let chat = tdlib_rs::functions::get_secret_chat(secret_chat_id, client_id).await?;
+
+            match chat {
+                tdlib_rs::enums::SecretChat::SecretChat(c) => Ok(c),
+            }
+        })
+    }
+
+    /// Gets the notification settings shared by every chat of a scope.
+    pub fn get_scope_notification_settings(
+        &self,
+        scope: tdlib_rs::enums::NotificationSettingsScope,
+    ) -> Result<tdlib_rs::types::ScopeNotificationSettings, TdLibError> {
+        let client_id = self.client_id;
+
+        self.block_on_request("getScopeNotificationSettings", async {
+            let settings =
+                tdlib_rs::functions::get_scope_notification_settings(scope, client_id).await?;
+
+            match settings {
+                tdlib_rs::enums::ScopeNotificationSettings::ScopeNotificationSettings(s) => Ok(s),
+            }
+        })
+    }
+
+    /// Gets the countries Telegram knows; TDLib caches the list.
+    pub fn get_countries(&self) -> Result<Vec<tdlib_rs::types::CountryInfo>, TdLibError> {
+        let client_id = self.client_id;
+
+        self.block_on_request("getCountries", async {
+            let countries = tdlib_rs::functions::get_countries(client_id).await?;
+
+            match countries {
+                tdlib_rs::enums::Countries::Countries(c) => Ok(c.countries),
+            }
+        })
+    }
+
     /// Informs TDLib that the chat is opened by the user.
     ///
     /// Many useful activities depend on the chat being opened or closed

@@ -12,6 +12,34 @@ fn i_key_opens_chat_info_popup_when_chat_selected() {
 }
 
 #[test]
+fn i_key_dispatches_chat_info_query_with_chat_folders() {
+    use crate::domain::chat_folder::{ChatFolder, ChatFolders};
+
+    let folders = ChatFolders {
+        folders: vec![ChatFolder {
+            id: 3,
+            title: "Work".to_owned(),
+        }],
+        main_list_position: 0,
+    };
+    let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
+    o.handle_event(AppEvent::ChatUpdateReceived {
+        updates: vec![crate::domain::events::ChatUpdate::ChatFoldersChanged {
+            folders: folders.clone(),
+        }],
+    })
+    .unwrap();
+
+    o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+        .unwrap();
+
+    let query = o.dispatcher.last_chat_info_query().unwrap();
+    assert_eq!(query.chat_id, 1);
+    assert_eq!(query.title, "Alice");
+    assert_eq!(query.folders, folders);
+}
+
+#[test]
 fn i_key_does_nothing_when_no_chat_selected() {
     let mut o = make_orchestrator();
     o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
@@ -64,7 +92,7 @@ fn chat_info_popup_ignores_other_keys() {
 
 #[test]
 fn chat_info_loaded_updates_popup_state() {
-    use crate::domain::chat_info_state::{ChatInfo, ChatInfoPopupState};
+    use crate::domain::chat_info_state::{tests::sample_chat_info, ChatInfoPopupState};
 
     let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
     o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
@@ -74,23 +102,13 @@ fn chat_info_loaded_updates_popup_state() {
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatInfoLoaded {
             chat_id: 1,
-            result: Ok(ChatInfo {
-                title: "Alice".into(),
-                chat_type: crate::domain::chat::ChatType::Private,
-                status_line: "online".into(),
-                username: None,
-                description: Some("Hello world".into()),
-            }),
+            result: Ok(sample_chat_info("Alice")),
         },
     ]))
     .unwrap();
 
     match o.state().chat_info_popup().unwrap() {
-        ChatInfoPopupState::Loaded(info) => {
-            assert_eq!(info.title, "Alice");
-            assert_eq!(info.status_line, "online");
-            assert_eq!(info.description.as_deref(), Some("Hello world"));
-        }
+        ChatInfoPopupState::Loaded(info) => assert_eq!(**info, sample_chat_info("Alice")),
         _ => panic!("expected Loaded state"),
     }
 }
@@ -121,20 +139,14 @@ fn chat_info_loaded_error_sets_error_state() {
 
 #[test]
 fn chat_info_loaded_ignored_when_popup_closed() {
-    use crate::domain::chat_info_state::ChatInfo;
+    use crate::domain::chat_info_state::tests::sample_chat_info;
 
     let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
     // No popup open — result should be silently ignored
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatInfoLoaded {
             chat_id: 1,
-            result: Ok(ChatInfo {
-                title: "Alice".into(),
-                chat_type: crate::domain::chat::ChatType::Private,
-                status_line: "online".into(),
-                username: None,
-                description: None,
-            }),
+            result: Ok(sample_chat_info("Alice")),
         },
     ]))
     .unwrap();
@@ -144,7 +156,7 @@ fn chat_info_loaded_ignored_when_popup_closed() {
 
 #[test]
 fn chat_info_loaded_stale_result_ignored() {
-    use crate::domain::chat_info_state::{ChatInfo, ChatInfoPopupState};
+    use crate::domain::chat_info_state::{tests::sample_chat_info, ChatInfoPopupState};
 
     let mut o = orchestrator_with_chats(vec![chat(1, "Alice"), chat(2, "Bob")]);
 
@@ -166,13 +178,7 @@ fn chat_info_loaded_stale_result_ignored() {
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatInfoLoaded {
             chat_id: 1,
-            result: Ok(ChatInfo {
-                title: "Alice".into(),
-                chat_type: crate::domain::chat::ChatType::Private,
-                status_line: "online".into(),
-                username: None,
-                description: Some("Alice's bio".into()),
-            }),
+            result: Ok(sample_chat_info("Alice")),
         },
     ]))
     .unwrap();

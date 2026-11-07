@@ -3,7 +3,8 @@
 Research notes for extending the chat info popup (`I` in the chat list). They
 list what TDLib can return about the other side of a chat, what each field
 costs to fetch, and what is worth showing. The [Design](#design) section at
-the end records what was decided. Nothing here is implemented yet.
+the end records what was decided and is implemented; the research sections
+before it describe the popup as it was before the design.
 
 Sources: the TDLib 1.8.61 schema bundled with `tdlib-rs` 1.3.0 (`tl/api.tl`)
 and the TDLib sources (`MessagesManager.cpp`, `DialogActionBar.cpp`,
@@ -299,6 +300,11 @@ The member count stays in the header and is not repeated as a row.
 | Role | `supergroup.status`, `basicGroup.status` | `owner`, `admin "<custom title>"`, `member`, `restricted until <date>`, `left`, `banned` |
 | Joined | `supergroup.date` | `—` for a basic group, or when the user is not a member (then the field holds the creation date) |
 | Location rows | `supergroupFullInfo.location` | Shown only when it is set |
+
+Custom titles exist only in supergroups, and TDLib always leaves the title
+empty in `supergroup.status` (`tl/api.tl`). With the requests above Role
+shows a plain `admin`; the title would need `getChatMember` for the current
+user.
 
 ### Channel
 

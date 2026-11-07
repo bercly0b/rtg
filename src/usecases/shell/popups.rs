@@ -29,6 +29,7 @@ pub(super) fn show_chat_info_popup<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>)
         chat_id,
         chat_type,
         title,
+        folders: ctx.state.chat_folders().clone(),
     });
 }
 
@@ -151,7 +152,7 @@ pub(super) fn handle_chat_info_loaded<D: TaskDispatcher>(
         Ok(info) => {
             tracing::debug!(chat_id, "chat info resolved for popup");
             ctx.state
-                .set_chat_info_loaded(ChatInfoPopupState::Loaded(info));
+                .set_chat_info_loaded(ChatInfoPopupState::Loaded(Box::new(info)));
         }
         Err(e) => {
             tracing::debug!(chat_id, code = e.code, "chat info resolution failed");
