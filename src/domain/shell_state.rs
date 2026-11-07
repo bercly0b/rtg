@@ -330,8 +330,23 @@ impl ShellState {
         &self.chat_folders
     }
 
+    /// Stores the folders TDLib pushed. If the chat list shows a folder that is
+    /// gone, it switches to the main list. An open picker is rebuilt so that it
+    /// cannot offer a removed folder; its cursor stays on the same list, or
+    /// moves to the active one if that list is gone too.
     pub fn set_chat_folders(&mut self, folders: ChatFolders) {
         self.chat_folders = folders;
+        if !self.chat_folders.has_list(self.chat_list.kind()) {
+            self.chat_list.switch_to(ChatListKind::Main);
+        }
+        if let Some(picker) = &self.chat_folder_picker {
+            let cursor = picker
+                .selected()
+                .map(|entry| entry.list)
+                .filter(|&list| self.chat_folders.has_list(list))
+                .unwrap_or(self.chat_list.kind());
+            self.chat_folder_picker = ChatFolderPickerState::new(&self.chat_folders, cursor);
+        }
     }
 
     /// Title of the chat folder the chat list shows; `None` for the main
@@ -915,5 +930,62 @@ mod tests {
 
         state.set_chat_folders(ChatFolders::default());
         assert_eq!(state.active_chat_folder_title(), None);
+    }
+
+    #[test]
+    fn removing_active_folder_switches_chat_list_to_main() {
+        let mut state = ShellState::default();
+        state.set_chat_folders(work_folder());
+        state.chat_list_mut().switch_to(ChatListKind::Folder(3));
+
+        state.set_chat_folders(ChatFolders::default());
+
+        assert_eq!(state.chat_list().kind(), ChatListKind::Main);
+        assert_eq!(
+            state.chat_list().ui_state(),
+            crate::domain::chat_list_state::ChatListUiState::Loading
+        );
+    }
+
+    #[test]
+    fn folders_update_keeps_existing_active_folder() {
+        let mut state = ShellState::default();
+        state.set_chat_folders(work_folder());
+        state.chat_list_mut().switch_to(ChatListKind::Folder(3));
+        state.chat_list_mut().set_ready(vec![chat(1, "Team")]);
+
+        let mut renamed = work_folder();
+        renamed.folders[0].title = "Job".to_owned();
+        state.set_chat_folders(renamed);
+
+        assert_eq!(state.chat_list().kind(), ChatListKind::Folder(3));
+        assert_eq!(state.chat_list().chats().len(), 1);
+        assert_eq!(state.active_chat_folder_title(), Some("Job"));
+    }
+
+    #[test]
+    fn picker_cursor_on_removed_folder_moves_to_active_list() {
+        let folder = |id, title: &str| crate::domain::chat_folder::ChatFolder {
+            id,
+            title: title.to_owned(),
+        };
+        let mut state = ShellState::default();
+        state.set_chat_folders(ChatFolders {
+            folders: vec![folder(3, "Work"), folder(7, "Family")],
+            main_list_position: 1,
+        });
+        state.chat_list_mut().switch_to(ChatListKind::Folder(3));
+        state.open_chat_folder_picker();
+
+        state.set_chat_folders(ChatFolders {
+            folders: vec![folder(7, "Family")],
+            main_list_position: 1,
+        });
+
+        let picker = state.chat_folder_picker().unwrap();
+        assert_eq!(
+            picker.selected().map(|entry| entry.list),
+            Some(ChatListKind::Main)
+        );
     }
 }
