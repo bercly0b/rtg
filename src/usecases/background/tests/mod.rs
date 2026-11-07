@@ -92,6 +92,8 @@ impl TaskDispatcher for StubTaskDispatcher {
     fn dispatch_add_reaction(&self, _chat_id: i64, _message_id: i64, _emoji: String) {}
 
     fn dispatch_remove_reaction(&self, _chat_id: i64, _message_id: i64, _emoji: String) {}
+
+    fn dispatch_self_update(&self) {}
 }
 
 // ── dispatch_forum_unread_counts: the badge warm-up sweep ──

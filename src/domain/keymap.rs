@@ -42,6 +42,7 @@ pub enum Action {
     // Global
     Quit,
     ShowHelp,
+    InstallUpdate,
 }
 
 impl Action {
@@ -81,6 +82,7 @@ impl Action {
             Self::ScrollToLastMessage => "scroll_to_last_message",
             Self::Quit => "quit",
             Self::ShowHelp => "show_help",
+            Self::InstallUpdate => "install_update",
         }
     }
 
@@ -120,6 +122,7 @@ impl Action {
             "scroll_to_last_message" => Some(Self::ScrollToLastMessage),
             "quit" => Some(Self::Quit),
             "show_help" => Some(Self::ShowHelp),
+            "install_update" => Some(Self::InstallUpdate),
             _ => None,
         }
     }
@@ -618,6 +621,11 @@ fn default_bindings() -> Vec<KeyBinding> {
             action: Action::ShowHelp,
             context: KeyContext::Global,
         },
+        KeyBinding {
+            pattern: KeyPattern::single("U"),
+            action: Action::InstallUpdate,
+            context: KeyContext::Global,
+        },
     ]
 }
 
@@ -690,6 +698,22 @@ mod tests {
             km.resolve("q", false, KeyContext::Messages),
             ResolveResult::Action(Action::Quit)
         );
+    }
+
+    #[test]
+    fn shift_u_installs_an_update_in_every_context() {
+        let mut km = Keymap::default();
+        for context in [
+            KeyContext::ChatList,
+            KeyContext::ForumTopicList,
+            KeyContext::Messages,
+        ] {
+            assert_eq!(
+                km.resolve("U", false, context),
+                ResolveResult::Action(Action::InstallUpdate),
+                "{context:?}"
+            );
+        }
     }
 
     #[test]
@@ -846,6 +870,7 @@ mod tests {
             Action::DeleteMessage,
             Action::Quit,
             Action::ShowHelp,
+            Action::InstallUpdate,
         ];
         for action in actions {
             let name = action.display_name();

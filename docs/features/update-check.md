@@ -28,7 +28,9 @@ this install:
 
 ## Status bar
 
-The notice sits right before `? for help`. A notification is short-lived and
+The notice sits right before `? for help`. `U` installs the update from the
+TUI ([Self-update](self-update.md#from-the-tui)); while it runs and once it is
+installed, its progress takes the notice's place. A notification is short-lived and
 keeps priority: when there is no room for both, the notice is hidden until the
 notification expires. On a terminal too narrow for the notice, it is not shown.
 

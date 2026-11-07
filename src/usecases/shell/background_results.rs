@@ -3,7 +3,7 @@ use crate::{
     usecases::background::{BackgroundTaskResult, TaskDispatcher},
 };
 
-use super::{chat_list, chat_open, popups, OrchestratorCtx};
+use super::{chat_list, chat_open, popups, self_update, OrchestratorCtx};
 
 pub(super) fn handle_background_result<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
@@ -379,6 +379,9 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
         }
         BackgroundTaskResult::UpdateAvailable(update) => {
             ctx.shell.state.set_available_update(update);
+        }
+        BackgroundTaskResult::SelfUpdateFinished(result) => {
+            self_update::handle_self_update_finished(&mut ctx.shell, result);
         }
     }
 }

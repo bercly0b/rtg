@@ -10,7 +10,7 @@ use super::{
     chat_open::{self, OpenChatSync},
     chat_search, command_popup,
     file_updates::Downloads,
-    forum, message_actions, message_input, popups, voice, OrchestratorCtx, ShellCtx,
+    forum, message_actions, message_input, popups, self_update, voice, OrchestratorCtx, ShellCtx,
 };
 
 /// Routes a key to the surface that captures all input while it is open:
@@ -101,6 +101,7 @@ pub(super) fn dispatch_chat_list_action<D: TaskDispatcher>(
         Action::ShowHelp => {
             ctx.shell.state.show_help();
         }
+        Action::InstallUpdate => self_update::start_self_update(&mut ctx.shell),
         _ => {}
     }
     Ok(false)
@@ -196,6 +197,7 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
         Action::ShowHelp => {
             ctx.shell.state.show_help();
         }
+        Action::InstallUpdate => self_update::start_self_update(&mut ctx.shell),
         _ => {}
     }
     Ok(())
@@ -304,6 +306,7 @@ pub(super) fn dispatch_forum_topic_list_action<D: TaskDispatcher>(
         Action::ShowHelp => {
             ctx.shell.state.show_help();
         }
+        Action::InstallUpdate => self_update::start_self_update(&mut ctx.shell),
         _ => {}
     }
     Ok(())

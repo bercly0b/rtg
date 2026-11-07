@@ -30,6 +30,16 @@ pub struct AvailableUpdate {
     pub channel: InstallChannel,
 }
 
+/// An update the user started from the TUI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SelfUpdateProgress {
+    /// `rtg update` runs in the background.
+    Running,
+    /// The release is installed; the running RTG keeps its version until it
+    /// restarts.
+    Installed { version: String },
+}
+
 /// Whether release `candidate` is newer than `current`.
 ///
 /// Versions are `MAJOR.MINOR.PATCH` with an optional `v` prefix and an

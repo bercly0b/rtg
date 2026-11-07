@@ -26,6 +26,7 @@ use super::{
     load_messages::MessagesSource,
     message_info::{MessageInfoQuery, MessageInfoSource},
     message_reactions::{AvailableReactionsQuery, ReactionSource},
+    self_update::{self, UpdateRtg},
     send_message::MessageSender,
     send_voice::VoiceNoteSender,
 };
@@ -142,6 +143,10 @@ pub trait TaskDispatcher {
 
     /// Removes a reaction from a message (fire-and-forget).
     fn dispatch_remove_reaction(&self, chat_id: i64, message_id: i64, emoji: String);
+
+    /// Runs `rtg update` in the background; how it ended arrives as
+    /// `SelfUpdateFinished`.
+    fn dispatch_self_update(&self);
 }
 
 /// Thread-based dispatcher that runs blocking API calls on background OS threads.
@@ -169,6 +174,7 @@ where
     message_sender: Arc<MS>,
     lifecycle: Arc<L>,
     subtitle_source: Arc<S>,
+    update_rtg: UpdateRtg,
     result_tx: Sender<BackgroundTaskResult>,
 }
 
@@ -193,6 +199,7 @@ where
         message_sender: Arc<MS>,
         lifecycle: Arc<L>,
         subtitle_source: Arc<S>,
+        update_rtg: UpdateRtg,
         result_tx: Sender<BackgroundTaskResult>,
     ) -> Self {
         Self {
@@ -201,6 +208,7 @@ where
             message_sender,
             lifecycle,
             subtitle_source,
+            update_rtg,
             result_tx,
         }
     }
@@ -363,6 +371,10 @@ where
 
     fn dispatch_remove_reaction(&self, chat_id: i64, message_id: i64, emoji: String) {
         lifecycle::dispatch_remove_reaction(&self.subtitle_source, chat_id, message_id, emoji);
+    }
+
+    fn dispatch_self_update(&self) {
+        self_update::spawn_self_update(self.update_rtg, self.result_tx.clone());
     }
 }
 

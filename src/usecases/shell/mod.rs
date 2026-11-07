@@ -10,6 +10,7 @@ mod key_dispatch;
 mod message_actions;
 mod message_input;
 mod popups;
+mod self_update;
 mod voice;
 
 use std::{collections::HashMap, sync::Arc};

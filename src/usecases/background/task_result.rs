@@ -1,8 +1,11 @@
-use crate::domain::{
-    chat::ChatSummary, chat_folder::ChatListKind, chat_info_state::ChatInfo,
-    chat_subtitle::ChatSubtitle, forum_topic::ForumTopicSummary, message::Message,
-    message_info_state::MessageInfo, message_input_state::OutgoingMessage,
-    reaction_picker_state::AvailableReaction, update_check::AvailableUpdate,
+use crate::{
+    domain::{
+        chat::ChatSummary, chat_folder::ChatListKind, chat_info_state::ChatInfo,
+        chat_subtitle::ChatSubtitle, forum_topic::ForumTopicSummary, message::Message,
+        message_info_state::MessageInfo, message_input_state::OutgoingMessage,
+        reaction_picker_state::AvailableReaction, update_check::AvailableUpdate,
+    },
+    usecases::self_update::SelfUpdated,
 };
 
 /// Result of an asynchronous background operation dispatched from the UI thread.
@@ -105,6 +108,9 @@ pub enum BackgroundTaskResult {
     FileSaveFailed { file_id: i32, error: String },
     /// The update check found a release newer than the running RTG.
     UpdateAvailable(AvailableUpdate),
+    /// `rtg update` started from the TUI ended; an error is the status bar
+    /// text that says why nothing was installed.
+    SelfUpdateFinished(Result<SelfUpdated, String>),
 }
 
 /// Lightweight error type for background task failures.

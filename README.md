@@ -62,8 +62,8 @@ On Linux, `rtg` needs Ubuntu 24.04 or newer (glibc 2.39) and the libc++ runtime:
 - Ubuntu 24.04: `sudo apt install libc++1 libc++abi1`
 - Ubuntu 26.04 and newer: `sudo apt install libc++1 libc++abi1 llvm-libunwind1`
 
-To update an `rtg` installed this way, run `rtg update`. When a newer release
-is out, RTG shows it in the status bar.
+To update an `rtg` installed this way, run `rtg update` or press `U` in RTG.
+When a newer release is out, RTG shows it in the status bar.
 
 If you installed an older release with its `install.sh`, remove that copy from
 `/usr/local`:

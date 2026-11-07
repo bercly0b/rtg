@@ -62,8 +62,9 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bercly0b/rtg/releases/l
 - Ubuntu 24.04: `sudo apt install libc++1 libc++abi1`
 - Ubuntu 26.04 и новее: `sudo apt install libc++1 libc++abi1 llvm-libunwind1`
 
-Чтобы обновить `rtg`, установленный этим способом, выполните `rtg update`.
-Когда выходит новый релиз, RTG показывает его в строке состояния.
+Чтобы обновить `rtg`, установленный этим способом, выполните `rtg update` или
+нажмите `U` в RTG. Когда выходит новый релиз, RTG показывает его в строке
+состояния.
 
 Если вы ставили одну из прошлых версий через её `install.sh`, удалите старую
 копию из `/usr/local`:

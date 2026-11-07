@@ -29,6 +29,7 @@ pub(super) struct RecordingDispatcher {
     dispatched_chat_infos: RefCell<Vec<ChatInfoQuery>>,
     dispatched_add_reactions: RefCell<Vec<(i64, i64, String)>>,
     dispatched_remove_reactions: RefCell<Vec<(i64, i64, String)>>,
+    dispatched_self_updates: RefCell<usize>,
 }
 
 impl RecordingDispatcher {
@@ -54,6 +55,7 @@ impl RecordingDispatcher {
             dispatched_chat_infos: RefCell::new(Vec::new()),
             dispatched_add_reactions: RefCell::new(Vec::new()),
             dispatched_remove_reactions: RefCell::new(Vec::new()),
+            dispatched_self_updates: RefCell::new(0),
         }
     }
 
@@ -245,6 +247,10 @@ impl RecordingDispatcher {
     pub(super) fn last_remove_reaction(&self) -> Option<(i64, i64, String)> {
         self.dispatched_remove_reactions.borrow().last().cloned()
     }
+
+    pub(super) fn self_update_dispatch_count(&self) -> usize {
+        *self.dispatched_self_updates.borrow()
+    }
 }
 
 impl TaskDispatcher for RecordingDispatcher {
@@ -379,5 +385,9 @@ impl TaskDispatcher for RecordingDispatcher {
         self.dispatched_remove_reactions
             .borrow_mut()
             .push((chat_id, message_id, emoji));
+    }
+
+    fn dispatch_self_update(&self) {
+        *self.dispatched_self_updates.borrow_mut() += 1;
     }
 }
