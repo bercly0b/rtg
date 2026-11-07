@@ -53,9 +53,9 @@ impl MessageInfoPopupState {
     }
 }
 
-pub fn format_unix_timestamp(ts: i32) -> String {
+pub fn format_unix_timestamp(ts: impl Into<i64>) -> String {
     Local
-        .timestamp_opt(i64::from(ts), 0)
+        .timestamp_opt(ts.into(), 0)
         .single()
         .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(|| "unknown".to_owned())

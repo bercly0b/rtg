@@ -4,6 +4,7 @@
 //! Chat info: detailed information shown in the chat info popup (I key).
 
 use crate::domain::chat::ChatType;
+use crate::domain::chat_folder::ChatFolders;
 use crate::domain::chat_info_state::ChatInfo;
 use crate::domain::chat_subtitle::ChatSubtitle;
 
@@ -20,6 +21,8 @@ pub struct ChatInfoQuery {
     pub chat_id: i64,
     pub chat_type: ChatType,
     pub title: String,
+    /// The user's folders, to name the ones holding the chat.
+    pub folders: ChatFolders,
 }
 
 /// Error when subtitle or chat info resolution fails.

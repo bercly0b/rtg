@@ -83,9 +83,10 @@ sudo apt install libc++1 libc++abi1
 
 - [mise](https://mise.jdx.dev/installing-mise.html), активированный в вашей
   оболочке, — он установит версию Rust, закреплённую в [`mise.toml`](mise.toml)
-- На Linux — среда выполнения libc++, которую использует готовая сборка TDLib:
+- На Linux — libc++: TDLib вшивается в `rtg` статически, а её C++-рантайм
+  берётся из системы:
   ```bash
-  sudo apt install libc++1 libc++abi1 libunwind8
+  sudo apt install libc++-dev libc++abi-dev
   ```
 
 TDLib (~50 МБ) скачивается автоматически при первой сборке через фичу

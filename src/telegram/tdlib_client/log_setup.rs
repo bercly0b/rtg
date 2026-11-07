@@ -8,7 +8,8 @@
 
 use std::ffi::{c_char, CString};
 
-#[link(name = "tdjson")]
+// No `#[link]`: the symbol comes from the TDLib that `tdlib-rs` links in
+// statically; naming `tdjson` here would make the binary load the dylib.
 unsafe extern "C" {
     fn td_execute(request: *const c_char) -> *const c_char;
 }

@@ -323,6 +323,10 @@ impl ShellState {
         self.chat_search = None;
     }
 
+    pub fn chat_folders(&self) -> &ChatFolders {
+        &self.chat_folders
+    }
+
     pub fn set_chat_folders(&mut self, folders: ChatFolders) {
         self.chat_folders = folders;
     }
@@ -532,21 +536,14 @@ mod tests {
 
     #[test]
     fn set_chat_info_loaded_updates_popup() {
-        use crate::domain::chat_info_state::{ChatInfo, ChatInfoPopupState};
+        use crate::domain::chat_info_state::{tests::sample_chat_info, ChatInfoPopupState};
         let mut state = ShellState::default();
         state.show_chat_info_loading(1, "Alice");
-        state.set_chat_info_loaded(ChatInfoPopupState::Loaded(ChatInfo {
-            title: "Alice".into(),
-            chat_type: ChatType::Private,
-            status_line: "online".into(),
-            username: None,
-            description: Some("Hello world".into()),
-        }));
+        state.set_chat_info_loaded(ChatInfoPopupState::Loaded(Box::new(sample_chat_info(
+            "Alice",
+        ))));
         match state.chat_info_popup().unwrap() {
-            ChatInfoPopupState::Loaded(info) => {
-                assert_eq!(info.status_line, "online");
-                assert_eq!(info.description.as_deref(), Some("Hello world"));
-            }
+            ChatInfoPopupState::Loaded(info) => assert_eq!(info.title, "Alice"),
             _ => panic!("expected Loaded state"),
         }
     }

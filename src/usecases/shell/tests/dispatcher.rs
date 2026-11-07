@@ -1,4 +1,5 @@
 use super::*;
+use crate::usecases::chat_subtitle::ChatInfoQuery;
 
 // ── Recording task dispatcher for tests ──
 
@@ -24,6 +25,7 @@ pub(super) struct RecordingDispatcher {
     dispatched_deletes: RefCell<Vec<(i64, i64)>>,
     dispatched_voice_sends: RefCell<Vec<VoiceSendRecord>>,
     dispatched_subtitles: RefCell<Vec<ChatSubtitleQuery>>,
+    dispatched_chat_infos: RefCell<Vec<ChatInfoQuery>>,
     dispatched_add_reactions: RefCell<Vec<(i64, i64, String)>>,
     dispatched_remove_reactions: RefCell<Vec<(i64, i64, String)>>,
 }
@@ -47,6 +49,7 @@ impl RecordingDispatcher {
             dispatched_deletes: RefCell::new(Vec::new()),
             dispatched_voice_sends: RefCell::new(Vec::new()),
             dispatched_subtitles: RefCell::new(Vec::new()),
+            dispatched_chat_infos: RefCell::new(Vec::new()),
             dispatched_add_reactions: RefCell::new(Vec::new()),
             dispatched_remove_reactions: RefCell::new(Vec::new()),
         }
@@ -225,6 +228,10 @@ impl RecordingDispatcher {
         self.dispatched_subtitles.borrow().last().cloned()
     }
 
+    pub(super) fn last_chat_info_query(&self) -> Option<ChatInfoQuery> {
+        self.dispatched_chat_infos.borrow().last().cloned()
+    }
+
     pub(super) fn last_add_reaction(&self) -> Option<(i64, i64, String)> {
         self.dispatched_add_reactions.borrow().last().cloned()
     }
@@ -326,8 +333,8 @@ impl TaskDispatcher for RecordingDispatcher {
         // Recording: no-op for now
     }
 
-    fn dispatch_chat_info(&self, _query: crate::usecases::chat_subtitle::ChatInfoQuery) {
-        // Recording: no-op for now
+    fn dispatch_chat_info(&self, query: ChatInfoQuery) {
+        self.dispatched_chat_infos.borrow_mut().push(query);
     }
 
     fn dispatch_open_file(&self, _cmd_template: String, _file_path: String) {
