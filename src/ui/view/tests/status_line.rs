@@ -1,5 +1,8 @@
+use std::time::{Duration, Instant};
+
 use unicode_width::UnicodeWidthStr;
 
+use crate::domain::download_speed::MIN_TRACKED_FILE_SIZE;
 use crate::domain::events::ConnectivityStatus;
 use crate::domain::shell_state::ShellState;
 
@@ -117,6 +120,104 @@ fn status_line_truncates_long_notification() {
 
     assert!(text.contains("? for help"));
     assert!(text.width() <= 40);
+}
+
+fn state_downloading(bytes_per_second: u64) -> ShellState {
+    let mut state = ShellState::default();
+    state.set_connectivity_status(ConnectivityStatus::Connected);
+    let start = Instant::now() - Duration::from_secs(2);
+    let meter = state.download_speed_mut();
+    meter.record_progress(1, MIN_TRACKED_FILE_SIZE, 0, start);
+    meter.record_progress(
+        1,
+        MIN_TRACKED_FILE_SIZE,
+        bytes_per_second,
+        start + Duration::from_secs(1),
+    );
+    state
+}
+
+#[test]
+fn status_line_shows_download_speed_after_connectivity_label() {
+    let state = state_downloading(1_572_864);
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(text.contains("Connected  \u{2193} 1.5 MB/s"), "{text}");
+}
+
+#[test]
+fn status_line_without_download_has_no_speed() {
+    let mut state = ShellState::default();
+    state.set_connectivity_status(ConnectivityStatus::Connected);
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(!text.contains("/s"));
+}
+
+#[test]
+fn status_line_shows_download_speed_with_notification() {
+    let mut state = state_downloading(1_572_864);
+    state.set_notification("A".repeat(200));
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(text.contains("MB/s  AAA"), "{text}");
+    assert!(text.ends_with("? for help "));
+    assert_eq!(text.width(), STATUS_WIDTH);
+}
+
+#[test]
+fn download_speed_below_one_kilobyte_is_shown_in_bytes() {
+    assert_eq!(status_line::format_download_speed(0), "\u{2193} 0 B/s");
+    assert_eq!(
+        status_line::format_download_speed(1_023),
+        "\u{2193} 1023 B/s"
+    );
+}
+
+#[test]
+fn download_speed_is_shown_in_binary_kilobytes_and_megabytes() {
+    assert_eq!(
+        status_line::format_download_speed(1_024),
+        "\u{2193} 1.0 KB/s"
+    );
+    assert_eq!(
+        status_line::format_download_speed(512 * 1_024),
+        "\u{2193} 512 KB/s"
+    );
+    assert_eq!(
+        status_line::format_download_speed(1_048_576),
+        "\u{2193} 1.0 MB/s"
+    );
+    assert_eq!(
+        status_line::format_download_speed(8 * 1_048_576),
+        "\u{2193} 8.0 MB/s"
+    );
+}
+
+#[test]
+fn download_speed_has_one_truncated_decimal_up_to_99() {
+    assert_eq!(
+        status_line::format_download_speed(7_000_000),
+        "\u{2193} 6.6 MB/s"
+    );
+    assert_eq!(
+        status_line::format_download_speed(1_048_575),
+        "\u{2193} 1023 KB/s"
+    );
+    assert_eq!(
+        status_line::format_download_speed(100 * 1_024 - 1),
+        "\u{2193} 99.9 KB/s"
+    );
+    assert_eq!(
+        status_line::format_download_speed(150 * 1_048_576 + 900_000),
+        "\u{2193} 150 MB/s"
+    );
 }
 
 // -- compute_input_height tests --

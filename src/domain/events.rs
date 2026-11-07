@@ -63,9 +63,11 @@ pub enum ChatUpdate {
     },
     /// File download progress or completion update from TDLib.
     /// `local_path` is set only once the download has completed.
+    /// `downloaded_size` is the running byte count used for the download speed.
     FileUpdated {
         file_id: i32,
         size: u64,
+        downloaded_size: u64,
         local_path: Option<String>,
         download_status: super::message::DownloadStatus,
     },

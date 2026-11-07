@@ -114,6 +114,7 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
             ChatUpdate::FileUpdated {
                 file_id,
                 size,
+                downloaded_size,
                 local_path,
                 download_status,
             } => {
@@ -122,6 +123,7 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                     ctx.downloads,
                     file_id,
                     size,
+                    downloaded_size,
                     local_path,
                     download_status,
                 );

@@ -27,15 +27,28 @@ pub(super) fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
         }
     };
 
+    let download_speed = state
+        .download_speed()
+        .bytes_per_second(Instant::now())
+        .map(format_download_speed);
+
     let dot_text = " \u{25CF} ";
     let separator = "  ";
     let right_text = "? for help ";
-    let fixed_width = dot_text.width() + label.width() + right_text.width();
+    let speed_width = download_speed
+        .as_ref()
+        .map_or(0, |speed| separator.width() + speed.width());
+    let fixed_width = dot_text.width() + label.width() + speed_width + right_text.width();
 
     let mut spans: Vec<Span<'a>> = vec![
         Span::styled(dot_text, dot_style),
         Span::styled(label, styles::connectivity_label_style()),
     ];
+
+    if let Some(speed) = download_speed {
+        spans.push(Span::styled(separator, styles::status_bar_style()));
+        spans.push(Span::styled(speed, styles::connectivity_label_style()));
+    }
 
     if let Some(notification) = state.active_notification() {
         let budget = width.saturating_sub(fixed_width + separator.width());
@@ -56,6 +69,29 @@ pub(super) fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
     spans.push(Span::styled(right_text, styles::help_hint_style()));
 
     Line::from(spans)
+}
+
+/// Formats a download speed in bytes per second with binary (1024) multiples,
+/// the way tmux-net-speed and similar system monitors show it, so the numbers
+/// can be compared side by side. The decimal is truncated rather than rounded
+/// so a value never rounds up past its unit (e.g. to `100.0`).
+pub(super) fn format_download_speed(bytes_per_second: u64) -> String {
+    const UNITS: [&str; 3] = ["B", "KB", "MB"];
+
+    let mut unit = 0;
+    let mut divisor = 1;
+    while bytes_per_second / divisor >= 1_024 && unit < UNITS.len() - 1 {
+        divisor *= 1_024;
+        unit += 1;
+    }
+
+    let whole = bytes_per_second / divisor;
+    if unit == 0 || whole > 99 {
+        format!("\u{2193} {whole} {}/s", UNITS[unit])
+    } else {
+        let tenth = bytes_per_second % divisor * 10 / divisor;
+        format!("\u{2193} {whole}.{tenth} {}/s", UNITS[unit])
+    }
 }
 
 /// Returns the Connecting label for the given animation phase.

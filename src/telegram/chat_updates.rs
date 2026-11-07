@@ -154,6 +154,7 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
             Some(ChatUpdate::FileUpdated {
                 file_id: file.id,
                 size: effective_file_size(&file),
+                downloaded_size: file.local.downloaded_size.max(0) as u64,
                 local_path,
                 download_status,
             })
@@ -659,6 +660,7 @@ mod tests {
             Some(ChatUpdate::FileUpdated {
                 file_id: 7,
                 size: 4000,
+                downloaded_size: 1000,
                 local_path: None,
                 download_status: DownloadStatus::Downloading {
                     progress_percent: 25

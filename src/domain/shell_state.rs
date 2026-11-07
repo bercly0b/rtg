@@ -7,6 +7,7 @@ use super::{
     chat_list_state::ChatListState,
     chat_search_state::ChatSearchState,
     command_popup_state::CommandPopupState,
+    download_speed::DownloadSpeedMeter,
     events::ConnectivityStatus,
     forum_topic_list_state::ForumTopicListState,
     message_cache::MessageCache,
@@ -71,6 +72,7 @@ pub struct ShellState {
     chat_search: Option<ChatSearchState>,
     chat_folders: ChatFolders,
     chat_folder_picker: Option<ChatFolderPickerState>,
+    download_speed: DownloadSpeedMeter,
 }
 
 impl Default for ShellState {
@@ -93,6 +95,7 @@ impl Default for ShellState {
             chat_search: None,
             chat_folders: ChatFolders::default(),
             chat_folder_picker: None,
+            download_speed: DownloadSpeedMeter::default(),
         }
     }
 }
@@ -364,6 +367,14 @@ impl ShellState {
 
     pub fn message_input_mut(&mut self) -> &mut MessageInputState {
         &mut self.message_input
+    }
+
+    pub fn download_speed(&self) -> &DownloadSpeedMeter {
+        &self.download_speed
+    }
+
+    pub fn download_speed_mut(&mut self) -> &mut DownloadSpeedMeter {
+        &mut self.download_speed
     }
 
     pub fn set_notification(&mut self, text: impl Into<String>) {

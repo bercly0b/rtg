@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use crate::{
     domain::message::{DownloadStatus, Message},
@@ -37,6 +38,7 @@ pub(super) fn handle_file_update<D: TaskDispatcher>(
     downloads: &mut Downloads,
     file_id: i32,
     size: u64,
+    downloaded_size: u64,
     local_path: Option<String>,
     download_status: DownloadStatus,
 ) {
@@ -85,11 +87,13 @@ pub(super) fn handle_file_update<D: TaskDispatcher>(
     match download_status {
         DownloadStatus::Completed => {
             downloads.active_downloads.remove(&file_id);
+            ctx.state.download_speed_mut().finish(file_id);
             tracing::info!(file_id, chat_id, message_id, "file download completed");
         }
         DownloadStatus::NotStarted => {
             downloads.active_downloads.remove(&file_id);
             downloads.pending_saves.remove(&file_id);
+            ctx.state.download_speed_mut().finish(file_id);
             tracing::warn!(
                 file_id,
                 chat_id,
@@ -97,7 +101,14 @@ pub(super) fn handle_file_update<D: TaskDispatcher>(
                 "file download failed or cancelled"
             );
         }
-        DownloadStatus::Downloading { .. } => {}
+        DownloadStatus::Downloading { .. } => {
+            ctx.state.download_speed_mut().record_progress(
+                file_id,
+                size,
+                downloaded_size,
+                Instant::now(),
+            );
+        }
     }
 }
 
