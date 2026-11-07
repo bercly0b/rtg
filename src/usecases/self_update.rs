@@ -26,14 +26,24 @@ pub enum SelfUpdated {
 #[derive(Debug, thiserror::Error)]
 pub enum SelfUpdateError {
     #[error(
-        "rtg update only updates an rtg installed by the release installer. Update this one with:\n\n    {}",
-        .0.update_command()
+        "rtg update only updates an rtg installed by the release installer. {}",
+        how_to_update(.0)
     )]
     OtherInstallChannel(InstallChannel),
     #[error("rtg cannot write to {}. Update it as root:\n\n    {command}", .dir.display())]
     InstallDirNotWritable { dir: PathBuf, command: String },
     #[error(transparent)]
     Failed(#[from] anyhow::Error),
+}
+
+fn how_to_update(channel: &InstallChannel) -> String {
+    match channel {
+        InstallChannel::Unknown => format!(
+            "Download the latest release from:\n\n    {}",
+            channel.update_hint()
+        ),
+        _ => format!("Update this one with:\n\n    {}", channel.update_hint()),
+    }
 }
 
 /// Installs the latest release when it is newer than the running RTG.
@@ -178,11 +188,19 @@ mod tests {
     fn other_install_channel_is_pointed_at_its_own_update_command() {
         assert_eq!(
             SelfUpdateError::OtherInstallChannel(InstallChannel::Homebrew).to_string(),
-            "rtg update only updates an rtg installed by the release installer. Update this one with:\n\n    brew upgrade rtg-tui"
+            "rtg update only updates an rtg installed by the release installer. Update this one with:\n\n    brew upgrade rtg"
         );
         assert_eq!(
             SelfUpdateError::OtherInstallChannel(InstallChannel::CratesIo).to_string(),
             "rtg update only updates an rtg installed by the release installer. Update this one with:\n\n    cargo install --locked rtg-tui"
+        );
+    }
+
+    #[test]
+    fn unknown_install_channel_is_pointed_at_the_release_page() {
+        assert_eq!(
+            SelfUpdateError::OtherInstallChannel(InstallChannel::Unknown).to_string(),
+            "rtg update only updates an rtg installed by the release installer. Download the latest release from:\n\n    https://github.com/bercly0b/rtg/releases/latest"
         );
     }
 }

@@ -4,14 +4,20 @@ pub enum InstallChannel {
     ReleaseInstaller,
     Homebrew,
     CratesIo,
+    /// None of the above: a build from source, a copied binary or an install
+    /// from an older release.
+    Unknown,
 }
 
 impl InstallChannel {
-    pub fn update_command(self) -> &'static str {
+    /// The command that updates this install; for an unknown channel, the
+    /// release page to update it from by hand.
+    pub fn update_hint(self) -> &'static str {
         match self {
             Self::ReleaseInstaller => "rtg update",
-            Self::Homebrew => "brew upgrade rtg-tui",
+            Self::Homebrew => "brew upgrade rtg",
             Self::CratesIo => "cargo install --locked rtg-tui",
+            Self::Unknown => "https://github.com/bercly0b/rtg/releases/latest",
         }
     }
 }
@@ -108,18 +114,16 @@ mod tests {
     }
 
     #[test]
-    fn each_install_channel_has_its_own_update_command() {
+    fn each_install_channel_has_its_own_update_hint() {
+        assert_eq!(InstallChannel::ReleaseInstaller.update_hint(), "rtg update");
+        assert_eq!(InstallChannel::Homebrew.update_hint(), "brew upgrade rtg");
         assert_eq!(
-            InstallChannel::ReleaseInstaller.update_command(),
-            "rtg update"
-        );
-        assert_eq!(
-            InstallChannel::Homebrew.update_command(),
-            "brew upgrade rtg-tui"
-        );
-        assert_eq!(
-            InstallChannel::CratesIo.update_command(),
+            InstallChannel::CratesIo.update_hint(),
             "cargo install --locked rtg-tui"
+        );
+        assert_eq!(
+            InstallChannel::Unknown.update_hint(),
+            "https://github.com/bercly0b/rtg/releases/latest"
         );
     }
 }

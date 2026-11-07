@@ -92,7 +92,7 @@ pub(super) fn format_update_notice(update: &AvailableUpdate) -> String {
     format!(
         "v{} available: {}",
         update.version,
-        update.channel.update_command()
+        update.channel.update_hint()
     )
 }
 
