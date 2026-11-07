@@ -28,7 +28,8 @@ then:
    next to it, and builds the release installer `rtg-tui-installer.sh`, a
    combined `sha256.sum` and a source tarball.
 4. **Publishes** a GitHub Release with all of the above. dist writes the
-   release body: the install command and a table of downloads.
+   release body: the version's section of [`CHANGELOG.md`](../CHANGELOG.md),
+   the install command and a table of downloads.
 
 Every pull request runs steps 1–3 (`pr-run-mode = "upload"`), so a broken
 release build shows up before the tag; the artifacts are attached to the run
@@ -60,6 +61,34 @@ dist generate
 `cargo-dist-version` in `dist-workspace.toml`. To upgrade it, bump the pin and
 run `dist init`, which updates the config and regenerates the workflow.
 
+## Changelog
+
+[`CHANGELOG.md`](../CHANGELOG.md) lists the user-visible changes of each
+release. Between releases the entries wait in `changelog.d/` as fragments, one
+file per pull request (`changelog.d/roz-197.md`), so parallel branches never
+edit the same lines:
+
+```markdown
+- Archive chats from the chat list.
+- Show the archive in the folder picker.
+```
+
+Write the items in English, for users. Fragments are joined into one flat list
+in file-name order.
+
+The `changelog` check ([`changelog.yml`](../.github/workflows/changelog.yml)) is
+required for merging into `main`: it fails unless the pull request adds or edits
+a fragment. A pull request without user-visible changes (docs, refactoring, CI,
+tests) carries the `no-changelog` label instead; pull requests from Dependabot
+pass without one.
+
+At release, `mise run release` moves the fragments into a new
+`## X.Y.Z - YYYY-MM-DD` section at the top of `CHANGELOG.md`
+([`scripts/release-changelog.sh`](../scripts/release-changelog.sh)). dist puts
+that section into the release body under *Release Notes* and uses its heading
+as the release title. dist silently skips a version that has no section, which
+is why the release task refuses to run without fragments.
+
 ## Cutting a release
 
 Use the `mise` task from a clean `main`:
@@ -70,11 +99,13 @@ mise run release 0.2.0
 
 The task:
 1. Checks the working tree is clean and HEAD is on `main`.
-2. Bumps `version = "0.2.0"` in `Cargo.toml` and refreshes `Cargo.lock`
+2. Moves the fragments from `changelog.d/` into a `## 0.2.0 - <today>`
+   section of `CHANGELOG.md`; fails if there are none.
+3. Bumps `version = "0.2.0"` in `Cargo.toml` and refreshes `Cargo.lock`
    via `cargo check`.
-3. Commits as `release: v0.2.0`.
-4. Tags `v0.2.0`.
-5. Pushes the commit and the tag to `origin`.
+4. Commits as `release: v0.2.0`.
+5. Tags `v0.2.0`.
+6. Pushes the commit and the tag to `origin`.
 
 Then watch the run in [Actions](https://github.com/bercly0b/rtg/actions). A
 full release takes ~10–15 minutes.
@@ -86,10 +117,6 @@ stable release, so try it with its own installer:
 
 ## Known caveats
 
-- **No change list in the release body.** dist takes release notes from a
-  changelog file in the repository root, and RTG has none. To list the merged
-  pull requests, edit the published release and use GitHub's
-  *Generate release notes*.
 - **The release binaries are not run in CI.** dist offers no hook after its
   build step, so `tests/static_tdlib.rs` (no `libtdjson` at runtime) runs in
   the quality gate on Linux instead of against each release binary.

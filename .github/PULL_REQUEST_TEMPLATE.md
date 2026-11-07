@@ -13,3 +13,7 @@
 
 Reason (if no tests):
 -
+
+## Changelog
+- [ ] Added a fragment to `changelog.d/` (see `docs/RELEASES.md`)
+- [ ] No user-visible changes: labelled `no-changelog`

@@ -1,0 +1,38 @@
+name: Changelog
+
+# Separate from the quality gate: adding or removing the `no-changelog` label
+# re-runs only this check, not the Rust build.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+jobs:
+  changelog:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Repository checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      # HEAD is the merge commit GitHub builds for the pull request, so HEAD^1
+      # is the base branch it merges into.
+      - name: Require a changelog fragment
+        env:
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          NO_CHANGELOG: ${{ contains(github.event.pull_request.labels.*.name, 'no-changelog') }}
+        run: |
+          if [ "$AUTHOR" = "dependabot[bot]" ]; then
+            echo "Dependabot pull request: no changelog fragment needed."
+            exit 0
+          fi
+          if [ "$NO_CHANGELOG" = "true" ]; then
+            echo "Labelled no-changelog: no changelog fragment needed."
+            exit 0
+          fi
+          if git diff --name-only --diff-filter=AM HEAD^1 HEAD -- 'changelog.d/*.md' | grep -q .; then
+            exit 0
+          fi
+          echo "::error::Add a changelog fragment to changelog.d/, or label the pull request no-changelog if it has no user-visible changes. See docs/RELEASES.md."
+          exit 1
