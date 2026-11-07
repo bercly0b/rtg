@@ -30,11 +30,18 @@ rtg is updated to 0.2.0.
    ```
    Error: rtg update only updates an rtg installed by the release installer. Update this one with:
 
-       brew upgrade rtg-tui
+       brew upgrade rtg
    ```
 
    The channel is detected the same way as for the [update check](update-check.md#install-channel):
-   Homebrew by the `Cellar` path, crates.io otherwise.
+   Homebrew by the `Cellar` path, crates.io by `$CARGO_HOME/bin`. For any
+   other binary RTG points at the release page instead:
+
+   ```
+   Error: rtg update only updates an rtg installed by the release installer. Download the latest release from:
+
+       https://github.com/bercly0b/rtg/releases/latest
+   ```
 4. **Is there a newer release** (`is_update_needed`): the latest stable GitHub
    release is compared with the running version, not with the version in the
    receipt, so `rtg update` agrees with the status bar notice.

@@ -2,7 +2,9 @@
 //! install channel detection.
 
 use std::{
-    env, fs,
+    env,
+    ffi::OsString,
+    fs,
     path::{Path, PathBuf},
     time::{Duration, UNIX_EPOCH},
 };
@@ -105,24 +107,47 @@ impl UpdateCheckCache for FileUpdateCheckCache {
     }
 }
 
-/// Homebrew is recognised by where the running binary lives; otherwise the
-/// install receipt tells the release installer apart from `cargo install`,
-/// which uses the same directory. The receipt check is the one `rtg update`
-/// makes, so the status bar suggests `rtg update` only where it works.
+/// The install receipt goes first: the release installer and `cargo install`
+/// share `~/.cargo/bin`, and only the receipt tells them apart. Its check is
+/// the one `rtg update` makes, so the status bar suggests `rtg update` only
+/// where it works. The other channels are recognised by where the running
+/// binary lives.
 pub fn detect_install_channel() -> InstallChannel {
     let exe = env::current_exe().and_then(fs::canonicalize).ok();
+    let cargo_bin = cargo_bin_dir(env::var_os("CARGO_HOME"), env::var_os("HOME"));
 
-    install_channel(exe.as_deref(), self_update::is_release_install())
+    install_channel(
+        exe.as_deref(),
+        self_update::is_release_install(),
+        cargo_bin.as_deref(),
+    )
 }
 
-fn install_channel(exe: Option<&Path>, is_release_install: bool) -> InstallChannel {
-    if exe.is_some_and(is_in_homebrew_cellar) {
-        InstallChannel::Homebrew
-    } else if is_release_install {
+fn install_channel(
+    exe: Option<&Path>,
+    is_release_install: bool,
+    cargo_bin: Option<&Path>,
+) -> InstallChannel {
+    if is_release_install {
         InstallChannel::ReleaseInstaller
-    } else {
+    } else if exe.is_some_and(is_in_homebrew_cellar) {
+        InstallChannel::Homebrew
+    } else if cargo_bin.is_some_and(|bin| exe.and_then(Path::parent) == Some(bin)) {
         InstallChannel::CratesIo
+    } else {
+        InstallChannel::Unknown
     }
+}
+
+/// `cargo install` puts binaries into `$CARGO_HOME/bin`, `~/.cargo/bin` by
+/// default. The path is canonical to compare with the running binary's.
+fn cargo_bin_dir(cargo_home: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> {
+    let cargo_home = cargo_home
+        .map(PathBuf::from)
+        .or_else(|| home.map(|home| PathBuf::from(home).join(".cargo")))?;
+    let bin = cargo_home.join("bin");
+
+    Some(fs::canonicalize(&bin).unwrap_or(bin))
 }
 
 /// Homebrew keeps every formula under `<prefix>/Cellar` and only links it
@@ -245,36 +270,95 @@ mod tests {
         assert!(cache.save(&check).is_err());
     }
 
+    const CARGO_BIN: &str = "/Users/me/.cargo/bin";
+
+    fn channel_of(exe: &str, is_release_install: bool) -> InstallChannel {
+        install_channel(
+            Some(Path::new(exe)),
+            is_release_install,
+            Some(Path::new(CARGO_BIN)),
+        )
+    }
+
     #[test]
-    fn binary_in_the_homebrew_cellar_is_homebrew_even_with_a_receipt() {
+    fn receipt_means_the_release_installer_wherever_the_binary_is() {
         for exe in [
-            "/opt/homebrew/Cellar/rtg-tui/0.1.13/bin/rtg",
-            "/usr/local/Cellar/rtg-tui/0.1.13/bin/rtg",
-            "/home/linuxbrew/.linuxbrew/Cellar/rtg-tui/0.1.13/bin/rtg",
+            "/Users/me/.cargo/bin/rtg",
+            "/Users/me/.local/bin/rtg",
+            "/opt/homebrew/Cellar/rtg/0.1.14/bin/rtg",
         ] {
             assert_eq!(
-                install_channel(Some(Path::new(exe)), true),
-                InstallChannel::Homebrew,
+                channel_of(exe, true),
+                InstallChannel::ReleaseInstaller,
                 "{exe}"
             );
         }
     }
 
     #[test]
-    fn receipt_means_the_release_installer() {
-        let exe = Path::new("/Users/me/.cargo/bin/rtg");
+    fn binary_in_the_homebrew_cellar_is_homebrew() {
+        for exe in [
+            "/opt/homebrew/Cellar/rtg/0.1.14/bin/rtg",
+            "/usr/local/Cellar/rtg/0.1.14/bin/rtg",
+            "/home/linuxbrew/.linuxbrew/Cellar/rtg/0.1.14/bin/rtg",
+        ] {
+            assert_eq!(channel_of(exe, false), InstallChannel::Homebrew, "{exe}");
+        }
+    }
 
+    #[test]
+    fn binary_in_the_cargo_bin_dir_without_a_receipt_is_crates_io() {
         assert_eq!(
-            install_channel(Some(exe), true),
-            InstallChannel::ReleaseInstaller
+            channel_of("/Users/me/.cargo/bin/rtg", false),
+            InstallChannel::CratesIo
         );
     }
 
     #[test]
-    fn no_receipt_outside_homebrew_means_crates_io() {
-        let exe = Path::new("/Users/me/.cargo/bin/rtg");
+    fn binary_anywhere_else_is_unknown() {
+        for exe in [
+            "/usr/local/bin/rtg",
+            "/Users/me/.local/bin/rtg",
+            "/Users/me/src/rtg/target/release/rtg",
+            "/Users/me/.cargo/bin/tools/rtg",
+        ] {
+            assert_eq!(channel_of(exe, false), InstallChannel::Unknown, "{exe}");
+        }
 
-        assert_eq!(install_channel(Some(exe), false), InstallChannel::CratesIo);
-        assert_eq!(install_channel(None, false), InstallChannel::CratesIo);
+        assert_eq!(
+            install_channel(None, false, Some(Path::new(CARGO_BIN))),
+            InstallChannel::Unknown
+        );
+        assert_eq!(
+            install_channel(Some(Path::new("/Users/me/.cargo/bin/rtg")), false, None),
+            InstallChannel::Unknown
+        );
+    }
+
+    #[test]
+    fn cargo_bin_dir_is_in_cargo_home_or_in_home() {
+        assert_eq!(
+            cargo_bin_dir(Some("/opt/cargo".into()), Some("/Users/me".into())),
+            Some(PathBuf::from("/opt/cargo/bin"))
+        );
+        assert_eq!(
+            cargo_bin_dir(None, Some("/Users/me".into())),
+            Some(PathBuf::from("/Users/me/.cargo/bin"))
+        );
+        assert_eq!(cargo_bin_dir(None, None), None);
+    }
+
+    #[test]
+    fn cargo_bin_dir_is_canonical_like_the_binary_path() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let real = dir.path().join("real");
+        fs::create_dir_all(real.join("bin")).expect("create bin");
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).expect("symlink");
+
+        assert_eq!(
+            cargo_bin_dir(Some(link.into_os_string()), None),
+            Some(fs::canonicalize(real.join("bin")).expect("canonical bin"))
+        );
     }
 }

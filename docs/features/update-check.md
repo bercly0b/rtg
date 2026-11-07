@@ -39,11 +39,12 @@ there is an update to show (`infra/update_check.rs`):
 
 | Install channel | Detected by | Command |
 |-----------------|-------------|---------|
-| Homebrew | the canonical path of the running binary goes through a Homebrew `Cellar` | `brew upgrade rtg-tui` |
 | Release installer | the install receipt is for the running binary — the check `rtg update` makes ([Self-update](self-update.md)) | `rtg update` |
-| crates.io | anything else | `cargo install --locked rtg-tui` |
+| Homebrew | the canonical path of the running binary goes through a Homebrew `Cellar` | `brew upgrade rtg` |
+| crates.io | the running binary is in `$CARGO_HOME/bin` (`~/.cargo/bin` by default) | `cargo install --locked rtg-tui` |
+| unknown | anything else: a build from source, a copied binary, an install from an older release | the release page, `https://github.com/bercly0b/rtg/releases/latest` |
 
-Homebrew is checked first because its binary path is unambiguous. The release
+The rules apply in this order. The receipt goes first because the release
 installer and `cargo install` share `~/.cargo/bin`, so only the receipt tells
 them apart ([ADR 0002](../adr/0002-release-through-cargo-dist.md)).
 

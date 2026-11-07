@@ -297,11 +297,15 @@ fn status_line_shows_available_update_before_help_hint() {
 }
 
 #[test]
-fn update_notice_names_the_command_of_the_install_channel() {
-    for (channel, command) in [
+fn update_notice_names_how_to_update_the_install_channel() {
+    for (channel, hint) in [
         (InstallChannel::ReleaseInstaller, "rtg update"),
-        (InstallChannel::Homebrew, "brew upgrade rtg-tui"),
+        (InstallChannel::Homebrew, "brew upgrade rtg"),
         (InstallChannel::CratesIo, "cargo install --locked rtg-tui"),
+        (
+            InstallChannel::Unknown,
+            "https://github.com/bercly0b/rtg/releases/latest",
+        ),
     ] {
         let update = AvailableUpdate {
             version: "0.2.0".to_owned(),
@@ -309,7 +313,7 @@ fn update_notice_names_the_command_of_the_install_channel() {
         };
         assert_eq!(
             status_line::format_update_notice(&update),
-            format!("v0.2.0 available: {command}")
+            format!("v0.2.0 available: {hint}")
         );
     }
 }
