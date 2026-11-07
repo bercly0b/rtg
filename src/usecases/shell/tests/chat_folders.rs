@@ -253,3 +253,130 @@ fn folders_update_does_not_reload_chat_list() {
 
     assert_eq!(o.dispatcher.chat_list_dispatch_count(), dispatches_before);
 }
+
+fn push_only_family(o: &mut TestOrchestrator) {
+    o.handle_event(AppEvent::ChatUpdateReceived {
+        updates: vec![ChatUpdate::ChatFoldersChanged {
+            folders: ChatFolders {
+                folders: vec![ChatFolder {
+                    id: 7,
+                    title: "Family".to_owned(),
+                }],
+                main_list_position: 0,
+            },
+        }],
+    })
+    .unwrap();
+}
+
+#[test]
+fn removing_active_folder_switches_to_main_list_and_reloads_it() {
+    let mut o = orchestrator_with_folders();
+    switch_to_work(&mut o);
+    inject_folder_chat_list(&mut o, 3, vec![chat(5, "Team")]);
+    let dispatches_before = o.dispatcher.chat_list_dispatch_count();
+
+    push_only_family(&mut o);
+
+    assert_eq!(o.state().chat_list().kind(), ChatListKind::Main);
+    assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Loading);
+    assert!(o.state().chat_list().chats().is_empty());
+    assert_eq!(
+        o.dispatcher.chat_list_dispatch_count(),
+        dispatches_before + 1
+    );
+    assert_eq!(o.dispatcher.last_chat_list(), Some(ChatListKind::Main));
+}
+
+#[test]
+fn removing_active_folder_while_its_load_is_in_flight_reloads_main_list() {
+    let mut o = orchestrator_with_folders();
+    switch_to_work(&mut o);
+    let dispatches_before = o.dispatcher.chat_list_dispatch_count();
+
+    push_only_family(&mut o);
+    assert_eq!(
+        o.dispatcher.chat_list_dispatch_count(),
+        dispatches_before,
+        "fallback must wait for the in-flight folder request"
+    );
+
+    inject_folder_chat_list(&mut o, 3, vec![chat(5, "Team")]);
+
+    assert!(o.state().chat_list().chats().is_empty());
+    assert_eq!(
+        o.dispatcher.chat_list_dispatch_count(),
+        dispatches_before + 1
+    );
+    assert_eq!(o.dispatcher.last_chat_list(), Some(ChatListKind::Main));
+}
+
+#[test]
+fn removing_inactive_folder_keeps_active_folder() {
+    let mut o = orchestrator_with_folders();
+    let family = 7;
+    press(&mut o, "f");
+    press(&mut o, "j");
+    press(&mut o, "j");
+    press(&mut o, "enter");
+    inject_folder_chat_list(&mut o, family, vec![chat(5, "Mom")]);
+    let dispatches_before = o.dispatcher.chat_list_dispatch_count();
+
+    push_only_family(&mut o);
+
+    assert_eq!(o.state().chat_list().kind(), ChatListKind::Folder(family));
+    assert_eq!(o.state().chat_list().chats().len(), 1);
+    assert_eq!(o.dispatcher.chat_list_dispatch_count(), dispatches_before);
+}
+
+#[test]
+fn folders_update_rebuilds_open_picker_without_removed_folder() {
+    let mut o = orchestrator_with_folders();
+    switch_to_work(&mut o);
+    inject_folder_chat_list(&mut o, 3, vec![chat(5, "Team")]);
+    press(&mut o, "f");
+
+    push_only_family(&mut o);
+
+    let picker = o
+        .state()
+        .chat_folder_picker()
+        .expect("picker must stay open");
+    let lists: Vec<ChatListKind> = picker.entries().iter().map(|entry| entry.list).collect();
+    assert_eq!(lists, vec![ChatListKind::Main, ChatListKind::Folder(7)]);
+    assert_eq!(
+        picker.selected().map(|entry| entry.list),
+        Some(ChatListKind::Main)
+    );
+}
+
+#[test]
+fn folders_update_keeps_picker_cursor_on_surviving_entry() {
+    let mut o = orchestrator_with_folders();
+    press(&mut o, "f");
+    press(&mut o, "j");
+    press(&mut o, "j");
+
+    push_only_family(&mut o);
+
+    let picker = o.state().chat_folder_picker().unwrap();
+    assert_eq!(
+        picker.selected().map(|entry| entry.list),
+        Some(ChatListKind::Folder(7))
+    );
+}
+
+#[test]
+fn removing_all_folders_closes_picker() {
+    let mut o = orchestrator_with_folders();
+    press(&mut o, "f");
+
+    o.handle_event(AppEvent::ChatUpdateReceived {
+        updates: vec![ChatUpdate::ChatFoldersChanged {
+            folders: ChatFolders::default(),
+        }],
+    })
+    .unwrap();
+
+    assert!(o.state().chat_folder_picker().is_none());
+}

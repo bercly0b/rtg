@@ -38,6 +38,14 @@ impl ChatFolders {
             .find(|folder| folder.id == folder_id)
             .map(|folder| folder.title.as_str())
     }
+
+    /// The main list always exists; a folder only while TDLib reports it.
+    pub fn has_list(&self, list: ChatListKind) -> bool {
+        match list {
+            ChatListKind::Main => true,
+            ChatListKind::Folder(folder_id) => self.title(folder_id).is_some(),
+        }
+    }
 }
 
 /// A row of the folder picker.
@@ -213,5 +221,15 @@ mod tests {
 
         assert_eq!(folders.title(7), Some("Family"));
         assert_eq!(folders.title(99), None);
+    }
+
+    #[test]
+    fn has_list_knows_main_list_and_reported_folders() {
+        let folders = folders(0);
+
+        assert!(folders.has_list(ChatListKind::Main));
+        assert!(folders.has_list(ChatListKind::Folder(7)));
+        assert!(!folders.has_list(ChatListKind::Folder(99)));
+        assert!(ChatFolders::default().has_list(ChatListKind::Main));
     }
 }
