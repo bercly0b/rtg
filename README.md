@@ -45,36 +45,25 @@ new features are landing regularly.
 
 ## Installation
 
-### Prebuilt binaries
-
-Download the archive for your platform from the
-[latest release](https://github.com/bercly0b/rtg/releases/latest):
-
-| Platform | Archive |
-|---|---|
-| macOS Apple Silicon | `rtg-<version>-aarch64-apple-darwin.tar.gz` |
-| macOS Intel | `rtg-<version>-x86_64-apple-darwin.tar.gz` |
-| Linux x86_64 | `rtg-<version>-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux aarch64 | `rtg-<version>-aarch64-unknown-linux-gnu.tar.gz` |
-
-Then extract and run the installer:
+On macOS and Linux:
 
 ```bash
-tar xzf rtg-<version>-<target>.tar.gz
-cd rtg-<version>-<target>
-./install.sh          # installs to /usr/local — may need sudo on Linux
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bercly0b/rtg/releases/latest/download/rtg-tui-installer.sh | sh
 ```
 
-To install to a custom prefix (e.g. `~/.local`):
+The installer puts `rtg` into `~/.cargo/bin` and adds it to your `PATH`. To
+install elsewhere, end the command with `| RTG_TUI_INSTALL_DIR=~/.local sh`:
+`rtg` then goes into `~/.local/bin`. For anything else — archives for each
+platform, checksums — see the
+[latest release](https://github.com/bercly0b/rtg/releases/latest).
+
+On Linux, `rtg` needs the libc++ runtime: `sudo apt install libc++1 libc++abi1`.
+
+If you installed an older release with its `install.sh`, remove that copy from
+`/usr/local`:
 
 ```bash
-INSTALL_PREFIX=~/.local ./install.sh
-```
-
-**Linux note:** the bundled TDLib requires the libc++ runtime:
-
-```bash
-sudo apt install libc++1 libc++abi1
+sudo rm -f /usr/local/bin/rtg /usr/local/lib/libtdjson.*
 ```
 
 ### Build from source

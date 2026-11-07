@@ -1,0 +1,35 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist'
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.34.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+# Where to host releases
+hosting = "github"
+# Whether to install an updater program
+install-updater = false
+# Build every target on pull requests too, so a broken release build shows up
+# before the tag; nothing is published from a pull request.
+pr-run-mode = "upload"
+
+# The prebuilt static TDLib from tdlib-rs is built on Ubuntu 24.04 (glibc 2.38+,
+# libc++ 18) and does not link on older runners.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-latest"
+x86_64-apple-darwin = "macos-latest"
+x86_64-unknown-linux-gnu = "ubuntu-24.04"
+aarch64-unknown-linux-gnu = "ubuntu-24.04-arm"
+
+# The static TDLib still takes its C++ runtime from the system.
+[dist.dependencies.apt]
+"libc++-dev" = "*"
+"libc++abi-dev" = "*"

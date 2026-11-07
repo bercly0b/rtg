@@ -3,6 +3,7 @@ rust = { version = "1.97.1", components = ["rustfmt", "clippy", "llvm-tools"] }
 "github:taiki-e/cargo-llvm-cov" = "0.9.1"
 ast-grep = "0.51.0"
 cargo-deny = "0.20.2"
+cargo-dist = "0.34.0"
 
 # ── Quality gate (mirrors CLAUDE.md rules) ──────────────────────────────────
 
