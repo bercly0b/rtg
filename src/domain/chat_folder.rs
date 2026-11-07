@@ -40,10 +40,11 @@ impl ChatFolders {
             .map(|folder| folder.title.as_str())
     }
 
-    /// The main list always exists; a folder only while TDLib reports it.
+    /// The main list and the archive always exist; a folder only while TDLib
+    /// reports it.
     pub fn has_list(&self, list: ChatListKind) -> bool {
         match list {
-            ChatListKind::Main => true,
+            ChatListKind::Main | ChatListKind::Archive => true,
             ChatListKind::Folder(folder_id) => self.title(folder_id).is_some(),
         }
     }
@@ -249,12 +250,14 @@ mod tests {
     }
 
     #[test]
-    fn has_list_knows_main_list_and_reported_folders() {
+    fn has_list_knows_main_list_archive_and_reported_folders() {
         let folders = folders(0);
 
         assert!(folders.has_list(ChatListKind::Main));
+        assert!(folders.has_list(ChatListKind::Archive));
         assert!(folders.has_list(ChatListKind::Folder(7)));
         assert!(!folders.has_list(ChatListKind::Folder(99)));
         assert!(ChatFolders::default().has_list(ChatListKind::Main));
+        assert!(ChatFolders::default().has_list(ChatListKind::Archive));
     }
 }

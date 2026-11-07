@@ -345,7 +345,7 @@ impl ShellState {
                 .map(|entry| entry.list)
                 .filter(|&list| self.chat_folders.has_list(list))
                 .unwrap_or(self.chat_list.kind());
-            self.chat_folder_picker = ChatFolderPickerState::new(&self.chat_folders, cursor);
+            self.chat_folder_picker = Some(ChatFolderPickerState::new(&self.chat_folders, cursor));
         }
     }
 
@@ -965,7 +965,26 @@ mod tests {
 
         assert_eq!(state.chat_list().kind(), ChatListKind::Folder(3));
         assert_eq!(state.chat_list().chats().len(), 1);
-        assert_eq!(state.active_chat_folder_title(), Some("Job"));
+        assert_eq!(state.active_chat_list_title(), Some("Job"));
+    }
+
+    #[test]
+    fn folders_update_keeps_archive_open() {
+        let mut state = ShellState::default();
+        state.set_chat_folders(work_folder());
+        state.chat_list_mut().switch_to(ChatListKind::Archive);
+        state.chat_list_mut().set_ready(vec![chat(1, "Old")]);
+        state.open_chat_folder_picker();
+
+        state.set_chat_folders(ChatFolders::default());
+
+        assert_eq!(state.chat_list().kind(), ChatListKind::Archive);
+        assert_eq!(state.chat_list().chats().len(), 1);
+        let picker = state.chat_folder_picker().unwrap();
+        assert_eq!(
+            picker.selected().map(|entry| entry.list),
+            Some(ChatListKind::Archive)
+        );
     }
 
     #[test]

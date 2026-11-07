@@ -341,7 +341,14 @@ fn folders_update_rebuilds_open_picker_without_removed_folder() {
         .chat_folder_picker()
         .expect("picker must stay open");
     let lists: Vec<ChatListKind> = picker.entries().iter().map(|entry| entry.list).collect();
-    assert_eq!(lists, vec![ChatListKind::Main, ChatListKind::Folder(7)]);
+    assert_eq!(
+        lists,
+        vec![
+            ChatListKind::Main,
+            ChatListKind::Folder(7),
+            ChatListKind::Archive
+        ]
+    );
     assert_eq!(
         picker.selected().map(|entry| entry.list),
         Some(ChatListKind::Main)
@@ -365,7 +372,7 @@ fn folders_update_keeps_picker_cursor_on_surviving_entry() {
 }
 
 #[test]
-fn removing_all_folders_closes_picker() {
+fn removing_all_folders_keeps_picker_with_main_list_and_archive() {
     let mut o = orchestrator_with_folders();
     press(&mut o, "f");
 
@@ -376,5 +383,35 @@ fn removing_all_folders_closes_picker() {
     })
     .unwrap();
 
-    assert!(o.state().chat_folder_picker().is_none());
+    let picker = o
+        .state()
+        .chat_folder_picker()
+        .expect("picker must stay open");
+    let lists: Vec<ChatListKind> = picker.entries().iter().map(|entry| entry.list).collect();
+    assert_eq!(lists, vec![ChatListKind::Main, ChatListKind::Archive]);
+}
+
+#[test]
+fn folders_update_keeps_archive_without_reload() {
+    let mut o = orchestrator_with_folders();
+    press(&mut o, "f");
+    for _ in 0..3 {
+        press(&mut o, "j");
+    }
+    press(&mut o, "enter");
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
+        BackgroundTaskResult::ChatListLoaded {
+            list: ChatListKind::Archive,
+            result: Ok(vec![chat(5, "Old")]),
+            all_loaded: true,
+        },
+    ]))
+    .unwrap();
+    let dispatches_before = o.dispatcher.chat_list_dispatch_count();
+
+    push_only_family(&mut o);
+
+    assert_eq!(o.state().chat_list().kind(), ChatListKind::Archive);
+    assert_eq!(o.state().chat_list().chats().len(), 1);
+    assert_eq!(o.dispatcher.chat_list_dispatch_count(), dispatches_before);
 }

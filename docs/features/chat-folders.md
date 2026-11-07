@@ -35,4 +35,5 @@ the active folder's name ("Chats" for the main list).
   same way as a manual switch. An open picker is rebuilt from the new folders,
   so it never offers a removed folder. Its cursor stays on the same list, or
   moves to the active list if that one is gone too. With no folders left, the
-  picker closes.
+  picker stays open with "All chats" and "Archive". The archive always exists,
+  so a folder update never moves the chat list out of it.
