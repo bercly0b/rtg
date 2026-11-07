@@ -57,7 +57,10 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bercly0b/rtg/releases/l
 Всё остальное — архивы для каждой платформы, контрольные суммы — в
 [последнем релизе](https://github.com/bercly0b/rtg/releases/latest).
 
-На Linux `rtg` нужна среда выполнения libc++: `sudo apt install libc++1 libc++abi1`.
+На Linux `rtg` нужны Ubuntu 24.04 или новее (glibc 2.39) и среда выполнения libc++:
+
+- Ubuntu 24.04: `sudo apt install libc++1 libc++abi1`
+- Ubuntu 26.04 и новее: `sudo apt install libc++1 libc++abi1 llvm-libunwind1`
 
 Чтобы обновить `rtg`, установленный этим способом, выполните `rtg update`.
 Когда выходит новый релиз, RTG показывает его в строке состояния.
