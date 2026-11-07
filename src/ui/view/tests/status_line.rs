@@ -5,7 +5,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::domain::download_speed::MIN_TRACKED_FILE_SIZE;
 use crate::domain::events::ConnectivityStatus;
 use crate::domain::shell_state::ShellState;
-use crate::domain::update_check::{AvailableUpdate, InstallChannel};
+use crate::domain::update_check::{AvailableUpdate, InstallChannel, SelfUpdateProgress};
 
 use super::{super::status_line, line_to_string};
 
@@ -316,6 +316,33 @@ fn update_notice_names_how_to_update_the_install_channel() {
             format!("v0.2.0 available: {hint}")
         );
     }
+}
+
+#[test]
+fn running_self_update_takes_the_place_of_the_update_notice() {
+    let mut state = state_with_update(InstallChannel::ReleaseInstaller);
+    state.set_self_update(Some(SelfUpdateProgress::Running));
+
+    let text = line_to_string(&status_line::status_line(&state, STATUS_WIDTH));
+
+    assert!(text.ends_with("Updating rtg...  ? for help "), "{text}");
+    assert!(!text.contains("available"), "{text}");
+}
+
+#[test]
+fn installed_self_update_asks_for_a_restart() {
+    let mut state = state_with_update(InstallChannel::ReleaseInstaller);
+    state.set_self_update(Some(SelfUpdateProgress::Installed {
+        version: "0.2.0".to_owned(),
+    }));
+
+    let text = line_to_string(&status_line::status_line(&state, STATUS_WIDTH));
+
+    assert!(
+        text.ends_with("Updated to v0.2.0, restart rtg  ? for help "),
+        "{text}"
+    );
+    assert_eq!(text.width(), STATUS_WIDTH);
 }
 
 #[test]

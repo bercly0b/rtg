@@ -5,7 +5,7 @@ use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
 use crate::domain::shell_state::ShellState;
-use crate::domain::update_check::AvailableUpdate;
+use crate::domain::update_check::{AvailableUpdate, SelfUpdateProgress};
 use crate::ui::styles;
 
 use super::text_utils::truncate_to_display_width;
@@ -65,8 +65,9 @@ pub(super) fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
     // A notification is short-lived, so it may take the room the update
     // notice needs; the notice comes back once the notification expires.
     let update_notice = state
-        .available_update()
-        .map(format_update_notice)
+        .self_update()
+        .map(format_self_update_notice)
+        .or_else(|| state.available_update().map(format_update_notice))
         .filter(|notice| {
             left_width + notice.width() + separator.width() + right_text.width() <= width
         });
@@ -94,6 +95,13 @@ pub(super) fn format_update_notice(update: &AvailableUpdate) -> String {
         update.version,
         update.channel.update_hint()
     )
+}
+
+pub(super) fn format_self_update_notice(progress: &SelfUpdateProgress) -> String {
+    match progress {
+        SelfUpdateProgress::Running => "Updating rtg...".to_owned(),
+        SelfUpdateProgress::Installed { version } => format!("Updated to v{version}, restart rtg"),
+    }
 }
 
 /// Formats a download speed in bytes per second with binary (1024) multiples,

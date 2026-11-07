@@ -68,6 +68,34 @@ rtg is updated to 0.2.0.
 config: the TUI suggests it while running, and replacing the binary on disk
 does not affect a running RTG.
 
+## From the TUI
+
+`U` (`install_update`, in every pane) runs the same flow on a background
+thread, so the TUI stays usable while the installer downloads. The status bar
+shows its progress where the [update notice](update-check.md#status-bar) is:
+
+```
+ ● Connected                                    Updating rtg...  ? for help
+ ● Connected                     Updated to v0.2.0, restart rtg  ? for help
+```
+
+The running RTG keeps its version until it restarts, so once a release is
+installed, `U` does nothing: running it again would install the same release
+again. `U` also does nothing while the update runs.
+
+When nothing is installed, a notification says why, in one line:
+
+| Outcome | Notification |
+|---------|--------------|
+| Homebrew or crates.io install | `Update with: brew upgrade rtg`, `Update with: cargo install --locked rtg-tui` |
+| Any other install | `Download the update from https://github.com/bercly0b/rtg/releases/latest` |
+| The install directory needs root | `Update as root: sudo /usr/local/bin/rtg update` |
+| No newer release | `rtg 0.1.14 is the latest release` |
+| Failure | `Update failed: the release installer failed` (the full error is in the log) |
+
+The installer's output is captured instead of going to the terminal, where it
+would break the TUI's screen; a failed install keeps it in its error.
+
 ## Dependencies
 
 `axoupdater` brings `reqwest` with rustls on `aws-lc-rs` (the update check's

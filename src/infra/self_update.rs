@@ -66,6 +66,13 @@ impl AxoReleaseInstall {
                 .build()?,
         }))
     }
+
+    /// Keeps the installer's output off the terminal, where it would break
+    /// the TUI's screen; a failed install carries it in its error instead.
+    pub fn capture_installer_output(mut self) -> Self {
+        self.updater.disable_installer_output();
+        self
+    }
 }
 
 impl ReleaseInstall for AxoReleaseInstall {
@@ -175,10 +182,19 @@ mod tests {
         fs::write(dir.join("rtg-tui-receipt.json"), receipt.to_string()).expect("write receipt");
     }
 
+    /// The installer `serve_release` serves by default: it writes the install
+    /// directory it was given into `$RTG_TEST_INSTALLER_MARKER`.
+    const MARKER_INSTALLER: &str =
+        "#!/bin/sh\nprintf '%s' \"$RTG_TUI_INSTALL_DIR\" > \"$RTG_TEST_INSTALLER_MARKER\"\n";
+
     /// Serves `requests` requests: the GitHub latest release, tagged `tag`,
-    /// and its installer, which writes the install directory it was given
-    /// into `$RTG_TEST_INSTALLER_MARKER`.
-    fn serve_release(listener: TcpListener, tag: &'static str, requests: usize) -> JoinHandle<()> {
+    /// and its installer script, `installer`.
+    fn serve_release(
+        listener: TcpListener,
+        tag: &'static str,
+        installer: &'static str,
+        requests: usize,
+    ) -> JoinHandle<()> {
         let base = format!("http://{}", listener.local_addr().expect("local addr"));
         thread::spawn(move || {
             for stream in listener.incoming().take(requests) {
@@ -209,8 +225,7 @@ mod tests {
                     });
                     release.to_string()
                 } else if request.starts_with("GET /rtg-tui-installer.sh ") {
-                    "#!/bin/sh\nprintf '%s' \"$RTG_TUI_INSTALL_DIR\" > \"$RTG_TEST_INSTALLER_MARKER\"\n"
-                        .to_owned()
+                    installer.to_owned()
                 } else {
                     panic!("unexpected request: {request}");
                 };
@@ -276,7 +291,7 @@ mod tests {
         let marker = config.path().join("installed-into");
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind localhost");
         let api = format!("http://{}/", listener.local_addr().expect("local addr"));
-        let server = serve_release(listener, "v99.0.0", 2);
+        let server = serve_release(listener, "v99.0.0", MARKER_INSTALLER, 2);
 
         let (needed, installed) = with_env(
             &[
@@ -303,6 +318,38 @@ mod tests {
     }
 
     #[test]
+    fn captured_installer_output_ends_up_in_the_install_error() {
+        let _guard = env_lock();
+        let config = tempfile::tempdir().expect("temp dir");
+        write_receipt(config.path(), &this_executable_dir());
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind localhost");
+        let api = format!("http://{}/", listener.local_addr().expect("local addr"));
+        let installer = "#!/bin/sh\necho 'rtg-tui: cannot unpack the archive' >&2\nexit 1\n";
+        let server = serve_release(listener, "v99.0.0", installer, 2);
+
+        let error = with_env(
+            &[
+                ("AXOUPDATER_CONFIG_PATH", config.path().into()),
+                ("RTG_TUI_INSTALLER_GHE_BASE_URL", api.into()),
+            ],
+            || {
+                AxoReleaseInstall::detect()
+                    .expect("detect")
+                    .expect("release install")
+                    .capture_installer_output()
+                    .install_latest()
+                    .expect_err("the installer fails")
+            },
+        );
+        server.join().expect("server thread");
+
+        assert!(
+            format!("{error:#}").contains("rtg-tui: cannot unpack the archive"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
     fn running_version_is_not_updated_to_itself() {
         let _guard = env_lock();
         let config = tempfile::tempdir().expect("temp dir");
@@ -310,7 +357,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind localhost");
         let api = format!("http://{}/", listener.local_addr().expect("local addr"));
         let tag = concat!("v", env!("CARGO_PKG_VERSION"));
-        let server = serve_release(listener, tag, 1);
+        let server = serve_release(listener, tag, MARKER_INSTALLER, 1);
 
         let needed = with_env(
             &[

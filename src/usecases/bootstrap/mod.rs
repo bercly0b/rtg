@@ -11,6 +11,7 @@ use crate::{
         contracts::ConfigAdapter,
         error::AppError,
         opener::BrowserOpener,
+        self_update::AxoReleaseInstall,
         storage_layout::StorageLayout,
         stubs::StubStorageAdapter,
         update_check::{detect_install_channel, FileUpdateCheckCache, GitHubLatestRelease},
@@ -30,6 +31,7 @@ use crate::{
         contracts::ShellOrchestrator,
         guided_auth::{AuthBackendError, AuthTerminal, StdTerminal},
         load_messages::CachedMessagesSource,
+        self_update::{self_update, SelfUpdateError, SelfUpdated},
         shell::{DefaultShellOrchestrator, OrchestratorConfig},
         update_check::spawn_update_check,
     },
@@ -147,6 +149,7 @@ fn compose_shell_with_factory(
         std::sync::Arc::clone(&context.telegram),
         std::sync::Arc::clone(&context.telegram),
         std::sync::Arc::clone(&context.telegram),
+        update_from_tui,
         bg_tx.clone(),
     );
 
@@ -186,6 +189,16 @@ fn compose_shell_with_factory(
         background_results: bg_tx,
         _connectivity_monitor: connectivity_monitor,
         _chat_updates_monitor: chat_updates_monitor,
+    }
+}
+
+/// `rtg update`, run from the TUI.
+fn update_from_tui() -> Result<SelfUpdated, SelfUpdateError> {
+    match AxoReleaseInstall::detect()? {
+        Some(install) => self_update(&mut install.capture_installer_output()),
+        None => Err(SelfUpdateError::OtherInstallChannel(
+            detect_install_channel(),
+        )),
     }
 }
 

@@ -59,8 +59,8 @@ platform, checksums — see the
 
 On Linux, `rtg` needs the libc++ runtime: `sudo apt install libc++1 libc++abi1`.
 
-To update an `rtg` installed this way, run `rtg update`. When a newer release
-is out, RTG shows it in the status bar.
+To update an `rtg` installed this way, run `rtg update` or press `U` in RTG.
+When a newer release is out, RTG shows it in the status bar.
 
 If you installed an older release with its `install.sh`, remove that copy from
 `/usr/local`:

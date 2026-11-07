@@ -1,9 +1,12 @@
 //! Self-update: `rtg update` re-runs the release installer of the latest
 //! release over the install it made.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::mpsc::Sender,
+};
 
-use crate::domain::update_check::InstallChannel;
+use crate::{domain::update_check::InstallChannel, usecases::background::BackgroundTaskResult};
 
 /// An install made by the release installer, for the running binary.
 pub trait ReleaseInstall {
@@ -17,7 +20,7 @@ pub trait ReleaseInstall {
     fn install_latest(&mut self) -> anyhow::Result<String>;
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelfUpdated {
     AlreadyLatest,
     To { version: String },
@@ -68,8 +71,49 @@ pub fn self_update(install: &mut dyn ReleaseInstall) -> Result<SelfUpdated, Self
     Ok(SelfUpdated::To { version })
 }
 
+/// What `rtg update` does, from finding the install to running the installer.
+pub type UpdateRtg = fn() -> Result<SelfUpdated, SelfUpdateError>;
+
+/// Runs `update` on its own thread, so the TUI stays usable while the
+/// installer downloads, and sends how it ended to the shell, with an error
+/// worded for the status bar.
+pub fn spawn_self_update(update: UpdateRtg, results: Sender<BackgroundTaskResult>) {
+    if let Err(error) = std::thread::Builder::new()
+        .name("rtg-self-update".into())
+        .spawn(move || {
+            let result = update().map_err(|error| {
+                tracing::warn!(error = ?error, "self-update: the latest release is not installed");
+                status_message(&error)
+            });
+            let _ = results.send(BackgroundTaskResult::SelfUpdateFinished(result));
+        })
+    {
+        tracing::warn!(error = %error, "self-update: failed to spawn thread");
+    }
+}
+
+/// The CLI wording puts a command on a line of its own; the status bar has a
+/// single line.
+fn status_message(error: &SelfUpdateError) -> String {
+    match error {
+        SelfUpdateError::OtherInstallChannel(InstallChannel::Unknown) => format!(
+            "Download the update from {}",
+            InstallChannel::Unknown.update_hint()
+        ),
+        SelfUpdateError::OtherInstallChannel(channel) => {
+            format!("Update with: {}", channel.update_hint())
+        }
+        SelfUpdateError::InstallDirNotWritable { command, .. } => {
+            format!("Update as root: {command}")
+        }
+        SelfUpdateError::Failed(error) => format!("Update failed: {error}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::{sync::mpsc, time::Duration};
+
     use super::*;
 
     struct FakeInstall {
@@ -201,6 +245,75 @@ mod tests {
         assert_eq!(
             SelfUpdateError::OtherInstallChannel(InstallChannel::Unknown).to_string(),
             "rtg update only updates an rtg installed by the release installer. Download the latest release from:\n\n    https://github.com/bercly0b/rtg/releases/latest"
+        );
+    }
+
+    fn spawned_result(update: UpdateRtg) -> BackgroundTaskResult {
+        let (tx, rx) = mpsc::channel();
+        spawn_self_update(update, tx);
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("self-update result")
+    }
+
+    #[test]
+    fn spawned_update_sends_the_installed_version() {
+        assert_eq!(
+            spawned_result(|| Ok(SelfUpdated::To {
+                version: "0.2.0".to_owned()
+            })),
+            BackgroundTaskResult::SelfUpdateFinished(Ok(SelfUpdated::To {
+                version: "0.2.0".to_owned()
+            }))
+        );
+    }
+
+    #[test]
+    fn spawned_update_words_errors_for_the_status_bar() {
+        assert_eq!(
+            spawned_result(|| Err(SelfUpdateError::OtherInstallChannel(
+                InstallChannel::Homebrew
+            ))),
+            BackgroundTaskResult::SelfUpdateFinished(Err(
+                "Update with: brew upgrade rtg".to_owned()
+            ))
+        );
+        assert_eq!(
+            spawned_result(|| Err(SelfUpdateError::OtherInstallChannel(
+                InstallChannel::CratesIo
+            ))),
+            BackgroundTaskResult::SelfUpdateFinished(Err(
+                "Update with: cargo install --locked rtg-tui".to_owned()
+            ))
+        );
+        assert_eq!(
+            spawned_result(|| Err(SelfUpdateError::OtherInstallChannel(
+                InstallChannel::Unknown
+            ))),
+            BackgroundTaskResult::SelfUpdateFinished(Err(
+                "Download the update from https://github.com/bercly0b/rtg/releases/latest"
+                    .to_owned()
+            ))
+        );
+        assert_eq!(
+            spawned_result(|| Err(SelfUpdateError::InstallDirNotWritable {
+                dir: PathBuf::from("/usr/local/bin"),
+                command: "sudo /usr/local/bin/rtg update".to_owned(),
+            })),
+            BackgroundTaskResult::SelfUpdateFinished(Err(
+                "Update as root: sudo /usr/local/bin/rtg update".to_owned()
+            ))
+        );
+    }
+
+    #[test]
+    fn failed_update_shows_only_the_outer_error_in_the_status_bar() {
+        assert_eq!(
+            spawned_result(|| Err(SelfUpdateError::Failed(
+                anyhow::anyhow!("exit status 1").context("the release installer failed")
+            ))),
+            BackgroundTaskResult::SelfUpdateFinished(Err(
+                "Update failed: the release installer failed".to_owned()
+            ))
         );
     }
 }
