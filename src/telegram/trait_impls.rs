@@ -3,7 +3,8 @@ use crate::{
     infra::error::AppError,
     usecases::{
         chat_lifecycle::{
-            ChatLifecycle, ChatLifecycleError, ChatReadMarker, FileDownloader, MessageDeleter,
+            ChatLifecycle, ChatLifecycleError, ChatListMover, ChatReadMarker, FileDownloader,
+            MessageDeleter,
         },
         chat_subtitle::{ChatInfoQuery, ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource},
         edit_message::{EditMessageSourceError, MessageEditor},
@@ -140,6 +141,22 @@ impl ChatLifecycle for TelegramAdapter {
         match self.tdlib_backend.as_ref() {
             Some(backend) => backend.close_chat(chat_id).map_err(|e| {
                 tracing::debug!(chat_id, error = ?e, "close_chat mapped to lifecycle error");
+                ChatLifecycleError::Unavailable
+            }),
+            None => Err(ChatLifecycleError::Unavailable),
+        }
+    }
+}
+
+impl ChatListMover for TelegramAdapter {
+    fn add_chat_to_list(
+        &self,
+        chat_id: i64,
+        list: crate::domain::chat_folder::ChatListKind,
+    ) -> Result<(), ChatLifecycleError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.add_chat_to_list(chat_id, list).map_err(|e| {
+                tracing::debug!(chat_id, ?list, error = ?e, "add_chat_to_list mapped to lifecycle error");
                 ChatLifecycleError::Unavailable
             }),
             None => Err(ChatLifecycleError::Unavailable),

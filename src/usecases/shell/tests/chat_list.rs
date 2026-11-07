@@ -380,6 +380,7 @@ fn chat_with_unread(
         last_message_preview: Some("text".to_owned()),
         last_message_unix_ms: None,
         is_pinned: false,
+        is_archived: false,
         chat_type: ChatType::Private,
         last_message_sender: None,
         is_online: None,

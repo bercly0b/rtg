@@ -20,6 +20,7 @@ pub fn map_chat_folders(folders: &[ChatFolderInfo], main_chat_list_position: i32
 pub fn map_chat_list_kind(list: ChatListKind) -> TdChatList {
     match list {
         ChatListKind::Main => TdChatList::Main,
+        ChatListKind::Archive => TdChatList::Archive,
         ChatListKind::Folder(chat_folder_id) => {
             TdChatList::Folder(ChatListFolder { chat_folder_id })
         }

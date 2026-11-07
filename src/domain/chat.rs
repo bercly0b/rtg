@@ -31,6 +31,8 @@ pub struct ChatSummary {
     pub last_message_preview: Option<String>,
     pub last_message_unix_ms: Option<i64>,
     pub is_pinned: bool,
+    /// `true` if the chat is in the archive rather than the main list.
+    pub is_archived: bool,
     /// Type of chat (Private, Group, Channel).
     pub chat_type: ChatType,
     /// Name of the sender of the last message (for group chats).

@@ -197,6 +197,21 @@ impl ChatListState {
         }
     }
 
+    /// Drops the selected chat from the list, e.g. right after it was moved
+    /// to another chat list. The cursor moves to the next chat.
+    pub fn remove_selected_chat(&mut self) {
+        self.list.remove_selected();
+        if self.list.items().is_empty() {
+            self.ui_state = ChatListUiState::Empty;
+        }
+    }
+
+    pub fn set_selected_chat_archived(&mut self, is_archived: bool) {
+        if let Some(chat) = self.list.selected_mut() {
+            chat.is_archived = is_archived;
+        }
+    }
+
     /// Sets a forum chat's unread-topic count directly.
     ///
     /// Used to reconcile the root-list badge from a topic list already held in
@@ -250,6 +265,7 @@ mod tests {
             last_message_preview: None,
             last_message_unix_ms: None,
             is_pinned: false,
+            is_archived: false,
             chat_type: ChatType::Private,
             last_message_sender: None,
             is_online: None,
@@ -635,5 +651,42 @@ mod tests {
         assert_eq!(state.selected_index(), None);
         assert!(!state.all_chats_loaded());
         assert_eq!(state.total_limit(), DEFAULT_CHAT_PAGE_SIZE);
+    }
+
+    #[test]
+    fn remove_selected_chat_moves_cursor_to_next_chat() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![chat(1, "General"), chat(2, "Backend"), chat(3, "Ops")]);
+        state.select_next();
+
+        state.remove_selected_chat();
+
+        let ids: Vec<i64> = state.chats().iter().map(|c| c.chat_id).collect();
+        assert_eq!(ids, vec![1, 3]);
+        assert_eq!(state.selected_chat().map(|c| c.chat_id), Some(3));
+        assert_eq!(state.ui_state(), ChatListUiState::Ready);
+    }
+
+    #[test]
+    fn remove_selected_chat_empties_list_without_marking_all_loaded() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![chat(1, "General")]);
+
+        state.remove_selected_chat();
+
+        assert_eq!(state.ui_state(), ChatListUiState::Empty);
+        assert_eq!(state.selected_index(), None);
+        assert!(!state.all_chats_loaded());
+    }
+
+    #[test]
+    fn set_selected_chat_archived_updates_only_selected_chat() {
+        let mut state = ChatListState::default();
+        state.set_ready(vec![chat(1, "General"), chat(2, "Backend")]);
+
+        state.set_selected_chat_archived(true);
+
+        assert!(state.chats()[0].is_archived);
+        assert!(!state.chats()[1].is_archived);
     }
 }

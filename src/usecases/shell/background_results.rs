@@ -28,6 +28,14 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 counts,
             )
         }
+        BackgroundTaskResult::AddChatToListFailed { chat_id, list } => {
+            chat_list::handle_add_chat_to_list_failed(
+                &mut ctx.shell,
+                ctx.chat_list_loads,
+                chat_id,
+                list,
+            )
+        }
         BackgroundTaskResult::ForumTopicsLoaded { chat_id, result } => {
             let Some(forum_list) = ctx.shell.state.forum_topic_list_mut() else {
                 tracing::debug!(

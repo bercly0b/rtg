@@ -141,10 +141,60 @@ pub(super) fn handle_forum_unread_counts_loaded<D: TaskDispatcher>(
     }
 }
 
-pub(super) fn show_chat_folder_picker<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {
-    if !ctx.state.open_chat_folder_picker() {
-        ctx.state.set_notification("No chat folders");
+/// Archives the selected chat, or unarchives it when it is archived.
+///
+/// The direction follows the chat's own `is_archived`, not the active list,
+/// so the toggle works the same in the main list, the archive and folders.
+/// A chat that leaves the active list disappears from it at once; in a
+/// folder the row stays until the update-driven reload decides its fate.
+pub(super) fn toggle_selected_chat_archive<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {
+    let Some(chat) = ctx.state.chat_list().selected_chat() else {
+        return;
+    };
+    let chat_id = chat.chat_id;
+    let archive = !chat.is_archived;
+    let (from, to) = if archive {
+        (ChatListKind::Main, ChatListKind::Archive)
+    } else {
+        (ChatListKind::Archive, ChatListKind::Main)
+    };
+
+    tracing::debug!(chat_id, archive, "toggling chat archive");
+    ctx.dispatcher.dispatch_add_chat_to_list(chat_id, to);
+
+    let chat_list = ctx.state.chat_list_mut();
+    if chat_list.kind() == from {
+        chat_list.remove_selected_chat();
+    } else {
+        chat_list.set_selected_chat_archived(archive);
     }
+    ctx.state.set_notification(if archive {
+        "Chat archived"
+    } else {
+        "Chat unarchived"
+    });
+}
+
+/// Reloads the chat list so that it shows the chat where TDLib kept it,
+/// undoing the optimistic change of [`toggle_selected_chat_archive`].
+pub(super) fn handle_add_chat_to_list_failed<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    loads: &mut ChatListLoads,
+    chat_id: i64,
+    list: ChatListKind,
+) {
+    tracing::warn!(
+        chat_id,
+        ?list,
+        "background: addChatToList failed, reloading chat list"
+    );
+    ctx.state
+        .set_notification(if list == ChatListKind::Archive {
+            "Failed to archive chat"
+        } else {
+            "Failed to unarchive chat"
+        });
+    dispatch_chat_list_refresh(ctx, loads, false);
 }
 
 pub(super) fn handle_chat_folder_picker_key<D: TaskDispatcher>(

@@ -23,6 +23,7 @@ pub(super) struct RecordingDispatcher {
     dispatched_forum_topics: RefCell<Vec<i64>>,
     dispatched_forum_unread_counts: RefCell<Vec<Vec<i64>>>,
     dispatched_deletes: RefCell<Vec<(i64, i64)>>,
+    dispatched_add_chat_to_list: RefCell<Vec<(i64, ChatListKind)>>,
     dispatched_voice_sends: RefCell<Vec<VoiceSendRecord>>,
     dispatched_subtitles: RefCell<Vec<ChatSubtitleQuery>>,
     dispatched_chat_infos: RefCell<Vec<ChatInfoQuery>>,
@@ -47,6 +48,7 @@ impl RecordingDispatcher {
             dispatched_forum_topics: RefCell::new(Vec::new()),
             dispatched_forum_unread_counts: RefCell::new(Vec::new()),
             dispatched_deletes: RefCell::new(Vec::new()),
+            dispatched_add_chat_to_list: RefCell::new(Vec::new()),
             dispatched_voice_sends: RefCell::new(Vec::new()),
             dispatched_subtitles: RefCell::new(Vec::new()),
             dispatched_chat_infos: RefCell::new(Vec::new()),
@@ -194,6 +196,10 @@ impl RecordingDispatcher {
         self.dispatched_deletes.borrow().last().copied()
     }
 
+    pub(super) fn add_chat_to_list_dispatches(&self) -> Vec<(i64, ChatListKind)> {
+        self.dispatched_add_chat_to_list.borrow().clone()
+    }
+
     pub(super) fn voice_send_dispatch_count(&self) -> usize {
         self.dispatched_voice_sends.borrow().len()
     }
@@ -305,6 +311,12 @@ impl TaskDispatcher for RecordingDispatcher {
         self.dispatched_prefetches
             .borrow_mut()
             .push((chat_id, topic_id));
+    }
+
+    fn dispatch_add_chat_to_list(&self, chat_id: i64, list: ChatListKind) {
+        self.dispatched_add_chat_to_list
+            .borrow_mut()
+            .push((chat_id, list));
     }
 
     fn dispatch_delete_message(&self, chat_id: i64, message_id: i64) {

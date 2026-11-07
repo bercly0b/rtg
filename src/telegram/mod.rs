@@ -190,7 +190,9 @@ pub fn module_name() -> &'static str {
 mod tests {
     use super::*;
     use crate::usecases::{
-        chat_lifecycle::{ChatLifecycle, ChatLifecycleError, ChatReadMarker, MessageDeleter},
+        chat_lifecycle::{
+            ChatLifecycle, ChatLifecycleError, ChatListMover, ChatReadMarker, MessageDeleter,
+        },
         guided_auth::TelegramAuthClient,
         list_chats::{ListChatsSource, ListChatsSourceError},
         load_messages::{MessagesSource, MessagesSourceError},
@@ -353,6 +355,17 @@ mod tests {
 
         let error = adapter
             .mark_messages_read(1, None, vec![1, 2, 3])
+            .expect_err("stub adapter should fail");
+
+        assert_eq!(error, ChatLifecycleError::Unavailable);
+    }
+
+    #[test]
+    fn add_chat_to_list_returns_unavailable_when_backend_is_not_configured() {
+        let adapter = TelegramAdapter::stub();
+
+        let error = adapter
+            .add_chat_to_list(1, crate::domain::chat_folder::ChatListKind::Archive)
             .expect_err("stub adapter should fail");
 
         assert_eq!(error, ChatLifecycleError::Unavailable);

@@ -56,6 +56,10 @@ fn negative_main_list_position_falls_back_to_first() {
 fn chat_list_kind_maps_to_tdlib_chat_list() {
     assert_eq!(map_chat_list_kind(ChatListKind::Main), TdChatList::Main);
     assert_eq!(
+        map_chat_list_kind(ChatListKind::Archive),
+        TdChatList::Archive
+    );
+    assert_eq!(
         map_chat_list_kind(ChatListKind::Folder(3)),
         TdChatList::Folder(ChatListFolder { chat_folder_id: 3 })
     );

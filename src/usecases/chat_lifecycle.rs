@@ -3,6 +3,8 @@
 //! Provides traits for TDLib chat lifecycle operations that are
 //! managed by the orchestrator rather than individual use cases.
 
+use crate::domain::chat_folder::ChatListKind;
+
 /// Error type for chat lifecycle operations.
 ///
 /// These are best-effort operations — failures are logged but do not
@@ -35,6 +37,14 @@ pub trait MessageDeleter: Send + Sync {
         message_ids: Vec<i64>,
         revoke: bool,
     ) -> Result<(), ChatLifecycleError>;
+}
+
+/// Moves a chat into a chat list via TDLib's `addChatToList`.
+///
+/// A chat is in exactly one of the main list and the archive, so TDLib
+/// removes it from the other one itself.
+pub trait ChatListMover: Send + Sync {
+    fn add_chat_to_list(&self, chat_id: i64, list: ChatListKind) -> Result<(), ChatLifecycleError>;
 }
 
 /// Triggers an asynchronous file download in TDLib.

@@ -81,7 +81,11 @@ pub(super) fn dispatch_chat_list_action<D: TaskDispatcher>(
         }
         Action::ShowChatInfo => popups::show_chat_info_popup(&mut ctx.shell),
         Action::SearchChats => ctx.shell.state.open_chat_search(),
-        Action::ShowChatFolders => chat_list::show_chat_folder_picker(&mut ctx.shell),
+        Action::ShowChatFolders => ctx.shell.state.open_chat_folder_picker(),
+        Action::ToggleChatArchive => {
+            chat_list::toggle_selected_chat_archive(&mut ctx.shell);
+            chat_open::maybe_prefetch_selected_chat(&mut ctx.shell, ctx.open_chat_sync);
+        }
         Action::OpenChat if ctx.shell.state.chat_list().selected_chat().is_some() => {
             // Pane management lives inside open_selected_chat — forum chats
             // need the ChatList pane to stay active, regular chats switch to

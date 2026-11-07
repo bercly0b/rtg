@@ -2,7 +2,9 @@ use std::sync::{mpsc::Sender, Arc};
 
 use crate::domain::chat_folder::ChatListKind;
 use crate::usecases::{
-    chat_lifecycle::{ChatLifecycle, ChatReadMarker, FileDownloader, MessageDeleter},
+    chat_lifecycle::{
+        ChatLifecycle, ChatListMover, ChatReadMarker, FileDownloader, MessageDeleter,
+    },
     chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
     list_chats::{list_chats, ListChatsQuery, ListChatsSource},
     list_forum_topics::{list_forum_topics, ForumTopicsSource, ListForumTopicsQuery},
@@ -243,6 +245,32 @@ pub(super) fn dispatch_mark_chat_as_read<
         })
     {
         tracing::error!(error = %error, "failed to spawn mark-chat-as-read background thread");
+    }
+}
+
+pub(super) fn dispatch_add_chat_to_list<L: ChatListMover + Send + Sync + 'static>(
+    lifecycle: &Arc<L>,
+    tx: &Sender<BackgroundTaskResult>,
+    chat_id: i64,
+    list: ChatListKind,
+) {
+    let lifecycle = Arc::clone(lifecycle);
+    let tx = tx.clone();
+    let tx_fallback = tx.clone();
+
+    let spawn_result = std::thread::Builder::new()
+        .name("rtg-bg-add-chat-to-list".into())
+        .spawn(move || {
+            tracing::debug!(chat_id, ?list, "background: adding chat to chat list");
+            if let Err(e) = lifecycle.add_chat_to_list(chat_id, list) {
+                tracing::warn!(chat_id, ?list, error = ?e, "background: addChatToList failed");
+                let _ = tx.send(BackgroundTaskResult::AddChatToListFailed { chat_id, list });
+            }
+        });
+
+    if let Err(error) = spawn_result {
+        tracing::error!(error = %error, "failed to spawn add chat to list background thread");
+        let _ = tx_fallback.send(BackgroundTaskResult::AddChatToListFailed { chat_id, list });
     }
 }
 

@@ -156,6 +156,7 @@ mod tests {
             last_message_preview: Some("hello".to_owned()),
             last_message_unix_ms: Some(1_700_000_000_000),
             is_pinned: false,
+            is_archived: false,
             chat_type: ChatType::Private,
             last_message_sender: None,
             is_online: None,

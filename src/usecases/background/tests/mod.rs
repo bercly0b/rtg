@@ -57,6 +57,13 @@ impl TaskDispatcher for StubTaskDispatcher {
 
     fn dispatch_prefetch_messages(&self, _chat_id: i64, _topic_id: Option<i32>) {}
 
+    fn dispatch_add_chat_to_list(
+        &self,
+        _chat_id: i64,
+        _list: crate::domain::chat_folder::ChatListKind,
+    ) {
+    }
+
     fn dispatch_delete_message(&self, _chat_id: i64, _message_id: i64) {}
 
     fn dispatch_chat_subtitle(&self, _query: ChatSubtitleQuery) {}
@@ -312,6 +319,82 @@ mod send_rollback {
                 chat_id: 1,
                 pending_id: -9,
             }
+        );
+    }
+}
+
+// ── dispatch_add_chat_to_list: only a failure is reported ──
+
+mod add_chat_to_list {
+    use std::sync::{mpsc::Receiver, Arc, Mutex};
+    use std::time::Duration;
+
+    use crate::domain::chat_folder::ChatListKind;
+    use crate::usecases::background::lifecycle::dispatch_add_chat_to_list;
+    use crate::usecases::background::BackgroundTaskResult;
+    use crate::usecases::chat_lifecycle::{ChatLifecycleError, ChatListMover};
+
+    struct StubMover {
+        result: Result<(), ChatLifecycleError>,
+        calls: Mutex<Vec<(i64, ChatListKind)>>,
+    }
+
+    impl ChatListMover for StubMover {
+        fn add_chat_to_list(
+            &self,
+            chat_id: i64,
+            list: ChatListKind,
+        ) -> Result<(), ChatLifecycleError> {
+            self.calls.lock().unwrap().push((chat_id, list));
+            self.result.clone()
+        }
+    }
+
+    fn run(
+        result: Result<(), ChatLifecycleError>,
+    ) -> (Arc<StubMover>, Receiver<BackgroundTaskResult>) {
+        let mover = Arc::new(StubMover {
+            result,
+            calls: Mutex::new(Vec::new()),
+        });
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        dispatch_add_chat_to_list(&mover, &tx, 7, ChatListKind::Archive);
+
+        (mover, rx)
+    }
+
+    #[test]
+    fn failure_is_reported_with_chat_and_target_list() {
+        let (mover, rx) = run(Err(ChatLifecycleError::Unavailable));
+
+        let result = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("a failure must be reported");
+
+        assert_eq!(
+            result,
+            BackgroundTaskResult::AddChatToListFailed {
+                chat_id: 7,
+                list: ChatListKind::Archive,
+            }
+        );
+        assert_eq!(
+            *mover.calls.lock().unwrap(),
+            vec![(7, ChatListKind::Archive)]
+        );
+    }
+
+    #[test]
+    fn success_sends_no_result() {
+        let (mover, rx) = run(Ok(()));
+
+        // The sender is dropped when the thread finishes, so `recv` returns
+        // `Err` instead of hanging once nothing was sent.
+        assert!(rx.recv_timeout(Duration::from_secs(5)).is_err());
+        assert_eq!(
+            *mover.calls.lock().unwrap(),
+            vec![(7, ChatListKind::Archive)]
         );
     }
 }
