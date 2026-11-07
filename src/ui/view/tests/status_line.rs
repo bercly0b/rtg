@@ -5,6 +5,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::domain::download_speed::MIN_TRACKED_FILE_SIZE;
 use crate::domain::events::ConnectivityStatus;
 use crate::domain::shell_state::ShellState;
+use crate::domain::update_check::{AvailableUpdate, InstallChannel};
 
 use super::{super::status_line, line_to_string};
 
@@ -268,4 +269,107 @@ fn compute_input_height_zero_width_returns_one() {
 #[test]
 fn compute_input_height_narrow_width_returns_one() {
     assert_eq!(status_line::compute_input_height("hello", 4), 1);
+}
+
+fn state_with_update(channel: InstallChannel) -> ShellState {
+    let mut state = ShellState::default();
+    state.set_connectivity_status(ConnectivityStatus::Connected);
+    state.set_available_update(AvailableUpdate {
+        version: "0.2.0".to_owned(),
+        channel,
+    });
+    state
+}
+
+#[test]
+fn status_line_shows_available_update_before_help_hint() {
+    let state = state_with_update(InstallChannel::ReleaseInstaller);
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(
+        text.ends_with("v0.2.0 available: rtg update  ? for help "),
+        "{text}"
+    );
+    assert!(text.starts_with(" \u{25CF} Connected "), "{text}");
+    assert_eq!(text.width(), STATUS_WIDTH);
+}
+
+#[test]
+fn update_notice_names_the_command_of_the_install_channel() {
+    for (channel, command) in [
+        (InstallChannel::ReleaseInstaller, "rtg update"),
+        (InstallChannel::Homebrew, "brew upgrade rtg-tui"),
+        (InstallChannel::CratesIo, "cargo install --locked rtg-tui"),
+    ] {
+        let update = AvailableUpdate {
+            version: "0.2.0".to_owned(),
+            channel,
+        };
+        assert_eq!(
+            status_line::format_update_notice(&update),
+            format!("v0.2.0 available: {command}")
+        );
+    }
+}
+
+#[test]
+fn status_line_without_update_has_no_update_notice() {
+    let mut state = ShellState::default();
+    state.set_connectivity_status(ConnectivityStatus::Connected);
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(!text.contains("available"), "{text}");
+}
+
+#[test]
+fn status_line_drops_update_notice_that_does_not_fit() {
+    let state = state_with_update(InstallChannel::CratesIo);
+
+    let line = status_line::status_line(&state, 40);
+    let text = line_to_string(&line);
+
+    assert!(!text.contains("available"), "{text}");
+    assert!(text.ends_with("? for help "), "{text}");
+    assert_eq!(text.width(), 40);
+}
+
+#[test]
+fn status_line_shows_short_notification_and_update_notice_together() {
+    let mut state = state_with_update(InstallChannel::ReleaseInstaller);
+    state.set_notification("Saved: a.pdf");
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(text.contains("Connected  Saved: a.pdf "), "{text}");
+    assert!(
+        text.ends_with("v0.2.0 available: rtg update  ? for help "),
+        "{text}"
+    );
+    assert_eq!(text.width(), STATUS_WIDTH);
+}
+
+#[test]
+fn long_notification_hides_update_notice_until_it_expires() {
+    let mut state = state_with_update(InstallChannel::ReleaseInstaller);
+    state.set_notification("A".repeat(200));
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(text.contains("AAA"), "{text}");
+    assert!(!text.contains("available"), "{text}");
+    assert_eq!(text.width(), STATUS_WIDTH);
+
+    let expired = Instant::now() - Duration::from_secs(5);
+    state.set_notification_at("A".repeat(200), expired);
+
+    let line = status_line::status_line(&state, STATUS_WIDTH);
+    let text = line_to_string(&line);
+
+    assert!(text.contains("v0.2.0 available: rtg update"), "{text}");
 }

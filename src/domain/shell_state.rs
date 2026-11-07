@@ -15,6 +15,7 @@ use super::{
     message_input_state::MessageInputState,
     open_chat_state::OpenChatState,
     reaction_picker_state::ReactionPickerState,
+    update_check::AvailableUpdate,
 };
 
 const NOTIFICATION_TTL: Duration = Duration::from_secs(3);
@@ -73,6 +74,7 @@ pub struct ShellState {
     chat_folders: ChatFolders,
     chat_folder_picker: Option<ChatFolderPickerState>,
     download_speed: DownloadSpeedMeter,
+    available_update: Option<AvailableUpdate>,
 }
 
 impl Default for ShellState {
@@ -96,6 +98,7 @@ impl Default for ShellState {
             chat_folders: ChatFolders::default(),
             chat_folder_picker: None,
             download_speed: DownloadSpeedMeter::default(),
+            available_update: None,
         }
     }
 }
@@ -375,6 +378,14 @@ impl ShellState {
 
     pub fn download_speed_mut(&mut self) -> &mut DownloadSpeedMeter {
         &mut self.download_speed
+    }
+
+    pub fn available_update(&self) -> Option<&AvailableUpdate> {
+        self.available_update.as_ref()
+    }
+
+    pub fn set_available_update(&mut self, update: AvailableUpdate) {
+        self.available_update = Some(update);
     }
 
     pub fn set_notification(&mut self, text: impl Into<String>) {

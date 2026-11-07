@@ -75,6 +75,12 @@ pub fn notification_style() -> Style {
         .add_modifier(Modifier::ITALIC)
 }
 
+/// Available update notice in the status bar: visible, but calmer than a
+/// notification.
+pub fn update_notice_style() -> Style {
+    Style::default().fg(Color::Cyan).bg(Color::Black)
+}
+
 /// Subtle help hint ("? for help") in the status bar.
 pub fn help_hint_style() -> Style {
     Style::default().fg(Color::DarkGray).bg(Color::Black)

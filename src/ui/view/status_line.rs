@@ -5,6 +5,7 @@ use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
 use crate::domain::shell_state::ShellState;
+use crate::domain::update_check::AvailableUpdate;
 use crate::ui::styles;
 
 use super::text_utils::truncate_to_display_width;
@@ -60,15 +61,39 @@ pub(super) fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
     }
 
     let left_width: usize = spans.iter().map(|s| s.content.width()).sum();
-    let padding = width.saturating_sub(left_width + right_text.width());
+
+    // A notification is short-lived, so it may take the room the update
+    // notice needs; the notice comes back once the notification expires.
+    let update_notice = state
+        .available_update()
+        .map(format_update_notice)
+        .filter(|notice| {
+            left_width + notice.width() + separator.width() + right_text.width() <= width
+        });
+    let notice_width = update_notice
+        .as_ref()
+        .map_or(0, |notice| notice.width() + separator.width());
+    let padding = width.saturating_sub(left_width + notice_width + right_text.width());
 
     spans.push(Span::styled(
         " ".repeat(padding),
         styles::status_bar_style(),
     ));
+    if let Some(notice) = update_notice {
+        spans.push(Span::styled(notice, styles::update_notice_style()));
+        spans.push(Span::styled(separator, styles::status_bar_style()));
+    }
     spans.push(Span::styled(right_text, styles::help_hint_style()));
 
     Line::from(spans)
+}
+
+pub(super) fn format_update_notice(update: &AvailableUpdate) -> String {
+    format!(
+        "v{} available: {}",
+        update.version,
+        update.channel.update_command()
+    )
 }
 
 /// Formats a download speed in bytes per second with binary (1024) multiples,

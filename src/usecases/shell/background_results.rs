@@ -369,5 +369,8 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 .state
                 .set_notification(format!("Save failed: {error}"));
         }
+        BackgroundTaskResult::UpdateAvailable(update) => {
+            ctx.shell.state.set_available_update(update);
+        }
     }
 }

@@ -67,6 +67,11 @@ impl StorageLayout {
         self.config_dir.join("tdlib.log")
     }
 
+    /// Returns the file that keeps the last update check.
+    pub fn update_check_file(&self) -> PathBuf {
+        self.cache_dir.join("update_check.toml")
+    }
+
     /// Checks whether a TDLib session (database) exists on disk.
     ///
     /// Returns `true` if the TDLib database directory exists and contains
@@ -131,6 +136,18 @@ mod tests {
                 .to_str()
                 .unwrap(),
             "tdlib.log"
+        );
+    }
+
+    #[test]
+    fn update_check_file_is_in_cache_dir() {
+        let layout = StorageLayout {
+            config_dir: PathBuf::from("/tmp/test"),
+            cache_dir: PathBuf::from("/tmp/test/cache"),
+        };
+        assert_eq!(
+            layout.update_check_file(),
+            PathBuf::from("/tmp/test/cache/update_check.toml")
         );
     }
 

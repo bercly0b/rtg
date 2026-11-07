@@ -20,6 +20,7 @@ pub mod send_message;
 pub mod send_voice;
 pub mod shell;
 pub mod startup;
+pub mod update_check;
 pub mod voice_recording;
 
 /// Returns the usecases module name for smoke checks.
