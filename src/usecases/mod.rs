@@ -16,6 +16,7 @@ pub mod logout;
 pub mod message_info;
 pub mod message_reactions;
 pub mod pty;
+pub mod self_update;
 pub mod send_message;
 pub mod send_voice;
 pub mod shell;

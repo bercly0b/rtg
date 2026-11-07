@@ -91,8 +91,8 @@ Examples: `config/`, `StorageLayout`, `logging.rs`, `secrets.rs`, `stubs.rs`.
 | File | Role |
 |------|------|
 | `main.rs` | Binary entry point. Declares top-level modules, parses CLI args, installs panic hooks, delegates to `app::run()`. |
-| `app.rs` | Application dispatch. Routes between `Run` (TUI startup) and `Logout` flows. Composition root. |
-| `cli.rs` | CLI argument definitions (clap). Subcommands: `Run` (default — launch TUI), `Logout` (disconnect and clear session). |
+| `app.rs` | Application dispatch. Routes between `Run` (TUI startup), `Logout` and `Update` flows. Composition root. |
+| `cli.rs` | CLI argument definitions (clap). Subcommands: `Run` (default — launch TUI), `Logout` (disconnect and clear session), `Update` (self-update, see [`features/self-update.md`](features/self-update.md)). |
 
 When adding a new top-level command or changing the startup sequence, start from `cli.rs` → `app.rs`.
 

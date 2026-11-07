@@ -19,6 +19,8 @@ pub enum Command {
     Run,
     /// Logout/disconnect and reset local auth/session state
     Logout,
+    /// Update rtg to the latest release (installs made by the release installer)
+    Update,
 }
 
 impl Cli {
@@ -58,6 +60,13 @@ mod tests {
         let cli = Cli::parse_from(["rtg", "logout"]);
 
         assert!(matches!(cli.command_or_default(), Command::Logout));
+    }
+
+    #[test]
+    fn parses_update_command() {
+        let cli = Cli::parse_from(["rtg", "update"]);
+
+        assert!(matches!(cli.command_or_default(), Command::Update));
     }
 
     #[test]

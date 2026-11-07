@@ -6,6 +6,7 @@ pub mod error;
 pub mod logging;
 pub mod opener;
 pub mod secrets;
+pub mod self_update;
 pub mod storage_layout;
 pub mod stubs;
 pub mod update_check;

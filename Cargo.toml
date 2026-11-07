@@ -37,8 +37,9 @@ shell-words = "1.1"
 # adds no new crates.
 ureq = "3"
 serde_json = "1"
-
-[dev-dependencies]
+# `rtg update`: reads the release installer's install receipt and re-runs the
+# installer of the latest release (ADR 0002).
+axoupdater = "0.10"
 tempfile = "3.25.0"
 
 [profile.release]
