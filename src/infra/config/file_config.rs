@@ -5,7 +5,7 @@ use crate::{
     infra::{
         config::{
             AppConfig, CacheConfig, DownloadConfig, KeysConfig, LogConfig, OpenConfig,
-            TelegramConfig, VoiceConfig,
+            TelegramConfig, UpdatesConfig, VoiceConfig,
         },
         error::AppError,
     },
@@ -20,6 +20,7 @@ pub struct FileConfig {
     pub open: Option<FileOpenConfig>,
     pub download: Option<FileDownloadConfig>,
     pub keys: Option<FileKeysConfig>,
+    pub updates: Option<FileUpdatesConfig>,
 }
 
 impl FileConfig {
@@ -50,6 +51,10 @@ impl FileConfig {
 
         if let Some(keys) = self.keys {
             keys.merge_into(&mut config.keys);
+        }
+
+        if let Some(updates) = self.updates {
+            updates.merge_into(&mut config.updates);
         }
 
         Ok(())
@@ -180,6 +185,19 @@ impl FileKeysConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct FileUpdatesConfig {
+    pub check: Option<bool>,
+}
+
+impl FileUpdatesConfig {
+    fn merge_into(self, config: &mut UpdatesConfig) {
+        if let Some(check) = self.check {
+            config.check = check;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,6 +276,7 @@ level = "warn"
             open: None,
             download: None,
             keys: None,
+            updates: None,
         };
 
         let mut config = AppConfig::default();
@@ -299,6 +318,7 @@ level = "warn"
             open: None,
             download: None,
             keys: None,
+            updates: None,
         };
 
         let mut config = AppConfig::default();
@@ -324,6 +344,7 @@ level = "warn"
             open: None,
             download: None,
             keys: None,
+            updates: None,
         };
 
         let mut config = AppConfig::default();
@@ -420,6 +441,7 @@ record_cmd = "sox -d {file_path}"
             open: None,
             download: None,
             keys: None,
+            updates: None,
         };
         let mut config = AppConfig::default();
         file.merge_into(&mut config).unwrap();
@@ -459,6 +481,7 @@ max_auto_download_size = "500KB"
             open: None,
             download: None,
             keys: None,
+            updates: None,
         };
         let mut config = AppConfig::default();
         file.merge_into(&mut config).unwrap();
@@ -502,9 +525,30 @@ quit = "Q"
             open: None,
             download: None,
             keys: None,
+            updates: None,
         };
         let mut config = AppConfig::default();
         file.merge_into(&mut config).unwrap();
         assert!(config.keys.overrides.is_empty());
+    }
+
+    #[test]
+    fn updates_check_can_be_turned_off() {
+        let toml = r#"
+[updates]
+check = false
+"#;
+        let file: FileConfig = toml::from_str(toml).unwrap();
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config).unwrap();
+        assert!(!config.updates.check);
+    }
+
+    #[test]
+    fn updates_section_without_check_keeps_it_enabled() {
+        let file: FileConfig = toml::from_str("[updates]\n").unwrap();
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config).unwrap();
+        assert!(config.updates.check);
     }
 }

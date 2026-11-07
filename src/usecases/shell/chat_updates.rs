@@ -157,7 +157,12 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
             }
             ChatUpdate::ChatFoldersChanged { folders } => {
                 tracing::debug!(count = folders.folders.len(), "chat folders changed");
+                let list = ctx.shell.state.chat_list().kind();
                 ctx.shell.state.set_chat_folders(folders);
+                if ctx.shell.state.chat_list().kind() != list {
+                    tracing::debug!(?list, "active chat folder removed, showing the main list");
+                    should_refresh_chat_list = true;
+                }
             }
         }
     }

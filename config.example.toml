@@ -36,6 +36,11 @@ api_hash = "replace-me"
 # "audio/mpeg" = "mpv --no-video {file_path}"
 # "audio/*" = "mpv {file_path}"
 
+[updates]
+# Once a day the TUI checks GitHub for a newer release in the background and,
+# if there is one, shows it in the status bar with the command to update.
+# check = false
+
 [keys]
 # Override default key bindings. Keys are action names (snake_case),
 # values are key patterns. Action names are listed in the in-app help

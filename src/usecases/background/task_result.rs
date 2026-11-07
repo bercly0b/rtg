@@ -2,7 +2,7 @@ use crate::domain::{
     chat::ChatSummary, chat_folder::ChatListKind, chat_info_state::ChatInfo,
     chat_subtitle::ChatSubtitle, forum_topic::ForumTopicSummary, message::Message,
     message_info_state::MessageInfo, message_input_state::OutgoingMessage,
-    reaction_picker_state::AvailableReaction,
+    reaction_picker_state::AvailableReaction, update_check::AvailableUpdate,
 };
 
 /// Result of an asynchronous background operation dispatched from the UI thread.
@@ -103,6 +103,8 @@ pub enum BackgroundTaskResult {
     FileSaved { file_id: i32, file_name: String },
     /// File save to downloads directory failed.
     FileSaveFailed { file_id: i32, error: String },
+    /// The update check found a release newer than the running RTG.
+    UpdateAvailable(AvailableUpdate),
 }
 
 /// Lightweight error type for background task failures.

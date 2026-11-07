@@ -79,6 +79,13 @@ fn notification_style_is_yellow_italic_on_black() {
 }
 
 #[test]
+fn update_notice_style_is_cyan_on_black() {
+    let style = update_notice_style();
+    assert_eq!(style.fg, Some(Color::Cyan));
+    assert_eq!(style.bg, Some(Color::Black));
+}
+
+#[test]
 fn help_hint_style_is_dark_gray_on_black() {
     let style = help_hint_style();
     assert_eq!(style.fg, Some(Color::DarkGray));

@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::update_check::{AvailableUpdate, InstallChannel};
 
 #[test]
 fn stops_on_quit_event() {
@@ -150,4 +151,20 @@ fn config_key_overrides_rebind_actions() {
         .unwrap();
 
     assert!(o.state().help_visible());
+}
+
+#[test]
+fn update_available_result_marks_the_update_in_state() {
+    let mut o = make_orchestrator();
+    let update = AvailableUpdate {
+        version: "0.2.0".to_owned(),
+        channel: InstallChannel::ReleaseInstaller,
+    };
+
+    o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
+        BackgroundTaskResult::UpdateAvailable(update.clone()),
+    ]))
+    .unwrap();
+
+    assert_eq!(o.state().available_update(), Some(&update));
 }

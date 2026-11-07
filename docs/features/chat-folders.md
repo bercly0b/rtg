@@ -29,7 +29,10 @@ the active folder's name ("Chats" for the main list).
   to `map_chat_to_summary`, which marks a chat pinned only by its position in
   that list. A folder's "Pinned" section therefore shows the chats pinned in
   the folder, not the ones pinned in the main list.
-
-## Out of scope
-
-Falling back when the active folder is deleted is tracked as a separate issue.
+- **Removed folder**: when an `updateChatFolders` no longer lists the active
+  folder (deleted on another device, for example), `ShellState::set_chat_folders`
+  switches the chat list to the main list, and the orchestrator reloads it the
+  same way as a manual switch. An open picker is rebuilt from the new folders,
+  so it never offers a removed folder. Its cursor stays on the same list, or
+  moves to the active list if that one is gone too. With no folders left, the
+  picker closes.

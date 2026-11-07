@@ -7,11 +7,13 @@ use crate::{
     domain::{events::ConnectivityStatus, shell_state::ShellState},
     infra::{
         self,
-        config::{FileConfigAdapter, TelegramConfig},
+        config::{FileConfigAdapter, TelegramConfig, UpdatesConfig},
         contracts::ConfigAdapter,
         error::AppError,
         opener::BrowserOpener,
+        storage_layout::StorageLayout,
         stubs::StubStorageAdapter,
+        update_check::{detect_install_channel, FileUpdateCheckCache, GitHubLatestRelease},
     },
     telegram::{
         ChatUpdatesMonitorStartError, ConnectivityMonitorStartError, TelegramAdapter,
@@ -29,6 +31,7 @@ use crate::{
         guided_auth::{AuthBackendError, AuthTerminal, StdTerminal},
         load_messages::CachedMessagesSource,
         shell::{DefaultShellOrchestrator, OrchestratorConfig},
+        update_check::spawn_update_check,
     },
 };
 
@@ -40,8 +43,36 @@ const CHAT_UPDATES_MONITOR_START_FAILED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_S
 pub struct ShellComposition {
     pub event_source: Box<CrosstermEventSource>,
     pub orchestrator: Box<dyn ShellOrchestrator>,
+    background_results: Sender<BackgroundTaskResult>,
     _connectivity_monitor: Option<TelegramConnectivityMonitor>,
     _chat_updates_monitor: Option<TelegramChatUpdatesMonitor>,
+}
+
+impl ShellComposition {
+    /// Starts the update check in the background unless the config turns it
+    /// off; a newer release reaches the shell as a background result.
+    pub fn start_update_check(&self, config: &UpdatesConfig) {
+        if !config.check {
+            tracing::debug!("update check is turned off in the config");
+            return;
+        }
+
+        let cache_file = match StorageLayout::resolve() {
+            Ok(layout) => layout.update_check_file(),
+            Err(error) => {
+                tracing::warn!(error = %error, "update check: cache directory is unresolved");
+                return;
+            }
+        };
+
+        spawn_update_check(
+            GitHubLatestRelease::default(),
+            FileUpdateCheckCache::new(cache_file),
+            env!("CARGO_PKG_VERSION"),
+            detect_install_channel,
+            self.background_results.clone(),
+        );
+    }
 }
 
 pub fn bootstrap(config_path: Option<&Path>) -> Result<AppContext, AppError> {
@@ -116,7 +147,7 @@ fn compose_shell_with_factory(
         std::sync::Arc::clone(&context.telegram),
         std::sync::Arc::clone(&context.telegram),
         std::sync::Arc::clone(&context.telegram),
-        bg_tx,
+        bg_tx.clone(),
     );
 
     let cache_cfg = &context.config.cache;
@@ -152,6 +183,7 @@ fn compose_shell_with_factory(
                 key_overrides: context.config.keys.overrides.clone(),
             },
         )),
+        background_results: bg_tx,
         _connectivity_monitor: connectivity_monitor,
         _chat_updates_monitor: chat_updates_monitor,
     }
