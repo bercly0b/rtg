@@ -59,7 +59,9 @@ fn build_lines(state: &ChatFolderPickerState) -> Vec<Line<'static>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::chat_folder::{ChatFolder, ChatFolders, ChatListKind, MAIN_CHAT_LIST_TITLE};
+    use crate::domain::chat_folder::{
+        ChatFolder, ChatFolders, ChatListKind, ARCHIVE_CHAT_LIST_TITLE, MAIN_CHAT_LIST_TITLE,
+    };
 
     fn picker(active: ChatListKind) -> ChatFolderPickerState {
         let folders = ChatFolders {
@@ -75,7 +77,7 @@ mod tests {
             ],
             main_list_position: 0,
         };
-        ChatFolderPickerState::new(&folders, active).unwrap()
+        ChatFolderPickerState::new(&folders, active)
     }
 
     fn is_highlighted(line: &Line<'_>) -> bool {
@@ -83,15 +85,16 @@ mod tests {
     }
 
     #[test]
-    fn lists_main_list_and_folders_with_footer() {
+    fn lists_main_list_folders_and_archive_with_footer() {
         let lines = build_lines(&picker(ChatListKind::Main));
 
-        assert_eq!(lines.len(), 6);
+        assert_eq!(lines.len(), 7);
         assert!(lines[0].spans[0].content.contains(MAIN_CHAT_LIST_TITLE));
         assert!(lines[1].spans[0].content.contains("Work"));
         assert!(lines[2].spans[0].content.contains("Family"));
-        assert!(lines[4].spans[0].content.contains("j/k navigate"));
-        assert!(lines[5].spans[0]
+        assert!(lines[3].spans[0].content.contains(ARCHIVE_CHAT_LIST_TITLE));
+        assert!(lines[5].spans[0].content.contains("j/k navigate"));
+        assert!(lines[6].spans[0]
             .content
             .contains("Press q, Esc or f to close"));
     }
@@ -116,7 +119,7 @@ mod tests {
             .unwrap();
 
         let rect = popup_utils::rendered_border_rect(terminal.backend().buffer()).unwrap();
-        // The footer is the widest line; three entries, blank, two footer lines.
-        assert_eq!((rect.width, rect.height), (26 + 6, 6 + 4));
+        // The footer is the widest line; four entries, blank, two footer lines.
+        assert_eq!((rect.width, rect.height), (26 + 6, 7 + 4));
     }
 }

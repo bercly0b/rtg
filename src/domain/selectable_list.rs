@@ -91,6 +91,20 @@ impl<T> SelectableList<T> {
             self.selected_index = Some(0);
         }
     }
+
+    /// Removes the selected item. The cursor stays on the same index, which
+    /// now holds the next item, or moves to the new last item when the
+    /// removed one was last.
+    pub fn remove_selected(&mut self) {
+        let Some(index) = self.selected_index else {
+            return;
+        };
+        self.items.remove(index);
+        self.selected_index = match self.items.len() {
+            0 => None,
+            len => Some(index.min(len - 1)),
+        };
+    }
 }
 
 #[cfg(test)]
@@ -195,6 +209,42 @@ mod tests {
         list.replace(vec![1, 2, 3], Some(1));
         list.set_selected_index(None);
         assert_eq!(list.selected_index(), None);
+    }
+
+    #[test]
+    fn remove_selected_moves_cursor_to_next_item() {
+        let mut list = SelectableList::default();
+        list.replace(vec![10, 20, 30], Some(1));
+        list.remove_selected();
+        assert_eq!(list.items(), &[10, 30]);
+        assert_eq!(list.selected(), Some(&30));
+    }
+
+    #[test]
+    fn remove_selected_last_item_moves_cursor_to_new_last() {
+        let mut list = SelectableList::default();
+        list.replace(vec![10, 20, 30], Some(2));
+        list.remove_selected();
+        assert_eq!(list.items(), &[10, 20]);
+        assert_eq!(list.selected(), Some(&20));
+    }
+
+    #[test]
+    fn remove_selected_only_item_clears_selection() {
+        let mut list = SelectableList::default();
+        list.replace(vec![10], None);
+        list.remove_selected();
+        assert!(list.items().is_empty());
+        assert_eq!(list.selected_index(), None);
+    }
+
+    #[test]
+    fn remove_selected_without_selection_is_noop() {
+        let mut list = SelectableList::default();
+        list.replace(vec![10, 20], None);
+        list.set_selected_index(None);
+        list.remove_selected();
+        assert_eq!(list.items(), &[10, 20]);
     }
 
     #[test]

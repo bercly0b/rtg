@@ -312,6 +312,22 @@ impl TdLibClient {
         Ok(())
     }
 
+    /// Adds a chat to a chat list. A chat can't be in both the main list and
+    /// the archive, so TDLib removes it from the other one.
+    pub fn add_chat_to_list(
+        &self,
+        chat_id: i64,
+        chat_list: tdlib_rs::enums::ChatList,
+    ) -> Result<(), TdLibError> {
+        let client_id = self.client_id;
+
+        self.block_on_request("addChatToList", async {
+            tdlib_rs::functions::add_chat_to_list(chat_id, chat_list, client_id)
+                .await
+                .map_err(TdLibError::from)
+        })
+    }
+
     /// Informs TDLib that the chat is closed by the user.
     ///
     /// Must be called for every chat previously opened via

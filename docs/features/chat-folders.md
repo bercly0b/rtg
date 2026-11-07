@@ -2,10 +2,11 @@
 
 Press `f` in the chat list to open the folder picker (rebindable as
 `show_chat_folders`). It lists "All chats" (the main list) and the user's chat
-folders in Telegram's order. `j`/`k` move the cursor, `Enter` switches the chat
-list to the selected list, and `q`, `Esc` or `f` close the picker. If the user
-has no folders, a "No chat folders" notification is shown instead. The chat list
-panel title shows the active folder's name ("Chats" for the main list).
+folders in Telegram's order, then "Archive" as the last row (see
+[chat-archive.md](chat-archive.md)). It opens even when the user has no
+folders. `j`/`k` move the cursor, `Enter` switches the chat list to the selected
+list, and `q`, `Esc` or `f` close the picker. The chat list panel title shows
+the active folder's name ("Chats" for the main list).
 
 ## TDLib integration
 

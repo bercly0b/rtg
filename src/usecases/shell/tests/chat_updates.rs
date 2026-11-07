@@ -275,6 +275,7 @@ fn group_chat(chat_id: i64, title: &str) -> ChatSummary {
         last_message_preview: None,
         last_message_unix_ms: None,
         is_pinned: false,
+        is_archived: false,
         chat_type: ChatType::Group,
         last_message_sender: None,
         is_online: None,

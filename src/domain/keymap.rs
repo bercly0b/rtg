@@ -14,6 +14,7 @@ pub enum Action {
     SearchChats,
     SelectFirstChat,
     ShowChatFolders,
+    ToggleChatArchive,
     // ForumTopicList
     SelectNextTopic,
     SelectPreviousTopic,
@@ -55,6 +56,7 @@ impl Action {
             Self::SearchChats => "search_chats",
             Self::SelectFirstChat => "select_first_chat",
             Self::ShowChatFolders => "show_chat_folders",
+            Self::ToggleChatArchive => "toggle_chat_archive",
             Self::SelectNextTopic => "select_next_topic",
             Self::SelectPreviousTopic => "select_previous_topic",
             Self::SelectFirstTopic => "select_first_topic",
@@ -93,6 +95,7 @@ impl Action {
             "search_chats" => Some(Self::SearchChats),
             "select_first_chat" => Some(Self::SelectFirstChat),
             "show_chat_folders" => Some(Self::ShowChatFolders),
+            "toggle_chat_archive" => Some(Self::ToggleChatArchive),
             "select_next_topic" => Some(Self::SelectNextTopic),
             "select_previous_topic" => Some(Self::SelectPreviousTopic),
             "select_first_topic" => Some(Self::SelectFirstTopic),
@@ -477,6 +480,11 @@ fn default_bindings() -> Vec<KeyBinding> {
             action: Action::ShowChatFolders,
             context: KeyContext::ChatList,
         },
+        KeyBinding {
+            pattern: KeyPattern::single("A"),
+            action: Action::ToggleChatArchive,
+            context: KeyContext::ChatList,
+        },
         // ── ForumTopicList ──
         KeyBinding {
             pattern: KeyPattern::single("j"),
@@ -834,6 +842,7 @@ mod tests {
             Action::SelectNextChat,
             Action::SelectFirstChat,
             Action::ShowChatFolders,
+            Action::ToggleChatArchive,
             Action::DeleteMessage,
             Action::Quit,
             Action::ShowHelp,
@@ -992,6 +1001,33 @@ mod tests {
             km.resolve("f", false, KeyContext::Messages),
             ResolveResult::Unmatched
         );
+    }
+
+    #[test]
+    fn shift_a_toggles_chat_archive_only_in_chat_list() {
+        let mut km = Keymap::default();
+        assert_eq!(
+            km.resolve("A", false, KeyContext::ChatList),
+            ResolveResult::Action(Action::ToggleChatArchive)
+        );
+        assert_eq!(
+            km.resolve("A", false, KeyContext::ForumTopicList),
+            ResolveResult::Unmatched
+        );
+        assert_eq!(
+            km.resolve("A", false, KeyContext::Messages),
+            ResolveResult::Unmatched
+        );
+    }
+
+    #[test]
+    fn help_entries_for_chat_list_include_toggle_chat_archive() {
+        let km = Keymap::default();
+        let entries = km.help_entries(KeyContext::ChatList);
+
+        assert!(entries
+            .iter()
+            .any(|e| e.action_name == "toggle_chat_archive" && e.key_label == "A"));
     }
 
     #[test]

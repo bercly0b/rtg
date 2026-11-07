@@ -69,6 +69,9 @@ pub enum BackgroundTaskResult {
         original_text: String,
         result: Result<(), BackgroundError>,
     },
+    /// `addChatToList` failed, so the chat stayed where it was; the chat list
+    /// should be reloaded to undo the optimistic change.
+    AddChatToListFailed { chat_id: i64, list: ChatListKind },
     /// Voice note send failed; the optimistic message `pending_id` should be removed.
     VoiceSendFailed { chat_id: i64, pending_id: i64 },
     /// Chat subtitle (user status / member count) resolved.

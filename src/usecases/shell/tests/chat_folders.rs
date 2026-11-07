@@ -1,6 +1,6 @@
 use super::*;
 use crate::domain::{
-    chat_folder::{ChatFolder, ChatFolders, MAIN_CHAT_LIST_TITLE},
+    chat_folder::{ChatFolder, ChatFolders, ARCHIVE_CHAT_LIST_TITLE, MAIN_CHAT_LIST_TITLE},
     events::ChatUpdate,
 };
 
@@ -55,16 +55,6 @@ fn switch_to_work(o: &mut TestOrchestrator) {
 }
 
 #[test]
-fn f_without_folders_shows_notification() {
-    let mut o = orchestrator_with_chats(vec![chat(1, "General")]);
-
-    press(&mut o, "f");
-
-    assert!(o.state().chat_folder_picker().is_none());
-    assert_eq!(o.state().active_notification(), Some("No chat folders"));
-}
-
-#[test]
 fn f_opens_picker_with_cursor_on_active_list() {
     let mut o = orchestrator_with_folders();
 
@@ -76,7 +66,15 @@ fn f_opens_picker_with_cursor_on_active_list() {
         .iter()
         .map(|entry| entry.title.as_str())
         .collect();
-    assert_eq!(titles, vec![MAIN_CHAT_LIST_TITLE, "Work", "Family"]);
+    assert_eq!(
+        titles,
+        vec![
+            MAIN_CHAT_LIST_TITLE,
+            "Work",
+            "Family",
+            ARCHIVE_CHAT_LIST_TITLE
+        ]
+    );
     assert_eq!(
         picker.selected().map(|entry| entry.list),
         Some(ChatListKind::Main)
@@ -111,7 +109,7 @@ fn enter_switches_to_folder_and_loads_its_chats() {
     assert_eq!(o.state().chat_list().kind(), ChatListKind::Folder(3));
     assert_eq!(o.state().chat_list().ui_state(), ChatListUiState::Loading);
     assert!(o.state().chat_list().chats().is_empty());
-    assert_eq!(o.state().active_chat_folder_title(), Some("Work"));
+    assert_eq!(o.state().active_chat_list_title(), Some("Work"));
     assert_eq!(
         o.dispatcher.chat_list_dispatch_count(),
         dispatches_before + 1
@@ -214,7 +212,7 @@ fn picking_main_list_switches_back_from_folder() {
     press(&mut o, "enter");
 
     assert_eq!(o.state().chat_list().kind(), ChatListKind::Main);
-    assert_eq!(o.state().active_chat_folder_title(), None);
+    assert_eq!(o.state().active_chat_list_title(), None);
     assert_eq!(o.dispatcher.last_chat_list(), Some(ChatListKind::Main));
 }
 

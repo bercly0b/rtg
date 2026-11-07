@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use super::{
     chat::ChatSummary,
-    chat_folder::{ChatFolderPickerState, ChatFolders, ChatListKind},
+    chat_folder::{ChatFolderPickerState, ChatFolders, ChatListKind, ARCHIVE_CHAT_LIST_TITLE},
     chat_info_state::ChatInfoPopupState,
     chat_list_state::ChatListState,
     chat_search_state::ChatSearchState,
@@ -331,11 +331,12 @@ impl ShellState {
         self.chat_folders = folders;
     }
 
-    /// Title of the chat folder the chat list shows; `None` for the main
+    /// Title of the chat list the chat list panel shows; `None` for the main
     /// list or a folder TDLib no longer reports.
-    pub fn active_chat_folder_title(&self) -> Option<&str> {
+    pub fn active_chat_list_title(&self) -> Option<&str> {
         match self.chat_list.kind() {
             ChatListKind::Main => None,
+            ChatListKind::Archive => Some(ARCHIVE_CHAT_LIST_TITLE),
             ChatListKind::Folder(folder_id) => self.chat_folders.title(folder_id),
         }
     }
@@ -349,12 +350,11 @@ impl ShellState {
     }
 
     /// Opens the folder picker with the cursor on the active chat list.
-    /// Returns `false` and leaves the picker closed when the user has no
-    /// chat folders.
-    pub fn open_chat_folder_picker(&mut self) -> bool {
-        self.chat_folder_picker =
-            ChatFolderPickerState::new(&self.chat_folders, self.chat_list.kind());
-        self.chat_folder_picker.is_some()
+    pub fn open_chat_folder_picker(&mut self) {
+        self.chat_folder_picker = Some(ChatFolderPickerState::new(
+            &self.chat_folders,
+            self.chat_list.kind(),
+        ));
     }
 
     pub fn close_chat_folder_picker(&mut self) {
@@ -414,6 +414,7 @@ mod tests {
             last_message_preview: None,
             last_message_unix_ms: None,
             is_pinned: false,
+            is_archived: false,
             chat_type: ChatType::Private,
             last_message_sender: None,
             is_online: None,
@@ -868,11 +869,12 @@ mod tests {
     }
 
     #[test]
-    fn chat_folder_picker_stays_closed_without_folders() {
+    fn chat_folder_picker_opens_without_folders() {
         let mut state = ShellState::default();
 
-        assert!(!state.open_chat_folder_picker());
-        assert!(state.chat_folder_picker().is_none());
+        state.open_chat_folder_picker();
+
+        assert!(state.chat_folder_picker().is_some());
     }
 
     #[test]
@@ -881,7 +883,7 @@ mod tests {
         state.set_chat_folders(work_folder());
         state.chat_list_mut().switch_to(ChatListKind::Folder(3));
 
-        assert!(state.open_chat_folder_picker());
+        state.open_chat_folder_picker();
 
         let picker = state.chat_folder_picker().unwrap();
         assert_eq!(
@@ -894,15 +896,18 @@ mod tests {
     }
 
     #[test]
-    fn active_chat_folder_title_follows_chat_list_kind() {
+    fn active_chat_list_title_follows_chat_list_kind() {
         let mut state = ShellState::default();
         state.set_chat_folders(work_folder());
-        assert_eq!(state.active_chat_folder_title(), None);
+        assert_eq!(state.active_chat_list_title(), None);
 
         state.chat_list_mut().switch_to(ChatListKind::Folder(3));
-        assert_eq!(state.active_chat_folder_title(), Some("Work"));
+        assert_eq!(state.active_chat_list_title(), Some("Work"));
 
         state.set_chat_folders(ChatFolders::default());
-        assert_eq!(state.active_chat_folder_title(), None);
+        assert_eq!(state.active_chat_list_title(), None);
+
+        state.chat_list_mut().switch_to(ChatListKind::Archive);
+        assert_eq!(state.active_chat_list_title(), Some("Archive"));
     }
 }

@@ -349,3 +349,17 @@ fn folder_chat_list_title_is_shown_while_loading() {
     assert!(rendered.contains("Work"), "got: {rendered}");
     assert!(rendered.contains("Loading chats..."), "got: {rendered}");
 }
+
+#[test]
+fn archive_chat_list_title_is_archive() {
+    let mut state = ShellState::default();
+    state.chat_list_mut().switch_to(ChatListKind::Archive);
+    state
+        .chat_list_mut()
+        .set_ready(vec![chat(1, "Alice", 0, None)]);
+
+    let rendered = buffer_text(&render_chat_list(&state, ActivePane::ChatList));
+
+    assert!(rendered.contains("Archive (1)"), "got: {rendered}");
+    assert!(!rendered.contains("Chats ("), "got: {rendered}");
+}

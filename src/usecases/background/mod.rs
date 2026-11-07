@@ -16,7 +16,9 @@ use crate::domain::{chat_folder::ChatListKind, message_input_state::OutgoingMess
 pub use task_result::{BackgroundError, BackgroundTaskResult};
 
 use super::{
-    chat_lifecycle::{ChatLifecycle, ChatReadMarker, FileDownloader, MessageDeleter},
+    chat_lifecycle::{
+        ChatLifecycle, ChatListMover, ChatReadMarker, FileDownloader, MessageDeleter,
+    },
     chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
     edit_message::MessageEditor,
     list_chats::ListChatsSource,
@@ -85,6 +87,11 @@ pub trait TaskDispatcher {
     /// `topic_id` scopes the prefetch to a forum topic when `Some`.
     fn dispatch_prefetch_messages(&self, chat_id: i64, topic_id: Option<i32>);
 
+    /// Moves a chat into `list` (the archive or the main list). Only a
+    /// failure is reported, as `AddChatToListFailed`; on success TDLib's
+    /// position updates reload the chat list.
+    fn dispatch_add_chat_to_list(&self, chat_id: i64, list: ChatListKind);
+
     /// Deletes a message from a chat (fire-and-forget).
     ///
     /// Tries `revoke=true` first (delete for everyone), falls back to
@@ -147,7 +154,14 @@ where
     C: ListChatsSource + ForumTopicsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
-    L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
+    L: ChatLifecycle
+        + ChatReadMarker
+        + ChatListMover
+        + MessageDeleter
+        + FileDownloader
+        + Send
+        + Sync
+        + 'static,
     S: ChatSubtitleSource + MessageInfoSource + ReactionSource + Send + Sync + 'static,
 {
     chats_source: Arc<C>,
@@ -163,7 +177,14 @@ where
     C: ListChatsSource + ForumTopicsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
-    L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
+    L: ChatLifecycle
+        + ChatReadMarker
+        + ChatListMover
+        + MessageDeleter
+        + FileDownloader
+        + Send
+        + Sync
+        + 'static,
     S: ChatSubtitleSource + MessageInfoSource + ReactionSource + Send + Sync + 'static,
 {
     pub fn new(
@@ -190,7 +211,14 @@ where
     C: ListChatsSource + ForumTopicsSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
-    L: ChatLifecycle + ChatReadMarker + MessageDeleter + FileDownloader + Send + Sync + 'static,
+    L: ChatLifecycle
+        + ChatReadMarker
+        + ChatListMover
+        + MessageDeleter
+        + FileDownloader
+        + Send
+        + Sync
+        + 'static,
     S: ChatSubtitleSource + MessageInfoSource + ReactionSource + Send + Sync + 'static,
 {
     fn dispatch_chat_list(&self, list: ChatListKind, force: bool, limit: usize) {
@@ -273,6 +301,10 @@ where
             chat_id,
             topic_id,
         );
+    }
+
+    fn dispatch_add_chat_to_list(&self, chat_id: i64, list: ChatListKind) {
+        lifecycle::dispatch_add_chat_to_list(&self.lifecycle, &self.result_tx, chat_id, list);
     }
 
     fn dispatch_delete_message(&self, chat_id: i64, message_id: i64) {

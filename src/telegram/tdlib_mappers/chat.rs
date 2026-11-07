@@ -31,6 +31,10 @@ pub fn map_chat_to_summary(
         .positions
         .iter()
         .any(|pos| &pos.list == list && pos.is_pinned);
+    let is_archived = chat
+        .positions
+        .iter()
+        .any(|pos| pos.list == TdChatList::Archive);
 
     let (last_message_preview, last_message_unix_ms, outgoing_status, last_message_id) =
         extract_last_message_info(chat);
@@ -55,6 +59,7 @@ pub fn map_chat_to_summary(
         last_message_preview,
         last_message_unix_ms,
         is_pinned,
+        is_archived,
         chat_type,
         last_message_sender: match chat_type {
             ChatType::Group | ChatType::Channel => sender_name,

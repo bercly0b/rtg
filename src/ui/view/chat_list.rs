@@ -32,7 +32,7 @@ pub(super) fn render_chat_list_panel(
     }
 
     let chat_list = state.chat_list();
-    let list_title = state.active_chat_folder_title().unwrap_or("Chats");
+    let list_title = state.active_chat_list_title().unwrap_or("Chats");
     match chat_list.ui_state() {
         ChatListUiState::Loading => {
             render_chat_list_message(frame, area, list_title, "Loading chats...", title_style)

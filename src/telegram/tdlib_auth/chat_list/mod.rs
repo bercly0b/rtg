@@ -92,6 +92,14 @@ impl TdLibAuthBackend {
             force,
         )
     }
+
+    /// Moves a chat into `list` via `addChatToList`.
+    pub fn add_chat_to_list(&self, chat_id: i64, list: ChatListKind) -> Result<(), TdLibError> {
+        self.client.add_chat_to_list(
+            chat_id,
+            crate::telegram::tdlib_mappers::map_chat_list_kind(list),
+        )
+    }
 }
 
 /// Resolves the chat IDs returned by `getChats` for `list` into summaries.

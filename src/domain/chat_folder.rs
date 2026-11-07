@@ -13,6 +13,7 @@ pub const ARCHIVE_CHAT_LIST_TITLE: &str = "Archive";
 pub enum ChatListKind {
     #[default]
     Main,
+    Archive,
     Folder(i32),
 }
 
@@ -53,13 +54,9 @@ pub struct ChatFolderPickerState {
 }
 
 impl ChatFolderPickerState {
-    /// Lists the main chat list and every folder in the user's order, with
-    /// the cursor on `active`. `None` when the user has no chat folders.
-    pub fn new(folders: &ChatFolders, active: ChatListKind) -> Option<Self> {
-        if folders.folders.is_empty() {
-            return None;
-        }
-
+    /// Lists the main chat list and every folder in the user's order, then
+    /// the archive, with the cursor on `active`.
+    pub fn new(folders: &ChatFolders, active: ChatListKind) -> Self {
         let mut entries: Vec<ChatFolderEntry> = folders
             .folders
             .iter()
@@ -76,11 +73,15 @@ impl ChatFolderPickerState {
                 title: MAIN_CHAT_LIST_TITLE.to_owned(),
             },
         );
+        entries.push(ChatFolderEntry {
+            list: ChatListKind::Archive,
+            title: ARCHIVE_CHAT_LIST_TITLE.to_owned(),
+        });
 
         let active_index = entries.iter().position(|entry| entry.list == active);
         let mut list = SelectableList::default();
         list.replace(entries, active_index);
-        Some(Self { entries: list })
+        Self { entries: list }
     }
 
     pub fn entries(&self) -> &[ChatFolderEntry] {
@@ -129,23 +130,27 @@ mod tests {
     }
 
     #[test]
-    fn no_picker_without_folders() {
+    fn without_folders_picker_lists_main_list_and_archive() {
+        let picker = ChatFolderPickerState::new(&ChatFolders::default(), ChatListKind::Main);
+
         assert_eq!(
-            ChatFolderPickerState::new(&ChatFolders::default(), ChatListKind::Main),
-            None
+            lists(&picker),
+            vec![ChatListKind::Main, ChatListKind::Archive]
         );
+        assert_eq!(picker.entries()[1].title, ARCHIVE_CHAT_LIST_TITLE);
     }
 
     #[test]
     fn main_list_comes_first_by_default() {
-        let picker = ChatFolderPickerState::new(&folders(0), ChatListKind::Main).unwrap();
+        let picker = ChatFolderPickerState::new(&folders(0), ChatListKind::Main);
 
         assert_eq!(
             lists(&picker),
             vec![
                 ChatListKind::Main,
                 ChatListKind::Folder(3),
-                ChatListKind::Folder(7)
+                ChatListKind::Folder(7),
+                ChatListKind::Archive
             ]
         );
         assert_eq!(picker.entries()[0].title, MAIN_CHAT_LIST_TITLE);
@@ -154,28 +159,47 @@ mod tests {
 
     #[test]
     fn main_list_is_placed_at_its_position() {
-        let picker = ChatFolderPickerState::new(&folders(1), ChatListKind::Main).unwrap();
+        let picker = ChatFolderPickerState::new(&folders(1), ChatListKind::Main);
 
         assert_eq!(
             lists(&picker),
             vec![
                 ChatListKind::Folder(3),
                 ChatListKind::Main,
-                ChatListKind::Folder(7)
+                ChatListKind::Folder(7),
+                ChatListKind::Archive
             ]
         );
     }
 
     #[test]
-    fn main_list_position_past_the_end_goes_last() {
-        let picker = ChatFolderPickerState::new(&folders(10), ChatListKind::Main).unwrap();
+    fn main_list_position_past_the_end_goes_after_folders() {
+        let picker = ChatFolderPickerState::new(&folders(10), ChatListKind::Main);
 
-        assert_eq!(lists(&picker).last(), Some(&ChatListKind::Main));
+        assert_eq!(
+            lists(&picker),
+            vec![
+                ChatListKind::Folder(3),
+                ChatListKind::Folder(7),
+                ChatListKind::Main,
+                ChatListKind::Archive
+            ]
+        );
+    }
+
+    #[test]
+    fn cursor_starts_on_archive_when_it_is_active() {
+        let picker = ChatFolderPickerState::new(&folders(0), ChatListKind::Archive);
+
+        assert_eq!(
+            picker.selected().map(|entry| entry.list),
+            Some(ChatListKind::Archive)
+        );
     }
 
     #[test]
     fn cursor_starts_on_active_list() {
-        let picker = ChatFolderPickerState::new(&folders(0), ChatListKind::Folder(7)).unwrap();
+        let picker = ChatFolderPickerState::new(&folders(0), ChatListKind::Folder(7));
 
         assert_eq!(picker.selected_index(), Some(2));
         assert_eq!(
@@ -186,14 +210,14 @@ mod tests {
 
     #[test]
     fn cursor_falls_back_to_first_entry_for_unknown_active_folder() {
-        let picker = ChatFolderPickerState::new(&folders(1), ChatListKind::Folder(99)).unwrap();
+        let picker = ChatFolderPickerState::new(&folders(1), ChatListKind::Folder(99));
 
         assert_eq!(picker.selected_index(), Some(0));
     }
 
     #[test]
     fn cursor_moves_and_clamps() {
-        let mut picker = ChatFolderPickerState::new(&folders(0), ChatListKind::Main).unwrap();
+        let mut picker = ChatFolderPickerState::new(&folders(0), ChatListKind::Main);
 
         picker.select_previous();
         assert_eq!(picker.selected_index(), Some(0));
@@ -201,10 +225,11 @@ mod tests {
         picker.select_next();
         picker.select_next();
         picker.select_next();
-        assert_eq!(picker.selected_index(), Some(2));
+        picker.select_next();
+        assert_eq!(picker.selected_index(), Some(3));
 
         picker.select_previous();
-        assert_eq!(picker.selected_index(), Some(1));
+        assert_eq!(picker.selected_index(), Some(2));
     }
 
     #[test]

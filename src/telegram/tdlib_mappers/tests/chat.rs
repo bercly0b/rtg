@@ -37,3 +37,25 @@ fn chat_summary_carries_is_forum_flag() {
     assert!(with_topics.is_forum);
     assert!(!without_topics.is_forum);
 }
+
+#[test]
+fn chat_summary_is_archived_by_archive_position_in_any_list() {
+    use tdlib_rs::types::{ChatListFolder, ChatPosition};
+
+    let position = |list| ChatPosition {
+        list,
+        order: 100,
+        is_pinned: false,
+        source: None,
+    };
+    let folder = ChatList::Folder(ChatListFolder { chat_folder_id: 3 });
+    let mut archived = crate::telegram::tdlib_cache::tests::make_test_chat(1, "Old");
+    archived.positions = vec![position(ChatList::Archive), position(folder.clone())];
+    let mut in_main = crate::telegram::tdlib_cache::tests::make_test_chat(2, "New");
+    in_main.positions = vec![position(ChatList::Main), position(folder.clone())];
+
+    let map = |chat| map_chat_to_summary(chat, &folder, None, None, false, false);
+
+    assert!(map(&archived).is_archived);
+    assert!(!map(&in_main).is_archived);
+}
