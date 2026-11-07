@@ -1,10 +1,14 @@
 [package]
-name = "rtg"
+name = "rtg-tui"
 version = "0.1.12"
 edition = "2021"
 description = "A terminal-first Telegram client written in Rust."
 license = "MIT"
 repository = "https://github.com/bercly0b/rtg"
+
+[[bin]]
+name = "rtg"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
@@ -35,6 +39,11 @@ tempfile = "3.25.0"
 
 [profile.release]
 strip = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
 
 [lints.clippy]
 allow_attributes_without_reason = "warn"

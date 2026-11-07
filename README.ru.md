@@ -45,36 +45,25 @@ RTG — быстрый Telegram-клиент для терминала с упр
 
 ## Установка
 
-### Готовые сборки
-
-Скачайте архив для своей платформы из
-[последнего релиза](https://github.com/bercly0b/rtg/releases/latest):
-
-| Платформа | Архив |
-|---|---|
-| macOS Apple Silicon | `rtg-<version>-aarch64-apple-darwin.tar.gz` |
-| macOS Intel | `rtg-<version>-x86_64-apple-darwin.tar.gz` |
-| Linux x86_64 | `rtg-<version>-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux aarch64 | `rtg-<version>-aarch64-unknown-linux-gnu.tar.gz` |
-
-Затем распакуйте его и запустите установщик:
+На macOS и Linux:
 
 ```bash
-tar xzf rtg-<version>-<target>.tar.gz
-cd rtg-<version>-<target>
-./install.sh          # устанавливает в /usr/local — на Linux может понадобиться sudo
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bercly0b/rtg/releases/latest/download/rtg-tui-installer.sh | sh
 ```
 
-Чтобы установить в другой каталог (например, `~/.local`):
+Установщик кладёт `rtg` в `~/.cargo/bin` и добавляет этот каталог в `PATH`.
+Чтобы установить в другое место, замените конец команды на
+`| RTG_TUI_INSTALL_DIR=~/.local sh`: тогда `rtg` окажется в `~/.local/bin`.
+Всё остальное — архивы для каждой платформы, контрольные суммы — в
+[последнем релизе](https://github.com/bercly0b/rtg/releases/latest).
+
+На Linux `rtg` нужна среда выполнения libc++: `sudo apt install libc++1 libc++abi1`.
+
+Если вы ставили одну из прошлых версий через её `install.sh`, удалите старую
+копию из `/usr/local`:
 
 ```bash
-INSTALL_PREFIX=~/.local ./install.sh
-```
-
-**Linux:** входящей в комплект TDLib нужна среда выполнения libc++:
-
-```bash
-sudo apt install libc++1 libc++abi1
+sudo rm -f /usr/local/bin/rtg /usr/local/lib/libtdjson.*
 ```
 
 ### Сборка из исходников
