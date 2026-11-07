@@ -13,17 +13,22 @@ A release is triggered by pushing a `v*` git tag (e.g. `v0.2.0`). The
    - `x86_64-apple-darwin` (macOS Intel, cross-compiled from the ARM runner)
    - `x86_64-unknown-linux-gnu` (Linux x86_64)
    - `aarch64-unknown-linux-gnu` (Linux ARM64 — Raspberry Pi, AWS Graviton, Apple Silicon Linux VMs)
-3. **Fixes the rpath** so the binary finds `libtdjson` next to itself
-   (`@executable_path/../lib` on macOS, `$ORIGIN/../lib` on Linux).
+   TDLib, OpenSSL and zlib are linked into the binary statically (the
+   `static` feature of `tdlib-rs`); only libc++ comes from the system.
+3. **Checks** that the binary does not load `libtdjson` at runtime and starts
+   (`tests/static_tdlib.rs`, then `rtg --version`).
 4. **Packages** each target into `rtg-<version>-<target>.tar.gz` containing:
    ```
    rtg-<version>-<target>/
    ├── bin/rtg
-   ├── lib/libtdjson.<version>.{dylib,so}
    └── install.sh
    ```
 5. **Publishes** a GitHub Release with all archives plus a `SHA256SUMS` file
    and auto-generated release notes from the commit log.
+
+Pull requests that change `Cargo.toml`, `Cargo.lock` or `release.yml` run
+steps 2–4 as well, so a broken release build shows up before the tag; the
+archives are attached to the run as artifacts and nothing is published.
 
 ## Cutting a release
 

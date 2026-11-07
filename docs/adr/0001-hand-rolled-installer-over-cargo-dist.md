@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0002
+---
+
 # Hand-rolled release installer instead of cargo-dist
 
 RTG ships through three install channels (release installer, Homebrew tap, crates.io) and needs an update check plus self-update for the release installer. cargo-dist offers all of this out of the box, but we write our own `install.sh` and `rtg update` on top of the existing `release.yml`, following cargo-dist's conventions: `RTG_INSTALL_DIR`, then `$XDG_BIN_HOME`, then `~/.local/bin`; an install receipt in `~/.config/rtg/`; self-update by re-running the new release's installer into the current binary's directory.
