@@ -57,13 +57,20 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bercly0b/rtg/releases/l
 Всё остальное — архивы для каждой платформы, контрольные суммы — в
 [последнем релизе](https://github.com/bercly0b/rtg/releases/latest).
 
+Или через [Homebrew](https://brew.sh):
+
+```bash
+brew install bercly0b/rtg/rtg
+```
+
 На Linux `rtg` нужны Ubuntu 24.04 или новее (glibc 2.39) и среда выполнения libc++:
 
 - Ubuntu 24.04: `sudo apt install libc++1 libc++abi1`
 - Ubuntu 26.04 и новее: `sudo apt install libc++1 libc++abi1 llvm-libunwind1`
 
-Чтобы обновить `rtg`, установленный этим способом, выполните `rtg update` или
-нажмите `U` в RTG. Когда выходит новый релиз, RTG показывает его в строке
+Чтобы обновить `rtg`, установленный установщиком, выполните `rtg update` или
+нажмите `U` в RTG; установленный через Homebrew обновляется командой
+`brew upgrade rtg`. Когда выходит новый релиз, RTG показывает его в строке
 состояния.
 
 Если вы ставили одну из прошлых версий через её `install.sh`, удалите старую

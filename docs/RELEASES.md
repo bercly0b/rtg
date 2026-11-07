@@ -25,11 +25,12 @@ then:
    `static` feature of `tdlib-rs`); only libc++ comes from the system. The
    build log prints the dynamic libraries each binary links against.
 3. **Packages** each target into `rtg-tui-<target>.tar.xz` with a `.sha256`
-   next to it, and builds the release installer `rtg-tui-installer.sh`, a
-   combined `sha256.sum` and a source tarball.
+   next to it, and builds the release installer `rtg-tui-installer.sh`, the
+   Homebrew formula `rtg.rb`, a combined `sha256.sum` and a source tarball.
 4. **Publishes** a GitHub Release with all of the above. dist writes the
    release body: the version's section of [`CHANGELOG.md`](../CHANGELOG.md),
    the install command and a table of downloads.
+5. **Publishes the formula** to the [Homebrew tap](#homebrew-tap).
 
 Every pull request runs steps 1–3 (`pr-run-mode = "upload"`), so a broken
 release build shows up before the tag; the artifacts are attached to the run
@@ -48,6 +49,27 @@ reads.
 The installer in `releases/latest/download/` installs the latest release; the
 installer of any other release (`releases/download/vX.Y.Z/rtg-tui-installer.sh`)
 installs that release.
+
+## Homebrew tap
+
+`brew install bercly0b/rtg/rtg` installs RTG from the tap
+[`bercly0b/homebrew-rtg`](https://github.com/bercly0b/homebrew-rtg). The
+`publish-homebrew-formula` job commits the release's `rtg.rb` to `Formula/` in
+the tap, so the formula always points at the release just published. A
+pre-release leaves the formula as it is.
+
+The formula is named after the binary (`formula = "rtg"`), not after the
+package `rtg-tui`. It downloads the same archives as the release installer, so
+on Linux it needs the same libc++ runtime.
+
+The job pushes to the tap with the `HOMEBREW_TAP_TOKEN` secret of this
+repository, a token with write access to the tap's contents. If the token has
+expired, the job fails after the GitHub Release is already out: renew the
+token, update the secret and re-run the failed job.
+
+An RTG installed with Homebrew does not update itself, as Homebrew requires:
+`rtg update` and the status bar point at `brew upgrade rtg`
+([install channel](features/update-check.md#install-channel)).
 
 ## Changing the release build
 
