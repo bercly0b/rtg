@@ -57,7 +57,10 @@ install elsewhere, end the command with `| RTG_TUI_INSTALL_DIR=~/.local sh`:
 platform, checksums — see the
 [latest release](https://github.com/bercly0b/rtg/releases/latest).
 
-On Linux, `rtg` needs the libc++ runtime: `sudo apt install libc++1 libc++abi1`.
+On Linux, `rtg` needs Ubuntu 24.04 or newer (glibc 2.39) and the libc++ runtime:
+
+- Ubuntu 24.04: `sudo apt install libc++1 libc++abi1`
+- Ubuntu 26.04 and newer: `sudo apt install libc++1 libc++abi1 llvm-libunwind1`
 
 To update an `rtg` installed this way, run `rtg update`. When a newer release
 is out, RTG shows it in the status bar.
