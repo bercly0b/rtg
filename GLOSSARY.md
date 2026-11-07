@@ -19,3 +19,17 @@ _Avoid_: auto-update, update notification
 **Self-update**:
 RTG replacing its own installed files with a newer release; only possible for the release installer channel.
 _Avoid_: auto-update, upgrade
+
+## Chat info
+
+**Chat info popup**:
+The overlay that shows what is known about a chat and about whoever stands behind it.
+_Avoid_: modal, profile, chat info modal
+
+**Info template**:
+The fixed set and order of rows the chat info popup uses for one kind of chat: User, Bot, Group or Channel.
+_Avoid_: layout, field set
+
+**Account info**:
+What Telegram reveals about a non-contact who wrote first: the country of their phone number, when they registered, and when they last changed their name or photo.
+_Avoid_: new-contact card, widget
