@@ -6,6 +6,12 @@ description = "A terminal-first Telegram client written in Rust."
 license = "MIT"
 repository = "https://github.com/bercly0b/rtg"
 homepage = "https://github.com/bercly0b/rtg"
+readme = "README.md"
+keywords = ["telegram", "tui", "terminal", "tdlib", "messenger"]
+categories = ["command-line-utilities"]
+# The README demo GIF alone would take the package close to the 10 MB limit of
+# crates.io.
+exclude = ["docs/assets/"]
 
 [[bin]]
 name = "rtg"

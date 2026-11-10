@@ -63,6 +63,15 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bercly0b/rtg/releases/l
 brew install bercly0b/rtg/rtg
 ```
 
+Или с [crates.io](https://crates.io/crates/rtg-tui): `rtg` собирается из
+исходников, нужен набор инструментов Rust:
+
+```bash
+cargo install --locked rtg-tui
+```
+
+На Linux для сборки нужен libc++: `sudo apt install libc++-dev libc++abi-dev`.
+
 На Linux `rtg` нужны Ubuntu 24.04 или новее (glibc 2.39) и среда выполнения libc++:
 
 - Ubuntu 24.04: `sudo apt install libc++1 libc++abi1`
@@ -70,7 +79,8 @@ brew install bercly0b/rtg/rtg
 
 Чтобы обновить `rtg`, установленный установщиком, выполните `rtg update` или
 нажмите `U` в RTG; установленный через Homebrew обновляется командой
-`brew upgrade rtg`. Когда выходит новый релиз, RTG показывает его в строке
+`brew upgrade rtg`, установленный с crates.io — командой
+`cargo install --locked rtg-tui`. Когда выходит новый релиз, RTG показывает его в строке
 состояния.
 
 Если вы ставили одну из прошлых версий через её `install.sh`, удалите старую

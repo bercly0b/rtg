@@ -63,14 +63,24 @@ Or with [Homebrew](https://brew.sh):
 brew install bercly0b/rtg/rtg
 ```
 
+Or from [crates.io](https://crates.io/crates/rtg-tui), building `rtg` from
+source with a Rust toolchain:
+
+```bash
+cargo install --locked rtg-tui
+```
+
+On Linux the build needs libc++: `sudo apt install libc++-dev libc++abi-dev`.
+
 On Linux, `rtg` needs Ubuntu 24.04 or newer (glibc 2.39) and the libc++ runtime:
 
 - Ubuntu 24.04: `sudo apt install libc++1 libc++abi1`
 - Ubuntu 26.04 and newer: `sudo apt install libc++1 libc++abi1 llvm-libunwind1`
 
 To update an `rtg` installed by the installer, run `rtg update` or press `U` in
-RTG; update a Homebrew install with `brew upgrade rtg`. When a newer release is
-out, RTG shows it in the status bar.
+RTG; update a Homebrew install with `brew upgrade rtg` and a crates.io install
+with `cargo install --locked rtg-tui`. When a newer release is out, RTG shows it
+in the status bar.
 
 If you installed an older release with its `install.sh`, remove that copy from
 `/usr/local`:

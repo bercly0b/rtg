@@ -31,6 +31,7 @@ then:
    release body: the version's section of [`CHANGELOG.md`](../CHANGELOG.md),
    the install command and a table of downloads.
 5. **Publishes the formula** to the [Homebrew tap](#homebrew-tap).
+6. **Publishes the package** to [crates.io](#cratesio).
 
 Every pull request runs steps 1–3 (`pr-run-mode = "upload"`), so a broken
 release build shows up before the tag; the artifacts are attached to the run
@@ -70,6 +71,23 @@ token, update the secret and re-run the failed job.
 An RTG installed with Homebrew does not update itself, as Homebrew requires:
 `rtg update` and the status bar point at `brew upgrade rtg`
 ([install channel](features/update-check.md#install-channel)).
+
+## crates.io
+
+`cargo install --locked rtg-tui` builds RTG from the package
+[`rtg-tui`](https://crates.io/crates/rtg-tui) on crates.io; the name `rtg` was
+taken there, and the binary is still `rtg`. The package is published by
+[`publish-crates.yml`](../.github/workflows/publish-crates.yml), a dist custom
+publish job (`"./publish-crates"` in `publish-jobs`) that runs `cargo publish`
+once the GitHub Release is out. A pre-release is not published.
+
+`exclude` in `Cargo.toml` keeps `docs/assets/` out of the package: crates.io
+rejects packages over 10 MB, and the README demo GIF takes most of that.
+
+The job publishes with the `CARGO_REGISTRY_TOKEN` secret of this repository, a
+crates.io token with the `publish-update` scope for `rtg-tui`. If the token has
+expired, the job fails after the GitHub Release is already out: renew the
+token, update the secret and re-run the failed job.
 
 ## Changing the release build
 
