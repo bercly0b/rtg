@@ -117,6 +117,16 @@ impl TdLibClient {
                             );
                         }
 
+                        Update::UnreadChatCount(u) => {
+                            forward_update(
+                                &update_tx,
+                                TdLibUpdate::UnreadChatCount {
+                                    chat_list: u.chat_list,
+                                    unread_count: u.unread_count,
+                                },
+                            );
+                        }
+
                         // TDLib option updates (e.g. "my_id" for current user)
                         Update::Option(u) => {
                             if u.name == "my_id" {

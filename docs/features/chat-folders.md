@@ -8,6 +8,12 @@ folders. `j`/`k` move the cursor, `Enter` switches the chat list to the selected
 list, and `q`, `Esc` or `f` close the picker. The chat list panel title shows
 the active folder's name ("Chats" for the main list).
 
+Every row with unread chats shows its unread chat count as a dimmed `[N]`,
+right-aligned in a column: the number of chats in that list with something
+unread, muted or not. A row with no unread chats, or whose count TDLib has not
+reported yet, shows no badge. The active list shows its count too, and an open
+picker follows count changes.
+
 ## TDLib integration
 
 - **Folder list**: TDLib has no method that lists folders. It pushes
@@ -16,6 +22,13 @@ the active folder's name ("Chats" for the main list).
   `ChatUpdate::ChatFoldersChanged`, and the orchestrator stores it in
   `ShellState`. That way the picker opens from memory, with no request.
   `main_chat_list_position` places "All chats" among the folders.
+- **Unread chat counts**: TDLib pushes `updateUnreadChatCount` for a chat list
+  at startup and whenever its counts change (only with
+  `use_message_database`, which rtg enables). The update loop forwards
+  `unread_count` as `TdLibUpdate::UnreadChatCount`, the chat updates monitor
+  maps it to `ChatUpdate::UnreadChatCountChanged`, and the orchestrator stores
+  it per chat list in `ShellState`. The picker reads the counts at render time,
+  so it needs no request and no rebuild.
 - **Folder chats**: the folder is a TDLib `chatListFolder`. The chat list fetch
   uses the same `loadChats` + `getChats` path as the main list, called with the
   active `ChatList` instead of `chatListMain`. Refreshes, pagination and

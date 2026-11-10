@@ -95,6 +95,13 @@ pub enum TdLibUpdate {
         chat_folders: Vec<tdlib_rs::types::ChatFolderInfo>,
         main_chat_list_position: i32,
     },
+
+    /// The number of unread chats in a chat list changed; also pushed at
+    /// startup.
+    UnreadChatCount {
+        chat_list: tdlib_rs::enums::ChatList,
+        unread_count: i32,
+    },
 }
 
 impl TdLibUpdate {
@@ -119,7 +126,8 @@ impl TdLibUpdate {
             | TdLibUpdate::SupergroupMetadataChanged { chat_id } => Some(*chat_id),
             TdLibUpdate::UserStatus { .. }
             | TdLibUpdate::FileUpdated { .. }
-            | TdLibUpdate::ChatFolders { .. } => None,
+            | TdLibUpdate::ChatFolders { .. }
+            | TdLibUpdate::UnreadChatCount { .. } => None,
         }
     }
 
@@ -144,6 +152,7 @@ impl TdLibUpdate {
             TdLibUpdate::ForumTopicChanged { .. } => "forum_topic",
             TdLibUpdate::SupergroupMetadataChanged { .. } => "supergroup_metadata",
             TdLibUpdate::ChatFolders { .. } => "chat_folders",
+            TdLibUpdate::UnreadChatCount { .. } => "unread_chat_count",
         }
     }
 }

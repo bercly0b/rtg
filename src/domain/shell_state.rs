@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use super::{
@@ -72,6 +73,7 @@ pub struct ShellState {
     reaction_picker: Option<ReactionPickerState>,
     chat_search: Option<ChatSearchState>,
     chat_folders: ChatFolders,
+    unread_chat_counts: HashMap<ChatListKind, u32>,
     chat_folder_picker: Option<ChatFolderPickerState>,
     download_speed: DownloadSpeedMeter,
     available_update: Option<AvailableUpdate>,
@@ -97,6 +99,7 @@ impl Default for ShellState {
             reaction_picker: None,
             chat_search: None,
             chat_folders: ChatFolders::default(),
+            unread_chat_counts: HashMap::new(),
             chat_folder_picker: None,
             download_speed: DownloadSpeedMeter::default(),
             available_update: None,
@@ -349,6 +352,15 @@ impl ShellState {
                 .unwrap_or(self.chat_list.kind());
             self.chat_folder_picker = Some(ChatFolderPickerState::new(&self.chat_folders, cursor));
         }
+    }
+
+    /// Unread chat count of every chat list TDLib has reported one for.
+    pub fn unread_chat_counts(&self) -> &HashMap<ChatListKind, u32> {
+        &self.unread_chat_counts
+    }
+
+    pub fn set_unread_chat_count(&mut self, list: ChatListKind, unread_count: u32) {
+        self.unread_chat_counts.insert(list, unread_count);
     }
 
     /// Title of the chat list the chat list panel shows; `None` for the main
@@ -902,6 +914,26 @@ mod tests {
             }],
             main_list_position: 0,
         }
+    }
+
+    #[test]
+    fn unread_chat_count_is_kept_per_chat_list() {
+        let mut state = ShellState::default();
+        assert!(state.unread_chat_counts().is_empty());
+
+        state.set_unread_chat_count(ChatListKind::Archive, 3);
+        state.set_unread_chat_count(ChatListKind::Folder(7), 1);
+        state.set_unread_chat_count(ChatListKind::Archive, 2);
+
+        assert_eq!(
+            state.unread_chat_counts().get(&ChatListKind::Archive),
+            Some(&2)
+        );
+        assert_eq!(
+            state.unread_chat_counts().get(&ChatListKind::Folder(7)),
+            Some(&1)
+        );
+        assert_eq!(state.unread_chat_counts().get(&ChatListKind::Main), None);
     }
 
     #[test]

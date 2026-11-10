@@ -415,3 +415,30 @@ fn folders_update_keeps_archive_without_reload() {
     assert_eq!(o.state().chat_list().chats().len(), 1);
     assert_eq!(o.dispatcher.chat_list_dispatch_count(), dispatches_before);
 }
+
+#[test]
+fn unread_chat_count_update_reaches_an_open_picker() {
+    let mut o = make_orchestrator();
+    push_folders(&mut o);
+    press(&mut o, "f");
+
+    o.handle_event(AppEvent::ChatUpdateReceived {
+        updates: vec![
+            ChatUpdate::UnreadChatCountChanged {
+                list: ChatListKind::Archive,
+                unread_count: 3,
+            },
+            ChatUpdate::UnreadChatCountChanged {
+                list: ChatListKind::Folder(7),
+                unread_count: 1,
+            },
+        ],
+    })
+    .unwrap();
+
+    assert!(o.state().chat_folder_picker().is_some());
+    let counts = o.state().unread_chat_counts();
+    assert_eq!(counts.get(&ChatListKind::Archive), Some(&3));
+    assert_eq!(counts.get(&ChatListKind::Folder(7)), Some(&1));
+    assert_eq!(counts.get(&ChatListKind::Main), None);
+}

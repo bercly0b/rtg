@@ -122,7 +122,12 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_entries: &[Hel
     }
 
     if let Some(picker_state) = state.chat_folder_picker() {
-        chat_folder_picker_popup::render_chat_folder_picker(frame, frame.area(), picker_state);
+        chat_folder_picker_popup::render_chat_folder_picker(
+            frame,
+            frame.area(),
+            picker_state,
+            state.unread_chat_counts(),
+        );
     }
 }
 
