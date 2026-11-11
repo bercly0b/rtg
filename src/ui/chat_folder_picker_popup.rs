@@ -34,22 +34,37 @@ pub fn render_chat_folder_picker(
     frame.render_widget(paragraph.block(block), popup_area);
 }
 
+const FOOTER: [&str; 2] = ["j/k navigate, Enter select", "Press q, Esc or f to close"];
+
 fn build_lines(
     state: &ChatFolderPickerState,
     unread_chat_counts: &HashMap<ChatListKind, u32>,
 ) -> Vec<Line<'static>> {
-    let title_width = state
+    let rows: Vec<(String, Option<String>)> = state
         .entries()
         .iter()
-        .map(|entry| entry.title.width())
+        .map(|entry| {
+            let badge = unread_chat_counts
+                .get(&entry.list)
+                .filter(|&&unread| unread > 0)
+                .map(|unread| format!("[{unread}]"));
+            (format!("  {}", entry.title), badge)
+        })
+        .collect();
+
+    // Badges end at the right edge of the popup content, which is as wide as
+    // its widest line: a footer line or a row with a one-space gap.
+    let content_width = rows
+        .iter()
+        .map(|(title, badge)| title.width() + badge.as_ref().map_or(0, |badge| 1 + badge.width()))
+        .chain(FOOTER.iter().map(|line| line.width()))
         .max()
         .unwrap_or(0);
 
-    let mut lines: Vec<Line<'static>> = state
-        .entries()
-        .iter()
+    let mut lines: Vec<Line<'static>> = rows
+        .into_iter()
         .enumerate()
-        .map(|(i, entry)| {
+        .map(|(i, (title, badge))| {
             let selected = Some(i) == state.selected_index();
             let style = if selected {
                 Style::default()
@@ -59,31 +74,29 @@ fn build_lines(
             } else {
                 styles::chat_info_popup_value_style()
             };
-            let mut spans = vec![Span::styled(format!("  {}", entry.title), style)];
+            let Some(badge) = badge else {
+                return Line::from(Span::styled(title, style));
+            };
 
-            let unread = unread_chat_counts.get(&entry.list).copied().unwrap_or(0);
-            if unread > 0 {
-                let padding = " ".repeat(title_width - entry.title.width());
-                let badge_style = if selected {
-                    style
-                } else {
-                    styles::unread_chat_count_style()
-                };
-                spans.push(Span::styled(format!("{padding} [{unread}]"), badge_style));
-            }
-            Line::from(spans)
+            let gap = content_width - title.width() - badge.width();
+            let badge_style = if selected {
+                style
+            } else {
+                styles::unread_chat_count_style()
+            };
+            Line::from(vec![
+                Span::styled(title, style),
+                Span::styled(format!("{}{badge}", " ".repeat(gap)), badge_style),
+            ])
         })
         .collect();
 
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "j/k navigate, Enter select",
-        styles::help_popup_footer_style(),
-    )));
-    lines.push(Line::from(Span::styled(
-        "Press q, Esc or f to close",
-        styles::help_popup_footer_style(),
-    )));
+    lines.extend(
+        FOOTER
+            .iter()
+            .map(|line| Line::from(Span::styled(*line, styles::help_popup_footer_style()))),
+    );
     lines
 }
 
@@ -160,10 +173,34 @@ mod tests {
 
         let lines = build_lines(&picker(ChatListKind::Folder(7)), &counts);
 
-        assert_eq!(line_text(&lines[0]), "  All chats [12]");
+        assert_eq!(line_text(&lines[0]), "  All chats           [12]");
         assert_eq!(line_text(&lines[1]), "  Work");
         assert_eq!(line_text(&lines[2]), "  Family");
-        assert_eq!(line_text(&lines[3]), "  Archive   [3]");
+        assert_eq!(line_text(&lines[3]), "  Archive              [3]");
+    }
+
+    #[test]
+    fn long_title_with_a_count_widens_the_rows_past_the_footer() {
+        let folders = ChatFolders {
+            folders: vec![ChatFolder {
+                id: 3,
+                title: "A folder with a very long title".to_owned(),
+            }],
+            main_list_position: 0,
+        };
+        let state = ChatFolderPickerState::new(&folders, ChatListKind::Main);
+        let counts = HashMap::from([(ChatListKind::Folder(3), 5), (ChatListKind::Archive, 43)]);
+
+        let lines = build_lines(&state, &counts);
+
+        assert_eq!(
+            line_text(&lines[1]),
+            "  A folder with a very long title [5]"
+        );
+        assert_eq!(
+            line_text(&lines[2]),
+            "  Archive                        [43]"
+        );
     }
 
     #[test]

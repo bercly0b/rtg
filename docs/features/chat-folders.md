@@ -9,7 +9,7 @@ list, and `q`, `Esc` or `f` close the picker. The chat list panel title shows
 the active folder's name ("Chats" for the main list).
 
 Every row with unread chats shows its unread chat count as a dimmed `[N]`,
-right-aligned in a column: the number of chats in that list with something
+right-aligned at the popup's right edge: the number of chats in that list with something
 unread, muted or not. A row with no unread chats, or whose count TDLib has not
 reported yet, shows no badge. The active list shows its count too, and an open
 picker follows count changes.
