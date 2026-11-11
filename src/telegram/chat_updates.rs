@@ -12,7 +12,9 @@ use std::time::Duration;
 use crate::domain::events::ChatUpdate;
 use crate::domain::message::Message;
 
-use super::tdlib_mappers::{effective_file_size, map_chat_folders, map_download_state};
+use super::tdlib_mappers::{
+    effective_file_size, map_chat_folders, map_download_state, map_td_chat_list,
+};
 use super::tdlib_updates::TdLibUpdate;
 
 const CHAT_UPDATES_MONITOR_STARTED: &str = "TELEGRAM_CHAT_UPDATES_MONITOR_STARTED";
@@ -195,6 +197,13 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
         } => Some(ChatUpdate::ChatFoldersChanged {
             folders: map_chat_folders(&chat_folders, main_chat_list_position),
         }),
+        TdLibUpdate::UnreadChatCount {
+            chat_list,
+            unread_count,
+        } => Some(ChatUpdate::UnreadChatCountChanged {
+            list: map_td_chat_list(&chat_list),
+            unread_count: u32::try_from(unread_count).unwrap_or(0),
+        }),
     }
 }
 
@@ -294,7 +303,7 @@ impl MessageMapper for StubMessageMapper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::chat_folder::{ChatFolder, ChatFolders};
+    use crate::domain::chat_folder::{ChatFolder, ChatFolders, ChatListKind};
     use crate::domain::message::{DownloadStatus, MessageMedia, MessageStatus};
     use std::sync::mpsc;
 
@@ -679,6 +688,45 @@ mod tests {
         assert!(
             matches!(result, Some(ChatUpdate::UserStatusChanged { user_id: 42 })),
             "expected UserStatusChanged, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn map_unread_chat_count_to_unread_chat_count_changed() {
+        let mapper = StubMessageMapper;
+        let update = |chat_list, unread_count| TdLibUpdate::UnreadChatCount {
+            chat_list,
+            unread_count,
+        };
+
+        assert_eq!(
+            map_update(update(tdlib_rs::enums::ChatList::Archive, 4), &mapper),
+            Some(ChatUpdate::UnreadChatCountChanged {
+                list: ChatListKind::Archive,
+                unread_count: 4,
+            })
+        );
+        assert_eq!(
+            map_update(
+                update(
+                    tdlib_rs::enums::ChatList::Folder(tdlib_rs::types::ChatListFolder {
+                        chat_folder_id: 7,
+                    }),
+                    1,
+                ),
+                &mapper
+            ),
+            Some(ChatUpdate::UnreadChatCountChanged {
+                list: ChatListKind::Folder(7),
+                unread_count: 1,
+            })
+        );
+        assert_eq!(
+            map_update(update(tdlib_rs::enums::ChatList::Main, 0), &mapper),
+            Some(ChatUpdate::UnreadChatCountChanged {
+                list: ChatListKind::Main,
+                unread_count: 0,
+            })
         );
     }
 

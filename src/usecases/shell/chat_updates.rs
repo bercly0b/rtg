@@ -164,6 +164,9 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                     should_refresh_chat_list = true;
                 }
             }
+            ChatUpdate::UnreadChatCountChanged { list, unread_count } => {
+                ctx.shell.state.set_unread_chat_count(list, unread_count);
+            }
         }
     }
 

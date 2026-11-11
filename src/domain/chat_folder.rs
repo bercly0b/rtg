@@ -9,7 +9,7 @@ pub const MAIN_CHAT_LIST_TITLE: &str = "All chats";
 pub const ARCHIVE_CHAT_LIST_TITLE: &str = "Archive";
 
 /// Which TDLib chat list the chat list panel shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ChatListKind {
     #[default]
     Main,

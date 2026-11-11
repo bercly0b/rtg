@@ -86,6 +86,12 @@ pub enum ChatUpdate {
     ChatFoldersChanged {
         folders: super::chat_folder::ChatFolders,
     },
+    /// The number of chats with unread messages in a chat list changed (TDLib
+    /// also pushes it at startup).
+    UnreadChatCountChanged {
+        list: super::chat_folder::ChatListKind,
+        unread_count: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

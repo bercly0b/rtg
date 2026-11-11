@@ -19,6 +19,11 @@ pub fn unread_count_style() -> Style {
     Style::default().fg(Color::Green)
 }
 
+/// Style for the unread chat count of a chat list in the folder picker (dimmed).
+pub fn unread_chat_count_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
 /// Style for unread reaction badge in the chat list (pink heart icon).
 pub fn reaction_badge_style() -> Style {
     Style::default().fg(Color::LightRed)

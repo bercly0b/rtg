@@ -59,3 +59,7 @@ _Avoid_: hiding
 **Folder picker**:
 The popup that switches the left panel between the main list, the folders and the archive.
 _Avoid_: folder selector, directory selector
+
+**Unread chat count**:
+The number of chats in a chat list that have something unread; it counts chats, not messages.
+_Avoid_: unread counter, unread badge, unread messages
