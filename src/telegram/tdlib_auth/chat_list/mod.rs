@@ -6,8 +6,9 @@ use crate::domain::chat_folder::ChatListKind;
 use crate::telegram::tdlib_cache::TdLibCache;
 use crate::telegram::tdlib_client::TdLibError;
 use crate::usecases::list_chats::ListChatsSourceError;
+use crate::usecases::resolve_mention::MentionSourceError;
 
-use super::error_mapping::map_list_chats_error;
+use super::error_mapping::{is_unknown_username, map_list_chats_error};
 use super::TdLibAuthBackend;
 
 /// Abstraction over TDLib data access for chat list resolution.
@@ -93,6 +94,15 @@ impl TdLibAuthBackend {
         )
     }
 
+    /// Finds the chat behind a mention via `searchPublicChat`; `Ok(None)` when
+    /// nobody holds `username`.
+    pub fn resolve_mention(
+        &self,
+        username: &str,
+    ) -> Result<Option<ChatSummary>, MentionSourceError> {
+        summarize_public_chat(&self.client, self.client.search_public_chat(username))
+    }
+
     /// Moves a chat into `list` via `addChatToList`.
     pub fn add_chat_to_list(&self, chat_id: i64, list: ChatListKind) -> Result<(), TdLibError> {
         self.client.add_chat_to_list(
@@ -100,6 +110,30 @@ impl TdLibAuthBackend {
             crate::telegram::tdlib_mappers::map_chat_list_kind(list),
         )
     }
+}
+
+/// Turns the outcome of `searchPublicChat` into the summary of the found chat.
+///
+/// The summary is built as for the main list: the found chat may be in no
+/// chat list at all, and the caller only opens it.
+pub(super) fn summarize_public_chat(
+    resolver: &dyn ChatDataResolver,
+    found: Result<Chat, TdLibError>,
+) -> Result<Option<ChatSummary>, MentionSourceError> {
+    let chat = match found {
+        Ok(chat) => chat,
+        Err(error) if is_unknown_username(&error) => return Ok(None),
+        Err(error) => {
+            tracing::warn!(error = %error, "searchPublicChat failed");
+            return Err(MentionSourceError::Unavailable);
+        }
+    };
+    let chat_id = chat.id;
+    resolver.cache().upsert_chat(chat);
+    build_summaries_from_ids(resolver, &TdChatList::Main, vec![chat_id], false)
+        .pop()
+        .map(Some)
+        .ok_or(MentionSourceError::Unavailable)
 }
 
 /// Resolves the chat IDs returned by `getChats` for `list` into summaries.

@@ -13,6 +13,7 @@ pub mod events;
 pub mod forum_topic;
 pub mod forum_topic_list_state;
 pub mod keymap;
+pub mod link_picker_state;
 pub mod message;
 pub mod message_cache;
 pub mod message_info_state;

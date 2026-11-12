@@ -20,6 +20,7 @@ use super::chat_info_popup;
 use super::chat_search_popup;
 use super::command_popup;
 use super::help_popup;
+use super::link_picker_popup;
 use super::message_info_popup;
 use super::message_input::{
     render_message_input, reply_preview_height, CHANNEL_READONLY_PLACEHOLDER, PLACEHOLDER_TEXT,
@@ -128,6 +129,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_entries: &[Hel
             picker_state,
             state.unread_chat_counts(),
         );
+    }
+
+    if let Some(picker_state) = state.link_picker() {
+        link_picker_popup::render_link_picker(frame, frame.area(), picker_state);
     }
 }
 

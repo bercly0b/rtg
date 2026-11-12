@@ -93,7 +93,61 @@ impl TaskDispatcher for StubTaskDispatcher {
 
     fn dispatch_remove_reaction(&self, _chat_id: i64, _message_id: i64, _emoji: String) {}
 
+    fn dispatch_resolve_mention(&self, _username: String) {}
+
     fn dispatch_self_update(&self) {}
+}
+
+// ── dispatch_resolve_mention ──
+
+mod resolve_mention {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use crate::domain::chat::ChatSummary;
+    use crate::usecases::background::lifecycle::dispatch_resolve_mention;
+    use crate::usecases::background::{BackgroundError, BackgroundTaskResult};
+    use crate::usecases::resolve_mention::{MentionSource, MentionSourceError};
+
+    struct StubMentionSource(Result<Option<ChatSummary>, MentionSourceError>);
+
+    impl MentionSource for StubMentionSource {
+        fn resolve_mention(
+            &self,
+            _username: &str,
+        ) -> Result<Option<ChatSummary>, MentionSourceError> {
+            self.0.clone()
+        }
+    }
+
+    fn resolve(source: StubMentionSource) -> BackgroundTaskResult {
+        let (tx, rx) = std::sync::mpsc::channel();
+        dispatch_resolve_mention(&Arc::new(source), &tx, "alice".to_owned());
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("mention result should arrive")
+    }
+
+    #[test]
+    fn unknown_username_is_reported_as_no_chat() {
+        assert_eq!(
+            resolve(StubMentionSource(Ok(None))),
+            BackgroundTaskResult::MentionResolved {
+                username: "alice".to_owned(),
+                result: Ok(None),
+            }
+        );
+    }
+
+    #[test]
+    fn source_failure_is_reported_with_the_username() {
+        assert_eq!(
+            resolve(StubMentionSource(Err(MentionSourceError::Unavailable))),
+            BackgroundTaskResult::MentionResolved {
+                username: "alice".to_owned(),
+                result: Err(BackgroundError::new("MENTION_UNAVAILABLE")),
+            }
+        );
+    }
 }
 
 // ── dispatch_forum_unread_counts: the badge warm-up sweep ──

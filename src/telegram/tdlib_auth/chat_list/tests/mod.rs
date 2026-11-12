@@ -1,5 +1,6 @@
 mod cache_lookup;
 mod failures;
+mod mention;
 mod metadata;
 mod pinned;
 
@@ -15,7 +16,7 @@ use crate::telegram::tdlib_cache::TdLibCache;
 use crate::telegram::tdlib_client::TdLibError;
 use crate::usecases::list_chats::ListChatsSourceError;
 
-use super::{build_summaries_from_ids, resolve_chat_list, ChatDataResolver};
+use super::{build_summaries_from_ids, resolve_chat_list, summarize_public_chat, ChatDataResolver};
 
 const NO_FORCE: bool = false;
 const MAIN_LIST: ChatList = ChatList::Main;

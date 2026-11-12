@@ -196,6 +196,13 @@ pub(super) fn map_forum_topics_error(error: TdLibError) -> ListForumTopicsSource
     ListForumTopicsSourceError::Unavailable
 }
 
+/// Whether `searchPublicChat` failed because nobody holds the username:
+/// Telegram answers `USERNAME_NOT_OCCUPIED` or `USERNAME_INVALID`, and TDLib
+/// itself rejects a malformed one with "Username is invalid".
+pub(super) fn is_unknown_username(error: &TdLibError) -> bool {
+    matches!(error, TdLibError::Request { message, .. } if message.to_ascii_lowercase().contains("username"))
+}
+
 /// Maps TDLib error to SendMessageSourceError.
 pub(super) fn map_send_message_error(error: TdLibError) -> SendMessageSourceError {
     let TdLibError::Request { code, message } = &error else {
@@ -253,6 +260,20 @@ mod tests {
                 "code {code}, message {message:?}"
             );
         }
+    }
+
+    #[test]
+    fn unknown_username_is_recognised_by_message() {
+        assert!(is_unknown_username(&request(400, "USERNAME_NOT_OCCUPIED")));
+        assert!(is_unknown_username(&request(400, "USERNAME_INVALID")));
+        assert!(is_unknown_username(&request(400, "Username is invalid")));
+        assert!(!is_unknown_username(&request(
+            429,
+            "Too Many Requests: retry after 5"
+        )));
+        assert!(!is_unknown_username(&TdLibError::Timeout {
+            message: "searchPublicChat".to_owned(),
+        }));
     }
 
     #[test]
