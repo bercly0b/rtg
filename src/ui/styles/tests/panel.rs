@@ -30,64 +30,66 @@ fn panel_separator_style_is_dark_gray() {
 }
 
 #[test]
-fn status_bar_style_uses_ansi_black_bg() {
-    let style = status_bar_style();
-    assert_eq!(style.bg, Some(Color::Black));
+fn status_bar_styles_keep_the_terminal_background() {
+    for style in [
+        connectivity_dot_connected(),
+        connectivity_dot_connecting(),
+        connectivity_dot_updating(),
+        connectivity_dot_disconnected(),
+        connectivity_label_style(),
+        notification_style(),
+        update_notice_style(),
+        help_hint_style(),
+    ] {
+        assert_eq!(style.bg, None);
+    }
 }
 
 #[test]
-fn connectivity_dot_connected_is_green_on_black() {
+fn connectivity_dot_connected_is_green() {
     let style = connectivity_dot_connected();
     assert_eq!(style.fg, Some(Color::Green));
-    assert_eq!(style.bg, Some(Color::Black));
 }
 
 #[test]
-fn connectivity_dot_connecting_is_yellow_on_black() {
+fn connectivity_dot_connecting_is_yellow() {
     let style = connectivity_dot_connecting();
     assert_eq!(style.fg, Some(Color::Yellow));
-    assert_eq!(style.bg, Some(Color::Black));
 }
 
 #[test]
-fn connectivity_dot_updating_is_cyan_on_black() {
+fn connectivity_dot_updating_is_cyan() {
     let style = connectivity_dot_updating();
     assert_eq!(style.fg, Some(Color::Cyan));
-    assert_eq!(style.bg, Some(Color::Black));
 }
 
 #[test]
-fn connectivity_dot_disconnected_is_red_on_black() {
+fn connectivity_dot_disconnected_is_red() {
     let style = connectivity_dot_disconnected();
     assert_eq!(style.fg, Some(Color::Red));
-    assert_eq!(style.bg, Some(Color::Black));
 }
 
 #[test]
-fn connectivity_label_style_is_white_on_black() {
+fn connectivity_label_style_uses_the_terminal_foreground() {
     let style = connectivity_label_style();
-    assert_eq!(style.fg, Some(Color::White));
-    assert_eq!(style.bg, Some(Color::Black));
+    assert_eq!(style.fg, None);
 }
 
 #[test]
-fn notification_style_is_yellow_italic_on_black() {
+fn notification_style_is_yellow_italic() {
     let style = notification_style();
     assert_eq!(style.fg, Some(Color::Yellow));
-    assert_eq!(style.bg, Some(Color::Black));
     assert!(style.add_modifier.contains(Modifier::ITALIC));
 }
 
 #[test]
-fn update_notice_style_is_cyan_on_black() {
+fn update_notice_style_is_cyan() {
     let style = update_notice_style();
     assert_eq!(style.fg, Some(Color::Cyan));
-    assert_eq!(style.bg, Some(Color::Black));
 }
 
 #[test]
-fn help_hint_style_is_dark_gray_on_black() {
+fn help_hint_style_is_dark_gray() {
     let style = help_hint_style();
     assert_eq!(style.fg, Some(Color::DarkGray));
-    assert_eq!(style.bg, Some(Color::Black));
 }

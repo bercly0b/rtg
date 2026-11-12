@@ -93,8 +93,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_entries: &[Hel
     }
 
     render_horizontal_separator(frame, status_separator_area);
-    let status = Paragraph::new(status_line::status_line(state, status_area.width as usize))
-        .style(styles::status_bar_style());
+    let status = Paragraph::new(status_line::status_line(state, status_area.width as usize));
     frame.render_widget(status, status_area);
 
     if let Some(popup_state) = state.command_popup() {
