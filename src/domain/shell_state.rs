@@ -11,6 +11,8 @@ use super::{
     download_speed::DownloadSpeedMeter,
     events::ConnectivityStatus,
     forum_topic_list_state::ForumTopicListState,
+    link_picker_state::LinkPickerState,
+    message::LinkTarget,
     message_cache::MessageCache,
     message_info_state::MessageInfoPopupState,
     message_input_state::MessageInputState,
@@ -75,6 +77,7 @@ pub struct ShellState {
     chat_folders: ChatFolders,
     unread_chat_counts: HashMap<ChatListKind, u32>,
     chat_folder_picker: Option<ChatFolderPickerState>,
+    link_picker: Option<LinkPickerState>,
     download_speed: DownloadSpeedMeter,
     available_update: Option<AvailableUpdate>,
     self_update: Option<SelfUpdateProgress>,
@@ -101,6 +104,7 @@ impl Default for ShellState {
             chat_folders: ChatFolders::default(),
             unread_chat_counts: HashMap::new(),
             chat_folder_picker: None,
+            link_picker: None,
             download_speed: DownloadSpeedMeter::default(),
             available_update: None,
             self_update: None,
@@ -391,6 +395,22 @@ impl ShellState {
 
     pub fn close_chat_folder_picker(&mut self) {
         self.chat_folder_picker = None;
+    }
+
+    pub fn link_picker(&self) -> Option<&LinkPickerState> {
+        self.link_picker.as_ref()
+    }
+
+    pub fn link_picker_mut(&mut self) -> Option<&mut LinkPickerState> {
+        self.link_picker.as_mut()
+    }
+
+    pub fn open_link_picker(&mut self, targets: Vec<LinkTarget>) {
+        self.link_picker = Some(LinkPickerState::new(targets));
+    }
+
+    pub fn close_link_picker(&mut self) {
+        self.link_picker = None;
     }
 
     pub fn message_input(&self) -> &MessageInputState {

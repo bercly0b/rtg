@@ -10,6 +10,7 @@ use crate::usecases::{
     list_forum_topics::{list_forum_topics, ForumTopicsSource, ListForumTopicsQuery},
     message_info::{MessageInfoQuery, MessageInfoSource},
     message_reactions::{AddReactionQuery, AvailableReactionsQuery, ReactionSource},
+    resolve_mention::MentionSource,
 };
 
 use super::{
@@ -347,6 +348,36 @@ pub(super) fn dispatch_chat_info<S: ChatSubtitleSource + Send + Sync + 'static>(
         tracing::error!(error = %error, "failed to spawn chat info background thread");
         let _ = tx_fallback.send(BackgroundTaskResult::ChatInfoLoaded {
             chat_id,
+            result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
+        });
+    }
+}
+
+pub(super) fn dispatch_resolve_mention<C: MentionSource + Send + Sync + 'static>(
+    source: &Arc<C>,
+    tx: &Sender<BackgroundTaskResult>,
+    username: String,
+) {
+    let source = Arc::clone(source);
+    let tx = tx.clone();
+    let tx_fallback = tx.clone();
+    let username_fallback = username.clone();
+
+    let spawn_result = std::thread::Builder::new()
+        .name("rtg-bg-mention".into())
+        .spawn(move || {
+            tracing::debug!("background: resolving mention");
+            let result = source
+                .resolve_mention(&username)
+                .map_err(|_| BackgroundError::new("MENTION_UNAVAILABLE"));
+
+            let _ = tx.send(BackgroundTaskResult::MentionResolved { username, result });
+        });
+
+    if let Err(error) = spawn_result {
+        tracing::error!(error = %error, "failed to spawn mention background thread");
+        let _ = tx_fallback.send(BackgroundTaskResult::MentionResolved {
+            username: username_fallback,
             result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
         });
     }

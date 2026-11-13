@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use crate::{
     domain::{
-        chat::ChatType,
+        chat::{ChatSummary, ChatType},
         open_chat_state::{MessageSource, OpenChatUiState},
         shell_state::ActivePane,
     },
     usecases::{
-        background::TaskDispatcher, chat_subtitle::ChatSubtitleQuery,
+        background::{BackgroundError, TaskDispatcher},
+        chat_subtitle::ChatSubtitleQuery,
         load_messages::CachedMessagesSource,
     },
 };
@@ -33,6 +34,16 @@ pub(super) struct OpenChatSync {
     pub min_display_messages: usize,
     /// Synchronous cache source for instant message display.
     pub cache_source: Option<Arc<dyn CachedMessagesSource>>,
+    /// The mention whose chat is being looked up.
+    pub pending_mention: Option<PendingMention>,
+}
+
+/// A mention lookup in flight and the place the user started it from: the
+/// found chat opens only if they are still there.
+pub(super) struct PendingMention {
+    username: String,
+    from_chat_id: Option<i64>,
+    from_topic_id: Option<i32>,
 }
 
 impl OpenChatSync {
@@ -47,6 +58,7 @@ impl OpenChatSync {
             older_messages_in_flight: false,
             min_display_messages: min_display_messages.max(1),
             cache_source,
+            pending_mention: None,
         }
     }
 }
@@ -64,6 +76,18 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(
     let chat_type = selected.chat_type;
     let is_forum = selected.is_forum;
 
+    open_chat(ctx, sync, chat_id, chat_title, chat_type, is_forum);
+}
+
+/// Opens a chat by its identity, whether or not the chat list holds it.
+fn open_chat<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &mut OpenChatSync,
+    chat_id: i64,
+    chat_title: String,
+    chat_type: ChatType,
+    is_forum: bool,
+) {
     // Forum chats route into the topic-list panel rather than directly into
     // the messages view. The active pane stays ChatList (left panel just
     // renders topics instead of chats) — see ui/view/chat_list.rs.
@@ -152,6 +176,83 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(
     // Dispatch subtitle resolution (user status / member count).
     ctx.dispatcher
         .dispatch_chat_subtitle(ChatSubtitleQuery { chat_id, chat_type });
+}
+
+/// Starts opening the chat behind the mention of `username`: the lookup may
+/// need the server, so it runs in the background and
+/// [`handle_mention_resolved`] opens the chat.
+pub(super) fn open_mention<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &mut OpenChatSync,
+    username: String,
+) {
+    ctx.state
+        .set_notification(format!("Opening @{username}..."));
+    sync.pending_mention = Some(PendingMention {
+        username: username.clone(),
+        from_chat_id: ctx.state.open_chat().chat_id(),
+        from_topic_id: ctx.state.open_chat().topic_id(),
+    });
+    ctx.dispatcher.dispatch_resolve_mention(username);
+}
+
+/// Opens the chat found for a mention, unless the user has moved on since
+/// asking: a late answer must not override what they did meanwhile.
+pub(super) fn handle_mention_resolved<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &mut OpenChatSync,
+    username: &str,
+    result: Result<Option<ChatSummary>, BackgroundError>,
+) {
+    let Some(pending) = sync
+        .pending_mention
+        .take_if(|pending| pending.username == username)
+    else {
+        tracing::debug!("background: discarding superseded mention result");
+        return;
+    };
+
+    let current = ctx.state.open_chat();
+    if ctx.state.active_pane() != ActivePane::Messages
+        || current.chat_id() != pending.from_chat_id
+        || current.topic_id() != pending.from_topic_id
+    {
+        tracing::debug!("background: discarding stale mention result (user navigated away)");
+        return;
+    }
+
+    let chat = match result {
+        Ok(Some(chat)) => chat,
+        Ok(None) => {
+            ctx.state.set_notification(format!("@{username} not found"));
+            return;
+        }
+        Err(error) => {
+            tracing::warn!(code = error.code, "background: mention lookup failed");
+            ctx.state
+                .set_notification(format!("Could not open @{username}"));
+            return;
+        }
+    };
+
+    if Some(chat.chat_id) == pending.from_chat_id {
+        return;
+    }
+
+    // The topic list of the forum the user is leaving would otherwise keep
+    // covering the chat list.
+    if ctx.state.forum_topic_list().is_some() {
+        super::forum::leave_forum(ctx, sync);
+    }
+    ctx.state.chat_list_mut().select_chat(chat.chat_id);
+    open_chat(
+        ctx,
+        sync,
+        chat.chat_id,
+        chat.title,
+        chat.chat_type,
+        chat.is_forum,
+    );
 }
 
 /// Prefetches messages for the currently highlighted chat in the chat list.

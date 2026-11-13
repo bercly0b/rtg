@@ -7,6 +7,7 @@ mod command_popup;
 mod file_updates;
 mod forum;
 mod key_dispatch;
+mod links;
 mod message_actions;
 mod message_input;
 mod popups;
@@ -279,7 +280,7 @@ where
                 command_popup::handle_command_exited(&mut ctx.shell, ctx.media, success);
             }
             AppEvent::InputKey(key) => {
-                if key_dispatch::dispatch_modal_key(&mut self.as_ctx(), &key.key) {
+                if key_dispatch::dispatch_modal_key(&mut self.as_ctx(), &key.key)? {
                     return Ok(());
                 }
 

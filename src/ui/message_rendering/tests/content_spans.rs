@@ -82,7 +82,7 @@ fn spans_linked_multiple_links() {
 
 #[test]
 fn message_with_text_url_entity_renders_underlined() {
-    use crate::domain::message::TextLink;
+    use crate::domain::message::{LinkTarget, TextLink};
     use crate::ui::message_rendering::{build_message_list_elements, element_to_text};
 
     let messages = vec![Message {
@@ -101,7 +101,7 @@ fn message_with_text_url_entity_renders_underlined() {
         links: vec![TextLink {
             offset: 0,
             length: 10,
-            url: "https://example.com".to_owned(),
+            target: LinkTarget::Url("https://example.com".to_owned()),
         }],
         is_edited: false,
         is_service: false,
@@ -122,6 +122,47 @@ fn message_with_text_url_entity_renders_underlined() {
         "Message with TextLink should have underlined spans"
     );
     assert_eq!(underlined_spans[0].content.as_ref(), "Click here");
+}
+
+#[test]
+fn mention_renders_underlined_like_a_link() {
+    use crate::domain::message::{LinkTarget, TextLink};
+    use crate::ui::message_rendering::{build_message_list_elements, element_to_text};
+
+    let messages = vec![Message {
+        id: 1,
+        sender_name: "Alice".to_owned(),
+        text: "ask @bob about it".to_owned(),
+        timestamp_ms: FEB_14_2026_10AM,
+        is_outgoing: false,
+        media: MessageMedia::None,
+        status: MessageStatus::Delivered,
+        file_info: None,
+        call_info: None,
+        reply_to: None,
+        forward_info: None,
+        reaction_count: 0,
+        links: vec![TextLink {
+            offset: 4,
+            length: 4,
+            target: LinkTarget::Mention("bob".to_owned()),
+        }],
+        is_edited: false,
+        is_service: false,
+    }];
+
+    let elements = build_message_list_elements(&messages);
+    let text = element_to_text(&elements[1], 80);
+
+    let underlined: Vec<&str> = text
+        .lines
+        .iter()
+        .flat_map(|l| l.spans.iter())
+        .filter(|s| s.style.add_modifier.contains(Modifier::UNDERLINED))
+        .map(|s| s.content.as_ref())
+        .collect();
+
+    assert_eq!(underlined, ["@bob"]);
 }
 
 #[test]

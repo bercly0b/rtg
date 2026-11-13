@@ -26,6 +26,7 @@ use super::{
     load_messages::MessagesSource,
     message_info::{MessageInfoQuery, MessageInfoSource},
     message_reactions::{AvailableReactionsQuery, ReactionSource},
+    resolve_mention::MentionSource,
     self_update::{self, UpdateRtg},
     send_message::MessageSender,
     send_voice::VoiceNoteSender,
@@ -144,6 +145,10 @@ pub trait TaskDispatcher {
     /// Removes a reaction from a message (fire-and-forget).
     fn dispatch_remove_reaction(&self, chat_id: i64, message_id: i64, emoji: String);
 
+    /// Looks up the chat behind the mention of `username` (no leading `@`);
+    /// the outcome arrives as `MentionResolved`.
+    fn dispatch_resolve_mention(&self, username: String);
+
     /// Runs `rtg update` in the background; how it ended arrives as
     /// `SelfUpdateFinished`.
     fn dispatch_self_update(&self);
@@ -156,7 +161,7 @@ pub trait TaskDispatcher {
 /// then sends the result through the shared channel.
 pub struct ThreadTaskDispatcher<C, M, MS, L, S>
 where
-    C: ListChatsSource + ForumTopicsSource + Send + Sync + 'static,
+    C: ListChatsSource + ForumTopicsSource + MentionSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle
@@ -180,7 +185,7 @@ where
 
 impl<C, M, MS, L, S> ThreadTaskDispatcher<C, M, MS, L, S>
 where
-    C: ListChatsSource + ForumTopicsSource + Send + Sync + 'static,
+    C: ListChatsSource + ForumTopicsSource + MentionSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle
@@ -216,7 +221,7 @@ where
 
 impl<C, M, MS, L, S> TaskDispatcher for ThreadTaskDispatcher<C, M, MS, L, S>
 where
-    C: ListChatsSource + ForumTopicsSource + Send + Sync + 'static,
+    C: ListChatsSource + ForumTopicsSource + MentionSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
     L: ChatLifecycle
@@ -371,6 +376,10 @@ where
 
     fn dispatch_remove_reaction(&self, chat_id: i64, message_id: i64, emoji: String) {
         lifecycle::dispatch_remove_reaction(&self.subtitle_source, chat_id, message_id, emoji);
+    }
+
+    fn dispatch_resolve_mention(&self, username: String) {
+        lifecycle::dispatch_resolve_mention(&self.chats_source, &self.result_tx, username);
     }
 
     fn dispatch_self_update(&self) {

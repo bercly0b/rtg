@@ -7,6 +7,7 @@ mod chat_search_popup;
 mod command_popup;
 mod event_source;
 mod help_popup;
+mod link_picker_popup;
 mod message_info_popup;
 mod message_input;
 mod message_rendering;

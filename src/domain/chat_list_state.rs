@@ -188,6 +188,19 @@ impl ChatListState {
         false
     }
 
+    /// Moves the selection to `chat_id`; a chat that is not in the list
+    /// leaves the selection where it was.
+    pub fn select_chat(&mut self, chat_id: i64) {
+        if let Some(index) = self
+            .list
+            .items()
+            .iter()
+            .position(|chat| chat.chat_id == chat_id)
+        {
+            self.list.set_selected_index(Some(index));
+        }
+    }
+
     pub fn clear_selected_chat_unread(&mut self) {
         if let Some(chat) = self.list.selected_mut() {
             chat.unread_count = 0;
@@ -506,6 +519,24 @@ mod tests {
         state.set_ready(vec![forum_chat_with_topics(1, "Forum", 4)]);
         state.clear_selected_chat_unread();
         assert_eq!(state.chats()[0].unread_topic_count, Some(0));
+    }
+
+    #[test]
+    fn select_chat_moves_selection_to_a_listed_chat() {
+        let mut state = ChatListState::with_initial_chats(vec![chat(1, "Alice"), chat(2, "Bob")]);
+
+        state.select_chat(2);
+
+        assert_eq!(state.selected_chat().map(|c| c.chat_id), Some(2));
+    }
+
+    #[test]
+    fn select_chat_keeps_selection_for_an_unlisted_chat() {
+        let mut state = ChatListState::with_initial_chats(vec![chat(1, "Alice"), chat(2, "Bob")]);
+
+        state.select_chat(99);
+
+        assert_eq!(state.selected_chat().map(|c| c.chat_id), Some(1));
     }
 
     #[test]

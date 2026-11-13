@@ -36,6 +36,14 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 list,
             )
         }
+        BackgroundTaskResult::MentionResolved { username, result } => {
+            chat_open::handle_mention_resolved(
+                &mut ctx.shell,
+                ctx.open_chat_sync,
+                &username,
+                result,
+            )
+        }
         BackgroundTaskResult::ForumTopicsLoaded { chat_id, result } => {
             let Some(forum_list) = ctx.shell.state.forum_topic_list_mut() else {
                 tracing::debug!(

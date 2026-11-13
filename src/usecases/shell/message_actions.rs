@@ -1,9 +1,4 @@
-use anyhow::Result;
-
-use crate::{
-    infra::contracts::ExternalOpener,
-    usecases::{background::TaskDispatcher, contracts::ShellEffect},
-};
+use crate::usecases::{background::TaskDispatcher, contracts::ShellEffect};
 
 use super::{command_popup::MediaCommands, file_updates::Downloads, ShellCtx};
 
@@ -231,20 +226,4 @@ pub(super) fn save_selected_message_file<D: TaskDispatcher>(
             ctx.state.set_notification("Will save after download...");
         }
     }
-}
-
-pub(super) fn open_message_url<D: TaskDispatcher>(
-    ctx: &ShellCtx<'_, D>,
-    opener: &dyn ExternalOpener,
-) -> Result<()> {
-    use crate::domain::message::extract_first_url;
-
-    let Some(msg) = ctx.state.open_chat().selected_message() else {
-        return Ok(());
-    };
-    let text = msg.display_content();
-    if let Some(url) = extract_first_url(&text, &msg.links) {
-        opener.open(&url)?;
-    }
-    Ok(())
 }

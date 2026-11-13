@@ -11,7 +11,7 @@ pub use file_info::{
     build_file_metadata_display, file_extension, format_duration, format_file_size, DownloadStatus,
     FileInfo,
 };
-pub use url::{extract_first_url, TextLink};
+pub use url::{open_targets, LinkTarget, TextLink};
 
 /// Type of media attached to a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -103,7 +103,7 @@ pub struct Message {
     pub forward_info: Option<ForwardInfo>,
     /// Total number of reactions on this message (summed across all reaction types).
     pub reaction_count: u32,
-    /// Hyperlinks embedded in the message text via text entities.
+    /// Links and mentions embedded in the message text via text entities.
     pub links: Vec<TextLink>,
     /// Whether the message has been edited after sending.
     pub is_edited: bool,

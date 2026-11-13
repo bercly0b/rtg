@@ -47,7 +47,7 @@ pub(super) fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
     ];
 
     if let Some(speed) = download_speed {
-        spans.push(Span::styled(separator, styles::status_bar_style()));
+        spans.push(Span::raw(separator));
         spans.push(Span::styled(speed, styles::connectivity_label_style()));
     }
 
@@ -55,7 +55,7 @@ pub(super) fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
         let budget = width.saturating_sub(fixed_width + separator.width());
         if budget > 0 {
             let (truncated, _) = truncate_to_display_width(notification, budget);
-            spans.push(Span::styled(separator, styles::status_bar_style()));
+            spans.push(Span::raw(separator));
             spans.push(Span::styled(truncated, styles::notification_style()));
         }
     }
@@ -76,13 +76,10 @@ pub(super) fn status_line<'a>(state: &'a ShellState, width: usize) -> Line<'a> {
         .map_or(0, |notice| notice.width() + separator.width());
     let padding = width.saturating_sub(left_width + notice_width + right_text.width());
 
-    spans.push(Span::styled(
-        " ".repeat(padding),
-        styles::status_bar_style(),
-    ));
+    spans.push(Span::raw(" ".repeat(padding)));
     if let Some(notice) = update_notice {
         spans.push(Span::styled(notice, styles::update_notice_style()));
-        spans.push(Span::styled(separator, styles::status_bar_style()));
+        spans.push(Span::raw(separator));
     }
     spans.push(Span::styled(right_text, styles::help_hint_style()));
 

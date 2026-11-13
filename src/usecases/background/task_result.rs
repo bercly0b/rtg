@@ -99,6 +99,12 @@ pub enum BackgroundTaskResult {
         message_id: i64,
         result: Result<Vec<AvailableReaction>, BackgroundError>,
     },
+    /// The chat behind a mention was looked up; `Ok(None)` means nobody holds
+    /// `username`.
+    MentionResolved {
+        username: String,
+        result: Result<Option<ChatSummary>, BackgroundError>,
+    },
     /// Platform default file opener failed (non-zero exit code).
     /// The orchestrator should display the error as a notification.
     OpenFileFailed { stderr: String },
