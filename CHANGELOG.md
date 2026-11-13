@@ -3,6 +3,13 @@
 User-visible changes in each RTG release. Releases up to v0.1.14 are listed on
 [GitHub Releases](https://github.com/bercly0b/rtg/releases).
 
+## 0.1.17 - 2026-11-13
+
+- Open the chat behind an `@username` mention: mentions in messages are highlighted like links, and `o` on a message opens its link or mention.
+- Pick what to open when a message holds several links or mentions: `o` shows a list of them.
+- The `open_link_in_browser` key action is now `open_link_or_mention`; the old name keeps working in the config.
+- Status bar no longer draws a contrasting stripe on light terminal themes; it uses the terminal background.
+
 ## 0.1.16 - 2026-11-11
 
 - Install from crates.io with `cargo install --locked rtg-tui`.
