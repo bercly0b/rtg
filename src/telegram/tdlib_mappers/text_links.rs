@@ -1,6 +1,6 @@
 use tdlib_rs::enums::MessageContent;
 
-use crate::domain::message::TextLink;
+use crate::domain::message::{LinkTarget, TextLink};
 
 /// Converts a UTF-16 code-unit offset to a UTF-8 byte offset within `text`.
 ///
@@ -22,10 +22,11 @@ pub(super) fn utf16_offset_to_byte_offset(text: &str, utf16_offset: usize) -> Op
     None
 }
 
-/// Extracts URL-bearing text entities from a `FormattedText` into domain `TextLink`s.
+/// Extracts link and mention text entities from a `FormattedText` into domain `TextLink`s.
 ///
-/// Handles `TextEntityTypeUrl` (URL visible in text) and `TextEntityTypeTextUrl`
-/// (clickable text with a hidden URL). Converts TDLib's UTF-16 offsets to byte offsets.
+/// Handles `TextEntityTypeUrl` (URL visible in text), `TextEntityTypeTextUrl`
+/// (clickable text with a hidden URL) and `TextEntityTypeMention` (`@username`).
+/// Converts TDLib's UTF-16 offsets to byte offsets.
 pub(super) fn extract_text_links(formatted: &tdlib_rs::types::FormattedText) -> Vec<TextLink> {
     use tdlib_rs::enums::TextEntityType;
 
@@ -39,24 +40,21 @@ pub(super) fn extract_text_links(formatted: &tdlib_rs::types::FormattedText) -> 
             let byte_offset = utf16_offset_to_byte_offset(&formatted.text, utf16_offset)?;
             let byte_end =
                 utf16_offset_to_byte_offset(&formatted.text, utf16_offset + utf16_length)?;
-            let byte_length = byte_end - byte_offset;
+            let entity_text = &formatted.text[byte_offset..byte_end];
 
-            match &entity.r#type {
-                TextEntityType::Url => {
-                    let url = formatted.text[byte_offset..byte_end].to_owned();
-                    Some(TextLink {
-                        offset: byte_offset,
-                        length: byte_length,
-                        url,
-                    })
+            let target = match &entity.r#type {
+                TextEntityType::Url => LinkTarget::Url(entity_text.to_owned()),
+                TextEntityType::TextUrl(tu) => LinkTarget::Url(tu.url.clone()),
+                TextEntityType::Mention => {
+                    LinkTarget::Mention(entity_text.trim_start_matches('@').to_owned())
                 }
-                TextEntityType::TextUrl(tu) => Some(TextLink {
-                    offset: byte_offset,
-                    length: byte_length,
-                    url: tu.url.clone(),
-                }),
-                _ => None,
-            }
+                _ => return None,
+            };
+            Some(TextLink {
+                offset: byte_offset,
+                length: byte_end - byte_offset,
+                target,
+            })
         })
         .collect()
 }

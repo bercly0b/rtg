@@ -63,3 +63,17 @@ _Avoid_: folder selector, directory selector
 **Unread chat count**:
 The number of chats in a chat list that have something unread; it counts chats, not messages.
 _Avoid_: unread counter, unread badge, unread messages
+
+## Messages
+
+**Mention**:
+An `@username` in the text of a message that points at a user, a bot, a group or a channel.
+_Avoid_: username link, tag, handle
+
+**Link**:
+An address in the text of a message that opens in the browser.
+_Avoid_: URL, hyperlink
+
+**Link picker**:
+The popup that asks what to open when a message holds more than one link or mention.
+_Avoid_: link selector, target picker

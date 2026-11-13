@@ -1,7 +1,25 @@
-/// A hyperlink embedded in message text via a text entity.
+/// What a [`TextLink`] opens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LinkTarget {
+    /// An address that opens in the browser.
+    Url(String),
+    /// A username, without the leading `@`, whose chat opens in RTG.
+    Mention(String),
+}
+
+impl LinkTarget {
+    pub fn label(&self) -> String {
+        match self {
+            Self::Url(url) => url.clone(),
+            Self::Mention(username) => format!("@{username}"),
+        }
+    }
+}
+
+/// A link or a mention embedded in message text via a text entity.
 ///
-/// Represents both `TextEntityTypeUrl` (URL visible in text) and
-/// `TextEntityTypeTextUrl` (clickable text with a hidden URL).
+/// Represents `TextEntityTypeUrl` (URL visible in text), `TextEntityTypeTextUrl`
+/// (clickable text with a hidden URL) and `TextEntityTypeMention` (`@username`).
 /// Offsets are **byte** offsets into `Message::text`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextLink {
@@ -9,22 +27,34 @@ pub struct TextLink {
     pub offset: usize,
     /// Byte length of the link text in `Message::text`.
     pub length: usize,
-    /// The target URL to open.
-    pub url: String,
+    pub target: LinkTarget,
 }
 
-/// Extracts the first URL from message text and link entities.
+/// Lists what can be opened from a message: its links and mentions in text
+/// order, each one once.
 ///
-/// Checks entity links first (they may contain URLs not visible in text),
-/// then falls back to whitespace-delimited scanning of plain text.
+/// A message without text entities falls back to the first whitespace-delimited
+/// `http(s)://` word of its text.
 /// URLs without a scheme get `http://` prepended so they can be opened by the OS.
-pub fn extract_first_url(text: &str, links: &[TextLink]) -> Option<String> {
-    if let Some(link) = links.first() {
-        return Some(normalize_url(&link.url));
+pub fn open_targets(text: &str, links: &[TextLink]) -> Vec<LinkTarget> {
+    let mut targets: Vec<LinkTarget> = Vec::new();
+    for link in links {
+        let target = match &link.target {
+            LinkTarget::Url(url) => LinkTarget::Url(normalize_url(url)),
+            mention @ LinkTarget::Mention(_) => mention.clone(),
+        };
+        if !targets.contains(&target) {
+            targets.push(target);
+        }
     }
-    text.split_whitespace()
-        .find(|word| word.starts_with("https://") || word.starts_with("http://"))
-        .map(|s| s.to_owned())
+    if targets.is_empty() {
+        targets.extend(
+            text.split_whitespace()
+                .find(|word| word.starts_with("https://") || word.starts_with("http://"))
+                .map(|url| LinkTarget::Url(url.to_owned())),
+        );
+    }
+    targets
 }
 
 /// Ensures a URL has an `http://` or `https://` scheme.

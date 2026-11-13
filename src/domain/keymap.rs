@@ -73,7 +73,7 @@ impl Action {
             Self::CopyMessage => "copy_message_to_clipboard",
             Self::DeleteMessage => "delete_message",
             Self::OpenMessage => "open_message",
-            Self::OpenLink => "open_link_in_browser",
+            Self::OpenLink => "open_link_or_mention",
             Self::RecordVoice => "record_voice_message",
             Self::ShowMessageInfo => "show_message_info",
             Self::AddReaction => "add_reaction",
@@ -113,7 +113,7 @@ impl Action {
             "copy_message_to_clipboard" => Some(Self::CopyMessage),
             "delete_message" => Some(Self::DeleteMessage),
             "open_message" => Some(Self::OpenMessage),
-            "open_link_in_browser" => Some(Self::OpenLink),
+            "open_link_or_mention" | "open_link_in_browser" => Some(Self::OpenLink),
             "record_voice_message" => Some(Self::RecordVoice),
             "show_message_info" => Some(Self::ShowMessageInfo),
             "add_reaction" => Some(Self::AddReaction),
@@ -876,6 +876,19 @@ mod tests {
             let name = action.display_name();
             assert_eq!(Action::from_name(name), Some(action));
         }
+    }
+
+    #[test]
+    fn open_link_action_keeps_its_old_config_name() {
+        assert_eq!(Action::OpenLink.display_name(), "open_link_or_mention");
+        assert_eq!(
+            Action::from_name("open_link_or_mention"),
+            Some(Action::OpenLink)
+        );
+        assert_eq!(
+            Action::from_name("open_link_in_browser"),
+            Some(Action::OpenLink)
+        );
     }
 
     #[test]

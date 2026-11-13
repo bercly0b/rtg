@@ -16,6 +16,7 @@ use crate::{
         message_reactions::{
             AddReactionQuery, AvailableReactionsQuery, ReactionError, ReactionSource,
         },
+        resolve_mention::{MentionSource, MentionSourceError},
         send_message::{MessageSender, SendMessageSourceError},
         send_voice::VoiceNoteSender,
     },
@@ -47,6 +48,18 @@ impl ForumTopicsSource for TelegramAdapter {
         match self.tdlib_backend.as_ref() {
             Some(backend) => backend.list_forum_topic_summaries(chat_id, limit),
             None => Err(ListForumTopicsSourceError::Unavailable),
+        }
+    }
+}
+
+impl MentionSource for TelegramAdapter {
+    fn resolve_mention(
+        &self,
+        username: &str,
+    ) -> Result<Option<crate::domain::chat::ChatSummary>, MentionSourceError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.resolve_mention(username),
+            None => Err(MentionSourceError::Unavailable),
         }
     }
 }

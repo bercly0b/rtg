@@ -112,6 +112,22 @@ impl TdLibClient {
         })
     }
 
+    /// Resolves a public chat by its username via `searchPublicChat`: a
+    /// server round-trip unless TDLib already knows the username. An
+    /// unoccupied or invalid username is a request error.
+    pub fn search_public_chat(&self, username: &str) -> Result<tdlib_rs::types::Chat, TdLibError> {
+        let client_id = self.client_id;
+        let username = username.to_owned();
+
+        self.block_on_request("searchPublicChat", async {
+            let chat = tdlib_rs::functions::search_public_chat(username, client_id).await?;
+
+            match chat {
+                tdlib_rs::enums::Chat::Chat(c) => Ok(c),
+            }
+        })
+    }
+
     /// Gets user information by ID.
     pub fn get_user(&self, user_id: i64) -> Result<tdlib_rs::types::User, TdLibError> {
         let client_id = self.client_id;

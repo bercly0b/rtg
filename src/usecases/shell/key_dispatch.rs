@@ -10,7 +10,8 @@ use super::{
     chat_open::{self, OpenChatSync},
     chat_search, command_popup,
     file_updates::Downloads,
-    forum, message_actions, message_input, popups, self_update, voice, OrchestratorCtx, ShellCtx,
+    forum, links, message_actions, message_input, popups, self_update, voice, OrchestratorCtx,
+    ShellCtx,
 };
 
 /// Routes a key to the surface that captures all input while it is open:
@@ -19,7 +20,7 @@ use super::{
 pub(super) fn dispatch_modal_key<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
     key: &str,
-) -> bool {
+) -> Result<bool> {
     let state = &ctx.shell.state;
     if state.chat_search().is_some() {
         chat_search::handle_chat_search_key(&mut ctx.shell, key);
@@ -33,14 +34,16 @@ pub(super) fn dispatch_modal_key<D: TaskDispatcher>(
         popups::handle_reaction_picker_key(&mut ctx.shell, key);
     } else if state.chat_folder_picker().is_some() {
         chat_list::handle_chat_folder_picker_key(&mut ctx.shell, ctx.chat_list_loads, key);
+    } else if state.link_picker().is_some() {
+        links::handle_link_picker_key(&mut ctx.shell, ctx.open_chat_sync, ctx.opener, key)?;
     } else if state.help_visible() {
         popups::handle_help_key(&mut ctx.shell, key);
     } else if state.active_pane() == ActivePane::MessageInput {
         message_input::handle_message_input_key(&mut ctx.shell, key);
     } else {
-        return false;
+        return Ok(false);
     }
-    true
+    Ok(true)
 }
 
 pub(super) fn dispatch_chat_list_action<D: TaskDispatcher>(
@@ -162,7 +165,9 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
                 }
             }
         }
-        Action::OpenLink => message_actions::open_message_url(&ctx.shell, ctx.opener)?,
+        Action::OpenLink => {
+            links::open_message_link(&mut ctx.shell, ctx.open_chat_sync, ctx.opener)?
+        }
         Action::OpenMessage if ctx.shell.state.open_chat().is_open() => {
             message_actions::open_selected_message(&mut ctx.shell, ctx.media);
         }

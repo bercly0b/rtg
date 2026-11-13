@@ -10,6 +10,7 @@ mod fixtures;
 mod forum;
 mod help_popup;
 mod lifecycle;
+mod links;
 mod message_actions;
 mod message_cache;
 mod message_info;

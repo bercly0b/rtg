@@ -29,6 +29,7 @@ pub(super) struct RecordingDispatcher {
     dispatched_chat_infos: RefCell<Vec<ChatInfoQuery>>,
     dispatched_add_reactions: RefCell<Vec<(i64, i64, String)>>,
     dispatched_remove_reactions: RefCell<Vec<(i64, i64, String)>>,
+    dispatched_mentions: RefCell<Vec<String>>,
     dispatched_self_updates: RefCell<usize>,
 }
 
@@ -55,6 +56,7 @@ impl RecordingDispatcher {
             dispatched_chat_infos: RefCell::new(Vec::new()),
             dispatched_add_reactions: RefCell::new(Vec::new()),
             dispatched_remove_reactions: RefCell::new(Vec::new()),
+            dispatched_mentions: RefCell::new(Vec::new()),
             dispatched_self_updates: RefCell::new(0),
         }
     }
@@ -149,6 +151,14 @@ impl RecordingDispatcher {
 
     pub(super) fn open_chat_dispatch_count(&self) -> usize {
         self.dispatched_open_chats.borrow().len()
+    }
+
+    pub(super) fn last_open_chat(&self) -> Option<i64> {
+        self.dispatched_open_chats.borrow().last().copied()
+    }
+
+    pub(super) fn last_close_chat(&self) -> Option<i64> {
+        self.dispatched_close_chats.borrow().last().copied()
     }
 
     pub(super) fn close_chat_dispatch_count(&self) -> usize {
@@ -246,6 +256,10 @@ impl RecordingDispatcher {
 
     pub(super) fn last_remove_reaction(&self) -> Option<(i64, i64, String)> {
         self.dispatched_remove_reactions.borrow().last().cloned()
+    }
+
+    pub(super) fn dispatched_mentions(&self) -> Vec<String> {
+        self.dispatched_mentions.borrow().clone()
     }
 
     pub(super) fn self_update_dispatch_count(&self) -> usize {
@@ -385,6 +399,10 @@ impl TaskDispatcher for RecordingDispatcher {
         self.dispatched_remove_reactions
             .borrow_mut()
             .push((chat_id, message_id, emoji));
+    }
+
+    fn dispatch_resolve_mention(&self, username: String) {
+        self.dispatched_mentions.borrow_mut().push(username);
     }
 
     fn dispatch_self_update(&self) {

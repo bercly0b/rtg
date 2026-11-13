@@ -1,5 +1,6 @@
 use tdlib_rs::enums::MessageContent;
 
+use crate::domain::message::LinkTarget;
 use crate::telegram::tdlib_mappers::text_links::{
     extract_content_links, extract_text_links, utf16_offset_to_byte_offset,
 };
@@ -21,7 +22,10 @@ fn extract_text_links_extracts_url_entity() {
     assert_eq!(links.len(), 1);
     assert_eq!(links[0].offset, 6);
     assert_eq!(links[0].length, 19);
-    assert_eq!(links[0].url, "https://example.com");
+    assert_eq!(
+        links[0].target,
+        LinkTarget::Url("https://example.com".to_owned())
+    );
 }
 
 #[test]
@@ -36,7 +40,31 @@ fn extract_text_links_extracts_text_url_entity() {
     assert_eq!(links.len(), 1);
     assert_eq!(links[0].offset, 0);
     assert_eq!(links[0].length, 10);
-    assert_eq!(links[0].url, "https://hidden.com");
+    assert_eq!(
+        links[0].target,
+        LinkTarget::Url("https://hidden.com".to_owned())
+    );
+}
+
+#[test]
+fn extract_text_links_extracts_mention_entity_without_the_at_sign() {
+    let text = "Привет @alice_1, глянь";
+    let ft = make_formatted_text(
+        text,
+        vec![tdlib_rs::types::TextEntity {
+            offset: 7,
+            length: 8,
+            r#type: tdlib_rs::enums::TextEntityType::Mention,
+        }],
+    );
+
+    let links = extract_text_links(&ft);
+    assert_eq!(links.len(), 1);
+    assert_eq!(
+        &text[links[0].offset..links[0].offset + links[0].length],
+        "@alice_1"
+    );
+    assert_eq!(links[0].target, LinkTarget::Mention("alice_1".to_owned()));
 }
 
 #[test]
@@ -61,8 +89,8 @@ fn extract_text_links_handles_multiple_links() {
 
     let links = extract_text_links(&ft);
     assert_eq!(links.len(), 2);
-    assert_eq!(links[0].url, "https://a.com");
-    assert_eq!(links[1].url, "https://b.com");
+    assert_eq!(links[0].target, LinkTarget::Url("https://a.com".to_owned()));
+    assert_eq!(links[1].target, LinkTarget::Url("https://b.com".to_owned()));
 }
 
 #[test]
@@ -75,7 +103,10 @@ fn extract_content_links_from_text_message() {
 
     let links = extract_content_links(&content);
     assert_eq!(links.len(), 1);
-    assert_eq!(links[0].url, "https://example.com");
+    assert_eq!(
+        links[0].target,
+        LinkTarget::Url("https://example.com".to_owned())
+    );
 }
 
 #[test]
@@ -131,7 +162,10 @@ fn extract_text_links_with_cyrillic_prefix() {
     // Byte offset of "тут" in UTF-8: "Смотри " = 12 bytes (6 × 2) + 1 space = 13
     assert_eq!(links[0].offset, 13);
     assert_eq!(links[0].length, 6); // "тут" = 3 chars × 2 bytes
-    assert_eq!(links[0].url, "https://example.com");
+    assert_eq!(
+        links[0].target,
+        LinkTarget::Url("https://example.com".to_owned())
+    );
 }
 
 #[test]
@@ -145,5 +179,5 @@ fn extract_text_links_with_emoji_prefix() {
     assert_eq!(links.len(), 1);
     assert_eq!(links[0].offset, 5); // 4 bytes for \u{1f44d} + 1 for space
     assert_eq!(links[0].length, 4);
-    assert_eq!(links[0].url, "link");
+    assert_eq!(links[0].target, LinkTarget::Url("link".to_owned()));
 }
