@@ -14,15 +14,8 @@ When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the 
 
 ## Labels only
 
-Triage and grilling change labels only; the issue's state is the user's call. Apply a label with an `issueUpdate` that touches labels alone:
+Triage and grilling change labels only; the issue's state is the user's call. Apply a label with an issue update that touches labels alone: `addLabels` with the new label and `removeLabels` with the previous triage label, both by name (see `docs/agents/issue-tracker.md`).
 
-```graphql
-issueUpdate(id: "<issue-uuid>", input: {
-  addedLabelIds: ["<new-label-id>"],
-  removedLabelIds: ["<previous-triage-label-id>"]
-})
-```
-
-An issue carries at most one triage label: remove the previous one when applying the next. Look up ids as described in `docs/agents/issue-tracker.md`.
+An issue carries at most one triage label: remove the previous one when applying the next.
 
 Edit the "Label in our tracker" column to match whatever vocabulary you actually use.

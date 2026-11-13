@@ -92,7 +92,7 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
 
 ### Issue tracker
 
-Issues live in Linear (team ROZ, project `rtg`), accessed via the GraphQL API. See `docs/agents/issue-tracker.md`.
+Issues live in Linear (team ROZ, project `rtg`), accessed via the Linear MCP server. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
