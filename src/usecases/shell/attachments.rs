@@ -1,7 +1,7 @@
 use crate::{
     domain::{
         attachment::OutgoingAttachment, chat::ChatType, events::KeyInput,
-        file_picker_state::FileEntry, message::ReplyInfo,
+        file_picker_state::FileEntry, message::ReplyInfo, open_defaults::DEFAULT_OPEN,
     },
     usecases::{
         background::{BackgroundError, TaskDispatcher, ATTACHMENT_TOO_LARGE},
@@ -9,7 +9,7 @@ use crate::{
     },
 };
 
-use super::{command_popup::MediaCommands, message_actions, ShellCtx};
+use super::ShellCtx;
 
 /// What the file picker lists, and the runs of the file list command it has
 /// started.
@@ -53,11 +53,7 @@ pub(super) fn open_file_picker<D: TaskDispatcher>(
     );
 }
 
-pub(super) fn handle_file_picker_key<D: TaskDispatcher>(
-    ctx: &mut ShellCtx<'_, D>,
-    media: &mut MediaCommands,
-    key: &KeyInput,
-) {
+pub(super) fn handle_file_picker_key<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>, key: &KeyInput) {
     let Some(picker) = ctx.state.file_picker_mut() else {
         return;
     };
@@ -66,7 +62,7 @@ pub(super) fn handle_file_picker_key<D: TaskDispatcher>(
         ("k", true) | ("up", _) => picker.select_previous(),
         ("l", true) => {
             if let Some(path) = picker.selected().map(|entry| entry.path.clone()) {
-                open_selected_file(ctx, media, path);
+                open_selected_file(ctx, path);
             }
         }
         ("backspace", _) => picker.delete_char_before(),
@@ -86,15 +82,12 @@ pub(super) fn handle_file_picker_key<D: TaskDispatcher>(
     }
 }
 
-/// Opens the file for a look before it is sent. A local file has no MIME
-/// type of its own, so the `[open]` handler is chosen by the file extension.
-fn open_selected_file<D: TaskDispatcher>(
-    ctx: &mut ShellCtx<'_, D>,
-    media: &mut MediaCommands,
-    path: String,
-) {
-    let mime_type = mime_guess::from_path(&path).first_or_octet_stream();
-    message_actions::open_file(ctx, media, mime_type.as_ref(), path);
+/// Opens the file for a look before it is sent. Always with the platform
+/// opener: choosing an `[open]` handler needs a MIME type, which a local
+/// file does not come with.
+fn open_selected_file<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>, path: String) {
+    ctx.dispatcher
+        .dispatch_open_file(DEFAULT_OPEN.to_owned(), path);
 }
 
 fn close_file_picker<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {

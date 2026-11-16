@@ -28,9 +28,8 @@ pub(super) fn dispatch_modal_key<D: TaskDispatcher>(
 ) -> Result<bool> {
     let key = input.key.as_str();
     let state = &ctx.shell.state;
-    // A file opened from the file picker plays in the command popup over it.
-    if state.file_picker().is_some() && state.command_popup().is_none() {
-        attachments::handle_file_picker_key(&mut ctx.shell, ctx.media, input);
+    if state.file_picker().is_some() {
+        attachments::handle_file_picker_key(&mut ctx.shell, input);
     } else if state.chat_search().is_some() {
         chat_search::handle_chat_search_key(&mut ctx.shell, key);
     } else if state.command_popup().is_some() {

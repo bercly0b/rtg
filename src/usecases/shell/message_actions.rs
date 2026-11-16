@@ -16,7 +16,9 @@ pub(super) fn open_selected_message<D: TaskDispatcher>(
     ctx: &mut ShellCtx<'_, D>,
     media: &mut MediaCommands,
 ) {
+    use crate::domain::command_popup_state::CommandPopupKind;
     use crate::domain::message::MessageMedia;
+    use crate::domain::open_defaults::is_platform_default;
 
     if ctx.state.command_popup().is_some() {
         return;
@@ -52,24 +54,10 @@ pub(super) fn open_selected_message<D: TaskDispatcher>(
         }
     };
 
-    let mime_type = file_info.mime_type.clone();
-    open_file(ctx, media, &mime_type, local_path);
-}
-
-/// Opens a local file with the `[open]` handler for its MIME type: a custom
-/// handler runs in the playback popup, the platform default opener in the
-/// background.
-pub(super) fn open_file<D: TaskDispatcher>(
-    ctx: &mut ShellCtx<'_, D>,
-    media: &mut MediaCommands,
-    mime_type: &str,
-    local_path: String,
-) {
-    use crate::domain::command_popup_state::CommandPopupKind;
-    use crate::domain::open_defaults::is_platform_default;
-
-    let cmd_template =
-        crate::domain::open_handler::resolve_open_command(mime_type, &media.open_handlers);
+    let cmd_template = crate::domain::open_handler::resolve_open_command(
+        &file_info.mime_type,
+        &media.open_handlers,
+    );
 
     if is_platform_default(cmd_template) {
         // No custom handler -- delegate to the OS default opener.

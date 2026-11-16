@@ -215,7 +215,7 @@ fn ctrl_l_opens_the_selected_file_and_keeps_the_picker_as_it_was() {
 }
 
 #[test]
-fn ctrl_l_runs_the_open_handler_matching_the_file_extension_over_the_picker() {
+fn ctrl_l_uses_the_platform_opener_even_when_an_open_handler_matches() {
     let mut o = picker_listing(vec![entry("/d/shot.png", 200)]);
     o.media
         .open_handlers
@@ -223,18 +223,11 @@ fn ctrl_l_runs_the_open_handler_matching_the_file_extension_over_the_picker() {
 
     press_ctrl(&mut o, "l");
 
-    let popup = o
-        .state()
-        .command_popup()
-        .expect("the handler must run in the playback popup");
-    assert_eq!(popup.kind(), CommandPopupKind::Playback);
-    assert!(o.dispatcher.file_opens().is_empty());
-
-    press(&mut o, "q");
-
+    assert_eq!(
+        o.dispatcher.file_opens(),
+        [(DEFAULT_OPEN.to_owned(), "/d/shot.png".to_owned())]
+    );
     assert!(o.state().command_popup().is_none());
-    assert_eq!(o.state().file_picker().unwrap().query(), "");
-    assert_eq!(selected_path(&o).as_deref(), Some("/d/shot.png"));
 }
 
 #[test]

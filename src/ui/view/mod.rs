@@ -98,6 +98,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_entries: &[Hel
     let status = Paragraph::new(status_line::status_line(state, status_area.width as usize));
     frame.render_widget(status, status_area);
 
+    if let Some(popup_state) = state.command_popup() {
+        command_popup::render_command_popup(frame, frame.area(), popup_state);
+    }
+
     if state.help_visible() {
         help_popup::render_help_popup(frame, frame.area(), active_pane, help_entries);
     }
@@ -133,11 +137,6 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_entries: &[Hel
 
     if let Some(picker_state) = state.file_picker() {
         file_picker_popup::render_file_picker(frame, frame.area(), picker_state);
-    }
-
-    // Last: a file opened from the file picker plays over the picker.
-    if let Some(popup_state) = state.command_popup() {
-        command_popup::render_command_popup(frame, frame.area(), popup_state);
     }
 }
 

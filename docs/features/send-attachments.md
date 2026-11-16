@@ -82,14 +82,11 @@ Plain letters always go into the query, which is why navigation is on `Ctrl`.
 `Ctrl+L` opens the selected file without closing the picker; the selection and
 the query stay as they were.
 
-- The file goes through the `[open]` handlers, like a file of a message
-  opened with `l`. A local file has no MIME type from Telegram, so the handler
-  is chosen by the file extension (`shot.png` is `image/png`); an unknown
-  extension is `application/octet-stream`.
-- A matching handler runs in the playback popup drawn over the picker; `q` or
-  `Esc` stops it and brings the picker back.
-- Without a matching handler the system opener (`open` / `xdg-open`) launches
-  in the background.
+- The file opens with the system opener (`open` / `xdg-open`), which
+  launches in the background.
+- The `[open]` handlers are not used: they are chosen by MIME type, and a
+  local file does not come with one.
+- When the system opener fails, the status bar says why.
 
 ## Sending
 
