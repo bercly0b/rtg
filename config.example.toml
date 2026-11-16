@@ -21,6 +21,17 @@ api_hash = "replace-me"
 # Default (Linux):  ffmpeg -f alsa -i hw:0 -c:a libopus -b:a 32k {file_path}
 # record_cmd = "ffmpeg -f avfoundation -i ':0' -c:a libopus -b:a 32k {file_path}"
 
+[attach]
+# The file picker (`a` in an open chat) lists the files named by `list_cmd`,
+# newest first. The command prints one path per line and nothing else: RTG
+# finds out sizes and dates itself. Arguments are split shell-style, no shell
+# is involved.
+# {dirs} is replaced with the directories of `dirs` that exist, one argument
+# each; `~` is the home directory. A command may leave {dirs} out.
+# dirs = ["~/Desktop", "~/Downloads", "~/Documents", "~/Pictures"]
+# list_cmd = "find {dirs} -type f -not -path '*/.*'"
+# list_cmd = "fd --type f . {dirs}"
+
 [download]
 # Maximum file size for auto-download. Files larger than this require
 # manual download via Shift+D. Supports units: B, KB, MB, GB.

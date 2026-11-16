@@ -48,6 +48,8 @@ serde_json = "1"
 # installer of the latest release (ADR 0002).
 axoupdater = "0.10"
 tempfile = "3.25.0"
+# Width and height of an attachment, to tell whether Telegram takes it as a photo.
+imagesize = "0.15"
 
 [profile.release]
 strip = true

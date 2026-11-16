@@ -18,6 +18,7 @@ pub mod message_reactions;
 pub mod pty;
 pub mod resolve_mention;
 pub mod self_update;
+pub mod send_attachment;
 pub mod send_message;
 pub mod send_voice;
 pub mod shell;

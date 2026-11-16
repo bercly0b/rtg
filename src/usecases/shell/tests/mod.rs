@@ -1,3 +1,4 @@
+mod attachments;
 mod chat_archive;
 mod chat_folders;
 mod chat_info;

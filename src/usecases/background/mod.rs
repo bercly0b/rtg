@@ -9,10 +9,13 @@ mod lifecycle;
 mod messaging;
 mod task_result;
 
-use std::sync::{mpsc::Sender, Arc};
+use std::sync::{mpsc::Sender, Arc, Mutex, PoisonError};
 
-use crate::domain::{chat_folder::ChatListKind, message_input_state::OutgoingMessage};
+use crate::domain::{
+    attachment::OutgoingAttachment, chat_folder::ChatListKind, message_input_state::OutgoingMessage,
+};
 
+pub use messaging::ATTACHMENT_TOO_LARGE;
 pub use task_result::{BackgroundError, BackgroundTaskResult};
 
 use super::{
@@ -21,6 +24,7 @@ use super::{
     },
     chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
     edit_message::MessageEditor,
+    external_command::{self, FileListEvent, FileListHandle},
     list_chats::ListChatsSource,
     list_forum_topics::ForumTopicsSource,
     load_messages::MessagesSource,
@@ -28,6 +32,7 @@ use super::{
     message_reactions::{AvailableReactionsQuery, ReactionSource},
     resolve_mention::MentionSource,
     self_update::{self, UpdateRtg},
+    send_attachment::AttachmentSender,
     send_message::MessageSender,
     send_voice::VoiceNoteSender,
 };
@@ -116,6 +121,24 @@ pub trait TaskDispatcher {
         pending_id: i64,
     );
 
+    /// Sends an attachment to a chat or forum topic; `AttachmentSent` echoes
+    /// `attachment` back so that a failed send can be rolled back.
+    fn dispatch_send_attachment(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        attachment: OutgoingAttachment,
+    );
+
+    /// Runs the file list command `list_cmd` over `dirs` for the file picker,
+    /// killing the previous run if it is still going. Files arrive as
+    /// `FilesListed` and the end as `FileListingFinished`, both carrying
+    /// `listing_id`.
+    fn dispatch_list_files(&self, listing_id: u64, list_cmd: String, dirs: Vec<String>);
+
+    /// Kills the running file list command, if any (fire-and-forget).
+    fn dispatch_stop_file_listing(&self);
+
     /// Triggers a file download in TDLib (fire-and-forget).
     ///
     /// Progress is delivered asynchronously via `updateFile` events.
@@ -163,7 +186,7 @@ pub struct ThreadTaskDispatcher<C, M, MS, L, S>
 where
     C: ListChatsSource + ForumTopicsSource + MentionSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
-    MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
+    MS: MessageSender + MessageEditor + VoiceNoteSender + AttachmentSender + Send + Sync + 'static,
     L: ChatLifecycle
         + ChatReadMarker
         + ChatListMover
@@ -181,13 +204,15 @@ where
     subtitle_source: Arc<S>,
     update_rtg: UpdateRtg,
     result_tx: Sender<BackgroundTaskResult>,
+    /// The running file list command; replacing or clearing it kills the run.
+    file_listing: Mutex<Option<FileListHandle>>,
 }
 
 impl<C, M, MS, L, S> ThreadTaskDispatcher<C, M, MS, L, S>
 where
     C: ListChatsSource + ForumTopicsSource + MentionSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
-    MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
+    MS: MessageSender + MessageEditor + VoiceNoteSender + AttachmentSender + Send + Sync + 'static,
     L: ChatLifecycle
         + ChatReadMarker
         + ChatListMover
@@ -215,7 +240,30 @@ where
             subtitle_source,
             update_rtg,
             result_tx,
+            file_listing: Mutex::new(None),
         }
+    }
+}
+
+impl<C, M, MS, L, S> ThreadTaskDispatcher<C, M, MS, L, S>
+where
+    C: ListChatsSource + ForumTopicsSource + MentionSource + Send + Sync + 'static,
+    M: MessagesSource + Send + Sync + 'static,
+    MS: MessageSender + MessageEditor + VoiceNoteSender + AttachmentSender + Send + Sync + 'static,
+    L: ChatLifecycle
+        + ChatReadMarker
+        + ChatListMover
+        + MessageDeleter
+        + FileDownloader
+        + Send
+        + Sync
+        + 'static,
+    S: ChatSubtitleSource + MessageInfoSource + ReactionSource + Send + Sync + 'static,
+{
+    fn lock_file_listing(&self) -> std::sync::MutexGuard<'_, Option<FileListHandle>> {
+        self.file_listing
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -223,7 +271,7 @@ impl<C, M, MS, L, S> TaskDispatcher for ThreadTaskDispatcher<C, M, MS, L, S>
 where
     C: ListChatsSource + ForumTopicsSource + MentionSource + Send + Sync + 'static,
     M: MessagesSource + Send + Sync + 'static,
-    MS: MessageSender + MessageEditor + VoiceNoteSender + Send + Sync + 'static,
+    MS: MessageSender + MessageEditor + VoiceNoteSender + AttachmentSender + Send + Sync + 'static,
     L: ChatLifecycle
         + ChatReadMarker
         + ChatListMover
@@ -344,6 +392,42 @@ where
             file_path,
             pending_id,
         );
+    }
+
+    fn dispatch_send_attachment(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        attachment: OutgoingAttachment,
+    ) {
+        messaging::dispatch_send_attachment(
+            &self.message_sender,
+            &self.messages_source,
+            &self.result_tx,
+            chat_id,
+            topic_id,
+            attachment,
+        );
+    }
+
+    fn dispatch_list_files(&self, listing_id: u64, list_cmd: String, dirs: Vec<String>) {
+        let tx = self.result_tx.clone();
+        let handle = external_command::start_file_list(&list_cmd, &dirs, move |event| {
+            let _ = tx.send(match event {
+                FileListEvent::Entries(entries) => BackgroundTaskResult::FilesListed {
+                    listing_id,
+                    entries,
+                },
+                FileListEvent::Finished { error } => {
+                    BackgroundTaskResult::FileListingFinished { listing_id, error }
+                }
+            });
+        });
+        *self.lock_file_listing() = handle;
+    }
+
+    fn dispatch_stop_file_listing(&self) {
+        *self.lock_file_listing() = None;
     }
 
     fn dispatch_download_file(&self, file_id: i32) {

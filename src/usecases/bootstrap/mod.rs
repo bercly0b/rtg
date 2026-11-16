@@ -182,6 +182,8 @@ fn compose_shell_with_factory(
                 min_display_messages: cache_cfg.min_display_messages,
                 voice_record_cmd: context.config.voice.record_cmd.clone(),
                 open_handlers: context.config.open.handlers.clone(),
+                file_list_cmd: context.config.attach.list_cmd.clone(),
+                attach_dirs: context.config.attach.dirs.clone(),
                 max_auto_download_bytes: context.config.download.max_auto_download_bytes(),
                 key_overrides: context.config.keys.overrides.clone(),
             },

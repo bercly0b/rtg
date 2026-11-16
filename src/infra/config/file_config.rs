@@ -4,8 +4,8 @@ use crate::{
     domain::command_template::FILE_PATH_PLACEHOLDER,
     infra::{
         config::{
-            AppConfig, CacheConfig, DownloadConfig, KeysConfig, LogConfig, OpenConfig,
-            TelegramConfig, UpdatesConfig, VoiceConfig,
+            AppConfig, AttachConfig, CacheConfig, DownloadConfig, KeysConfig, LogConfig,
+            OpenConfig, TelegramConfig, UpdatesConfig, VoiceConfig,
         },
         error::AppError,
     },
@@ -17,6 +17,7 @@ pub struct FileConfig {
     pub telegram: Option<FileTelegramConfig>,
     pub cache: Option<FileCacheConfig>,
     pub voice: Option<FileVoiceConfig>,
+    pub attach: Option<FileAttachConfig>,
     pub open: Option<FileOpenConfig>,
     pub download: Option<FileDownloadConfig>,
     pub keys: Option<FileKeysConfig>,
@@ -39,6 +40,10 @@ impl FileConfig {
 
         if let Some(voice) = self.voice {
             voice.merge_into(&mut config.voice)?;
+        }
+
+        if let Some(attach) = self.attach {
+            attach.merge_into(&mut config.attach);
         }
 
         if let Some(open) = self.open {
@@ -140,6 +145,23 @@ impl FileVoiceConfig {
         }
 
         Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct FileAttachConfig {
+    pub dirs: Option<Vec<String>>,
+    pub list_cmd: Option<String>,
+}
+
+impl FileAttachConfig {
+    fn merge_into(self, config: &mut AttachConfig) {
+        if let Some(dirs) = self.dirs {
+            config.dirs = dirs;
+        }
+        if let Some(list_cmd) = self.list_cmd {
+            config.list_cmd = list_cmd;
+        }
     }
 }
 
@@ -273,6 +295,7 @@ level = "warn"
                 min_display_messages: None,
             }),
             voice: None,
+            attach: None,
             open: None,
             download: None,
             keys: None,
@@ -315,6 +338,7 @@ level = "warn"
             voice: Some(FileVoiceConfig {
                 record_cmd: Some("custom-cmd {file_path}".to_owned()),
             }),
+            attach: None,
             open: None,
             download: None,
             keys: None,
@@ -341,6 +365,7 @@ level = "warn"
             telegram: None,
             cache: None,
             voice: None,
+            attach: None,
             open: None,
             download: None,
             keys: None,
@@ -362,6 +387,7 @@ level = "warn"
             voice: Some(FileVoiceConfig {
                 record_cmd: Some("ffmpeg -f avfoundation -i :0 out.oga".to_owned()),
             }),
+            attach: None,
             ..FileConfig::default()
         };
 
@@ -438,6 +464,7 @@ record_cmd = "sox -d {file_path}"
             telegram: None,
             cache: None,
             voice: None,
+            attach: None,
             open: None,
             download: None,
             keys: None,
@@ -478,6 +505,7 @@ max_auto_download_size = "500KB"
             telegram: None,
             cache: None,
             voice: None,
+            attach: None,
             open: None,
             download: None,
             keys: None,
@@ -522,6 +550,7 @@ quit = "Q"
             telegram: None,
             cache: None,
             voice: None,
+            attach: None,
             open: None,
             download: None,
             keys: None,
@@ -550,5 +579,48 @@ check = false
         let mut config = AppConfig::default();
         file.merge_into(&mut config).unwrap();
         assert!(config.updates.check);
+    }
+    #[test]
+    fn attach_config_defaults_to_the_usual_directories_and_find() {
+        let file: FileConfig = toml::from_str("").unwrap();
+
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config).unwrap();
+
+        assert_eq!(
+            config.attach.dirs,
+            ["~/Desktop", "~/Downloads", "~/Documents", "~/Pictures"]
+        );
+        assert_eq!(
+            config.attach.list_cmd,
+            "find {dirs} -type f -not -path '*/.*'"
+        );
+    }
+
+    #[test]
+    fn attach_config_overrides_dirs_and_list_cmd() {
+        let toml = r#"
+[attach]
+dirs = ["~/Screenshots"]
+list_cmd = "fd --type f . {dirs}"
+"#;
+        let file: FileConfig = toml::from_str(toml).unwrap();
+
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config).unwrap();
+
+        assert_eq!(config.attach.dirs, ["~/Screenshots"]);
+        assert_eq!(config.attach.list_cmd, "fd --type f . {dirs}");
+    }
+
+    #[test]
+    fn attach_list_cmd_may_omit_the_dirs_placeholder() {
+        let file: FileConfig = toml::from_str("[attach]\nlist_cmd = \"my-files\"\n").unwrap();
+
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config).unwrap();
+
+        assert_eq!(config.attach.list_cmd, "my-files");
+        assert_eq!(config.attach.dirs.len(), 4);
     }
 }

@@ -10,6 +10,7 @@ pub struct AppConfig {
     pub telegram: TelegramConfig,
     pub cache: CacheConfig,
     pub voice: VoiceConfig,
+    pub attach: AttachConfig,
     pub open: OpenConfig,
     pub download: DownloadConfig,
     pub keys: KeysConfig,
@@ -128,6 +129,35 @@ impl Default for VoiceConfig {
     fn default() -> Self {
         Self {
             record_cmd: default_voice_record_cmd(),
+        }
+    }
+}
+
+/// What the file picker lists: `list_cmd` names the files, `dirs` fills its
+/// `{dirs}` placeholder.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AttachConfig {
+    #[serde(default = "default_attach_dirs")]
+    pub dirs: Vec<String>,
+    #[serde(default = "default_attach_list_cmd")]
+    pub list_cmd: String,
+}
+
+fn default_attach_dirs() -> Vec<String> {
+    crate::domain::attach_defaults::DEFAULT_DIRS
+        .map(str::to_owned)
+        .to_vec()
+}
+
+fn default_attach_list_cmd() -> String {
+    crate::domain::attach_defaults::DEFAULT_LIST_CMD.to_owned()
+}
+
+impl Default for AttachConfig {
+    fn default() -> Self {
+        Self {
+            dirs: default_attach_dirs(),
+            list_cmd: default_attach_list_cmd(),
         }
     }
 }

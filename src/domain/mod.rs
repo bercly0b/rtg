@@ -1,5 +1,7 @@
 //! Domain layer: core entities and business rules.
 
+pub mod attach_defaults;
+pub mod attachment;
 pub mod chat;
 pub mod chat_folder;
 pub mod chat_info_state;
@@ -10,6 +12,7 @@ pub mod command_popup_state;
 pub mod command_template;
 pub mod download_speed;
 pub mod events;
+pub mod file_picker_state;
 pub mod forum_topic;
 pub mod forum_topic_list_state;
 pub mod keymap;

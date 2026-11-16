@@ -1,10 +1,11 @@
 use std::sync::{mpsc::Sender, Arc};
 
 use crate::{
-    domain::message_input_state::OutgoingMessage,
+    domain::{attachment::OutgoingAttachment, message_input_state::OutgoingMessage},
     usecases::{
         edit_message::{edit_message, EditMessageCommand, MessageEditor},
         load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
+        send_attachment::{AttachmentSender, SendAttachmentError},
         send_message::{send_message, MessageSender, SendMessageCommand},
         send_voice::VoiceNoteSender,
     },
@@ -14,6 +15,9 @@ use super::{
     error_mapping::{map_edit_message_error, map_load_messages_error, map_send_message_error},
     BackgroundError, BackgroundTaskResult,
 };
+
+/// Error code of an attachment larger than Telegram lets the account upload.
+pub const ATTACHMENT_TOO_LARGE: &str = "ATTACHMENT_TOO_LARGE";
 
 pub(super) fn dispatch_load_messages<M: MessagesSource + Send + Sync + 'static>(
     source: &Arc<M>,
@@ -305,6 +309,68 @@ pub(super) fn dispatch_send_voice<
         let _ = tx_fallback.send(BackgroundTaskResult::VoiceSendFailed {
             chat_id,
             pending_id,
+        });
+    }
+}
+
+pub(super) fn dispatch_send_attachment<
+    AS: AttachmentSender + Send + Sync + 'static,
+    M: MessagesSource + Send + Sync + 'static,
+>(
+    sender: &Arc<AS>,
+    messages_source: &Arc<M>,
+    tx: &Sender<BackgroundTaskResult>,
+    chat_id: i64,
+    topic_id: Option<i32>,
+    attachment: OutgoingAttachment,
+) {
+    let sender = Arc::clone(sender);
+    let messages_source = Arc::clone(messages_source);
+    let tx = tx.clone();
+    let tx_fallback = tx.clone();
+
+    let fallback_attachment = attachment.clone();
+    let spawn_result = std::thread::Builder::new()
+        .name("rtg-bg-send-file".into())
+        .spawn(move || {
+            tracing::info!(
+                chat_id,
+                ?topic_id,
+                path = attachment.path,
+                kind = ?attachment.kind,
+                "background: sending attachment"
+            );
+            let result = sender
+                .send_attachment(chat_id, topic_id, &attachment)
+                .map_err(|error| {
+                    tracing::warn!(chat_id, error = ?error, "background: send attachment failed");
+                    BackgroundError::new(match error {
+                        SendAttachmentError::TooLarge => ATTACHMENT_TOO_LARGE,
+                        SendAttachmentError::Source(_) => "SEND_ATTACHMENT_FAILED",
+                    })
+                });
+
+            let is_ok = result.is_ok();
+
+            let _ = tx.send(BackgroundTaskResult::AttachmentSent {
+                chat_id,
+                topic_id,
+                attachment,
+                result,
+            });
+
+            if is_ok {
+                refresh_messages_after_send(&messages_source, &tx, chat_id, topic_id);
+            }
+        });
+
+    if let Err(error) = spawn_result {
+        tracing::error!(error = %error, "failed to spawn send-attachment background thread");
+        let _ = tx_fallback.send(BackgroundTaskResult::AttachmentSent {
+            chat_id,
+            topic_id,
+            attachment: fallback_attachment,
+            result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
         });
     }
 }
