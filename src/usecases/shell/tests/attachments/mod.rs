@@ -5,8 +5,10 @@ use super::*;
 use crate::domain::{
     attachment::{AttachmentKind, OutgoingAttachment},
     chat::ChatType,
+    command_popup_state::CommandPopupKind,
     file_picker_state::{FileEntry, FileListing},
     message::{MessageMedia, MessageStatus},
+    open_defaults::DEFAULT_OPEN,
     shell_state::ActivePane,
 };
 

@@ -9,7 +9,7 @@ use crate::{
     },
 };
 
-use super::ShellCtx;
+use super::{command_popup::MediaCommands, message_actions, ShellCtx};
 
 /// What the file picker lists, and the runs of the file list command it has
 /// started.
@@ -53,13 +53,22 @@ pub(super) fn open_file_picker<D: TaskDispatcher>(
     );
 }
 
-pub(super) fn handle_file_picker_key<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>, key: &KeyInput) {
+pub(super) fn handle_file_picker_key<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    media: &mut MediaCommands,
+    key: &KeyInput,
+) {
     let Some(picker) = ctx.state.file_picker_mut() else {
         return;
     };
     match (key.key.as_str(), key.ctrl) {
         ("j", true) | ("down", _) => picker.select_next(),
         ("k", true) | ("up", _) => picker.select_previous(),
+        ("l", true) => {
+            if let Some(path) = picker.selected().map(|entry| entry.path.clone()) {
+                open_selected_file(ctx, media, path);
+            }
+        }
         ("backspace", _) => picker.delete_char_before(),
         ("esc", _) => close_file_picker(ctx),
         ("enter", _) => {
@@ -75,6 +84,17 @@ pub(super) fn handle_file_picker_key<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D
         }
         _ => {}
     }
+}
+
+/// Opens the file for a look before it is sent. A local file has no MIME
+/// type of its own, so the `[open]` handler is chosen by the file extension.
+fn open_selected_file<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    media: &mut MediaCommands,
+    path: String,
+) {
+    let mime_type = mime_guess::from_path(&path).first_or_octet_stream();
+    message_actions::open_file(ctx, media, mime_type.as_ref(), path);
 }
 
 fn close_file_picker<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {

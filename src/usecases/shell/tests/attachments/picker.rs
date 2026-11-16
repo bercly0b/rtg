@@ -189,3 +189,61 @@ fn esc_closes_the_picker_and_stops_the_file_list_command() {
     assert_eq!(o.dispatcher.stopped_file_listings(), 1);
     assert_eq!(o.dispatcher.attachment_send_count(), 0);
 }
+
+// ── opening the selected file ──
+
+#[test]
+fn ctrl_l_opens_the_selected_file_and_keeps_the_picker_as_it_was() {
+    let mut o = picker_listing(vec![
+        entry("/d/new.png", 300),
+        entry("/d/mid.png", 200),
+        entry("/d/notes.txt", 100),
+    ]);
+    type_text(&mut o, "png");
+    press_ctrl(&mut o, "j");
+
+    press_ctrl(&mut o, "l");
+
+    assert_eq!(
+        o.dispatcher.file_opens(),
+        [(DEFAULT_OPEN.to_owned(), "/d/mid.png".to_owned())]
+    );
+    assert_eq!(o.state().file_picker().unwrap().query(), "png");
+    assert_eq!(selected_path(&o).as_deref(), Some("/d/mid.png"));
+    assert_eq!(o.dispatcher.stopped_file_listings(), 0);
+    assert_eq!(o.dispatcher.attachment_send_count(), 0);
+}
+
+#[test]
+fn ctrl_l_runs_the_open_handler_matching_the_file_extension_over_the_picker() {
+    let mut o = picker_listing(vec![entry("/d/shot.png", 200)]);
+    o.media
+        .open_handlers
+        .insert("image/*".to_owned(), "true {file_path}".to_owned());
+
+    press_ctrl(&mut o, "l");
+
+    let popup = o
+        .state()
+        .command_popup()
+        .expect("the handler must run in the playback popup");
+    assert_eq!(popup.kind(), CommandPopupKind::Playback);
+    assert!(o.dispatcher.file_opens().is_empty());
+
+    press(&mut o, "q");
+
+    assert!(o.state().command_popup().is_none());
+    assert_eq!(o.state().file_picker().unwrap().query(), "");
+    assert_eq!(selected_path(&o).as_deref(), Some("/d/shot.png"));
+}
+
+#[test]
+fn ctrl_l_with_nothing_selected_does_nothing() {
+    let mut o = picker_listing(vec![]);
+
+    press_ctrl(&mut o, "l");
+
+    assert!(o.dispatcher.file_opens().is_empty());
+    assert!(o.state().command_popup().is_none());
+    assert_eq!(o.state().file_picker().unwrap().query(), "");
+}

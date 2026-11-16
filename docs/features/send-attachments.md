@@ -70,11 +70,26 @@ read) still shows those files.
 |-----|--------|
 | `Ctrl+J` / `Down` | next file |
 | `Ctrl+K` / `Up` | previous file |
+| `Ctrl+L` | open the selected file, see below |
 | `Enter` | send the selected file |
 | `Backspace` | delete the last character of the query |
 | `Esc` | close |
 
 Plain letters always go into the query, which is why navigation is on `Ctrl`.
+
+## Looking at a file before sending
+
+`Ctrl+L` opens the selected file without closing the picker; the selection and
+the query stay as they were.
+
+- The file goes through the `[open]` handlers, like a file of a message
+  opened with `l`. A local file has no MIME type from Telegram, so the handler
+  is chosen by the file extension (`shot.png` is `image/png`); an unknown
+  extension is `application/octet-stream`.
+- A matching handler runs in the playback popup drawn over the picker; `q` or
+  `Esc` stops it and brings the picker back.
+- Without a matching handler the system opener (`open` / `xdg-open`) launches
+  in the background.
 
 ## Sending
 
@@ -115,7 +130,7 @@ is deleted with `dd`.
 
 ## Not covered
 
-One file at a time, no upload progress, no preview from the picker, no choice
+One file at a time, no upload progress, no choice
 between photo and document, no video or audio as their own message types, no
 path input in the picker, no pasting from the clipboard, substring search
 only. Each is a separate issue.

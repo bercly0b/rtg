@@ -16,7 +16,7 @@ use crate::domain::{
 use super::{popup_utils, styles};
 
 const QUERY_PROMPT: &str = "> ";
-const FOOTER: &str = "Ctrl+J/Ctrl+K navigate, Enter send, Esc close";
+const FOOTER: &str = "Ctrl+J/Ctrl+K navigate, Ctrl+L open, Enter send, Esc close";
 /// Rows around the file list: the query and a blank line above it, a blank
 /// line and the footer below.
 const CHROME_ROWS: usize = 4;
