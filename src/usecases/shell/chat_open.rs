@@ -26,6 +26,10 @@ pub(super) struct OpenChatSync {
     pub prefetch_in_flight: Option<i64>,
     /// Guards against dispatching duplicate message refresh requests while one is in-flight.
     pub messages_refresh_in_flight: bool,
+    /// An update asked for a refresh while one was in flight. That one may
+    /// have read the messages before the update took effect, so another
+    /// follows it.
+    pub messages_refresh_queued: bool,
     /// Guards against dispatching duplicate older-messages pagination requests.
     pub older_messages_in_flight: bool,
     /// Minimum number of cached messages required to display them immediately.
@@ -55,6 +59,7 @@ impl OpenChatSync {
             tdlib_opened_chat_id: None,
             prefetch_in_flight: None,
             messages_refresh_in_flight: false,
+            messages_refresh_queued: false,
             older_messages_in_flight: false,
             min_display_messages: min_display_messages.max(1),
             cache_source,

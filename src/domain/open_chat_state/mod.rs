@@ -166,7 +166,6 @@ impl OpenChatState {
         }
     }
 
-    /// Sets the upload progress of the messages being sent with this file.
     pub fn set_upload_progress(&mut self, file_id: i32, progress_percent: Option<u8>) {
         set_upload_progress(&mut self.messages, file_id, progress_percent);
     }

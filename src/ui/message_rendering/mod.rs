@@ -44,7 +44,6 @@ pub enum MessageListElement {
         media: MessageMedia,
         /// File metadata line (e.g. "download=yes, size=15.5KB, duration=0:03").
         file_meta: Option<String>,
-        /// How much of the file being sent is uploaded.
         upload_progress_percent: Option<u8>,
         /// Reply preview: sender name and text of the replied-to message.
         reply_info: Option<ReplyInfo>,

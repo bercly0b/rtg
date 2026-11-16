@@ -191,19 +191,20 @@ pub(super) fn maybe_refresh_open_chat_messages<D: TaskDispatcher>(
 ) {
     use crate::domain::open_chat_state::OpenChatUiState;
 
-    if sync.messages_refresh_in_flight {
-        return;
-    }
-
     let Some(open_id) = ctx.state.open_chat().chat_id() else {
         return;
     };
 
-    if ctx.state.open_chat().ui_state() != OpenChatUiState::Ready {
+    if !affected_chat_ids.contains(&open_id) {
         return;
     }
 
-    if !affected_chat_ids.contains(&open_id) {
+    if sync.messages_refresh_in_flight {
+        sync.messages_refresh_queued = true;
+        return;
+    }
+
+    if ctx.state.open_chat().ui_state() != OpenChatUiState::Ready {
         return;
     }
 
@@ -211,6 +212,22 @@ pub(super) fn maybe_refresh_open_chat_messages<D: TaskDispatcher>(
         chat_id = open_id,
         "refreshing open chat messages from update"
     );
+    sync.messages_refresh_in_flight = true;
+    let topic_id = ctx.state.open_chat().topic_id();
+    ctx.dispatcher.dispatch_load_messages(open_id, topic_id);
+}
+
+/// Runs the refresh an update asked for while another one was in flight.
+pub(super) fn run_queued_messages_refresh<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &mut OpenChatSync,
+) {
+    if !std::mem::take(&mut sync.messages_refresh_queued) {
+        return;
+    }
+    let Some(open_id) = ctx.state.open_chat().chat_id() else {
+        return;
+    };
     sync.messages_refresh_in_flight = true;
     let topic_id = ctx.state.open_chat().topic_id();
     ctx.dispatcher.dispatch_load_messages(open_id, topic_id);

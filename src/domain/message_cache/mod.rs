@@ -165,7 +165,6 @@ impl MessageCache {
         }
     }
 
-    /// Sets the upload progress of the messages being sent with this file.
     pub fn set_upload_progress(&mut self, file_id: i32, progress_percent: Option<u8>) {
         for entry in self.chats.values_mut() {
             set_upload_progress(&mut entry.messages, file_id, progress_percent);
