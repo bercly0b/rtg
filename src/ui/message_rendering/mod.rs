@@ -123,10 +123,13 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
         } else if message.media == MessageMedia::Sticker {
             Some("Sticker".to_owned())
         } else {
-            message
-                .file_info
-                .as_ref()
-                .map(|fi| crate::domain::message::build_file_metadata_display(message.media, fi))
+            message.file_info.as_ref().map(|fi| {
+                crate::domain::message::build_file_metadata_display(
+                    message.media,
+                    message.status,
+                    fi,
+                )
+            })
         };
 
         elements.push(MessageListElement::Message {

@@ -3,7 +3,9 @@ use crate::{
     usecases::background::{BackgroundTaskResult, TaskDispatcher},
 };
 
-use super::{attachments, chat_list, chat_open, popups, self_update, OrchestratorCtx};
+use super::{
+    attachments, chat_list, chat_open, chat_updates, popups, self_update, OrchestratorCtx,
+};
 
 pub(super) fn handle_background_result<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
@@ -85,6 +87,7 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
             result,
         } => {
             ctx.open_chat_sync.messages_refresh_in_flight = false;
+            chat_updates::run_queued_messages_refresh(&mut ctx.shell, ctx.open_chat_sync);
 
             // Cache only chat-scoped results — the per-chat MessageCache cannot
             // express topic scope, so writing topic history under chat_id would
@@ -236,6 +239,7 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
             result,
         } => {
             ctx.open_chat_sync.messages_refresh_in_flight = false;
+            chat_updates::run_queued_messages_refresh(&mut ctx.shell, ctx.open_chat_sync);
 
             // Same caching rule as MessagesLoaded — topic-scoped refresh results
             // must not leak into the per-chat cache.

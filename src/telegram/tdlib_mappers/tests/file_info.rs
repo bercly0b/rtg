@@ -1,7 +1,7 @@
 use tdlib_rs::enums::MessageContent;
 
 use crate::domain::message::DownloadStatus;
-use crate::telegram::tdlib_mappers::{extract_file_info, map_download_state};
+use crate::telegram::tdlib_mappers::{extract_file_info, map_download_state, map_upload_progress};
 
 use super::make_test_file;
 
@@ -245,4 +245,56 @@ fn map_download_state_treats_completed_without_path_as_not_started() {
         map_download_state(&file),
         (DownloadStatus::NotStarted, None)
     );
+}
+
+#[test]
+fn upload_progress_is_the_uploaded_share_of_the_file() {
+    let mut file = make_test_file(42, "/tmp/report.pdf", true);
+    file.remote.is_uploading_active = true;
+    file.remote.uploaded_size = 250;
+
+    assert_eq!(map_upload_progress(&file), Some(25));
+}
+
+#[test]
+fn upload_progress_stays_below_100_while_the_upload_is_running() {
+    let mut file = make_test_file(42, "/tmp/report.pdf", true);
+    file.remote.is_uploading_active = true;
+    file.remote.uploaded_size = 1000;
+
+    assert_eq!(map_upload_progress(&file), Some(99));
+}
+
+#[test]
+fn file_that_is_not_uploading_has_no_upload_progress() {
+    let mut file = make_test_file(42, "/tmp/report.pdf", true);
+    file.remote.is_uploading_completed = true;
+    file.remote.uploaded_size = 1000;
+
+    assert_eq!(map_upload_progress(&file), None);
+}
+
+#[test]
+fn file_info_of_an_uploading_voice_note_carries_the_upload_progress() {
+    let mut file = make_test_file(42, "/tmp/report.pdf", true);
+    file.remote.is_uploading_active = true;
+    file.remote.uploaded_size = 500;
+    let content = MessageContent::MessageVoiceNote(tdlib_rs::types::MessageVoiceNote {
+        voice_note: tdlib_rs::types::VoiceNote {
+            duration: 5,
+            waveform: String::new(),
+            mime_type: "audio/ogg".to_owned(),
+            speech_recognition_result: None,
+            voice: file,
+        },
+        caption: tdlib_rs::types::FormattedText {
+            text: String::new(),
+            entities: vec![],
+        },
+        is_listened: false,
+    });
+
+    let file_info = extract_file_info(&content).expect("should have file info");
+
+    assert_eq!(file_info.upload_progress_percent, Some(50));
 }

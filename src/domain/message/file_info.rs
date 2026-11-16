@@ -33,6 +33,9 @@ pub struct FileInfo {
     pub is_listened: bool,
     /// Current download state.
     pub download_status: DownloadStatus,
+    /// How much of an attachment being sent is uploaded; `None` unless an
+    /// upload is running.
+    pub upload_progress_percent: Option<u8>,
 }
 
 /// Formats a file size in bytes into a human-readable string.
@@ -85,7 +88,11 @@ pub fn file_extension(file_name: &str) -> Option<&str> {
 ///
 /// Returns a formatted string like `"name=report.pdf, type=pdf, download=yes, size=15.5KB"`
 /// for rendering alongside the media label (e.g. `[Document]`).
-pub fn build_file_metadata_display(media: super::MessageMedia, info: &FileInfo) -> String {
+pub fn build_file_metadata_display(
+    media: super::MessageMedia,
+    status: super::MessageStatus,
+    info: &FileInfo,
+) -> String {
     let mut parts = Vec::new();
 
     if let Some(name) = info.file_name.as_deref() {
@@ -95,12 +102,20 @@ pub fn build_file_metadata_display(media: super::MessageMedia, info: &FileInfo) 
         }
     }
 
-    match info.download_status {
-        DownloadStatus::Completed => parts.push("download=yes".to_owned()),
-        DownloadStatus::Downloading { progress_percent } => {
-            parts.push(format!("downloading={}%", progress_percent));
+    // A file being sent is the user's own: whether it is downloaded says
+    // nothing, how much of it is uploaded does.
+    if status == super::MessageStatus::Sending {
+        if let Some(percent) = info.upload_progress_percent {
+            parts.push(format!("sending={percent}%"));
         }
-        DownloadStatus::NotStarted => parts.push("download=no".to_owned()),
+    } else {
+        match info.download_status {
+            DownloadStatus::Completed => parts.push("download=yes".to_owned()),
+            DownloadStatus::Downloading { progress_percent } => {
+                parts.push(format!("downloading={}%", progress_percent));
+            }
+            DownloadStatus::NotStarted => parts.push("download=no".to_owned()),
+        }
     }
 
     if let Some(size) = info.size {

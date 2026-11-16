@@ -1,6 +1,6 @@
 use super::chat::ChatType;
 use super::chat_subtitle::ChatSubtitle;
-use super::message::{Message, MessageStatus, ReplyInfo};
+use super::message::{set_upload_progress, Message, MessageStatus, ReplyInfo};
 use super::typing_state::TypingState;
 
 #[cfg(test)]
@@ -164,6 +164,10 @@ impl OpenChatState {
                 updater(fi);
             }
         }
+    }
+
+    pub fn set_upload_progress(&mut self, file_id: i32, progress_percent: Option<u8>) {
+        set_upload_progress(&mut self.messages, file_id, progress_percent);
     }
 
     pub fn update_message_text(&mut self, message_id: i64, new_text: String) {

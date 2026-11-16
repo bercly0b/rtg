@@ -27,6 +27,7 @@ fn file_updated(
             downloaded_size: 0,
             local_path: local_path.map(str::to_owned),
             download_status,
+            upload_progress_percent: None,
         }],
     }
 }
@@ -41,6 +42,7 @@ fn large_file_progress(file_id: i32, downloaded_size: u64) -> AppEvent {
             download_status: DownloadStatus::Downloading {
                 progress_percent: 0,
             },
+            upload_progress_percent: None,
         }],
     }
 }

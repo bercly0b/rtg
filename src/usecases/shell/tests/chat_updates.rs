@@ -76,6 +76,24 @@ fn chat_update_debounces_while_messages_refresh_in_flight() {
 }
 
 #[test]
+fn update_skipped_while_a_refresh_is_in_flight_refreshes_once_more_afterwards() {
+    let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
+    let before = o.dispatcher.messages_dispatch_count();
+    for _ in 0..3 {
+        o.handle_event(AppEvent::ChatUpdateReceived {
+            updates: vec![ChatUpdate::ChatMetadataChanged { chat_id: 1 }],
+        })
+        .unwrap();
+    }
+
+    inject_messages(&mut o, 1, vec![message(1, "Hello")]);
+    assert_eq!(o.dispatcher.messages_dispatch_count(), before + 2);
+
+    inject_messages(&mut o, 1, vec![message(1, "Hello")]);
+    assert_eq!(o.dispatcher.messages_dispatch_count(), before + 2);
+}
+
+#[test]
 fn messages_refresh_in_flight_resets_after_messages_loaded() {
     let mut o = orchestrator_with_open_chat(vec![chat(1, "General")], 1, vec![message(1, "Hello")]);
     let before = o.dispatcher.messages_dispatch_count();

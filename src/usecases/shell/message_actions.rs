@@ -91,7 +91,7 @@ pub(super) fn delete_selected_message<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, 
     let Some(msg) = ctx.state.open_chat().selected_message() else {
         return;
     };
-    if msg.is_pending() {
+    if msg.is_optimistic() {
         return;
     }
     let message_id = msg.id;

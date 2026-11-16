@@ -106,6 +106,12 @@ is deleted with `dd`.
   input, so an attachment cannot be sent as a reply yet.
 - **Optimistic UI** — the message appears in the chat at once as being sent;
   Telegram uploads the file in the background.
+- **Upload progress** — while the file uploads, its metadata says how much of
+  it is there: `[Document] name=report.pdf, type=pdf, sending=42%, size=1.2MB`.
+  Once the upload is over `sending=` goes away, and the `sending...` status
+  with it as soon as Telegram accepts the message. A message being sent does
+  not say `download=yes`: the file is the user's own. `dd` on such a message
+  cancels the send.
 - **Failure** — the pending message is removed, the caption goes back into
   the input (also when another chat is open by then), and the status bar says
   "Failed to send the file".
@@ -122,12 +128,18 @@ is deleted with `dd`.
   uploads the file itself. The refresh after a send replaces the optimistic
   message with TDLib's own pending message.
 - The photo limits are the ones TDLib documents for `inputMessagePhoto`.
+- A message TDLib has queued and not sent yet has
+  `sendingState = messageSendingStatePending`; it is shown as being sent.
+- Upload progress comes from `updateFile`, the update that also reports
+  downloads: `remote.uploaded_size` out of the file size while
+  `remote.is_uploading_active`. It is applied to the messages being sent
+  whose file has that id.
 - TDLib has no option for the upload size limit, so it is derived from the
   `is_premium` option.
 
 ## Not covered
 
-One file at a time, no upload progress, no choice
+One file at a time, no choice
 between photo and document, no video or audio as their own message types, no
 path input in the picker, no pasting from the clipboard, substring search
 only. Each is a separate issue.

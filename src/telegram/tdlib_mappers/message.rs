@@ -1,7 +1,7 @@
-use tdlib_rs::enums::{MessageContent, MessageSender};
+use tdlib_rs::enums::{MessageContent, MessageSender, MessageSendingState};
 use tdlib_rs::types::Message as TdMessage;
 
-use crate::domain::message::{ForwardInfo, Message, MessageMedia, ReplyInfo};
+use crate::domain::message::{ForwardInfo, Message, MessageMedia, MessageStatus, ReplyInfo};
 
 use super::file_info::{extract_call_info, extract_file_info};
 use super::text_links::extract_content_links;
@@ -35,7 +35,7 @@ pub fn map_tdlib_message_to_domain(
         timestamp_ms,
         is_outgoing: msg.is_outgoing,
         media,
-        status: crate::domain::message::MessageStatus::Delivered,
+        status: map_message_status(msg),
         file_info,
         call_info,
         reply_to,
@@ -44,6 +44,15 @@ pub fn map_tdlib_message_to_domain(
         links,
         is_edited: msg.edit_date > 0,
         is_service,
+    }
+}
+
+/// A message TDLib has queued but not sent yet (say, while its file uploads)
+/// is still being sent. A failed one keeps showing as delivered.
+fn map_message_status(msg: &TdMessage) -> MessageStatus {
+    match msg.sending_state {
+        Some(MessageSendingState::Pending(_)) => MessageStatus::Sending,
+        _ => MessageStatus::Delivered,
     }
 }
 

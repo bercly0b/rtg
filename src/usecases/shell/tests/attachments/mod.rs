@@ -1,5 +1,6 @@
 mod picker;
 mod sending;
+mod upload_progress;
 
 use super::*;
 use crate::domain::{

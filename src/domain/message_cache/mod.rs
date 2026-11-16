@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use super::message::Message;
+use super::message::{set_upload_progress, Message};
 
 #[cfg(test)]
 mod tests;
@@ -162,6 +162,12 @@ impl MessageCache {
                     updater(fi);
                 }
             }
+        }
+    }
+
+    pub fn set_upload_progress(&mut self, file_id: i32, progress_percent: Option<u8>) {
+        for entry in self.chats.values_mut() {
+            set_upload_progress(&mut entry.messages, file_id, progress_percent);
         }
     }
 
