@@ -70,11 +70,23 @@ read) still shows those files.
 |-----|--------|
 | `Ctrl+J` / `Down` | next file |
 | `Ctrl+K` / `Up` | previous file |
+| `Ctrl+L` | open the selected file, see below |
 | `Enter` | send the selected file |
 | `Backspace` | delete the last character of the query |
 | `Esc` | close |
 
 Plain letters always go into the query, which is why navigation is on `Ctrl`.
+
+## Looking at a file before sending
+
+`Ctrl+L` opens the selected file without closing the picker; the selection and
+the query stay as they were.
+
+- The file opens with the system opener (`open` / `xdg-open`), which
+  launches in the background.
+- The `[open]` handlers are not used: they are chosen by MIME type, and a
+  local file does not come with one.
+- When the system opener fails, the status bar says why.
 
 ## Sending
 
@@ -115,7 +127,7 @@ is deleted with `dd`.
 
 ## Not covered
 
-One file at a time, no upload progress, no preview from the picker, no choice
+One file at a time, no upload progress, no choice
 between photo and document, no video or audio as their own message types, no
 path input in the picker, no pasting from the clipboard, substring search
 only. Each is a separate issue.

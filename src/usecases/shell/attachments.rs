@@ -1,7 +1,7 @@
 use crate::{
     domain::{
         attachment::OutgoingAttachment, chat::ChatType, events::KeyInput,
-        file_picker_state::FileEntry, message::ReplyInfo,
+        file_picker_state::FileEntry, message::ReplyInfo, open_defaults::DEFAULT_OPEN,
     },
     usecases::{
         background::{BackgroundError, TaskDispatcher, ATTACHMENT_TOO_LARGE},
@@ -60,6 +60,11 @@ pub(super) fn handle_file_picker_key<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D
     match (key.key.as_str(), key.ctrl) {
         ("j", true) | ("down", _) => picker.select_next(),
         ("k", true) | ("up", _) => picker.select_previous(),
+        ("l", true) => {
+            if let Some(path) = picker.selected().map(|entry| entry.path.clone()) {
+                open_selected_file(ctx, path);
+            }
+        }
         ("backspace", _) => picker.delete_char_before(),
         ("esc", _) => close_file_picker(ctx),
         ("enter", _) => {
@@ -75,6 +80,14 @@ pub(super) fn handle_file_picker_key<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D
         }
         _ => {}
     }
+}
+
+/// Opens the file for a look before it is sent. Always with the platform
+/// opener: choosing an `[open]` handler needs a MIME type, which a local
+/// file does not come with.
+fn open_selected_file<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>, path: String) {
+    ctx.dispatcher
+        .dispatch_open_file(DEFAULT_OPEN.to_owned(), path);
 }
 
 fn close_file_picker<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {

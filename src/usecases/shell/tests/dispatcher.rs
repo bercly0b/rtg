@@ -34,6 +34,7 @@ pub(super) struct RecordingDispatcher {
     dispatched_attachment_sends: RefCell<Vec<AttachmentSendRecord>>,
     dispatched_file_listings: RefCell<Vec<FileListingRecord>>,
     stopped_file_listings: RefCell<usize>,
+    dispatched_file_opens: RefCell<Vec<(String, String)>>,
     dispatched_subtitles: RefCell<Vec<ChatSubtitleQuery>>,
     dispatched_chat_infos: RefCell<Vec<ChatInfoQuery>>,
     dispatched_add_reactions: RefCell<Vec<(i64, i64, String)>>,
@@ -64,6 +65,7 @@ impl RecordingDispatcher {
             dispatched_attachment_sends: RefCell::new(Vec::new()),
             dispatched_file_listings: RefCell::new(Vec::new()),
             stopped_file_listings: RefCell::new(0),
+            dispatched_file_opens: RefCell::new(Vec::new()),
             dispatched_subtitles: RefCell::new(Vec::new()),
             dispatched_chat_infos: RefCell::new(Vec::new()),
             dispatched_add_reactions: RefCell::new(Vec::new()),
@@ -238,6 +240,12 @@ impl RecordingDispatcher {
 
     pub(super) fn stopped_file_listings(&self) -> usize {
         *self.stopped_file_listings.borrow()
+    }
+
+    /// The command template and the path of every file handed to the
+    /// platform opener.
+    pub(super) fn file_opens(&self) -> Vec<(String, String)> {
+        self.dispatched_file_opens.borrow().clone()
     }
 
     pub(super) fn voice_send_dispatch_count(&self) -> usize {
@@ -418,8 +426,10 @@ impl TaskDispatcher for RecordingDispatcher {
         self.dispatched_chat_infos.borrow_mut().push(query);
     }
 
-    fn dispatch_open_file(&self, _cmd_template: String, _file_path: String) {
-        // Recording: no-op for now
+    fn dispatch_open_file(&self, cmd_template: String, file_path: String) {
+        self.dispatched_file_opens
+            .borrow_mut()
+            .push((cmd_template, file_path));
     }
 
     fn dispatch_save_file(&self, _file_id: i32, _local_path: String, _file_name: Option<String>) {
