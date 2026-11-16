@@ -1,5 +1,4 @@
 use super::*;
-use crate::domain::message::{DownloadStatus, FileInfo};
 use crate::ui::message_rendering::{
     build_message_list_elements, element_to_text, MessageListElement,
 };
@@ -50,33 +49,6 @@ fn sending_status_on_same_line_as_content() {
         "Last line should contain message text, got: '{}'",
         last_line_text
     );
-}
-
-#[test]
-fn sending_status_shows_the_upload_progress_of_the_file() {
-    let mut message = msg_with_media(1, "User", "", FEB_14_2026_10AM, MessageMedia::Document);
-    message.status = MessageStatus::Sending;
-    message.file_info = Some(FileInfo {
-        file_id: 1,
-        local_path: Some("/d/report.pdf".to_owned()),
-        mime_type: "application/pdf".to_owned(),
-        size: Some(4000),
-        duration: None,
-        file_name: Some("report.pdf".to_owned()),
-        is_listened: false,
-        download_status: DownloadStatus::Completed,
-        upload_progress_percent: Some(42),
-    });
-
-    let elements = build_message_list_elements(&[message]);
-    let text = element_to_text(&elements[1], 120);
-    let last_line: String = text.lines[1]
-        .spans
-        .iter()
-        .map(|s| s.content.as_ref())
-        .collect();
-
-    assert!(last_line.ends_with(" sending... 42%"), "got: '{last_line}'");
 }
 
 #[test]

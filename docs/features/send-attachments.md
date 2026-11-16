@@ -106,10 +106,12 @@ is deleted with `dd`.
   input, so an attachment cannot be sent as a reply yet.
 - **Optimistic UI** — the message appears in the chat at once as being sent;
   Telegram uploads the file in the background.
-- **Upload progress** — while the file uploads, the message says how much of
-  it is there: `sending... 42%`. Once the upload is over the percent goes
-  away, and `sending...` with it as soon as Telegram accepts the message.
-  `dd` on such a message cancels the send.
+- **Upload progress** — while the file uploads, its metadata says how much of
+  it is there: `[Document] name=report.pdf, type=pdf, sending=42%, size=1.2MB`.
+  Once the upload is over `sending=` goes away, and the `sending...` status
+  with it as soon as Telegram accepts the message. A message being sent does
+  not say `download=yes`: the file is the user's own. `dd` on such a message
+  cancels the send.
 - **Failure** — the pending message is removed, the caption goes back into
   the input (also when another chat is open by then), and the status bar says
   "Failed to send the file".

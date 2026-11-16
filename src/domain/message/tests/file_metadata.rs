@@ -73,7 +73,7 @@ fn metadata_display_voice_completed() {
         upload_progress_percent: None,
     };
     assert_eq!(
-        build_file_metadata_display(MessageMedia::Voice, &fi),
+        build_file_metadata_display(MessageMedia::Voice, MessageStatus::Delivered, &fi),
         "download=yes, size=15.5KB, duration=0:03, listened=yes"
     );
 }
@@ -92,7 +92,7 @@ fn metadata_display_photo_not_downloaded() {
         upload_progress_percent: None,
     };
     assert_eq!(
-        build_file_metadata_display(MessageMedia::Photo, &fi),
+        build_file_metadata_display(MessageMedia::Photo, MessageStatus::Delivered, &fi),
         "download=no, size=1.4MB"
     );
 }
@@ -113,7 +113,7 @@ fn metadata_display_downloading_progress() {
         upload_progress_percent: None,
     };
     assert_eq!(
-        build_file_metadata_display(MessageMedia::Video, &fi),
+        build_file_metadata_display(MessageMedia::Video, MessageStatus::Delivered, &fi),
         "downloading=42%, size=10.0MB, duration=2:00"
     );
 }
@@ -132,7 +132,7 @@ fn metadata_display_document_with_extension() {
         upload_progress_percent: None,
     };
     assert_eq!(
-        build_file_metadata_display(MessageMedia::Document, &fi),
+        build_file_metadata_display(MessageMedia::Document, MessageStatus::Delivered, &fi),
         "name=report.pdf, type=pdf, download=yes, size=2.5MB"
     );
 }
@@ -150,7 +150,8 @@ fn metadata_display_document_without_extension() {
         download_status: DownloadStatus::NotStarted,
         upload_progress_percent: None,
     };
-    let display = build_file_metadata_display(MessageMedia::Document, &fi);
+    let display =
+        build_file_metadata_display(MessageMedia::Document, MessageStatus::Delivered, &fi);
     assert!(
         display.contains("name=notes"),
         "should contain file name, got: '{}'",
@@ -179,7 +180,7 @@ fn metadata_display_audio_with_name_and_duration() {
         upload_progress_percent: None,
     };
     assert_eq!(
-        build_file_metadata_display(MessageMedia::Audio, &fi),
+        build_file_metadata_display(MessageMedia::Audio, MessageStatus::Delivered, &fi),
         "name=song.mp3, type=mp3, download=yes, size=4.2MB, duration=3:05"
     );
 }
@@ -197,7 +198,8 @@ fn metadata_display_multi_dot_name_uses_last_segment() {
         download_status: DownloadStatus::NotStarted,
         upload_progress_percent: None,
     };
-    let display = build_file_metadata_display(MessageMedia::Document, &fi);
+    let display =
+        build_file_metadata_display(MessageMedia::Document, MessageStatus::Delivered, &fi);
     assert!(
         display.contains("name=archive.tar.gz"),
         "got: '{}'",
@@ -252,9 +254,47 @@ fn metadata_display_voice_not_listened() {
         download_status: DownloadStatus::Completed,
         upload_progress_percent: None,
     };
-    let display = build_file_metadata_display(MessageMedia::Voice, &fi);
+    let display = build_file_metadata_display(MessageMedia::Voice, MessageStatus::Delivered, &fi);
     assert!(
         !display.contains("listened"),
         "should not show listened=yes when not listened"
+    );
+}
+
+fn document_being_sent(upload_progress_percent: Option<u8>) -> FileInfo {
+    FileInfo {
+        file_id: 1,
+        local_path: Some("/d/123.mp4".to_owned()),
+        mime_type: "video/mp4".to_owned(),
+        size: Some(166_000_000),
+        duration: None,
+        file_name: Some("123.mp4".to_owned()),
+        is_listened: false,
+        download_status: DownloadStatus::Completed,
+        upload_progress_percent,
+    }
+}
+
+#[test]
+fn metadata_display_of_a_file_being_sent_shows_upload_progress_instead_of_download() {
+    assert_eq!(
+        build_file_metadata_display(
+            MessageMedia::Document,
+            MessageStatus::Sending,
+            &document_being_sent(Some(5))
+        ),
+        "name=123.mp4, type=mp4, sending=5%, size=166.0MB"
+    );
+}
+
+#[test]
+fn metadata_display_of_a_file_being_sent_has_no_download_state_once_uploaded() {
+    assert_eq!(
+        build_file_metadata_display(
+            MessageMedia::Document,
+            MessageStatus::Sending,
+            &document_being_sent(None)
+        ),
+        "name=123.mp4, type=mp4, size=166.0MB"
     );
 }
