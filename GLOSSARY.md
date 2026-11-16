@@ -77,3 +77,17 @@ _Avoid_: URL, hyperlink
 **Link picker**:
 The popup that asks what to open when a message holds more than one link or mention.
 _Avoid_: link selector, target picker
+
+## Attachments
+
+**Attachment**:
+A local file the user sends into a chat, as opposed to a file that arrived inside a message.
+_Avoid_: upload, outgoing file
+
+**File picker**:
+The popup that lists local files and lets the user choose the attachment to send.
+_Avoid_: file selector, file browser, attach dialog
+
+**File list command**:
+The external command that tells the file picker which local files exist; it only names files, RTG finds out the rest about them itself.
+_Avoid_: file lister, engine, finder
