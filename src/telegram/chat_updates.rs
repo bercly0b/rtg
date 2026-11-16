@@ -14,6 +14,7 @@ use crate::domain::message::Message;
 
 use super::tdlib_mappers::{
     effective_file_size, map_chat_folders, map_download_state, map_td_chat_list,
+    map_upload_progress,
 };
 use super::tdlib_updates::TdLibUpdate;
 
@@ -153,12 +154,14 @@ fn map_update(update: TdLibUpdate, mapper: &dyn MessageMapper) -> Option<ChatUpd
         }),
         TdLibUpdate::FileUpdated { file } => {
             let (download_status, local_path) = map_download_state(&file);
+            let upload_progress_percent = map_upload_progress(&file);
             Some(ChatUpdate::FileUpdated {
                 file_id: file.id,
                 size: effective_file_size(&file),
                 downloaded_size: file.local.downloaded_size.max(0) as u64,
                 local_path,
                 download_status,
+                upload_progress_percent,
             })
         }
         TdLibUpdate::UserStatus { user_id } => Some(ChatUpdate::UserStatusChanged { user_id }),
@@ -674,6 +677,7 @@ mod tests {
                 download_status: DownloadStatus::Downloading {
                     progress_percent: 25
                 },
+                upload_progress_percent: None,
             })
         );
     }

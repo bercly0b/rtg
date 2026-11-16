@@ -33,6 +33,9 @@ pub struct FileInfo {
     pub is_listened: bool,
     /// Current download state.
     pub download_status: DownloadStatus,
+    /// How much of an outgoing file is uploaded; `None` unless an upload is
+    /// running.
+    pub upload_progress_percent: Option<u8>,
 }
 
 /// Formats a file size in bytes into a human-readable string.

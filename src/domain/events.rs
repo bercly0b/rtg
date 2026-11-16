@@ -61,7 +61,7 @@ pub enum ChatUpdate {
         action_label: String,
         is_cancel: bool,
     },
-    /// File download progress or completion update from TDLib.
+    /// File download or upload progress, or completion update from TDLib.
     /// `local_path` is set only once the download has completed.
     /// `downloaded_size` is the running byte count used for the download speed.
     FileUpdated {
@@ -70,6 +70,8 @@ pub enum ChatUpdate {
         downloaded_size: u64,
         local_path: Option<String>,
         download_status: super::message::DownloadStatus,
+        /// How much of the file is uploaded; `None` unless an upload is running.
+        upload_progress_percent: Option<u8>,
     },
     /// A forum topic's metadata or unread state changed. The orchestrator
     /// should refresh the topic list when this matches the open forum.

@@ -121,9 +121,32 @@ impl Message {
         }
     }
 
-    /// Whether this is an optimistically displayed message that Telegram has
-    /// not accepted yet; its id is local and must not reach TDLib.
+    /// Whether Telegram has not accepted this message yet: neither the
+    /// optimistically displayed one nor TDLib's own yet unsent one can be
+    /// replied to, edited or reacted to.
     pub fn is_pending(&self) -> bool {
         self.status == MessageStatus::Sending
+    }
+
+    /// Whether this is the optimistically displayed message: its id is local
+    /// and must not reach TDLib, unlike the id of TDLib's yet unsent message.
+    pub fn is_optimistic(&self) -> bool {
+        self.id < 0
+    }
+}
+
+/// Sets the upload progress of the messages being sent with `file_id`.
+pub(super) fn set_upload_progress(
+    messages: &mut [Message],
+    file_id: i32,
+    progress_percent: Option<u8>,
+) {
+    for file_info in messages
+        .iter_mut()
+        .filter(|message| message.is_pending())
+        .filter_map(|message| message.file_info.as_mut())
+        .filter(|file_info| file_info.file_id == file_id)
+    {
+        file_info.upload_progress_percent = progress_percent;
     }
 }

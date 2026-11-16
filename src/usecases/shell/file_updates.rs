@@ -29,6 +29,23 @@ impl Downloads {
     }
 }
 
+/// Shows how much of a file is uploaded on the messages being sent with it.
+///
+/// Unlike a download, an upload is not registered anywhere: TDLib starts it
+/// on its own, so the messages are found by the file id.
+pub(super) fn handle_upload_progress<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    file_id: i32,
+    progress_percent: Option<u8>,
+) {
+    ctx.state
+        .open_chat_mut()
+        .set_upload_progress(file_id, progress_percent);
+    ctx.state
+        .message_cache_mut()
+        .set_upload_progress(file_id, progress_percent);
+}
+
 /// Handles a file download progress/completion update from TDLib.
 ///
 /// Updates the `FileInfo` on the relevant message in both the open chat

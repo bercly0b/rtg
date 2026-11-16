@@ -44,6 +44,8 @@ pub enum MessageListElement {
         media: MessageMedia,
         /// File metadata line (e.g. "download=yes, size=15.5KB, duration=0:03").
         file_meta: Option<String>,
+        /// How much of the file being sent is uploaded.
+        upload_progress_percent: Option<u8>,
         /// Reply preview: sender name and text of the replied-to message.
         reply_info: Option<ReplyInfo>,
         forward_info: Option<ForwardInfo>,
@@ -90,6 +92,7 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
                 status: message.status,
                 media: message.media,
                 file_meta: None,
+                upload_progress_percent: None,
                 reply_info: None,
                 forward_info: None,
                 reaction_count: message.reaction_count,
@@ -138,6 +141,10 @@ pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListEleme
             status: message.status,
             media: message.media,
             file_meta,
+            upload_progress_percent: message
+                .file_info
+                .as_ref()
+                .and_then(|fi| fi.upload_progress_percent),
             reply_info: message.reply_to.clone(),
             forward_info: message.forward_info.clone(),
             reaction_count: message.reaction_count,
@@ -204,6 +211,7 @@ pub fn element_to_text(
             status: _,
             media: _,
             file_meta: _,
+            upload_progress_percent: _,
             reply_info: _,
             forward_info: _,
             reaction_count,
@@ -236,6 +244,7 @@ pub fn element_to_text(
             status,
             media,
             file_meta,
+            upload_progress_percent,
             reply_info,
             forward_info,
             reaction_count,
@@ -250,6 +259,7 @@ pub fn element_to_text(
                 *is_outgoing,
                 content,
                 *status,
+                *upload_progress_percent,
                 media.display_label(),
                 file_meta.as_deref(),
                 reply_info.as_ref(),

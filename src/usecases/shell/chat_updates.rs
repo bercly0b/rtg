@@ -117,7 +117,13 @@ pub(super) fn handle_chat_updates<D: TaskDispatcher>(
                 downloaded_size,
                 local_path,
                 download_status,
+                upload_progress_percent,
             } => {
+                file_updates::handle_upload_progress(
+                    &mut ctx.shell,
+                    file_id,
+                    upload_progress_percent,
+                );
                 file_updates::handle_file_update(
                     &mut ctx.shell,
                     ctx.downloads,

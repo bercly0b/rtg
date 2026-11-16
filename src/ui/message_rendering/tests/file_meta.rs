@@ -14,6 +14,7 @@ fn voice_file() -> FileInfo {
         file_name: None,
         is_listened: true,
         download_status: DownloadStatus::Completed,
+        upload_progress_percent: None,
     }
 }
 
@@ -102,6 +103,7 @@ fn voice_message_shows_file_metadata() {
             file_name: None,
             is_listened: true,
             download_status: DownloadStatus::Completed,
+            upload_progress_percent: None,
         }),
         call_info: None,
         reply_to: None,
@@ -157,6 +159,7 @@ fn document_message_shows_file_name_and_extension() {
             file_name: Some("report.pdf".to_owned()),
             is_listened: false,
             download_status: DownloadStatus::Completed,
+            upload_progress_percent: None,
         }),
         call_info: None,
         reply_to: None,
@@ -222,6 +225,7 @@ fn document_without_extension_does_not_break_layout() {
                 file_name,
                 is_listened: false,
                 download_status: DownloadStatus::NotStarted,
+                upload_progress_percent: None,
             }),
             call_info: None,
             reply_to: None,

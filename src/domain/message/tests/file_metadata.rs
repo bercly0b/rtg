@@ -70,6 +70,7 @@ fn metadata_display_voice_completed() {
         file_name: None,
         is_listened: true,
         download_status: DownloadStatus::Completed,
+        upload_progress_percent: None,
     };
     assert_eq!(
         build_file_metadata_display(MessageMedia::Voice, &fi),
@@ -88,6 +89,7 @@ fn metadata_display_photo_not_downloaded() {
         file_name: None,
         is_listened: false,
         download_status: DownloadStatus::NotStarted,
+        upload_progress_percent: None,
     };
     assert_eq!(
         build_file_metadata_display(MessageMedia::Photo, &fi),
@@ -108,6 +110,7 @@ fn metadata_display_downloading_progress() {
         download_status: DownloadStatus::Downloading {
             progress_percent: 42,
         },
+        upload_progress_percent: None,
     };
     assert_eq!(
         build_file_metadata_display(MessageMedia::Video, &fi),
@@ -126,6 +129,7 @@ fn metadata_display_document_with_extension() {
         file_name: Some("report.pdf".to_owned()),
         is_listened: false,
         download_status: DownloadStatus::Completed,
+        upload_progress_percent: None,
     };
     assert_eq!(
         build_file_metadata_display(MessageMedia::Document, &fi),
@@ -144,6 +148,7 @@ fn metadata_display_document_without_extension() {
         file_name: Some("notes".to_owned()),
         is_listened: false,
         download_status: DownloadStatus::NotStarted,
+        upload_progress_percent: None,
     };
     let display = build_file_metadata_display(MessageMedia::Document, &fi);
     assert!(
@@ -171,6 +176,7 @@ fn metadata_display_audio_with_name_and_duration() {
         file_name: Some("song.mp3".to_owned()),
         is_listened: false,
         download_status: DownloadStatus::Completed,
+        upload_progress_percent: None,
     };
     assert_eq!(
         build_file_metadata_display(MessageMedia::Audio, &fi),
@@ -189,6 +195,7 @@ fn metadata_display_multi_dot_name_uses_last_segment() {
         file_name: Some("archive.tar.gz".to_owned()),
         is_listened: false,
         download_status: DownloadStatus::NotStarted,
+        upload_progress_percent: None,
     };
     let display = build_file_metadata_display(MessageMedia::Document, &fi);
     assert!(
@@ -243,6 +250,7 @@ fn metadata_display_voice_not_listened() {
         file_name: None,
         is_listened: false,
         download_status: DownloadStatus::Completed,
+        upload_progress_percent: None,
     };
     let display = build_file_metadata_display(MessageMedia::Voice, &fi);
     assert!(

@@ -17,7 +17,7 @@ pub use chat::{map_chat_to_summary, map_chat_type};
 pub use chat_folder::{map_chat_folders, map_chat_list_kind, map_td_chat_list};
 #[allow(unused_imports, reason = "some re-exports are used only by tests")]
 pub use file_info::extract_file_info;
-pub use file_info::{effective_file_size, map_download_state};
+pub use file_info::{effective_file_size, map_download_state, map_upload_progress};
 pub use forum_topic::map_forum_topic_to_summary;
 #[allow(unused_imports, reason = "some re-exports are used only by tests")]
 pub use message::{

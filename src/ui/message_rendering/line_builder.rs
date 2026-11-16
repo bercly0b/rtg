@@ -27,6 +27,7 @@ pub(super) fn build_message_lines(
     is_outgoing: bool,
     content: &str,
     status: MessageStatus,
+    upload_progress_percent: Option<u8>,
     media_label: Option<&str>,
     file_meta: Option<&str>,
     reply_info: Option<&ReplyInfo>,
@@ -125,9 +126,13 @@ pub(super) fn build_message_lines(
     // Append sending status indicator on the same line as the last content line
     if status == MessageStatus::Sending {
         if let Some(last_line) = lines.last_mut() {
+            let label = match upload_progress_percent {
+                Some(percent) => format!(" sending... {percent}%"),
+                None => " sending...".to_owned(),
+            };
             last_line
                 .spans
-                .push(Span::styled(" sending...", styles::message_sending_style()));
+                .push(Span::styled(label, styles::message_sending_style()));
         }
     }
 

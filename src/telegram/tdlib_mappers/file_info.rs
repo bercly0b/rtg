@@ -101,6 +101,7 @@ fn extract_photo_file_info(p: &tdlib_rs::types::MessagePhoto) -> Option<FileInfo
 /// Builds a `FileInfo` from a TDLib `File` and extracted metadata.
 fn build_file_info(file: &tdlib_rs::types::File, meta: FileMetadata) -> FileInfo {
     let (download_status, local_path) = map_download_state(file);
+    let upload_progress_percent = map_upload_progress(file);
 
     let size = {
         let s = effective_file_size(file);
@@ -120,6 +121,7 @@ fn build_file_info(file: &tdlib_rs::types::File, meta: FileMetadata) -> FileInfo
         file_name: meta.file_name,
         is_listened: meta.is_listened,
         download_status,
+        upload_progress_percent,
     }
 }
 
@@ -144,6 +146,16 @@ pub fn map_download_state(file: &tdlib_rs::types::File) -> (DownloadStatus, Opti
         DownloadStatus::NotStarted
     };
     (status, None)
+}
+
+/// How much of the file TDLib has uploaded, while it is uploading it.
+pub fn map_upload_progress(file: &tdlib_rs::types::File) -> Option<u8> {
+    file.remote.is_uploading_active.then(|| {
+        (file.remote.uploaded_size.max(0) as u64 * 100)
+            .checked_div(effective_file_size(file))
+            .unwrap_or(0)
+            .min(99) as u8
+    })
 }
 
 /// Extracts call metadata from a `MessageCall` content.

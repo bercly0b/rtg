@@ -1,6 +1,6 @@
 use tdlib_rs::enums::MessageContent;
 
-use crate::domain::message::MessageMedia;
+use crate::domain::message::{MessageMedia, MessageStatus};
 use crate::telegram::tdlib_mappers::{
     extract_forward_info, extract_message_media, extract_message_text, extract_reply_info,
     map_tdlib_message_to_domain,
@@ -156,6 +156,29 @@ fn map_tdlib_message_to_domain_handles_outgoing() {
         map_tdlib_message_to_domain(&td_message, "Me".to_owned(), None, None, |_: i64| None);
 
     assert!(message.is_outgoing);
+}
+
+#[test]
+fn message_tdlib_has_not_sent_yet_is_being_sent() {
+    let mut td_message = make_test_message(456, "My message", true);
+    td_message.sending_state = Some(tdlib_rs::enums::MessageSendingState::Pending(
+        tdlib_rs::types::MessageSendingStatePending { sending_id: 0 },
+    ));
+
+    let message =
+        map_tdlib_message_to_domain(&td_message, "Me".to_owned(), None, None, |_: i64| None);
+
+    assert_eq!(message.status, MessageStatus::Sending);
+}
+
+#[test]
+fn sent_message_is_delivered() {
+    let td_message = make_test_message(456, "My message", true);
+
+    let message =
+        map_tdlib_message_to_domain(&td_message, "Me".to_owned(), None, None, |_: i64| None);
+
+    assert_eq!(message.status, MessageStatus::Delivered);
 }
 
 #[test]
