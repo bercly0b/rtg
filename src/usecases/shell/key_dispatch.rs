@@ -1,12 +1,17 @@
 use anyhow::Result;
 
 use crate::{
-    domain::{chat::ChatType, events::ConnectivityStatus, keymap::Action, shell_state::ActivePane},
+    domain::{
+        chat::ChatType,
+        events::{ConnectivityStatus, KeyInput},
+        keymap::Action,
+        shell_state::ActivePane,
+    },
     usecases::background::TaskDispatcher,
 };
 
 use super::{
-    chat_list,
+    attachments, chat_list,
     chat_open::{self, OpenChatSync},
     chat_search, command_popup,
     file_updates::Downloads,
@@ -19,10 +24,13 @@ use super::{
 /// open and the key goes through the keymap.
 pub(super) fn dispatch_modal_key<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
-    key: &str,
+    input: &KeyInput,
 ) -> Result<bool> {
+    let key = input.key.as_str();
     let state = &ctx.shell.state;
-    if state.chat_search().is_some() {
+    if state.file_picker().is_some() {
+        attachments::handle_file_picker_key(&mut ctx.shell, input);
+    } else if state.chat_search().is_some() {
         chat_search::handle_chat_search_key(&mut ctx.shell, key);
     } else if state.command_popup().is_some() {
         command_popup::handle_command_popup_key(&mut ctx.shell, ctx.media, key);
@@ -173,6 +181,9 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
         }
         Action::RecordVoice if ctx.shell.state.open_chat().is_open() => {
             voice::start_voice_recording(&mut ctx.shell, ctx.media);
+        }
+        Action::AttachFile if ctx.shell.state.open_chat().is_open() => {
+            attachments::open_file_picker(&mut ctx.shell, ctx.attachments);
         }
         Action::ShowMessageInfo => {
             popups::show_message_info_popup(&mut ctx.shell);

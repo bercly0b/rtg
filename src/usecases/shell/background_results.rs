@@ -3,7 +3,7 @@ use crate::{
     usecases::background::{BackgroundTaskResult, TaskDispatcher},
 };
 
-use super::{chat_list, chat_open, popups, self_update, OrchestratorCtx};
+use super::{attachments, chat_list, chat_open, popups, self_update, OrchestratorCtx};
 
 pub(super) fn handle_background_result<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
@@ -278,6 +278,25 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                     ctx.shell.state.open_chat_mut().set_refreshing(false);
                 }
             }
+        }
+        BackgroundTaskResult::AttachmentSent {
+            chat_id,
+            topic_id,
+            attachment,
+            result,
+        } => attachments::handle_attachment_sent(
+            &mut ctx.shell,
+            chat_id,
+            topic_id,
+            attachment,
+            result,
+        ),
+        BackgroundTaskResult::FilesListed {
+            listing_id,
+            entries,
+        } => attachments::handle_files_listed(&mut ctx.shell, listing_id, entries),
+        BackgroundTaskResult::FileListingFinished { listing_id, error } => {
+            attachments::handle_file_listing_finished(&mut ctx.shell, listing_id, error)
         }
         BackgroundTaskResult::VoiceSendFailed {
             chat_id,

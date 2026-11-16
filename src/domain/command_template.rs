@@ -1,10 +1,12 @@
-//! External command templates (`[voice] record_cmd`, `[open]` handlers).
+//! External command templates (`[voice] record_cmd`, `[open]` handlers,
+//! `[attach] list_cmd`).
 //!
 //! Templates are split with POSIX shell quoting rules, so an argument with
 //! spaces can be quoted (e.g. `-i ':MacBook Pro Microphone'`). No shell is
 //! spawned: the resulting argv is executed directly.
 
 pub const FILE_PATH_PLACEHOLDER: &str = "{file_path}";
+pub const DIRS_PLACEHOLDER: &str = "{dirs}";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CommandTemplateError {
@@ -28,6 +30,35 @@ pub fn resolve_argv(template: &str, file_path: &str) -> Result<Vec<String>, Comm
         .into_iter()
         .map(|arg| arg.replace(FILE_PATH_PLACEHOLDER, file_path))
         .collect())
+}
+
+/// Splits a file list command into argv, replacing the `{dirs}` argument
+/// with one argument per directory.
+pub fn resolve_list_argv(
+    template: &str,
+    dirs: &[String],
+) -> Result<Vec<String>, CommandTemplateError> {
+    let argv = shell_words::split(template)?;
+    if argv.is_empty() {
+        return Err(CommandTemplateError::Empty);
+    }
+
+    Ok(argv
+        .into_iter()
+        .flat_map(|arg| {
+            if arg == DIRS_PLACEHOLDER {
+                dirs.to_vec()
+            } else {
+                vec![arg]
+            }
+        })
+        .collect())
+}
+
+/// Whether a file list command asks for the directories: has `{dirs}` as an
+/// argument of its own.
+pub fn list_cmd_uses_dirs(template: &str) -> bool {
+    shell_words::split(template).is_ok_and(|argv| argv.iter().any(|arg| arg == DIRS_PLACEHOLDER))
 }
 
 /// Returns the executable (first argv token) of the template.
@@ -127,6 +158,51 @@ mod tests {
 
         assert!(matches!(error, CommandTemplateError::Parse(_)));
         assert!(error.to_string().contains("missing closing quote"));
+    }
+
+    #[test]
+    fn dirs_placeholder_becomes_one_argument_per_directory() {
+        let argv = resolve_list_argv(
+            "find {dirs} -type f",
+            &[
+                "/home/me/Desktop".to_owned(),
+                "/home/me/My Files".to_owned(),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(
+            argv,
+            [
+                "find",
+                "/home/me/Desktop",
+                "/home/me/My Files",
+                "-type",
+                "f"
+            ]
+        );
+    }
+
+    #[test]
+    fn list_command_without_dirs_placeholder_is_left_as_is() {
+        let argv = resolve_list_argv("git ls-files", &["/home/me".to_owned()]).unwrap();
+
+        assert_eq!(argv, ["git", "ls-files"]);
+    }
+
+    #[test]
+    fn list_command_uses_dirs_only_as_an_argument_of_its_own() {
+        assert!(list_cmd_uses_dirs("find {dirs} -type f"));
+        assert!(!list_cmd_uses_dirs("git ls-files"));
+        assert!(!list_cmd_uses_dirs("find {dirs}/sub"));
+    }
+
+    #[test]
+    fn empty_list_command_is_rejected() {
+        assert_eq!(
+            resolve_list_argv(" ", &["/home/me".to_owned()]),
+            Err(CommandTemplateError::Empty)
+        );
     }
 
     #[test]

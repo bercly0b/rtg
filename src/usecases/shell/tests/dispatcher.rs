@@ -5,6 +5,12 @@ use crate::usecases::chat_subtitle::ChatInfoQuery;
 
 type SendRecord = (i64, Option<i32>, OutgoingMessage);
 type VoiceSendRecord = (i64, Option<i32>, String, i64);
+type AttachmentSendRecord = (
+    i64,
+    Option<i32>,
+    crate::domain::attachment::OutgoingAttachment,
+);
+type FileListingRecord = (u64, String, Vec<String>);
 type MarkAsReadRecord = (i64, Option<i32>, Vec<i64>);
 
 /// Records what the orchestrator dispatched and allows inspection.
@@ -25,6 +31,9 @@ pub(super) struct RecordingDispatcher {
     dispatched_deletes: RefCell<Vec<(i64, i64)>>,
     dispatched_add_chat_to_list: RefCell<Vec<(i64, ChatListKind)>>,
     dispatched_voice_sends: RefCell<Vec<VoiceSendRecord>>,
+    dispatched_attachment_sends: RefCell<Vec<AttachmentSendRecord>>,
+    dispatched_file_listings: RefCell<Vec<FileListingRecord>>,
+    stopped_file_listings: RefCell<usize>,
     dispatched_subtitles: RefCell<Vec<ChatSubtitleQuery>>,
     dispatched_chat_infos: RefCell<Vec<ChatInfoQuery>>,
     dispatched_add_reactions: RefCell<Vec<(i64, i64, String)>>,
@@ -52,6 +61,9 @@ impl RecordingDispatcher {
             dispatched_deletes: RefCell::new(Vec::new()),
             dispatched_add_chat_to_list: RefCell::new(Vec::new()),
             dispatched_voice_sends: RefCell::new(Vec::new()),
+            dispatched_attachment_sends: RefCell::new(Vec::new()),
+            dispatched_file_listings: RefCell::new(Vec::new()),
+            stopped_file_listings: RefCell::new(0),
             dispatched_subtitles: RefCell::new(Vec::new()),
             dispatched_chat_infos: RefCell::new(Vec::new()),
             dispatched_add_reactions: RefCell::new(Vec::new()),
@@ -212,6 +224,22 @@ impl RecordingDispatcher {
         self.dispatched_add_chat_to_list.borrow().clone()
     }
 
+    pub(super) fn attachment_send_count(&self) -> usize {
+        self.dispatched_attachment_sends.borrow().len()
+    }
+
+    pub(super) fn last_attachment_send(&self) -> Option<AttachmentSendRecord> {
+        self.dispatched_attachment_sends.borrow().last().cloned()
+    }
+
+    pub(super) fn last_file_listing(&self) -> Option<FileListingRecord> {
+        self.dispatched_file_listings.borrow().last().cloned()
+    }
+
+    pub(super) fn stopped_file_listings(&self) -> usize {
+        *self.stopped_file_listings.borrow()
+    }
+
     pub(super) fn voice_send_dispatch_count(&self) -> usize {
         self.dispatched_voice_sends.borrow().len()
     }
@@ -359,6 +387,27 @@ impl TaskDispatcher for RecordingDispatcher {
         self.dispatched_voice_sends
             .borrow_mut()
             .push((chat_id, topic_id, file_path, pending_id));
+    }
+
+    fn dispatch_send_attachment(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        attachment: crate::domain::attachment::OutgoingAttachment,
+    ) {
+        self.dispatched_attachment_sends
+            .borrow_mut()
+            .push((chat_id, topic_id, attachment));
+    }
+
+    fn dispatch_list_files(&self, listing_id: u64, list_cmd: String, dirs: Vec<String>) {
+        self.dispatched_file_listings
+            .borrow_mut()
+            .push((listing_id, list_cmd, dirs));
+    }
+
+    fn dispatch_stop_file_listing(&self) {
+        *self.stopped_file_listings.borrow_mut() += 1;
     }
 
     fn dispatch_download_file(&self, _file_id: i32) {

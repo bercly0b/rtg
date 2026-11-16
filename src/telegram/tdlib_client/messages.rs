@@ -1,3 +1,5 @@
+use crate::domain::attachment::{AttachmentKind, OutgoingAttachment};
+
 use super::types::TdLibError;
 use super::TdLibClient;
 
@@ -234,6 +236,104 @@ impl TdLibClient {
             match message {
                 tdlib_rs::enums::Message::Message(m) => Ok(m),
             }
+        })
+    }
+
+    /// Sends a local file to a chat or forum topic, as a photo or as a
+    /// document depending on `attachment.kind`.
+    ///
+    /// See [`send_message`](Self::send_message) for the `topic_id` semantics.
+    /// Returns as soon as TDLib has queued the message: the upload goes on
+    /// in the background.
+    pub fn send_attachment(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        attachment: &OutgoingAttachment,
+    ) -> Result<tdlib_rs::types::Message, TdLibError> {
+        let client_id = self.client_id;
+        let attachment = attachment.clone();
+
+        self.block_on_request("sendMessage", async {
+            let file = tdlib_rs::enums::InputFile::Local(tdlib_rs::types::InputFileLocal {
+                path: attachment.path,
+            });
+            let caption =
+                (!attachment.caption.is_empty()).then(|| tdlib_rs::types::FormattedText {
+                    text: attachment.caption,
+                    entities: vec![],
+                });
+
+            let input_content = match attachment.kind {
+                AttachmentKind::Photo { width, height } => {
+                    tdlib_rs::enums::InputMessageContent::InputMessagePhoto(
+                        tdlib_rs::types::InputMessagePhoto {
+                            photo: file,
+                            thumbnail: None,
+                            added_sticker_file_ids: vec![],
+                            width: i32::try_from(width).unwrap_or(0),
+                            height: i32::try_from(height).unwrap_or(0),
+                            caption,
+                            show_caption_above_media: false,
+                            self_destruct_type: None,
+                            has_spoiler: false,
+                        },
+                    )
+                }
+                AttachmentKind::Document => {
+                    tdlib_rs::enums::InputMessageContent::InputMessageDocument(
+                        tdlib_rs::types::InputMessageDocument {
+                            document: file,
+                            thumbnail: None,
+                            disable_content_type_detection: false,
+                            caption,
+                        },
+                    )
+                }
+            };
+
+            let reply_to = attachment.reply_to.map(|reply| {
+                tdlib_rs::enums::InputMessageReplyTo::Message(
+                    tdlib_rs::types::InputMessageReplyToMessage {
+                        message_id: reply.message_id,
+                        quote: None,
+                        checklist_task_id: 0,
+                    },
+                )
+            });
+
+            let message = tdlib_rs::functions::send_message(
+                chat_id,
+                topic_id.map(|id| {
+                    tdlib_rs::enums::MessageTopic::Forum(tdlib_rs::types::MessageTopicForum {
+                        forum_topic_id: id,
+                    })
+                }),
+                reply_to,
+                None, // options
+                input_content,
+                client_id,
+            )
+            .await?;
+
+            match message {
+                tdlib_rs::enums::Message::Message(m) => Ok(m),
+            }
+        })
+    }
+
+    /// Whether the account has Telegram Premium (TDLib option `is_premium`).
+    pub fn is_premium(&self) -> Result<bool, TdLibError> {
+        let client_id = self.client_id;
+
+        self.block_on_request("getOption", async {
+            let value = tdlib_rs::functions::get_option("is_premium".to_owned(), client_id).await?;
+            Ok(matches!(
+                value,
+                tdlib_rs::enums::OptionValue::Boolean(tdlib_rs::types::OptionValueBoolean {
+                    value: true
+                })
+            ))
         })
     }
 

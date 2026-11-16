@@ -1,3 +1,4 @@
+mod attachments;
 mod background_results;
 mod chat_list;
 mod chat_open;
@@ -40,6 +41,7 @@ use super::{
     contracts::{AppEvent, ShellEffect, ShellOrchestrator},
     load_messages::CachedMessagesSource,
 };
+use attachments::Attachments;
 use chat_list::ChatListLoads;
 use chat_open::OpenChatSync;
 use command_popup::MediaCommands;
@@ -58,6 +60,10 @@ pub struct OrchestratorConfig {
     pub voice_record_cmd: String,
     /// MIME-type → command mappings for opening message files.
     pub open_handlers: HashMap<String, String>,
+    /// File list command template of the file picker.
+    pub file_list_cmd: String,
+    /// Directories that fill the `{dirs}` placeholder of `file_list_cmd`.
+    pub attach_dirs: Vec<String>,
     /// Maximum file size (in bytes) for auto-download.
     pub max_auto_download_bytes: u64,
     /// Action name → key pattern overrides of the default keymap.
@@ -70,6 +76,10 @@ impl Default for OrchestratorConfig {
             min_display_messages: DEFAULT_MIN_DISPLAY_MESSAGES,
             voice_record_cmd: super::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
             open_handlers: HashMap::new(),
+            file_list_cmd: crate::domain::attach_defaults::DEFAULT_LIST_CMD.to_owned(),
+            attach_dirs: crate::domain::attach_defaults::DEFAULT_DIRS
+                .map(str::to_owned)
+                .to_vec(),
             max_auto_download_bytes: 10_000_000,
             key_overrides: HashMap::new(),
         }
@@ -80,8 +90,8 @@ impl Default for OrchestratorConfig {
 /// and to the shell loop.
 ///
 /// Handlers take the orchestrator zones they touch (`ChatListLoads`,
-/// `OpenChatSync`, `Downloads`, `MediaCommands`) as separate arguments, so a
-/// signature states what a handler can change.
+/// `OpenChatSync`, `Downloads`, `MediaCommands`, `Attachments`) as separate
+/// arguments, so a signature states what a handler can change.
 struct ShellCtx<'a, D: TaskDispatcher> {
     pub state: &'a mut ShellState,
     pub dispatcher: &'a D,
@@ -97,6 +107,7 @@ struct OrchestratorCtx<'a, D: TaskDispatcher> {
     pub open_chat_sync: &'a mut OpenChatSync,
     pub downloads: &'a mut Downloads,
     pub media: &'a mut MediaCommands,
+    pub attachments: &'a mut Attachments,
     pub opener: &'a dyn ExternalOpener,
 }
 
@@ -116,6 +127,7 @@ where
     open_chat_sync: OpenChatSync,
     downloads: Downloads,
     media: MediaCommands,
+    attachments: Attachments,
     /// When `true`, the orchestrator was initialised with cached data and needs
     /// a background refresh on the first Tick to pick up server-side changes.
     initial_refresh_needed: bool,
@@ -167,6 +179,7 @@ where
             open_chat_sync: OpenChatSync::new(cache_source, config.min_display_messages),
             downloads: Downloads::new(config.max_auto_download_bytes),
             media: MediaCommands::new(config.voice_record_cmd, config.open_handlers),
+            attachments: Attachments::new(config.file_list_cmd, config.attach_dirs),
             initial_refresh_needed,
             keymap: if config.key_overrides.is_empty() {
                 Keymap::default()
@@ -187,6 +200,7 @@ where
             open_chat_sync: &mut self.open_chat_sync,
             downloads: &mut self.downloads,
             media: &mut self.media,
+            attachments: &mut self.attachments,
             opener: &self.opener,
         }
     }
@@ -280,7 +294,7 @@ where
                 command_popup::handle_command_exited(&mut ctx.shell, ctx.media, success);
             }
             AppEvent::InputKey(key) => {
-                if key_dispatch::dispatch_modal_key(&mut self.as_ctx(), &key.key)? {
+                if key_dispatch::dispatch_modal_key(&mut self.as_ctx(), &key)? {
                     return Ok(());
                 }
 

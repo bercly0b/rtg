@@ -267,6 +267,8 @@ fn map_key_event(key: KeyEvent) -> Option<AppEvent> {
         KeyCode::Esc => Some("esc"),
         KeyCode::Backspace => Some("backspace"),
         KeyCode::Delete => Some("delete"),
+        KeyCode::Up => Some("up"),
+        KeyCode::Down => Some("down"),
         KeyCode::Left => Some("left"),
         KeyCode::Right => Some("right"),
         KeyCode::Home => Some("home"),

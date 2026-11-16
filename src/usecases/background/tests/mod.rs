@@ -77,6 +77,18 @@ impl TaskDispatcher for StubTaskDispatcher {
     ) {
     }
 
+    fn dispatch_send_attachment(
+        &self,
+        _chat_id: i64,
+        _topic_id: Option<i32>,
+        _attachment: crate::domain::attachment::OutgoingAttachment,
+    ) {
+    }
+
+    fn dispatch_list_files(&self, _listing_id: u64, _list_cmd: String, _dirs: Vec<String>) {}
+
+    fn dispatch_stop_file_listing(&self) {}
+
     fn dispatch_download_file(&self, _file_id: i32) {}
 
     fn dispatch_chat_info(&self, _query: ChatInfoQuery) {}
@@ -261,11 +273,17 @@ mod send_rollback {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
+    use crate::domain::attachment::{AttachmentKind, OutgoingAttachment};
     use crate::domain::message::Message;
     use crate::domain::message_input_state::{OutgoingMessage, ReplyContext};
-    use crate::usecases::background::messaging::{dispatch_send_message, dispatch_send_voice};
-    use crate::usecases::background::{BackgroundError, BackgroundTaskResult};
+    use crate::usecases::background::messaging::{
+        dispatch_send_attachment, dispatch_send_message, dispatch_send_voice,
+    };
+    use crate::usecases::background::{
+        BackgroundError, BackgroundTaskResult, ATTACHMENT_TOO_LARGE,
+    };
     use crate::usecases::load_messages::{MessagesSource, MessagesSourceError};
+    use crate::usecases::send_attachment::{AttachmentSender, SendAttachmentError};
     use crate::usecases::send_message::{MessageSender, SendMessageSourceError};
     use crate::usecases::send_voice::VoiceNoteSender;
 
@@ -374,6 +392,74 @@ mod send_rollback {
             BackgroundTaskResult::VoiceSendFailed {
                 chat_id: 1,
                 pending_id: -9,
+            }
+        );
+    }
+
+    struct RejectingAttachments(SendAttachmentError);
+
+    impl AttachmentSender for RejectingAttachments {
+        fn send_attachment(
+            &self,
+            _chat_id: i64,
+            _topic_id: Option<i32>,
+            _attachment: &OutgoingAttachment,
+        ) -> Result<(), SendAttachmentError> {
+            Err(self.0.clone())
+        }
+    }
+
+    fn failed_attachment_send(error: SendAttachmentError) -> BackgroundTaskResult {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        dispatch_send_attachment(
+            &Arc::new(RejectingAttachments(error)),
+            &Arc::new(NoMessages),
+            &tx,
+            1,
+            Some(3),
+            attachment(),
+        );
+
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("send must always deliver a result")
+    }
+
+    fn attachment() -> OutgoingAttachment {
+        OutgoingAttachment {
+            pending_id: -4,
+            path: "/d/report.pdf".to_owned(),
+            size_bytes: 10,
+            kind: AttachmentKind::Document,
+            caption: "Look".to_owned(),
+            reply_to: None,
+        }
+    }
+
+    #[test]
+    fn failed_attachment_send_echoes_rollback_payload() {
+        assert_eq!(
+            failed_attachment_send(SendAttachmentError::Source(
+                SendMessageSourceError::Unavailable
+            )),
+            BackgroundTaskResult::AttachmentSent {
+                chat_id: 1,
+                topic_id: Some(3),
+                attachment: attachment(),
+                result: Err(BackgroundError::new("SEND_ATTACHMENT_FAILED")),
+            }
+        );
+    }
+
+    #[test]
+    fn attachment_over_the_upload_limit_has_its_own_error_code() {
+        assert_eq!(
+            failed_attachment_send(SendAttachmentError::TooLarge),
+            BackgroundTaskResult::AttachmentSent {
+                chat_id: 1,
+                topic_id: Some(3),
+                attachment: attachment(),
+                result: Err(BackgroundError::new(ATTACHMENT_TOO_LARGE)),
             }
         );
     }

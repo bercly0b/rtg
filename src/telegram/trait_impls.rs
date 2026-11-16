@@ -1,5 +1,5 @@
 use crate::{
-    domain::message::Message,
+    domain::{attachment::OutgoingAttachment, message::Message},
     infra::error::AppError,
     usecases::{
         chat_lifecycle::{
@@ -17,6 +17,7 @@ use crate::{
             AddReactionQuery, AvailableReactionsQuery, ReactionError, ReactionSource,
         },
         resolve_mention::{MentionSource, MentionSourceError},
+        send_attachment::{AttachmentSender, SendAttachmentError},
         send_message::{MessageSender, SendMessageSourceError},
         send_voice::VoiceNoteSender,
     },
@@ -135,6 +136,22 @@ impl VoiceNoteSender for TelegramAdapter {
                 backend.send_voice_note(chat_id, topic_id, file_path, duration, waveform)
             }
             None => Err(SendMessageSourceError::Unauthorized),
+        }
+    }
+}
+
+impl AttachmentSender for TelegramAdapter {
+    fn send_attachment(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        attachment: &OutgoingAttachment,
+    ) -> Result<(), SendAttachmentError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.send_attachment(chat_id, topic_id, attachment),
+            None => Err(SendAttachmentError::Source(
+                SendMessageSourceError::Unauthorized,
+            )),
         }
     }
 }

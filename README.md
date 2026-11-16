@@ -38,6 +38,7 @@ new features are landing regularly.
 - Read, send, reply, edit, delete, and copy messages
 - Message reactions
 - Voice message recording (via configurable `ffmpeg` command)
+- Sending files from a built-in file picker (photos and documents)
 - File downloads with auto-download size limit
 - Open attachments with custom MIME handlers (mailcap-style)
 - Customizable, context-aware keybindings
@@ -125,7 +126,8 @@ On first launch RTG will prompt for your Telegram API credentials
 RTG creates the config file at the path above with your credentials saved.
 
 You can then edit that file to tune the rest of the available options —
-logging, voice recording, download limits, MIME handlers, and key bindings.
+logging, voice recording, the file picker, download limits, MIME handlers, and key
+bindings.
 See [`config.example.toml`](config.example.toml) for the full reference.
 
 ## Contributing

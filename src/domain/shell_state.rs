@@ -10,6 +10,7 @@ use super::{
     command_popup_state::CommandPopupState,
     download_speed::DownloadSpeedMeter,
     events::ConnectivityStatus,
+    file_picker_state::FilePickerState,
     forum_topic_list_state::ForumTopicListState,
     link_picker_state::LinkPickerState,
     message::LinkTarget,
@@ -78,6 +79,7 @@ pub struct ShellState {
     unread_chat_counts: HashMap<ChatListKind, u32>,
     chat_folder_picker: Option<ChatFolderPickerState>,
     link_picker: Option<LinkPickerState>,
+    file_picker: Option<FilePickerState>,
     download_speed: DownloadSpeedMeter,
     available_update: Option<AvailableUpdate>,
     self_update: Option<SelfUpdateProgress>,
@@ -105,6 +107,7 @@ impl Default for ShellState {
             unread_chat_counts: HashMap::new(),
             chat_folder_picker: None,
             link_picker: None,
+            file_picker: None,
             download_speed: DownloadSpeedMeter::default(),
             available_update: None,
             self_update: None,
@@ -411,6 +414,22 @@ impl ShellState {
 
     pub fn close_link_picker(&mut self) {
         self.link_picker = None;
+    }
+
+    pub fn file_picker(&self) -> Option<&FilePickerState> {
+        self.file_picker.as_ref()
+    }
+
+    pub fn file_picker_mut(&mut self) -> Option<&mut FilePickerState> {
+        self.file_picker.as_mut()
+    }
+
+    pub fn open_file_picker(&mut self, listing_id: u64, home: Option<String>) {
+        self.file_picker = Some(FilePickerState::new(listing_id, home));
+    }
+
+    pub fn close_file_picker(&mut self) {
+        self.file_picker = None;
     }
 
     pub fn message_input(&self) -> &MessageInputState {

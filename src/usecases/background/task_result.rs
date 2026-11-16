@@ -1,9 +1,10 @@
 use crate::{
     domain::{
-        chat::ChatSummary, chat_folder::ChatListKind, chat_info_state::ChatInfo,
-        chat_subtitle::ChatSubtitle, forum_topic::ForumTopicSummary, message::Message,
-        message_info_state::MessageInfo, message_input_state::OutgoingMessage,
-        reaction_picker_state::AvailableReaction, update_check::AvailableUpdate,
+        attachment::OutgoingAttachment, chat::ChatSummary, chat_folder::ChatListKind,
+        chat_info_state::ChatInfo, chat_subtitle::ChatSubtitle, file_picker_state::FileEntry,
+        forum_topic::ForumTopicSummary, message::Message, message_info_state::MessageInfo,
+        message_input_state::OutgoingMessage, reaction_picker_state::AvailableReaction,
+        update_check::AvailableUpdate,
     },
     usecases::self_update::SelfUpdated,
 };
@@ -77,6 +78,25 @@ pub enum BackgroundTaskResult {
     AddChatToListFailed { chat_id: i64, list: ChatListKind },
     /// Voice note send failed; the optimistic message `pending_id` should be removed.
     VoiceSendFailed { chat_id: i64, pending_id: i64 },
+    /// Attachment send operation completed; `attachment` is kept to roll back
+    /// the pending message and put the caption back into the input on failure.
+    AttachmentSent {
+        chat_id: i64,
+        topic_id: Option<i32>,
+        attachment: OutgoingAttachment,
+        result: Result<(), BackgroundError>,
+    },
+    /// The file list command of the file picker named more files.
+    /// `listing_id` tells the picker the command was started for.
+    FilesListed {
+        listing_id: u64,
+        entries: Vec<FileEntry>,
+    },
+    /// The file list command ended; `error` says why it listed nothing.
+    FileListingFinished {
+        listing_id: u64,
+        error: Option<String>,
+    },
     /// Chat subtitle (user status / member count) resolved.
     ChatSubtitleLoaded {
         chat_id: i64,

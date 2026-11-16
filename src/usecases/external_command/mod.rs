@@ -6,10 +6,12 @@
 //! popup in real time.
 
 mod command;
+mod file_list;
 pub(crate) mod handle;
 mod output;
 
 pub use command::start_command;
+pub use file_list::{start_file_list, FileListEvent, FileListHandle};
 pub use handle::CommandHandle;
 
 #[cfg(test)]

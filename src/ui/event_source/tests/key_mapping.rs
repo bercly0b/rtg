@@ -68,6 +68,15 @@ fn ctrl_o_produces_ctrl_input_key() {
 }
 
 #[test]
+fn arrow_keys_produce_named_input_keys() {
+    let up = map_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    let down = map_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+
+    assert_eq!(up, Some(AppEvent::InputKey(KeyInput::new("up", false))));
+    assert_eq!(down, Some(AppEvent::InputKey(KeyInput::new("down", false))));
+}
+
+#[test]
 fn unknown_special_key_returns_none() {
     let event = map_key_event(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE));
     assert_eq!(event, None);

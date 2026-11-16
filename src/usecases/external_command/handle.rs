@@ -52,7 +52,7 @@ impl SharedChild {
     /// Force-kills the child's process group (the child itself off unix)
     /// unless it has already been reaped.
     pub(super) fn kill(&self) {
-        // The child was spawned with setsid(), so -pid targets only its group.
+        // The child leads its own process group, so -pid targets only that.
         #[cfg(unix)]
         self.send_signal(-(self.pid as libc::pid_t), libc::SIGKILL);
 

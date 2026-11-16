@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
+use crate::domain::attachment::OutgoingAttachment;
 use crate::domain::message::Message;
 use crate::usecases::edit_message::EditMessageSourceError;
 use crate::usecases::load_messages::MessagesSourceError;
+use crate::usecases::send_attachment::SendAttachmentError;
 use crate::usecases::send_message::SendMessageSourceError;
 
 use super::error_mapping::{map_edit_message_error, map_messages_error, map_send_message_error};
@@ -10,6 +12,18 @@ use super::TdLibAuthBackend;
 use crate::telegram::tdlib_cache::TdLibCache;
 use crate::telegram::tdlib_client::TdLibClient;
 use crate::telegram::tdlib_mappers;
+
+const MEBIBYTE: u64 = 1024 * 1024;
+
+/// The largest file Telegram lets an account upload: 2000 MB, or 4000 MB
+/// with Telegram Premium. TDLib has no option that reports it.
+pub(super) fn max_upload_bytes(is_premium: bool) -> u64 {
+    if is_premium {
+        4000 * MEBIBYTE
+    } else {
+        2000 * MEBIBYTE
+    }
+}
 
 impl TdLibAuthBackend {
     /// Lists messages from TDLib's local cache only.
@@ -268,6 +282,33 @@ impl TdLibAuthBackend {
             file_path,
             duration,
             "Voice note sent via TDLib"
+        );
+        Ok(())
+    }
+
+    pub fn send_attachment(
+        &self,
+        chat_id: i64,
+        topic_id: Option<i32>,
+        attachment: &OutgoingAttachment,
+    ) -> Result<(), SendAttachmentError> {
+        // An unknown Premium status counts as none: the lower limit is the
+        // one every account has.
+        let is_premium = self.client.is_premium().unwrap_or(false);
+        if attachment.size_bytes > max_upload_bytes(is_premium) {
+            return Err(SendAttachmentError::TooLarge);
+        }
+
+        self.client
+            .send_attachment(chat_id, topic_id, attachment)
+            .map_err(|error| SendAttachmentError::Source(map_send_message_error(error)))?;
+
+        tracing::debug!(
+            chat_id,
+            topic_id = ?topic_id,
+            path = attachment.path,
+            kind = ?attachment.kind,
+            "Attachment sent via TDLib"
         );
         Ok(())
     }

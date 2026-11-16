@@ -34,6 +34,7 @@ pub enum Action {
     OpenMessage,
     OpenLink,
     RecordVoice,
+    AttachFile,
     ShowMessageInfo,
     AddReaction,
     DownloadFile,
@@ -75,6 +76,7 @@ impl Action {
             Self::OpenMessage => "open_message",
             Self::OpenLink => "open_link_or_mention",
             Self::RecordVoice => "record_voice_message",
+            Self::AttachFile => "attach_file",
             Self::ShowMessageInfo => "show_message_info",
             Self::AddReaction => "add_reaction",
             Self::DownloadFile => "download_file",
@@ -115,6 +117,7 @@ impl Action {
             "open_message" => Some(Self::OpenMessage),
             "open_link_or_mention" | "open_link_in_browser" => Some(Self::OpenLink),
             "record_voice_message" => Some(Self::RecordVoice),
+            "attach_file" => Some(Self::AttachFile),
             "show_message_info" => Some(Self::ShowMessageInfo),
             "add_reaction" => Some(Self::AddReaction),
             "download_file" => Some(Self::DownloadFile),
@@ -591,6 +594,11 @@ fn default_bindings() -> Vec<KeyBinding> {
             context: KeyContext::Messages,
         },
         KeyBinding {
+            pattern: KeyPattern::single("a"),
+            action: Action::AttachFile,
+            context: KeyContext::Messages,
+        },
+        KeyBinding {
             pattern: KeyPattern::single("I"),
             action: Action::ShowMessageInfo,
             context: KeyContext::Messages,
@@ -752,6 +760,21 @@ mod tests {
         assert!(entries.iter().any(|e| e.action_name == "select_next_chat"));
         assert!(entries.iter().any(|e| e.action_name == "quit"));
         assert!(entries.iter().any(|e| e.action_name == "show_help"));
+    }
+
+    #[test]
+    fn a_attaches_a_file_in_messages_only() {
+        let mut km = Keymap::default();
+
+        assert_eq!(
+            km.resolve("a", false, KeyContext::Messages),
+            ResolveResult::Action(Action::AttachFile)
+        );
+        assert_eq!(
+            km.resolve("a", false, KeyContext::ChatList),
+            ResolveResult::Unmatched
+        );
+        assert_eq!(Action::from_name("attach_file"), Some(Action::AttachFile));
     }
 
     #[test]

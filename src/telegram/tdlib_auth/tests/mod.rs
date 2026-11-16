@@ -6,7 +6,15 @@ use super::error_mapping::{
     map_list_chats_error, map_password_error, map_request_code_error, map_sign_in_error,
     map_tdlib_error, parse_flood_wait_seconds,
 };
-use super::messages::{enrich_same_chat_reply_info, reply_sender_name_for_message};
+use super::messages::{
+    enrich_same_chat_reply_info, max_upload_bytes, reply_sender_name_for_message,
+};
+
+#[test]
+fn upload_limit_doubles_with_premium() {
+    assert_eq!(max_upload_bytes(false), 2_097_152_000);
+    assert_eq!(max_upload_bytes(true), 4_194_304_000);
+}
 
 #[test]
 fn parse_flood_wait_extracts_seconds() {
