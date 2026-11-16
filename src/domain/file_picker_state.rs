@@ -20,6 +20,8 @@ pub enum FileListing {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilePickerState {
     listing_id: u64,
+    /// The home directory, shown as `~` in paths.
+    home: Option<String>,
     listing: FileListing,
     query: String,
     entries: Vec<FileEntry>,
@@ -31,10 +33,11 @@ pub struct FilePickerState {
 
 impl FilePickerState {
     /// `listing_id` tells this picker's run of the file list command from
-    /// the runs of pickers opened before it.
-    pub fn new(listing_id: u64) -> Self {
+    /// the runs of pickers opened before it; `home` is the home directory.
+    pub fn new(listing_id: u64, home: Option<String>) -> Self {
         Self {
             listing_id,
+            home,
             listing: FileListing::Running,
             query: String::new(),
             entries: Vec::new(),
@@ -64,6 +67,16 @@ impl FilePickerState {
         self.visible.get(index).map(|&i| &self.entries[i])
     }
 
+    /// The path as the picker shows it and as the query matches it: with
+    /// the home directory shortened to `~`.
+    pub fn display_path(&self, entry: &FileEntry) -> String {
+        self.home
+            .as_deref()
+            .and_then(|home| entry.path.strip_prefix(home))
+            .filter(|rest| rest.starts_with('/'))
+            .map_or_else(|| entry.path.clone(), |rest| format!("~{rest}"))
+    }
+
     pub fn selected_index(&self) -> Option<usize> {
         (!self.visible.is_empty()).then_some(self.selected)
     }
@@ -86,6 +99,8 @@ impl FilePickerState {
                 .cmp(&a.modified_unix_s)
                 .then_with(|| a.path.cmp(&b.path))
         });
+        // Overlapping directories make a command name a file twice.
+        self.entries.dedup_by(|a, b| a.path == b.path);
         self.refilter();
 
         self.selected = followed
@@ -127,8 +142,8 @@ impl FilePickerState {
         self.selected = self.selected.saturating_sub(1);
     }
 
-    /// A file matches when its path contains every word of the query,
-    /// ignoring case.
+    /// A file matches when its displayed path contains every word of the
+    /// query, ignoring case.
     fn refilter(&mut self) {
         let words: Vec<String> = self
             .query
@@ -140,7 +155,7 @@ impl FilePickerState {
             .iter()
             .enumerate()
             .filter(|(_, entry)| {
-                let path = entry.path.to_lowercase();
+                let path = self.display_path(entry).to_lowercase();
                 words.iter().all(|word| path.contains(word))
             })
             .map(|(i, _)| i)
@@ -173,7 +188,7 @@ mod tests {
 
     #[test]
     fn newest_file_comes_first_whatever_order_the_command_names_them_in() {
-        let mut picker = FilePickerState::new(1);
+        let mut picker = FilePickerState::new(1, None);
 
         picker.add_entries(vec![entry("/d/old.png", 100), entry("/d/new.png", 300)]);
         picker.add_entries(vec![entry("/d/mid.png", 200)]);
@@ -187,7 +202,7 @@ mod tests {
 
     #[test]
     fn an_empty_picker_has_nothing_selected() {
-        let picker = FilePickerState::new(1);
+        let picker = FilePickerState::new(1, None);
 
         assert_eq!(picker.selected_index(), None);
         assert_eq!(picker.selected(), None);
@@ -195,7 +210,7 @@ mod tests {
 
     #[test]
     fn query_keeps_files_whose_path_holds_every_word_ignoring_case() {
-        let mut picker = FilePickerState::new(1);
+        let mut picker = FilePickerState::new(1, None);
         picker.add_entries(vec![
             entry("/home/me/Desktop/shot.png", 3),
             entry("/home/me/Desktop/notes.txt", 2),
@@ -208,8 +223,39 @@ mod tests {
     }
 
     #[test]
+    fn query_does_not_match_the_home_directory_hidden_behind_the_tilde() {
+        let mut picker = FilePickerState::new(1, Some("/home/me".to_owned()));
+        picker.add_entries(vec![
+            entry("/home/me/Desktop/shot.png", 2),
+            entry("/home/me/Desktop/home.txt", 1),
+        ]);
+        assert_eq!(
+            picker.display_path(&entry("/home/me/Desktop/shot.png", 2)),
+            "~/Desktop/shot.png"
+        );
+        assert_eq!(
+            picker.display_path(&entry("/home/merlin/a.png", 2)),
+            "/home/merlin/a.png"
+        );
+
+        type_query(&mut picker, "home");
+
+        assert_eq!(visible_paths(&picker), ["/home/me/Desktop/home.txt"]);
+    }
+
+    #[test]
+    fn a_file_named_twice_is_listed_once() {
+        let mut picker = FilePickerState::new(1, None);
+
+        picker.add_entries(vec![entry("/d/a.png", 2), entry("/d/b.png", 1)]);
+        picker.add_entries(vec![entry("/d/a.png", 2)]);
+
+        assert_eq!(visible_paths(&picker), ["/d/a.png", "/d/b.png"]);
+    }
+
+    #[test]
     fn deleting_the_query_brings_the_files_back() {
-        let mut picker = FilePickerState::new(1);
+        let mut picker = FilePickerState::new(1, None);
         picker.add_entries(vec![entry("/d/a.png", 2), entry("/d/b.txt", 1)]);
         type_query(&mut picker, "q");
         assert_eq!(picker.visible_len(), 0);
@@ -222,7 +268,7 @@ mod tests {
 
     #[test]
     fn selection_stops_at_both_ends() {
-        let mut picker = FilePickerState::new(1);
+        let mut picker = FilePickerState::new(1, None);
         picker.add_entries(vec![entry("/d/a", 2), entry("/d/b", 1)]);
 
         picker.select_previous();
@@ -235,7 +281,7 @@ mod tests {
 
     #[test]
     fn changing_the_query_selects_the_newest_match() {
-        let mut picker = FilePickerState::new(1);
+        let mut picker = FilePickerState::new(1, None);
         picker.add_entries(vec![entry("/d/a.png", 3), entry("/d/b.png", 2)]);
         picker.select_next();
 
@@ -246,7 +292,7 @@ mod tests {
 
     #[test]
     fn selection_stays_on_the_newest_file_while_untouched() {
-        let mut picker = FilePickerState::new(1);
+        let mut picker = FilePickerState::new(1, None);
         picker.add_entries(vec![entry("/d/a", 100)]);
 
         picker.add_entries(vec![entry("/d/b", 200)]);
@@ -256,7 +302,7 @@ mod tests {
 
     #[test]
     fn selection_follows_the_chosen_file_when_newer_files_arrive() {
-        let mut picker = FilePickerState::new(1);
+        let mut picker = FilePickerState::new(1, None);
         picker.add_entries(vec![entry("/d/a", 300), entry("/d/b", 200)]);
         picker.select_next();
 
@@ -268,7 +314,7 @@ mod tests {
 
     #[test]
     fn finish_records_how_the_listing_ended() {
-        let mut picker = FilePickerState::new(1);
+        let mut picker = FilePickerState::new(1, None);
         assert_eq!(picker.listing(), &FileListing::Running);
 
         picker.finish(None);

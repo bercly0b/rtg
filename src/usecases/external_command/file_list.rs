@@ -5,7 +5,7 @@ use std::{
     io::{BufRead, BufReader, Read},
     path::Path,
     process::{Child, Command, Stdio},
-    sync::{mpsc, Arc},
+    sync::{mpsc, Arc, Mutex, PoisonError},
     thread,
     time::{Duration, UNIX_EPOCH},
 };
@@ -13,10 +13,7 @@ use std::{
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-use crate::domain::{
-    command_template::{self, DIRS_PLACEHOLDER},
-    file_picker_state::FileEntry,
-};
+use crate::domain::{command_template, file_picker_state::FileEntry};
 
 use super::handle::SharedChild;
 
@@ -54,10 +51,15 @@ impl Drop for FileListHandle {
 pub fn start_file_list(
     template: &str,
     dirs: &[String],
-    mut on_event: impl FnMut(FileListEvent) + Send + 'static,
+    on_event: impl FnMut(FileListEvent) + Send + 'static,
 ) -> Option<FileListHandle> {
-    let mut fail = |error: String| {
-        on_event(FileListEvent::Finished { error: Some(error) });
+    // Shared with the reporting thread, so that the reason still gets out
+    // when that thread cannot be spawned.
+    let on_event = Arc::new(Mutex::new(on_event));
+    let fail = |error: String| {
+        (on_event.lock().unwrap_or_else(PoisonError::into_inner))(FileListEvent::Finished {
+            error: Some(error),
+        });
         None
     };
 
@@ -66,7 +68,7 @@ pub fn start_file_list(
         Ok(argv) => argv,
         Err(error) => return fail(format!("[attach] list_cmd: {error}")),
     };
-    if dirs.is_empty() && template.contains(DIRS_PLACEHOLDER) {
+    if dirs.is_empty() && command_template::list_cmd_uses_dirs(template) {
         return fail("None of the [attach] dirs exist".to_owned());
     }
 
@@ -82,14 +84,18 @@ pub fn start_file_list(
     let child = Arc::new(SharedChild::new(child));
 
     let waited_child = Arc::clone(&child);
+    let report_event = Arc::clone(&on_event);
     let spawned = thread::Builder::new()
         .name("rtg-file-list".into())
-        .spawn(move || report(stdout, stderr, &waited_child, on_event));
+        .spawn(move || {
+            report(stdout, stderr, &waited_child, |event| {
+                (report_event.lock().unwrap_or_else(PoisonError::into_inner))(event)
+            })
+        });
     if let Err(error) = spawned {
-        tracing::error!(%error, "failed to spawn the file list thread");
         child.kill();
         child.wait();
-        return None;
+        return fail(format!("failed to list files: {error}"));
     }
 
     Some(FileListHandle { child })
@@ -116,8 +122,10 @@ fn report(
 ) {
     let (entry_tx, entry_rx) = mpsc::channel();
     let stdout_reader = thread::spawn(move || {
-        for path in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if let Some(entry) = file_entry(path) {
+        // Split on bytes: a path that is not UTF-8 costs its own line only.
+        let lines = BufReader::new(stdout).split(b'\n').map_while(Result::ok);
+        for path in lines.filter_map(|line| String::from_utf8(line).ok()) {
+            if let Some(entry) = file_entry(&path) {
                 if entry_tx.send(entry).is_err() {
                     return;
                 }
@@ -145,7 +153,9 @@ fn report(
 
 /// The file behind a line the command printed, `None` unless the line is
 /// the path of an existing regular file.
-fn file_entry(path: String) -> Option<FileEntry> {
+fn file_entry(path: &str) -> Option<FileEntry> {
+    // A command may name files relative to the directory RTG runs in.
+    let path = std::path::absolute(path).ok()?.to_str()?.to_owned();
     let metadata = std::fs::metadata(&path).ok()?;
     if !metadata.is_file() {
         return None;
@@ -175,7 +185,7 @@ fn first_line(output: impl Read) -> Option<String> {
 }
 
 /// Expands a leading `~` to `home` and keeps the directories that exist.
-pub(super) fn existing_dirs(dirs: &[String], home: Option<&Path>) -> Vec<String> {
+fn existing_dirs(dirs: &[String], home: Option<&Path>) -> Vec<String> {
     dirs.iter()
         .filter_map(|dir| {
             let expanded = match (dir.strip_prefix('~'), home) {

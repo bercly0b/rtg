@@ -6,7 +6,7 @@ use std::{
 
 use crate::domain::file_picker_state::FileEntry;
 
-use super::super::file_list::{existing_dirs, start_file_list, FileListEvent, FileListHandle};
+use super::super::file_list::{start_file_list, FileListEvent, FileListHandle};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -152,27 +152,56 @@ fn dropping_the_handle_kills_the_command() {
 }
 
 #[test]
-fn tilde_stands_for_the_home_directory_and_missing_dirs_are_skipped() {
-    let home = tempfile::tempdir().unwrap();
-    fs::create_dir(home.path().join("Desktop")).unwrap();
-    let home_path = home.path().to_str().unwrap();
+fn dirs_that_do_not_exist_are_left_out_of_the_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut dirs = vec!["/rtg-no-such-dir-for-tests".to_owned()];
+    dirs.extend(dir_arg(&dir));
 
-    let dirs = existing_dirs(
-        &[
-            "~/Desktop".to_owned(),
-            "~/Downloads".to_owned(),
-            "~".to_owned(),
-            home_path.to_owned(),
-        ],
-        Some(home.path()),
+    let (listed, error) = run(
+        r#"sh -c 'echo "$#" > "$1/argc"; echo "$1/argc"' sh {dirs}"#,
+        &dirs,
     );
 
-    assert_eq!(
-        dirs,
-        [
-            format!("{home_path}/Desktop"),
-            home_path.to_owned(),
-            home_path.to_owned()
-        ]
+    assert_eq!(error, None);
+    assert_eq!(listed.len(), 1);
+    assert_eq!(fs::read_to_string(&listed[0].path).unwrap().trim(), "1");
+}
+
+#[test]
+fn tilde_stands_for_the_home_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("marker");
+    fs::write(&marker, b"x").unwrap();
+    let template = format!(
+        r#"sh -c '[ "$1" = "$HOME" ] && echo {}' sh {{dirs}}"#,
+        marker.display()
     );
+
+    let (listed, error) = run(&template, &["~".to_owned()]);
+
+    assert_eq!(error, None);
+    assert_eq!(listed.len(), 1);
+}
+
+#[test]
+fn a_path_that_is_not_utf8_costs_only_its_own_line() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.txt"), b"a").unwrap();
+
+    let (listed, error) = run(
+        r#"sh -c 'printf "\377\376\n"; echo "$0/a.txt"' {dirs}"#,
+        &dir_arg(&dir),
+    );
+
+    assert_eq!(error, None);
+    assert_eq!(listed.len(), 1);
+}
+
+#[test]
+fn relative_paths_are_made_absolute() {
+    let (listed, error) = run("echo Cargo.toml", &[]);
+
+    assert_eq!(error, None);
+    let expected = std::env::current_dir().unwrap().join("Cargo.toml");
+    assert_eq!(listed[0].path, expected.to_str().unwrap());
 }

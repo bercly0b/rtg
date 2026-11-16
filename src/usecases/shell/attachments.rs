@@ -43,7 +43,9 @@ pub(super) fn open_file_picker<D: TaskDispatcher>(
     }
 
     attachments.last_listing_id += 1;
-    ctx.state.open_file_picker(attachments.last_listing_id);
+    let home = dirs::home_dir().and_then(|home| home.to_str().map(str::to_owned));
+    ctx.state
+        .open_file_picker(attachments.last_listing_id, home);
     ctx.dispatcher.dispatch_list_files(
         attachments.last_listing_id,
         attachments.list_cmd.clone(),
@@ -175,17 +177,17 @@ pub(super) fn handle_attachment_sent<D: TaskDispatcher>(
     // conversation the attachment was sent from.
     let still_open = ctx.state.open_chat().chat_id() == Some(chat_id)
         && ctx.state.open_chat().topic_id() == topic_id;
-    if !still_open {
-        return;
+    if still_open {
+        ctx.state
+            .open_chat_mut()
+            .remove_message(attachment.pending_id);
     }
-    ctx.state
-        .open_chat_mut()
-        .remove_message(attachment.pending_id);
+    let reply_to = attachment.reply_to.filter(|_| still_open);
     // Without a caption or a reply there is nothing to put back, and a
     // draft typed meanwhile must survive.
-    if !attachment.caption.is_empty() || attachment.reply_to.is_some() {
+    if !attachment.caption.is_empty() || reply_to.is_some() {
         ctx.state
             .message_input_mut()
-            .restore_failed_send(&attachment.caption, attachment.reply_to);
+            .restore_failed_send(&attachment.caption, reply_to);
     }
 }

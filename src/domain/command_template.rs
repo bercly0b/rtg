@@ -55,6 +55,12 @@ pub fn resolve_list_argv(
         .collect())
 }
 
+/// Whether a file list command asks for the directories: has `{dirs}` as an
+/// argument of its own.
+pub fn list_cmd_uses_dirs(template: &str) -> bool {
+    shell_words::split(template).is_ok_and(|argv| argv.iter().any(|arg| arg == DIRS_PLACEHOLDER))
+}
+
 /// Returns the executable (first argv token) of the template.
 pub fn program(template: &str) -> Option<String> {
     shell_words::split(template).ok()?.into_iter().next()
@@ -182,6 +188,13 @@ mod tests {
         let argv = resolve_list_argv("git ls-files", &["/home/me".to_owned()]).unwrap();
 
         assert_eq!(argv, ["git", "ls-files"]);
+    }
+
+    #[test]
+    fn list_command_uses_dirs_only_as_an_argument_of_its_own() {
+        assert!(list_cmd_uses_dirs("find {dirs} -type f"));
+        assert!(!list_cmd_uses_dirs("git ls-files"));
+        assert!(!list_cmd_uses_dirs("find {dirs}/sub"));
     }
 
     #[test]

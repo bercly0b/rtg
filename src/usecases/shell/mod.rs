@@ -77,7 +77,9 @@ impl Default for OrchestratorConfig {
             voice_record_cmd: super::voice_recording::DEFAULT_RECORD_CMD.to_owned(),
             open_handlers: HashMap::new(),
             file_list_cmd: crate::domain::attach_defaults::DEFAULT_LIST_CMD.to_owned(),
-            attach_dirs: Vec::new(),
+            attach_dirs: crate::domain::attach_defaults::DEFAULT_DIRS
+                .map(str::to_owned)
+                .to_vec(),
             max_auto_download_bytes: 10_000_000,
             key_overrides: HashMap::new(),
         }
@@ -89,8 +91,7 @@ impl Default for OrchestratorConfig {
 ///
 /// Handlers take the orchestrator zones they touch (`ChatListLoads`,
 /// `OpenChatSync`, `Downloads`, `MediaCommands`, `Attachments`) as separate
-/// arguments, so a
-/// signature states what a handler can change.
+/// arguments, so a signature states what a handler can change.
 struct ShellCtx<'a, D: TaskDispatcher> {
     pub state: &'a mut ShellState,
     pub dispatcher: &'a D,

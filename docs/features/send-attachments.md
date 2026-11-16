@@ -21,11 +21,12 @@ and reads its output:
   tool that lists files fits: `find`, `fd`, `rg --files`, `git ls-files`, a
   script;
 - **metadata** — RTG finds out the size and the modification time of each
-  path itself, and silently drops lines that are not existing regular files;
+  path itself, and silently drops lines that are not existing regular files.
+  A relative path is taken from the directory RTG runs in;
 - **no shell** — the template is split with shell quoting rules and executed
   directly, like `[voice] record_cmd`;
-- **`{dirs}`** — replaced with the directories of `[attach] dirs`, one
-  argument each. `~` is the home directory and directories that do not exist
+- **`{dirs}`** — an argument of its own, replaced with the directories of
+  `[attach] dirs`, one argument each. `~` is the home directory and directories that do not exist
   are left out. A command may leave `{dirs}` out;
 - **defaults** — `find {dirs} -type f -not -path '*/.*'` over `~/Desktop`,
   `~/Downloads`, `~/Documents` and `~/Pictures`: the whole home directory
@@ -58,8 +59,10 @@ read) still shows those files.
   time as `Today 14:32`, `12 Nov` or `2025-03-01`. A path that does not fit is
   cut from the left, so the file name stays visible. Creation time is not
   shown: not every Linux file system has it.
-- Typing filters as you type: a file stays when its path contains every word
-  of the query, ignoring case (`desk png` finds `~/Desktop/shot.png`).
+- Typing filters as you type: a file stays when its path, as shown, contains
+  every word of the query, ignoring case (`desk png` finds
+  `~/Desktop/shot.png`). The home directory behind `~` does not take part.
+- A file the command names twice is listed once.
 - The selection starts on the newest file and stays there while files keep
   arriving; once moved, it follows the chosen file.
 
@@ -92,7 +95,8 @@ is deleted with `dd`.
 - **Optimistic UI** — the message appears in the chat at once as being sent;
   Telegram uploads the file in the background.
 - **Failure** — the pending message is removed, the caption goes back into
-  the input, and the status bar says "Failed to send the file".
+  the input (also when another chat is open by then), and the status bar says
+  "Failed to send the file".
 - **Size limit** — a file over 2000 MB (4000 MB with Telegram Premium) is not
   sent: "File is too large to send".
 

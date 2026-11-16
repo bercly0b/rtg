@@ -1,5 +1,3 @@
-//! Use case for sending an attachment to a chat.
-
 use std::{fs::File, io::BufReader};
 
 use crate::domain::attachment::{AttachmentKind, OutgoingAttachment};
@@ -13,7 +11,6 @@ pub enum SendAttachmentError {
     Source(SendMessageSourceError),
 }
 
-/// Trait for sending attachments to chats.
 pub trait AttachmentSender {
     /// Sends the attachment to the chat, or to a specific forum topic when
     /// `topic_id` is `Some`.

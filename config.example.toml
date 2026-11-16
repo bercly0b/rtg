@@ -26,8 +26,9 @@ api_hash = "replace-me"
 # newest first. The command prints one path per line and nothing else: RTG
 # finds out sizes and dates itself. Arguments are split shell-style, no shell
 # is involved.
-# {dirs} is replaced with the directories of `dirs` that exist, one argument
-# each; `~` is the home directory. A command may leave {dirs} out.
+# {dirs}, an argument of its own, is replaced with the directories of `dirs`
+# that exist, one argument each; `~` is the home directory. A command may
+# leave {dirs} out.
 # dirs = ["~/Desktop", "~/Downloads", "~/Documents", "~/Pictures"]
 # list_cmd = "find {dirs} -type f -not -path '*/.*'"
 # list_cmd = "fd --type f . {dirs}"

@@ -424,8 +424,8 @@ impl ShellState {
         self.file_picker.as_mut()
     }
 
-    pub fn open_file_picker(&mut self, listing_id: u64) {
-        self.file_picker = Some(FilePickerState::new(listing_id));
+    pub fn open_file_picker(&mut self, listing_id: u64, home: Option<String>) {
+        self.file_picker = Some(FilePickerState::new(listing_id, home));
     }
 
     pub fn close_file_picker(&mut self) {
