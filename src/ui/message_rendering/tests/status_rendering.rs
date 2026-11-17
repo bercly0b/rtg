@@ -22,6 +22,7 @@ fn sending_status_on_same_line_as_content() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }];
 
@@ -68,6 +69,7 @@ fn delivered_message_has_no_sending_indicator() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }];
 
@@ -140,6 +142,7 @@ fn edited_message_shows_edited_indicator() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: true,
+        sender: None,
         is_service: false,
     }];
 
@@ -175,6 +178,7 @@ fn non_edited_message_has_no_edited_indicator() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }];
 
@@ -209,6 +213,7 @@ fn edited_indicator_on_same_line_as_content() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: true,
+        sender: None,
         is_service: false,
     }];
 

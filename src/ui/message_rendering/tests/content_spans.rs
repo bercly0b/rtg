@@ -104,6 +104,7 @@ fn message_with_text_url_entity_renders_underlined() {
             target: LinkTarget::Url("https://example.com".to_owned()),
         }],
         is_edited: false,
+        sender: None,
         is_service: false,
     }];
 
@@ -148,6 +149,7 @@ fn mention_renders_underlined_like_a_link() {
             target: LinkTarget::Mention("bob".to_owned()),
         }],
         is_edited: false,
+        sender: None,
         is_service: false,
     }];
 

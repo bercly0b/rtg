@@ -1,12 +1,23 @@
 //! Chat info popup state — what is known about a chat and whoever stands
 //! behind it.
 //!
-//! Opened by pressing `I` on a chat in the chat list. Each kind of chat has
+//! Opened by pressing `I` on a chat in the chat list or on a message, for its
+//! sender or someone it mentions. Each kind of chat has
 //! its own info template (User, Bot, Group, Channel); the design lives in
 //! `docs/features/chat-info-user-data.md`.
 //!
 //! `None` in a field means the value is not set or unknown: the popup keeps
 //! the row and shows `—`.
+
+/// Whose chat info the popup shows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChatInfoSubject {
+    Chat(i64),
+    /// A user, who may have no private chat with the current user yet.
+    User(i64),
+    /// A username without the leading `@`.
+    Mention(String),
+}
 
 /// Resolved chat information for display in the popup.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -261,7 +272,10 @@ pub enum MemberRole {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatInfoPopupState {
     /// Data is being fetched from Telegram.
-    Loading { chat_id: i64, title: String },
+    Loading {
+        subject: ChatInfoSubject,
+        title: String,
+    },
     /// Data has been resolved.
     Loaded(Box<ChatInfo>),
     /// Fetching failed.
@@ -276,10 +290,10 @@ impl ChatInfoPopupState {
         }
     }
 
-    /// Returns the `chat_id` this popup was opened for (only available in Loading state).
-    pub fn chat_id(&self) -> Option<i64> {
+    /// Returns the subject this popup was opened for (only available in Loading state).
+    pub fn subject(&self) -> Option<&ChatInfoSubject> {
         match self {
-            Self::Loading { chat_id, .. } => Some(*chat_id),
+            Self::Loading { subject, .. } => Some(subject),
             _ => None,
         }
     }
@@ -316,25 +330,28 @@ pub(crate) mod tests {
     #[test]
     fn loading_state_returns_title() {
         let state = ChatInfoPopupState::Loading {
-            chat_id: 1,
+            subject: ChatInfoSubject::Chat(1),
             title: "Alice".into(),
         };
         assert_eq!(state.title(), "Alice");
     }
 
     #[test]
-    fn loading_state_returns_chat_id() {
+    fn loading_state_returns_subject() {
         let state = ChatInfoPopupState::Loading {
-            chat_id: 42,
-            title: "Alice".into(),
+            subject: ChatInfoSubject::Mention("alice".into()),
+            title: "@alice".into(),
         };
-        assert_eq!(state.chat_id(), Some(42));
+        assert_eq!(
+            state.subject(),
+            Some(&ChatInfoSubject::Mention("alice".into()))
+        );
     }
 
     #[test]
-    fn loaded_state_returns_no_chat_id() {
+    fn loaded_state_returns_no_subject() {
         let state = ChatInfoPopupState::Loaded(Box::new(sample_chat_info("Alice")));
-        assert_eq!(state.chat_id(), None);
+        assert_eq!(state.subject(), None);
     }
 
     #[test]

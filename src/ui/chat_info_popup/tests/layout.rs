@@ -1,7 +1,7 @@
 //! The header, the loading and error states, and the popup frame.
 
 use super::*;
-use crate::domain::chat_info_state::{ChannelInfo, GroupInfo, GroupKind, Joining};
+use crate::domain::chat_info_state::{ChannelInfo, ChatInfoSubject, GroupInfo, GroupKind, Joining};
 
 fn group_with_description(description: String) -> ChatInfoKind {
     ChatInfoKind::Group(GroupInfo {
@@ -33,7 +33,7 @@ fn rendered_popup_rect(state: &ChatInfoPopupState, width: u16, height: u16) -> R
 #[test]
 fn loading_state_shows_title_and_loading_text() {
     let state = ChatInfoPopupState::Loading {
-        chat_id: 1,
+        subject: ChatInfoSubject::Chat(1),
         title: "Alice".into(),
     };
 
@@ -72,7 +72,7 @@ fn header_is_the_title_and_status_line_without_a_name_row() {
 #[test]
 fn loading_popup_is_sized_to_content() {
     let state = ChatInfoPopupState::Loading {
-        chat_id: 1,
+        subject: ChatInfoSubject::Chat(1),
         title: "Alice".into(),
     };
     let rect = rendered_popup_rect(&state, 100, 40);

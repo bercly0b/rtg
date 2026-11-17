@@ -330,8 +330,8 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 }
             }
         }
-        BackgroundTaskResult::ChatInfoLoaded { chat_id, result } => {
-            popups::handle_chat_info_loaded(&mut ctx.shell, chat_id, result)
+        BackgroundTaskResult::ChatInfoLoaded { subject, result } => {
+            popups::handle_chat_info_loaded(&mut ctx.shell, &subject, result)
         }
         BackgroundTaskResult::MessagesPrefetched { chat_id, result } => {
             if ctx.open_chat_sync.prefetch_in_flight == Some(chat_id) {

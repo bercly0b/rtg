@@ -6,11 +6,12 @@ use tdlib_rs::types::{
 };
 
 use crate::domain::chat::ChatType;
-use crate::domain::chat_info_state::{Badge, ChatInfo};
+use crate::domain::chat_info_state::{Badge, ChatInfo, ChatInfoSubject};
 use crate::domain::chat_subtitle::ChatSubtitle;
 use crate::telegram::tdlib_client::{TdLibClient, TdLibError};
 use crate::usecases::chat_subtitle::{ChatInfoQuery, ChatSubtitleError};
 
+use super::error_mapping::is_unknown_username;
 use super::TdLibAuthBackend;
 use crate::telegram::tdlib_mappers;
 
@@ -22,6 +23,8 @@ mod user_info;
 /// so the resolution logic can be unit-tested with a fake.
 pub(super) trait ChatInfoResolver {
     fn get_chat(&self, chat_id: i64) -> Result<Chat, TdLibError>;
+    fn create_private_chat(&self, user_id: i64) -> Result<Chat, TdLibError>;
+    fn search_public_chat(&self, username: &str) -> Result<Chat, TdLibError>;
     fn get_user(&self, user_id: i64) -> Result<User, TdLibError>;
     fn get_user_full_info(&self, user_id: i64) -> Result<UserFullInfo, TdLibError>;
     fn get_basic_group(&self, basic_group_id: i64) -> Result<BasicGroup, TdLibError>;
@@ -45,6 +48,14 @@ pub(super) trait ChatInfoResolver {
 impl ChatInfoResolver for TdLibClient {
     fn get_chat(&self, chat_id: i64) -> Result<Chat, TdLibError> {
         self.get_chat(chat_id)
+    }
+
+    fn create_private_chat(&self, user_id: i64) -> Result<Chat, TdLibError> {
+        self.create_private_chat(user_id)
+    }
+
+    fn search_public_chat(&self, username: &str) -> Result<Chat, TdLibError> {
+        self.search_public_chat(username)
     }
 
     fn get_user(&self, user_id: i64) -> Result<User, TdLibError> {
@@ -170,22 +181,46 @@ pub(super) fn resolve_chat_info(
     query: &ChatInfoQuery,
     now: DateTime<Local>,
 ) -> Result<ChatInfo, ChatSubtitleError> {
-    let chat = resolver
-        .get_chat(query.chat_id)
-        .map_err(|e| request_failed("getChat", query.chat_id, e))?;
+    let chat = subject_chat(resolver, &query.subject)?;
 
-    let (status_line, kind) = match query.chat_type {
+    let (status_line, kind) = match tdlib_mappers::map_chat_type(&chat.r#type) {
         ChatType::Private => user_info::resolve(resolver, &chat, now)?,
         ChatType::Group => group_info::resolve_group(resolver, &chat, now)?,
         ChatType::Channel => group_info::resolve_channel(resolver, &chat, now)?,
     };
 
     Ok(ChatInfo {
-        title: query.title.clone(),
+        title: tdlib_mappers::chat_display_title(&chat),
         status_line,
         kind,
         chat: chat_block::resolve(resolver, &chat, &query.folders, now),
     })
+}
+
+/// Finds the chat of the subject. A user is reached through
+/// `createPrivateChat`, which also covers a user the current user has never
+/// talked to; a mention through `searchPublicChat`, as when it is opened.
+fn subject_chat(
+    resolver: &dyn ChatInfoResolver,
+    subject: &ChatInfoSubject,
+) -> Result<Chat, ChatSubtitleError> {
+    match subject {
+        ChatInfoSubject::Chat(chat_id) => resolver
+            .get_chat(*chat_id)
+            .map_err(|e| request_failed("getChat", *chat_id, e)),
+        ChatInfoSubject::User(user_id) => resolver
+            .create_private_chat(*user_id)
+            .map_err(|e| request_failed("createPrivateChat", *user_id, e)),
+        ChatInfoSubject::Mention(username) => {
+            resolver.search_public_chat(username).map_err(|error| {
+                if is_unknown_username(&error) {
+                    return ChatSubtitleError::NotFound;
+                }
+                tracing::warn!(error = %error, "chat info: searchPublicChat failed");
+                ChatSubtitleError::Unavailable
+            })
+        }
+    }
 }
 
 fn request_failed(request: &'static str, id: i64, error: TdLibError) -> ChatSubtitleError {

@@ -10,6 +10,7 @@ mod factories;
 mod fixtures;
 mod forum;
 mod help_popup;
+mod info_picker;
 mod lifecycle;
 mod links;
 mod message_actions;

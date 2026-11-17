@@ -15,8 +15,8 @@ use super::{
     chat_open::{self, OpenChatSync},
     chat_search, command_popup,
     file_updates::Downloads,
-    forum, links, message_actions, message_input, popups, self_update, voice, OrchestratorCtx,
-    ShellCtx,
+    forum, info_picker, links, message_actions, message_input, popups, self_update, voice,
+    OrchestratorCtx, ShellCtx,
 };
 
 /// Routes a key to the surface that captures all input while it is open:
@@ -44,6 +44,8 @@ pub(super) fn dispatch_modal_key<D: TaskDispatcher>(
         chat_list::handle_chat_folder_picker_key(&mut ctx.shell, ctx.chat_list_loads, key);
     } else if state.link_picker().is_some() {
         links::handle_link_picker_key(&mut ctx.shell, ctx.open_chat_sync, ctx.opener, key)?;
+    } else if state.info_picker().is_some() {
+        info_picker::handle_info_picker_key(&mut ctx.shell, key);
     } else if state.help_visible() {
         popups::handle_help_key(&mut ctx.shell, key);
     } else if state.active_pane() == ActivePane::MessageInput {
@@ -184,6 +186,9 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
         }
         Action::AttachFile if ctx.shell.state.open_chat().is_open() => {
             attachments::open_file_picker(&mut ctx.shell, ctx.attachments);
+        }
+        Action::ShowChatInfo => {
+            info_picker::show_message_chat_info(&mut ctx.shell);
         }
         Action::ShowMessageInfo => {
             popups::show_message_info_popup(&mut ctx.shell);

@@ -20,6 +20,7 @@ fn message_with_multiple_reactions_shows_count() {
         reaction_count: 3,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }];
 
@@ -51,6 +52,7 @@ fn message_with_single_reaction_shows_heart_without_count() {
         reaction_count: 1,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }];
 

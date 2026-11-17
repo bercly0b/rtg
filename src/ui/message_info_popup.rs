@@ -131,7 +131,7 @@ fn build_loaded_lines(info: &MessageInfo) -> Vec<Line<'static>> {
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "Press q, Esc or I to close",
+        "Press q, Esc or m to close",
         styles::help_popup_footer_style(),
     )));
 
@@ -156,6 +156,21 @@ fn build_field_line(label: &str, value: &str) -> Line<'static> {
 mod tests {
     use super::*;
     use crate::domain::message_info_state::{ReactionCount, ReactionDetail, ViewerDetail};
+
+    #[test]
+    fn footer_names_the_keys_that_close_the_popup() {
+        let state = MessageInfoPopupState::Loaded(MessageInfo {
+            author: None,
+            reactions: vec![],
+            reaction_counts: vec![],
+            viewers: vec![],
+            read_date: None,
+            edit_date: None,
+        });
+        let lines = build_info_lines(&state);
+        let footer = lines.last().unwrap();
+        assert_eq!(footer.spans[0].content, "Press q, Esc or m to close");
+    }
 
     #[test]
     fn loading_state_shows_loading_text() {

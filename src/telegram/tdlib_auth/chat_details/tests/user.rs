@@ -103,9 +103,9 @@ fn user_template_fills_every_row() {
         .chats
         .insert(77, make_test_chat(77, "Alice's notes"));
 
-    let info = resolve(&resolver, 1, ChatType::Private).unwrap();
+    let info = resolve(&resolver, 1).unwrap();
 
-    assert_eq!(info.title, "Title");
+    assert_eq!(info.title, "Private");
     assert_eq!(info.status_line, "online");
     assert_eq!(
         user_info(info),
@@ -151,7 +151,7 @@ fn unset_values_resolve_to_none_and_an_empty_phone_to_hidden() {
     let mut resolver = resolver_with_user(user(1));
     resolver.user_full_infos.insert(1, user_full_info());
 
-    let info = user_info(resolve(&resolver, 1, ChatType::Private).unwrap());
+    let info = user_info(resolve(&resolver, 1).unwrap());
 
     assert_eq!(
         info,
@@ -187,7 +187,7 @@ fn birthdate_without_year_keeps_day_and_month() {
     });
     resolver.user_full_infos.insert(1, full);
 
-    let info = user_info(resolve(&resolver, 1, ChatType::Private).unwrap());
+    let info = user_info(resolve(&resolver, 1).unwrap());
 
     assert_eq!(
         info.birthdate,
@@ -205,7 +205,7 @@ fn user_full_info_failure_leaves_its_rows_unknown() {
     alice.phone_number = "79001234567".to_owned();
     let resolver = resolver_with_user(alice);
 
-    let info = user_info(resolve(&resolver, 1, ChatType::Private).unwrap());
+    let info = user_info(resolve(&resolver, 1).unwrap());
 
     assert_eq!(info.phone, Some(PhoneNumber::Shown("79001234567".into())));
     assert_eq!(info.birthdate, None);
@@ -225,7 +225,7 @@ fn personal_channel_failure_leaves_its_row_unknown() {
     full.personal_chat_id = 77;
     resolver.user_full_infos.insert(1, full);
 
-    let info = user_info(resolve(&resolver, 1, ChatType::Private).unwrap());
+    let info = user_info(resolve(&resolver, 1).unwrap());
 
     assert_eq!(info.personal_channel, None);
 }
@@ -244,8 +244,8 @@ fn status_line_marks_a_last_seen_hidden_by_my_settings() {
     resolver.chats.insert(2, private_chat(2, 2));
     resolver.users.insert(2, theirs);
 
-    let mine = resolve(&resolver, 1, ChatType::Private).unwrap();
-    let theirs = resolve(&resolver, 2, ChatType::Private).unwrap();
+    let mine = resolve(&resolver, 1).unwrap();
+    let theirs = resolve(&resolver, 2).unwrap();
 
     assert_eq!(mine.status_line, "last seen recently (you hide yours)");
     assert_eq!(theirs.status_line, "last seen recently");
@@ -257,7 +257,7 @@ fn deleted_account_status_line() {
     deleted.r#type = tdlib_rs::enums::UserType::Deleted;
     let resolver = resolver_with_user(deleted);
 
-    let info = resolve(&resolver, 1, ChatType::Private).unwrap();
+    let info = resolve(&resolver, 1).unwrap();
 
     assert_eq!(info.status_line, "deleted account");
     assert!(matches!(info.kind, ChatInfoKind::User(_)));
@@ -269,7 +269,7 @@ fn deleted_account_phone_is_unknown_rather_than_hidden() {
     deleted.r#type = tdlib_rs::enums::UserType::Deleted;
     let resolver = resolver_with_user(deleted);
 
-    let info = user_info(resolve(&resolver, 1, ChatType::Private).unwrap());
+    let info = user_info(resolve(&resolver, 1).unwrap());
 
     assert_eq!(info.phone, None);
 }
@@ -280,7 +280,7 @@ fn account_info_comes_from_the_action_bar_with_the_country_name() {
     resolver.chats.get_mut(&1).unwrap().action_bar = account_info_bar(account_info_fields("RU"));
     resolver.countries = Some(vec![country("DE", "Germany"), country("RU", "Russia")]);
 
-    let info = user_info(resolve(&resolver, 1, ChatType::Private).unwrap());
+    let info = user_info(resolve(&resolver, 1).unwrap());
 
     assert_eq!(
         info.account_info,
@@ -301,7 +301,7 @@ fn account_info_country_falls_back_to_its_code() {
     let mut resolver = resolver_with_user(user(1));
     resolver.chats.get_mut(&1).unwrap().action_bar = account_info_bar(account_info_fields("RU"));
 
-    let info = user_info(resolve(&resolver, 1, ChatType::Private).unwrap());
+    let info = user_info(resolve(&resolver, 1).unwrap());
 
     assert_eq!(
         info.account_info.unwrap().phone_country.as_deref(),
@@ -321,7 +321,7 @@ fn account_info_zero_and_empty_fields_are_unknown() {
             last_photo_change_date: 0,
         });
 
-    let info = user_info(resolve(&resolver, 1, ChatType::Private).unwrap());
+    let info = user_info(resolve(&resolver, 1).unwrap());
 
     assert_eq!(
         info.account_info,
@@ -343,7 +343,7 @@ fn no_account_info_once_tdlib_drops_it() {
     let mut resolver = resolver_with_user(user(1));
     resolver.chats.get_mut(&1).unwrap().action_bar = Some(ChatActionBar::AddContact);
 
-    let info = user_info(resolve(&resolver, 1, ChatType::Private).unwrap());
+    let info = user_info(resolve(&resolver, 1).unwrap());
 
     assert_eq!(info.account_info, None);
 }
@@ -355,7 +355,7 @@ fn business_block_needs_a_location_or_opening_hours() {
     full.business_info = Some(business(None, false, 0, 0));
     resolver.user_full_infos.insert(1, full);
 
-    let info = user_info(resolve(&resolver, 1, ChatType::Private).unwrap());
+    let info = user_info(resolve(&resolver, 1).unwrap());
 
     assert_eq!(info.business, None);
 }
@@ -380,7 +380,7 @@ fn business_hours_tell_whether_it_is_open_now() {
         ));
         resolver.user_full_infos.insert(1, full);
 
-        let info = user_info(resolve(&resolver, 1, ChatType::Private).unwrap());
+        let info = user_info(resolve(&resolver, 1).unwrap());
 
         assert_eq!(
             info.business,
@@ -410,7 +410,7 @@ fn secret_chat_shows_state_and_the_comparable_part_of_the_key() {
         },
     );
 
-    let info = user_info(resolve(&resolver, 10, ChatType::Private).unwrap());
+    let info = user_info(resolve(&resolver, 10).unwrap());
 
     assert_eq!(
         info.secret_chat,
@@ -426,7 +426,7 @@ fn secret_chat_failure_keeps_the_block_with_unknown_rows() {
     let mut resolver = resolver_with_user(user(1));
     resolver.chats.insert(10, secret_chat(10, 5, 1));
 
-    let info = user_info(resolve(&resolver, 10, ChatType::Private).unwrap());
+    let info = user_info(resolve(&resolver, 10).unwrap());
 
     assert_eq!(
         info.secret_chat,

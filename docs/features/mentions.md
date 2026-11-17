@@ -36,6 +36,31 @@ each one once:
 - "@name not found" is shown when nobody holds the username, and
   "Could not open @name" when the lookup failed.
 
+## Chat info of the sender and the mentioned
+
+`I` on a message (`show_chat_info`, the same action and key as in the chat
+list) shows the chat info popup, described in
+[chat-info-user-data.md](chat-info-user-data.md).
+
+- **Without mentions** the popup is about the sender of the message, as TDLib
+  names it: a user, or a chat — a channel for its posts, a group for an
+  anonymous admin. A forwarded message shows who forwarded it, not its
+  original sender; the current user's own message shows the popup about
+  the current user.
+- **With at least one mention** the info picker asks first. Its first row is
+  the sender, by name, selected by default; then come the mentions in text
+  order, each one once. Links are not listed. A mention of the sender is kept
+  as its own row. `j`/`k` move, `Enter` or `I` open the popup about the
+  selected row, `q`/`Esc` close the picker.
+- The popup opens at once in its loading state, titled with the sender's name
+  or `@name`, without a notification. An answer that arrives after the popup
+  was closed is dropped.
+- "@name not found" is shown, and the popup closed, when nobody holds the
+  username. A failed request leaves the popup in its error state.
+
+The message info popup moved from `I` to `m` (`show_message_info`); `q`, `Esc`
+or `m` close it.
+
 ## TDLib integration
 
 - **Mentions** come from `textEntityTypeMention` in the `formattedText` of a
@@ -49,8 +74,18 @@ each one once:
   other error is a failed lookup.
 - The found chat is opened with the regular `openChat` / `getChatHistory`
   flow; it is not added to any chat list.
+- **The sender** comes from `message.sender_id`: `messageSenderUser` or
+  `messageSenderChat`. The chat info popup takes a sender chat by its id, a
+  sender user through `createPrivateChat(user_id, force = false)` and a
+  mention through `searchPublicChat`. `createPrivateChat` returns the
+  existing private chat or creates a local record of one; such a chat joins
+  no chat list, so the user's chat lists do not change.
 
 ## Out of scope
 
 `t.me/...` links open in the browser like any link. Usernames in the chat
-info and message info popups are not interactive.
+info and message info popups are not interactive. A mention without a
+username (`textEntityTypeMentionName`) is not offered by the info picker. The
+original sender of a forwarded message has no chat info popup. `I` does
+nothing in the topic list of a forum, and on a message that is still being
+sent optimistically.

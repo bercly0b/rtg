@@ -34,7 +34,7 @@ fn channel_template_fills_every_row() {
         },
     );
 
-    let info = resolve(&resolver, 7, ChatType::Channel).unwrap();
+    let info = resolve(&resolver, 7).unwrap();
 
     assert_eq!(info.status_line, "12345 subscribers");
     assert_eq!(
@@ -61,7 +61,7 @@ fn channel_supergroup_failure_leaves_its_rows_unknown() {
         .supergroup_full_infos
         .insert(70, supergroup_full_info(10, ""));
 
-    let info = resolve(&resolver, 7, ChatType::Channel).unwrap();
+    let info = resolve(&resolver, 7).unwrap();
 
     assert_eq!(info.status_line, "10 subscribers");
     assert_eq!(

@@ -60,6 +60,7 @@ pub(super) fn message(id: i64, text: &str) -> Message {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }
 }

@@ -128,6 +128,21 @@ impl TdLibClient {
         })
     }
 
+    /// Returns the private chat with a user via `createPrivateChat`, creating
+    /// its local record when there is none; such a chat joins no chat list.
+    /// Without `force` TDLib may ask the server, so the chat is accurate.
+    pub fn create_private_chat(&self, user_id: i64) -> Result<tdlib_rs::types::Chat, TdLibError> {
+        let client_id = self.client_id;
+
+        self.block_on_request("createPrivateChat", async {
+            let chat = tdlib_rs::functions::create_private_chat(user_id, false, client_id).await?;
+
+            match chat {
+                tdlib_rs::enums::Chat::Chat(c) => Ok(c),
+            }
+        })
+    }
+
     /// Gets user information by ID.
     pub fn get_user(&self, user_id: i64) -> Result<tdlib_rs::types::User, TdLibError> {
         let client_id = self.client_id;
