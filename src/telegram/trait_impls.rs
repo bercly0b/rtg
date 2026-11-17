@@ -1,5 +1,8 @@
 use crate::{
-    domain::{attachment::OutgoingAttachment, message::Message},
+    domain::{
+        attachment::{MediaMetadata, OutgoingAttachment},
+        message::Message,
+    },
     infra::error::AppError,
     usecases::{
         chat_lifecycle::{
@@ -146,9 +149,10 @@ impl AttachmentSender for TelegramAdapter {
         chat_id: i64,
         topic_id: Option<i32>,
         attachment: &OutgoingAttachment,
+        metadata: &MediaMetadata,
     ) -> Result<(), SendAttachmentError> {
         match self.tdlib_backend.as_ref() {
-            Some(backend) => backend.send_attachment(chat_id, topic_id, attachment),
+            Some(backend) => backend.send_attachment(chat_id, topic_id, attachment, metadata),
             None => Err(SendAttachmentError::Source(
                 SendMessageSourceError::Unauthorized,
             )),

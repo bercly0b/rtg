@@ -1,10 +1,14 @@
 use std::sync::{mpsc::Sender, Arc};
 
 use crate::{
-    domain::{attachment::OutgoingAttachment, message_input_state::OutgoingMessage},
+    domain::{
+        attachment::{MediaMetadata, OutgoingAttachment},
+        message_input_state::OutgoingMessage,
+    },
     usecases::{
         edit_message::{edit_message, EditMessageCommand, MessageEditor},
         load_messages::{load_messages, LoadMessagesQuery, MessagesSource},
+        media_probe::ProbeToolMissing,
         send_attachment::{AttachmentSender, SendAttachmentError},
         send_message::{send_message, MessageSender, SendMessageCommand},
         send_voice::VoiceNoteSender,
@@ -323,6 +327,7 @@ pub(super) fn dispatch_send_attachment<
     chat_id: i64,
     topic_id: Option<i32>,
     attachment: OutgoingAttachment,
+    probe: fn(&str) -> Result<MediaMetadata, ProbeToolMissing>,
 ) {
     let sender = Arc::clone(sender);
     let messages_source = Arc::clone(messages_source);
@@ -340,8 +345,16 @@ pub(super) fn dispatch_send_attachment<
                 kind = ?attachment.kind,
                 "background: sending attachment"
             );
+            let probed = if attachment.kind.has_metadata() {
+                probe(&attachment.path)
+            } else {
+                Ok(MediaMetadata::default())
+            };
+            let probe_tool_missing = probed.is_err();
+            let metadata = probed.unwrap_or_default();
+
             let result = sender
-                .send_attachment(chat_id, topic_id, &attachment)
+                .send_attachment(chat_id, topic_id, &attachment, &metadata)
                 .map_err(|error| {
                     tracing::warn!(chat_id, error = ?error, "background: send attachment failed");
                     BackgroundError::new(match error {
@@ -356,6 +369,7 @@ pub(super) fn dispatch_send_attachment<
                 chat_id,
                 topic_id,
                 attachment,
+                probe_tool_missing,
                 result,
             });
 
@@ -370,6 +384,7 @@ pub(super) fn dispatch_send_attachment<
             chat_id,
             topic_id,
             attachment: fallback_attachment,
+            probe_tool_missing: false,
             result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
         });
     }

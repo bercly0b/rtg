@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::domain::attachment::OutgoingAttachment;
+use crate::domain::attachment::{MediaMetadata, OutgoingAttachment};
 use crate::domain::message::Message;
 use crate::usecases::edit_message::EditMessageSourceError;
 use crate::usecases::load_messages::MessagesSourceError;
@@ -291,6 +291,7 @@ impl TdLibAuthBackend {
         chat_id: i64,
         topic_id: Option<i32>,
         attachment: &OutgoingAttachment,
+        metadata: &MediaMetadata,
     ) -> Result<(), SendAttachmentError> {
         // An unknown Premium status counts as none: the lower limit is the
         // one every account has.
@@ -300,7 +301,7 @@ impl TdLibAuthBackend {
         }
 
         self.client
-            .send_attachment(chat_id, topic_id, attachment)
+            .send_attachment(chat_id, topic_id, attachment, metadata)
             .map_err(|error| SendAttachmentError::Source(map_send_message_error(error)))?;
 
         tracing::debug!(

@@ -287,12 +287,14 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
             chat_id,
             topic_id,
             attachment,
+            probe_tool_missing,
             result,
         } => attachments::handle_attachment_sent(
             &mut ctx.shell,
             chat_id,
             topic_id,
             attachment,
+            probe_tool_missing,
             result,
         ),
         BackgroundTaskResult::FilesListed {

@@ -85,6 +85,7 @@ fn fail_send(o: &mut TestOrchestrator, code: &'static str) {
             chat_id,
             topic_id,
             attachment,
+            probe_tool_missing: false,
             result: Err(BackgroundError::new(code)),
         },
     );

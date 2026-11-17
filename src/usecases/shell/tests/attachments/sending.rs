@@ -218,10 +218,48 @@ fn successful_send_keeps_the_pending_message_until_the_refresh() {
             chat_id,
             topic_id,
             attachment,
+            probe_tool_missing: false,
             result: Ok(()),
         },
     );
 
     assert_eq!(o.state().open_chat().messages().len(), 2);
     assert_eq!(o.state().active_notification(), None);
+}
+
+#[test]
+fn video_shows_up_as_a_video_message_at_once() {
+    let mut o = picker_listing(vec![entry("/d/clip.MP4", 200)]);
+
+    press(&mut o, "enter");
+
+    assert_eq!(sent(&o).2.kind, AttachmentKind::Video);
+    assert_eq!(
+        o.state().open_chat().messages().last().unwrap().media,
+        MessageMedia::Video
+    );
+}
+
+#[test]
+fn send_without_the_probe_tool_says_what_the_message_lacks() {
+    let mut o = picker_listing(vec![entry("/d/clip.mp4", 200)]);
+    press(&mut o, "enter");
+    let (chat_id, topic_id, attachment) = sent(&o);
+
+    complete(
+        &mut o,
+        BackgroundTaskResult::AttachmentSent {
+            chat_id,
+            topic_id,
+            attachment,
+            probe_tool_missing: true,
+            result: Ok(()),
+        },
+    );
+
+    assert_eq!(o.state().open_chat().messages().len(), 2);
+    assert_eq!(
+        o.state().active_notification(),
+        Some("ffprobe not found: sent without duration and size")
+    );
 }

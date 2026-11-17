@@ -1,4 +1,4 @@
-use crate::domain::attachment::{AttachmentKind, OutgoingAttachment};
+use crate::domain::attachment::{AttachmentKind, MediaMetadata, OutgoingAttachment};
 
 use super::types::TdLibError;
 use super::TdLibClient;
@@ -239,8 +239,9 @@ impl TdLibClient {
         })
     }
 
-    /// Sends a local file to a chat or forum topic, as a photo or as a
-    /// document depending on `attachment.kind`.
+    /// Sends a local file to a chat or forum topic, as the message type
+    /// `attachment.kind` names. `metadata` goes along with a video, an audio
+    /// file and an animation; zero and empty tell TDLib a value is unknown.
     ///
     /// See [`send_message`](Self::send_message) for the `topic_id` semantics.
     /// Returns as soon as TDLib has queued the message: the upload goes on
@@ -250,9 +251,11 @@ impl TdLibClient {
         chat_id: i64,
         topic_id: Option<i32>,
         attachment: &OutgoingAttachment,
+        metadata: &MediaMetadata,
     ) -> Result<tdlib_rs::types::Message, TdLibError> {
         let client_id = self.client_id;
         let attachment = attachment.clone();
+        let metadata = metadata.clone();
 
         self.block_on_request("sendMessage", async {
             let file = tdlib_rs::enums::InputFile::Local(tdlib_rs::types::InputFileLocal {
@@ -276,6 +279,52 @@ impl TdLibClient {
                             caption,
                             show_caption_above_media: false,
                             self_destruct_type: None,
+                            has_spoiler: false,
+                        },
+                    )
+                }
+                AttachmentKind::Video => {
+                    tdlib_rs::enums::InputMessageContent::InputMessageVideo(
+                        tdlib_rs::types::InputMessageVideo {
+                            video: file,
+                            thumbnail: None,
+                            cover: None,
+                            start_timestamp: 0,
+                            added_sticker_file_ids: vec![],
+                            duration: metadata.duration_secs,
+                            width: metadata.width,
+                            height: metadata.height,
+                            // Streaming needs the index at the start of the
+                            // file, which is not checked.
+                            supports_streaming: false,
+                            caption,
+                            show_caption_above_media: false,
+                            self_destruct_type: None,
+                            has_spoiler: false,
+                        },
+                    )
+                }
+                AttachmentKind::Audio => tdlib_rs::enums::InputMessageContent::InputMessageAudio(
+                    tdlib_rs::types::InputMessageAudio {
+                        audio: file,
+                        album_cover_thumbnail: None,
+                        duration: metadata.duration_secs,
+                        title: metadata.title,
+                        performer: metadata.performer,
+                        caption,
+                    },
+                ),
+                AttachmentKind::Animation => {
+                    tdlib_rs::enums::InputMessageContent::InputMessageAnimation(
+                        tdlib_rs::types::InputMessageAnimation {
+                            animation: file,
+                            thumbnail: None,
+                            added_sticker_file_ids: vec![],
+                            duration: metadata.duration_secs,
+                            width: metadata.width,
+                            height: metadata.height,
+                            caption,
+                            show_caption_above_media: false,
                             has_spoiler: false,
                         },
                     )

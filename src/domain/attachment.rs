@@ -1,5 +1,7 @@
 //! Attachments: local files the user sends into a chat.
 
+use std::path::Path;
+
 use super::{message::MessageMedia, message_input_state::ReplyContext};
 
 /// TDLib limits for `inputMessagePhoto`: at most 10 MB, width and height at
@@ -13,11 +15,53 @@ const MAX_PHOTO_SIDE_RATIO: u32 = 20;
 pub enum AttachmentKind {
     /// A compressed photo.
     Photo { width: u32, height: u32 },
+    /// A video Telegram plays in the chat.
+    Video,
+    /// A music or other audio file Telegram plays in the chat.
+    Audio,
+    /// A GIF, played in a loop without sound.
+    Animation,
     /// A general file, sent as is.
     Document,
 }
 
+const VIDEO_EXTENSIONS: [&str; 3] = ["mp4", "mov", "m4v"];
+const AUDIO_EXTENSIONS: [&str; 8] = ["mp3", "m4a", "flac", "ogg", "oga", "opus", "wav", "aac"];
+
+/// What is known about a video, an audio file or an animation beyond its
+/// bytes. Zero and empty stand for unknown, as TDLib expects.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MediaMetadata {
+    pub duration_secs: i32,
+    pub width: i32,
+    pub height: i32,
+    pub title: String,
+    pub performer: String,
+}
+
 impl AttachmentKind {
+    /// Picks the kind a file name alone decides: video, audio or animation.
+    /// The extension is used rather than the content so that the kind does
+    /// not depend on a media tool being installed.
+    pub fn for_extension(path: &str) -> Option<Self> {
+        let extension = Path::new(path).extension()?.to_str()?.to_ascii_lowercase();
+        let extension = extension.as_str();
+        if VIDEO_EXTENSIONS.contains(&extension) {
+            Some(Self::Video)
+        } else if AUDIO_EXTENSIONS.contains(&extension) {
+            Some(Self::Audio)
+        } else if extension == "gif" {
+            Some(Self::Animation)
+        } else {
+            None
+        }
+    }
+
+    /// Whether Telegram wants a duration and the like along with the file.
+    pub fn has_metadata(self) -> bool {
+        matches!(self, Self::Video | Self::Audio | Self::Animation)
+    }
+
     /// Picks the kind for a file of `size_bytes`. `image_size` is the width
     /// and height of an image Telegram shows as a photo, `None` for any other
     /// file. An image outside the photo limits is sent as a document.
@@ -40,6 +84,9 @@ impl AttachmentKind {
     pub fn media(self) -> MessageMedia {
         match self {
             Self::Photo { .. } => MessageMedia::Photo,
+            Self::Video => MessageMedia::Video,
+            Self::Audio => MessageMedia::Audio,
+            Self::Animation => MessageMedia::Animation,
             Self::Document => MessageMedia::Document,
         }
     }
@@ -61,6 +108,52 @@ pub struct OutgoingAttachment {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_extension_tells_video_audio_and_animation_apart() {
+        for name in ["clip.mp4", "clip.mov", "clip.m4v"] {
+            assert_eq!(
+                AttachmentKind::for_extension(name),
+                Some(AttachmentKind::Video),
+                "{name}"
+            );
+        }
+        for name in [
+            "a.mp3", "a.m4a", "a.flac", "a.ogg", "a.oga", "a.opus", "a.wav", "a.aac",
+        ] {
+            assert_eq!(
+                AttachmentKind::for_extension(name),
+                Some(AttachmentKind::Audio),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            AttachmentKind::for_extension("/d/cat.gif"),
+            Some(AttachmentKind::Animation)
+        );
+    }
+
+    #[test]
+    fn the_extension_is_read_ignoring_case() {
+        assert_eq!(
+            AttachmentKind::for_extension("/d/IMG_0001.MOV"),
+            Some(AttachmentKind::Video)
+        );
+    }
+
+    #[test]
+    fn other_extensions_decide_nothing() {
+        for name in [
+            "film.mkv",
+            "film.webm",
+            "film.avi",
+            "report.pdf",
+            "mp4",
+            "/d.mp4/notes",
+        ] {
+            assert_eq!(AttachmentKind::for_extension(name), None, "{name}");
+        }
+    }
 
     #[test]
     fn a_file_that_is_not_an_image_is_a_document() {
