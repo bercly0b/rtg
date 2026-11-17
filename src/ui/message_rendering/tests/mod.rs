@@ -33,6 +33,7 @@ fn msg(id: i64, sender: &str, text: &str, ts_ms: i64, outgoing: bool) -> Message
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }
 }
@@ -53,6 +54,7 @@ fn msg_with_media(id: i64, sender: &str, text: &str, ts_ms: i64, media: MessageM
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }
 }
@@ -84,6 +86,7 @@ fn msg_with_reply(
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }
 }
@@ -112,6 +115,7 @@ fn msg_with_forward(
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }
 }

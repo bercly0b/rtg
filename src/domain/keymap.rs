@@ -600,6 +600,11 @@ fn default_bindings() -> Vec<KeyBinding> {
         },
         KeyBinding {
             pattern: KeyPattern::single("I"),
+            action: Action::ShowChatInfo,
+            context: KeyContext::Messages,
+        },
+        KeyBinding {
+            pattern: KeyPattern::single("m"),
             action: Action::ShowMessageInfo,
             context: KeyContext::Messages,
         },
@@ -651,6 +656,21 @@ mod tests {
         assert_eq!(
             km.resolve("j", false, KeyContext::Messages),
             ResolveResult::Action(Action::ScrollNextMessage)
+        );
+    }
+
+    #[test]
+    fn chat_info_is_on_the_same_key_in_the_chat_list_and_in_messages() {
+        let mut km = Keymap::default();
+        for context in [KeyContext::ChatList, KeyContext::Messages] {
+            assert_eq!(
+                km.resolve("I", false, context),
+                ResolveResult::Action(Action::ShowChatInfo)
+            );
+        }
+        assert_eq!(
+            km.resolve("m", false, KeyContext::Messages),
+            ResolveResult::Action(Action::ShowMessageInfo)
         );
     }
 

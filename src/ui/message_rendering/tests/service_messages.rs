@@ -18,6 +18,7 @@ fn service_message_renders_centered_with_sender_inline() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: true,
     }];
 
@@ -57,6 +58,7 @@ fn service_message_breaks_sender_grouping() {
             reaction_count: 0,
             links: Vec::new(),
             is_edited: false,
+            sender: None,
             is_service: true,
         },
         msg(3, "Alice", "World", FEB_14_2026_10AM, false),
@@ -98,6 +100,7 @@ fn service_message_shows_reaction_badge() {
         reaction_count: 3,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: true,
     }];
 
@@ -133,6 +136,7 @@ fn service_message_without_reactions_has_no_badge() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: true,
     }];
 

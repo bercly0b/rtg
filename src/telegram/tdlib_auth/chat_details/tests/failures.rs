@@ -6,7 +6,7 @@ use super::*;
 fn get_chat_failure_returns_error() {
     let resolver = FakeResolver::default();
 
-    let result = resolve(&resolver, 1, ChatType::Private);
+    let result = resolve(&resolver, 1);
 
     assert_eq!(result, Err(ChatSubtitleError::Unavailable));
 }
@@ -16,7 +16,7 @@ fn private_user_failure_returns_error() {
     let mut resolver = FakeResolver::default();
     resolver.chats.insert(1, private_chat(1, 1));
 
-    let result = resolve(&resolver, 1, ChatType::Private);
+    let result = resolve(&resolver, 1);
 
     assert_eq!(result, Err(ChatSubtitleError::Unavailable));
 }
@@ -29,7 +29,7 @@ fn basic_group_full_info_failure_returns_error() {
         .basic_groups
         .insert(50, basic_group(50, member_status()));
 
-    let result = resolve(&resolver, 5, ChatType::Group);
+    let result = resolve(&resolver, 5);
 
     assert_eq!(result, Err(ChatSubtitleError::Unavailable));
 }
@@ -40,7 +40,7 @@ fn supergroup_full_info_failure_returns_error() {
     resolver.chats.insert(6, supergroup_chat(6, 60, false));
     resolver.supergroups.insert(60, supergroup(60, false));
 
-    let result = resolve(&resolver, 6, ChatType::Group);
+    let result = resolve(&resolver, 6);
 
     assert_eq!(result, Err(ChatSubtitleError::Unavailable));
 }
@@ -51,17 +51,7 @@ fn channel_full_info_failure_returns_error() {
     resolver.chats.insert(7, supergroup_chat(7, 70, true));
     resolver.supergroups.insert(70, supergroup(70, true));
 
-    let result = resolve(&resolver, 7, ChatType::Channel);
-
-    assert_eq!(result, Err(ChatSubtitleError::Unavailable));
-}
-
-#[test]
-fn chat_type_mismatch_returns_error() {
-    let mut resolver = FakeResolver::default();
-    resolver.chats.insert(1, private_chat(1, 1));
-
-    let result = resolve(&resolver, 1, ChatType::Group);
+    let result = resolve(&resolver, 7);
 
     assert_eq!(result, Err(ChatSubtitleError::Unavailable));
 }
@@ -88,9 +78,9 @@ fn optional_request_failures_still_resolve_every_template() {
         .supergroup_full_infos
         .insert(70, supergroup_full_info(9, ""));
 
-    assert!(resolve(&resolver, 1, ChatType::Private).is_ok());
-    assert!(resolve(&resolver, 2, ChatType::Private).is_ok());
-    assert!(resolve(&resolver, 5, ChatType::Group).is_ok());
-    assert!(resolve(&resolver, 6, ChatType::Group).is_ok());
-    assert!(resolve(&resolver, 7, ChatType::Channel).is_ok());
+    assert!(resolve(&resolver, 1).is_ok());
+    assert!(resolve(&resolver, 2).is_ok());
+    assert!(resolve(&resolver, 5).is_ok());
+    assert!(resolve(&resolver, 6).is_ok());
+    assert!(resolve(&resolver, 7).is_ok());
 }

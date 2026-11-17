@@ -21,6 +21,7 @@ use super::chat_search_popup;
 use super::command_popup;
 use super::file_picker_popup;
 use super::help_popup;
+use super::info_picker_popup;
 use super::link_picker_popup;
 use super::message_info_popup;
 use super::message_input::{
@@ -133,6 +134,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_entries: &[Hel
 
     if let Some(picker_state) = state.link_picker() {
         link_picker_popup::render_link_picker(frame, frame.area(), picker_state);
+    }
+
+    if let Some(picker_state) = state.info_picker() {
+        info_picker_popup::render_info_picker(frame, frame.area(), picker_state);
     }
 
     if let Some(picker_state) = state.file_picker() {

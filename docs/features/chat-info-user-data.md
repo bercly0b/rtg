@@ -110,6 +110,19 @@ How it behaves:
 Decisions from the design discussion on ROZ-172. The terms (chat info popup,
 info template, account info) are defined in [GLOSSARY.md](../../GLOSSARY.md).
 
+### Where it opens
+
+`I` opens the popup for the selected chat of the chat list, and for the
+selected message of an open chat: about its sender or, through the info
+picker, about someone it mentions (see [mentions.md](mentions.md)). `q`, `Esc`
+or `I` close it.
+
+The popup resolves its subject to a TDLib chat first: a chat by `getChat`, a
+user by `createPrivateChat`, a mention by `searchPublicChat`. The info
+template and the title then come from that chat, so a user the current user
+has never talked to gets the User template with `—` in the rows of the Chat
+block that have no value.
+
 ### Principles
 
 - **Info templates.** Each kind of chat has its own info template: User, Bot,
@@ -362,6 +375,5 @@ client does not have.
 Each of these is a separate task:
 
 - marking strangers and scam accounts in the chat list;
-- a profile for a message's author in a group, reusing the User template;
 - scrolling in the chat info popup;
 - an approximate registration date estimated from the user ID (ROZ-190).

@@ -10,9 +10,8 @@ use tdlib_rs::types::{
     SecretChat, Supergroup, SupergroupFullInfo, User, UserFullInfo, UserTypeBot, Usernames,
 };
 
-use crate::domain::chat::ChatType;
 use crate::domain::chat_folder::ChatFolders;
-use crate::domain::chat_info_state::ChatInfo;
+use crate::domain::chat_info_state::{ChatInfo, ChatInfoSubject};
 use crate::telegram::tdlib_cache::tests::{make_test_chat, make_test_user};
 use crate::telegram::tdlib_client::TdLibError;
 use crate::usecases::chat_subtitle::{ChatInfoQuery, ChatSubtitleError};
@@ -24,6 +23,7 @@ mod channel;
 mod chat_block;
 mod failures;
 mod group;
+mod subject;
 mod user;
 
 // ---------------------------------------------------------------------------
@@ -35,6 +35,11 @@ mod user;
 #[derive(Default)]
 struct FakeResolver {
     chats: HashMap<i64, Chat>,
+    /// Private chats by user id, as `createPrivateChat` returns them.
+    private_chats: HashMap<i64, Chat>,
+    /// Chats by username; a missing one is unoccupied.
+    public_chats: HashMap<String, Chat>,
+    search_public_chat_fails: bool,
     users: HashMap<i64, User>,
     user_full_infos: HashMap<i64, UserFullInfo>,
     basic_groups: HashMap<i64, BasicGroup>,
@@ -77,6 +82,27 @@ fn not_found(request: &str, id: impl std::fmt::Display) -> TdLibError {
 impl ChatInfoResolver for FakeResolver {
     fn get_chat(&self, chat_id: i64) -> Result<Chat, TdLibError> {
         self.serve("getChat", &self.chats, chat_id)
+    }
+
+    fn create_private_chat(&self, user_id: i64) -> Result<Chat, TdLibError> {
+        self.serve("createPrivateChat", &self.private_chats, user_id)
+    }
+
+    fn search_public_chat(&self, username: &str) -> Result<Chat, TdLibError> {
+        self.requests.borrow_mut().push("searchPublicChat");
+        if self.search_public_chat_fails {
+            return Err(TdLibError::Request {
+                code: 500,
+                message: "Internal error".to_owned(),
+            });
+        }
+        self.public_chats
+            .get(username)
+            .cloned()
+            .ok_or_else(|| TdLibError::Request {
+                code: 400,
+                message: "USERNAME_NOT_OCCUPIED".to_owned(),
+            })
     }
 
     fn get_user(&self, user_id: i64) -> Result<User, TdLibError> {
@@ -151,27 +177,24 @@ fn now() -> DateTime<Local> {
     Local.with_ymd_and_hms(2026, 11, 6, 12, 0, 0).unwrap()
 }
 
-fn resolve(
-    resolver: &FakeResolver,
-    chat_id: i64,
-    chat_type: ChatType,
-) -> Result<ChatInfo, ChatSubtitleError> {
-    resolve_with_folders(resolver, chat_id, chat_type, ChatFolders::default())
+fn resolve(resolver: &FakeResolver, chat_id: i64) -> Result<ChatInfo, ChatSubtitleError> {
+    resolve_with_folders(resolver, chat_id, ChatFolders::default())
 }
 
 fn resolve_with_folders(
     resolver: &FakeResolver,
     chat_id: i64,
-    chat_type: ChatType,
     folders: ChatFolders,
 ) -> Result<ChatInfo, ChatSubtitleError> {
-    let query = ChatInfoQuery {
-        chat_id,
-        chat_type,
-        title: "Title".to_owned(),
-        folders,
-    };
-    resolve_chat_info(resolver, &query, now())
+    resolve_subject(resolver, ChatInfoSubject::Chat(chat_id), folders)
+}
+
+fn resolve_subject(
+    resolver: &FakeResolver,
+    subject: ChatInfoSubject,
+    folders: ChatFolders,
+) -> Result<ChatInfo, ChatSubtitleError> {
+    resolve_chat_info(resolver, &ChatInfoQuery { subject, folders }, now())
 }
 
 // ---------------------------------------------------------------------------

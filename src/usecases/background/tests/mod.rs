@@ -162,6 +162,74 @@ mod resolve_mention {
     }
 }
 
+// ── dispatch_chat_info ──
+
+mod chat_info {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use crate::domain::chat_folder::ChatFolders;
+    use crate::domain::chat_info_state::{ChatInfo, ChatInfoSubject};
+    use crate::domain::chat_subtitle::ChatSubtitle;
+    use crate::usecases::background::lifecycle::dispatch_chat_info;
+    use crate::usecases::background::{BackgroundError, BackgroundTaskResult, CHAT_INFO_NOT_FOUND};
+    use crate::usecases::chat_subtitle::{
+        ChatInfoQuery, ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource,
+    };
+
+    struct FailingSource(ChatSubtitleError);
+
+    impl ChatSubtitleSource for FailingSource {
+        fn resolve_chat_subtitle(
+            &self,
+            _query: &ChatSubtitleQuery,
+        ) -> Result<ChatSubtitle, ChatSubtitleError> {
+            Err(self.0.clone())
+        }
+
+        fn resolve_chat_info(&self, _query: &ChatInfoQuery) -> Result<ChatInfo, ChatSubtitleError> {
+            Err(self.0.clone())
+        }
+    }
+
+    fn subject() -> ChatInfoSubject {
+        ChatInfoSubject::Mention("alice".to_owned())
+    }
+
+    fn failure_code(error: ChatSubtitleError) -> BackgroundTaskResult {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let query = ChatInfoQuery {
+            subject: subject(),
+            folders: ChatFolders::default(),
+        };
+        dispatch_chat_info(&Arc::new(FailingSource(error)), &tx, query);
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("chat info result should arrive")
+    }
+
+    #[test]
+    fn unoccupied_username_has_its_own_error_code() {
+        assert_eq!(
+            failure_code(ChatSubtitleError::NotFound),
+            BackgroundTaskResult::ChatInfoLoaded {
+                subject: subject(),
+                result: Err(BackgroundError::new(CHAT_INFO_NOT_FOUND)),
+            }
+        );
+    }
+
+    #[test]
+    fn source_failure_is_reported_with_the_subject() {
+        assert_eq!(
+            failure_code(ChatSubtitleError::Unavailable),
+            BackgroundTaskResult::ChatInfoLoaded {
+                subject: subject(),
+                result: Err(BackgroundError::new("CHAT_INFO_UNAVAILABLE")),
+            }
+        );
+    }
+}
+
 // ── dispatch_forum_unread_counts: the badge warm-up sweep ──
 
 mod forum_unread_counts {

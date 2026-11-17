@@ -6,12 +6,31 @@ use ratatui::{
     Frame,
 };
 
-use crate::domain::link_picker_state::LinkPickerState;
+use crate::domain::{link_picker_state::LinkPickerState, message::LinkTarget};
 
 use super::{message_rendering::truncate_to_width, popup_utils, styles};
 
 pub fn render_link_picker(frame: &mut Frame<'_>, area: Rect, state: &LinkPickerState) {
-    let title = " Open ";
+    let labels: Vec<String> = state.targets().iter().map(LinkTarget::label).collect();
+    render_picker(
+        frame,
+        area,
+        " Open ",
+        &labels,
+        state.selected_index(),
+        &FOOTER,
+    );
+}
+
+/// Renders a popup that offers one of `labels`, each on its own row.
+pub(super) fn render_picker(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &str,
+    labels: &[String],
+    selected: Option<usize>,
+    footer: &[&'static str; 2],
+) {
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
@@ -19,7 +38,7 @@ pub fn render_link_picker(frame: &mut Frame<'_>, area: Rect, state: &LinkPickerS
         .padding(Padding::new(2, 2, 1, 1));
 
     let max_width = usize::from(popup_utils::max_content_width(area, &block));
-    let paragraph = Paragraph::new(build_lines(state, max_width));
+    let paragraph = Paragraph::new(build_lines(labels, selected, footer, max_width));
     let popup_area = popup_utils::content_sized_rect(area, title, &block, &paragraph);
 
     frame.render_widget(Clear, popup_area);
@@ -29,16 +48,20 @@ pub fn render_link_picker(frame: &mut Frame<'_>, area: Rect, state: &LinkPickerS
 const ROW_INDENT: &str = "  ";
 const FOOTER: [&str; 2] = ["j/k navigate, Enter or o open", "Press q or Esc to close"];
 
-/// Rows are cut to `max_width` rather than wrapped, so that every link or
-/// mention stays on its own line.
-fn build_lines(state: &LinkPickerState, max_width: usize) -> Vec<Line<'static>> {
+/// Rows are cut to `max_width` rather than wrapped, so that every label
+/// stays on its own line.
+pub(super) fn build_lines(
+    labels: &[String],
+    selected: Option<usize>,
+    footer: &[&'static str; 2],
+    max_width: usize,
+) -> Vec<Line<'static>> {
     let label_width = max_width.saturating_sub(ROW_INDENT.len());
-    let mut lines: Vec<Line<'static>> = state
-        .targets()
+    let mut lines: Vec<Line<'static>> = labels
         .iter()
         .enumerate()
-        .map(|(i, target)| {
-            let style = if Some(i) == state.selected_index() {
+        .map(|(i, label)| {
+            let style = if Some(i) == selected {
                 Style::default()
                     .fg(Color::Black)
                     .bg(Color::White)
@@ -46,14 +69,14 @@ fn build_lines(state: &LinkPickerState, max_width: usize) -> Vec<Line<'static>> 
             } else {
                 styles::chat_info_popup_value_style()
             };
-            let label = truncate_to_width(&target.label(), label_width);
+            let label = truncate_to_width(label, label_width);
             Line::from(Span::styled(format!("{ROW_INDENT}{label}"), style))
         })
         .collect();
 
     lines.push(Line::from(""));
     lines.extend(
-        FOOTER
+        footer
             .iter()
             .map(|line| Line::from(Span::styled(*line, styles::help_popup_footer_style()))),
     );
@@ -63,7 +86,11 @@ fn build_lines(state: &LinkPickerState, max_width: usize) -> Vec<Line<'static>> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::message::LinkTarget;
+
+    fn build_lines(state: &LinkPickerState, max_width: usize) -> Vec<Line<'static>> {
+        let labels: Vec<String> = state.targets().iter().map(LinkTarget::label).collect();
+        super::build_lines(&labels, state.selected_index(), &FOOTER, max_width)
+    }
 
     fn picker() -> LinkPickerState {
         LinkPickerState::new(vec![

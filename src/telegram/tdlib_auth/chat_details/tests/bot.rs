@@ -55,7 +55,7 @@ fn bot_template_fills_every_row() {
     });
     resolver.user_full_infos.insert(3, full);
 
-    let info = resolve(&resolver, 3, ChatType::Private).unwrap();
+    let info = resolve(&resolver, 3).unwrap();
 
     assert_eq!(info.status_line, "bot · 120345 monthly users");
     assert_eq!(
@@ -82,7 +82,7 @@ fn bot_template_fills_every_row() {
 fn bot_status_line_omits_unknown_monthly_users() {
     let resolver = resolver_with_bot(bot_user(3, bot_type()));
 
-    let info = resolve(&resolver, 3, ChatType::Private).unwrap();
+    let info = resolve(&resolver, 3).unwrap();
 
     assert_eq!(info.status_line, "bot");
 }
@@ -104,7 +104,7 @@ fn bot_group_access_follows_join_and_privacy_mode() {
             },
         ));
 
-        let info = bot_info(resolve(&resolver, 3, ChatType::Private).unwrap());
+        let info = bot_info(resolve(&resolver, 3).unwrap());
 
         assert_eq!(info.groups, expected);
     }
@@ -114,7 +114,7 @@ fn bot_group_access_follows_join_and_privacy_mode() {
 fn bot_full_info_failure_leaves_its_rows_unknown() {
     let resolver = resolver_with_bot(bot_user(3, bot_type()));
 
-    let info = bot_info(resolve(&resolver, 3, ChatType::Private).unwrap());
+    let info = bot_info(resolve(&resolver, 3).unwrap());
 
     assert_eq!(info.commands, Vec::<String>::new());
     assert_eq!(info.inline_placeholder, None);

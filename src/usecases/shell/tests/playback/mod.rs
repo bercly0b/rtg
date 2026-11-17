@@ -30,6 +30,7 @@ fn voice_message_downloaded(id: i64, path: &str) -> Message {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }
 }
@@ -60,6 +61,7 @@ fn voice_message_not_downloaded(id: i64) -> Message {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }
 }
@@ -90,6 +92,7 @@ fn audio_message_downloaded(id: i64, path: &str) -> Message {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }
 }
@@ -120,6 +123,7 @@ fn photo_message_downloaded(id: i64, path: &str) -> Message {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }
 }
@@ -150,6 +154,7 @@ fn video_message_downloaded(id: i64, path: &str) -> Message {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }
 }

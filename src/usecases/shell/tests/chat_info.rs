@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::chat_info_state::ChatInfoSubject;
 
 // ── Chat info popup tests ──
 
@@ -34,8 +35,7 @@ fn i_key_dispatches_chat_info_query_with_chat_folders() {
         .unwrap();
 
     let query = o.dispatcher.last_chat_info_query().unwrap();
-    assert_eq!(query.chat_id, 1);
-    assert_eq!(query.title, "Alice");
+    assert_eq!(query.subject, ChatInfoSubject::Chat(1));
     assert_eq!(query.folders, folders);
 }
 
@@ -101,7 +101,7 @@ fn chat_info_loaded_updates_popup_state() {
     // Simulate background task completion
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatInfoLoaded {
-            chat_id: 1,
+            subject: ChatInfoSubject::Chat(1),
             result: Ok(sample_chat_info("Alice")),
         },
     ]))
@@ -123,7 +123,7 @@ fn chat_info_loaded_error_sets_error_state() {
 
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatInfoLoaded {
-            chat_id: 1,
+            subject: ChatInfoSubject::Chat(1),
             result: Err(BackgroundError::new("CHAT_INFO_UNAVAILABLE")),
         },
     ]))
@@ -145,7 +145,7 @@ fn chat_info_loaded_ignored_when_popup_closed() {
     // No popup open — result should be silently ignored
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatInfoLoaded {
-            chat_id: 1,
+            subject: ChatInfoSubject::Chat(1),
             result: Ok(sample_chat_info("Alice")),
         },
     ]))
@@ -177,7 +177,7 @@ fn chat_info_loaded_stale_result_ignored() {
     // Stale result for Alice arrives — should be ignored
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
         BackgroundTaskResult::ChatInfoLoaded {
-            chat_id: 1,
+            subject: ChatInfoSubject::Chat(1),
             result: Ok(sample_chat_info("Alice")),
         },
     ]))

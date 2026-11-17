@@ -1,7 +1,9 @@
 use tdlib_rs::enums::{MessageContent, MessageSender, MessageSendingState};
 use tdlib_rs::types::Message as TdMessage;
 
-use crate::domain::message::{ForwardInfo, Message, MessageMedia, MessageStatus, ReplyInfo};
+use crate::domain::message::{
+    self as domain, ForwardInfo, Message, MessageMedia, MessageStatus, ReplyInfo,
+};
 
 use super::file_info::{extract_call_info, extract_file_info};
 use super::text_links::extract_content_links;
@@ -30,6 +32,7 @@ pub fn map_tdlib_message_to_domain(
 
     Message {
         id: msg.id,
+        sender: Some(map_message_sender(&msg.sender_id)),
         sender_name,
         text,
         timestamp_ms,
@@ -44,6 +47,13 @@ pub fn map_tdlib_message_to_domain(
         links,
         is_edited: msg.edit_date > 0,
         is_service,
+    }
+}
+
+fn map_message_sender(sender: &MessageSender) -> domain::MessageSender {
+    match sender {
+        MessageSender::User(user) => domain::MessageSender::User(user.user_id),
+        MessageSender::Chat(chat) => domain::MessageSender::Chat(chat.chat_id),
     }
 }
 

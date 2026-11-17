@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use super::{
     chat::ChatSummary,
     chat_folder::{ChatFolderPickerState, ChatFolders, ChatListKind, ARCHIVE_CHAT_LIST_TITLE},
-    chat_info_state::ChatInfoPopupState,
+    chat_info_state::{ChatInfoPopupState, ChatInfoSubject},
     chat_list_state::ChatListState,
     chat_search_state::ChatSearchState,
     command_popup_state::CommandPopupState,
@@ -12,6 +12,7 @@ use super::{
     events::ConnectivityStatus,
     file_picker_state::FilePickerState,
     forum_topic_list_state::ForumTopicListState,
+    info_picker_state::{InfoPickerEntry, InfoPickerState},
     link_picker_state::LinkPickerState,
     message::LinkTarget,
     message_cache::MessageCache,
@@ -79,6 +80,7 @@ pub struct ShellState {
     unread_chat_counts: HashMap<ChatListKind, u32>,
     chat_folder_picker: Option<ChatFolderPickerState>,
     link_picker: Option<LinkPickerState>,
+    info_picker: Option<InfoPickerState>,
     file_picker: Option<FilePickerState>,
     download_speed: DownloadSpeedMeter,
     available_update: Option<AvailableUpdate>,
@@ -107,6 +109,7 @@ impl Default for ShellState {
             unread_chat_counts: HashMap::new(),
             chat_folder_picker: None,
             link_picker: None,
+            info_picker: None,
             file_picker: None,
             download_speed: DownloadSpeedMeter::default(),
             available_update: None,
@@ -265,9 +268,9 @@ impl ShellState {
         self.chat_info_popup.as_ref()
     }
 
-    pub fn show_chat_info_loading(&mut self, chat_id: i64, title: impl Into<String>) {
+    pub fn show_chat_info_loading(&mut self, subject: ChatInfoSubject, title: impl Into<String>) {
         self.chat_info_popup = Some(ChatInfoPopupState::Loading {
-            chat_id,
+            subject,
             title: title.into(),
         });
     }
@@ -414,6 +417,22 @@ impl ShellState {
 
     pub fn close_link_picker(&mut self) {
         self.link_picker = None;
+    }
+
+    pub fn info_picker(&self) -> Option<&InfoPickerState> {
+        self.info_picker.as_ref()
+    }
+
+    pub fn info_picker_mut(&mut self) -> Option<&mut InfoPickerState> {
+        self.info_picker.as_mut()
+    }
+
+    pub fn open_info_picker(&mut self, entries: Vec<InfoPickerEntry>) {
+        self.info_picker = Some(InfoPickerState::new(entries));
+    }
+
+    pub fn close_info_picker(&mut self) {
+        self.info_picker = None;
     }
 
     pub fn file_picker(&self) -> Option<&FilePickerState> {
@@ -609,7 +628,7 @@ mod tests {
     #[test]
     fn show_chat_info_loading_creates_popup() {
         let mut state = ShellState::default();
-        state.show_chat_info_loading(1, "Alice");
+        state.show_chat_info_loading(ChatInfoSubject::Chat(1), "Alice");
         assert!(state.chat_info_popup().is_some());
         assert_eq!(state.chat_info_popup().unwrap().title(), "Alice");
     }
@@ -617,7 +636,7 @@ mod tests {
     #[test]
     fn close_chat_info_popup_clears_state() {
         let mut state = ShellState::default();
-        state.show_chat_info_loading(1, "Alice");
+        state.show_chat_info_loading(ChatInfoSubject::Chat(1), "Alice");
         state.close_chat_info_popup();
         assert!(state.chat_info_popup().is_none());
     }
@@ -626,7 +645,7 @@ mod tests {
     fn set_chat_info_loaded_updates_popup() {
         use crate::domain::chat_info_state::{tests::sample_chat_info, ChatInfoPopupState};
         let mut state = ShellState::default();
-        state.show_chat_info_loading(1, "Alice");
+        state.show_chat_info_loading(ChatInfoSubject::Chat(1), "Alice");
         state.set_chat_info_loaded(ChatInfoPopupState::Loaded(Box::new(sample_chat_info(
             "Alice",
         ))));

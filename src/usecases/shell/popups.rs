@@ -1,11 +1,11 @@
 use crate::{
     domain::{
-        chat_info_state::{ChatInfo, ChatInfoPopupState},
+        chat_info_state::{ChatInfo, ChatInfoPopupState, ChatInfoSubject},
         message_info_state::{MessageInfo, MessageInfoPopupState},
         reaction_picker_state::{AvailableReaction, ReactionPickerData, ReactionPickerState},
     },
     usecases::{
-        background::{BackgroundError, TaskDispatcher},
+        background::{BackgroundError, TaskDispatcher, CHAT_INFO_NOT_FOUND},
         chat_subtitle::ChatInfoQuery,
         message_info::MessageInfoQuery,
         message_reactions::AvailableReactionsQuery,
@@ -18,17 +18,22 @@ pub(super) fn show_chat_info_popup<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>)
     let Some(chat) = ctx.state.chat_list().selected_chat() else {
         return;
     };
-
-    let chat_id = chat.chat_id;
+    let subject = ChatInfoSubject::Chat(chat.chat_id);
     let title = chat.title.clone();
-    let chat_type = chat.chat_type;
+    open_chat_info_popup(ctx, subject, title);
+}
 
-    ctx.state.show_chat_info_loading(chat_id, &title);
+/// Opens the chat info popup about `subject` at once, in its loading state
+/// under `title`, and asks for the info in the background.
+pub(super) fn open_chat_info_popup<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    subject: ChatInfoSubject,
+    title: String,
+) {
+    ctx.state.show_chat_info_loading(subject.clone(), title);
 
     ctx.dispatcher.dispatch_chat_info(ChatInfoQuery {
-        chat_id,
-        chat_type,
-        title,
+        subject,
         folders: ctx.state.chat_folders().clone(),
     });
 }
@@ -88,7 +93,7 @@ pub(super) fn handle_message_info_popup_key<D: TaskDispatcher>(
     ctx: &mut ShellCtx<'_, D>,
     key: &str,
 ) {
-    if matches!(key, "q" | "esc" | "I") {
+    if matches!(key, "q" | "esc" | "m") {
         ctx.state.close_message_info_popup();
     }
 }
@@ -139,28 +144,32 @@ pub(super) fn handle_reaction_picker_key<D: TaskDispatcher>(ctx: &mut ShellCtx<'
     }
 }
 
+/// Applies the answer to the popup that asked for it; an answer that comes
+/// after the popup was closed or reopened about someone else is dropped.
 pub(super) fn handle_chat_info_loaded<D: TaskDispatcher>(
     ctx: &mut ShellCtx<'_, D>,
-    chat_id: i64,
+    subject: &ChatInfoSubject,
     result: Result<ChatInfo, BackgroundError>,
 ) {
-    let popup_chat_id = ctx.state.chat_info_popup().and_then(|p| p.chat_id());
-    if popup_chat_id != Some(chat_id) {
+    let Some(popup) = ctx.state.chat_info_popup() else {
+        return;
+    };
+    if popup.subject() != Some(subject) {
         return;
     }
+    let title = popup.title().to_owned();
     match result {
         Ok(info) => {
-            tracing::debug!(chat_id, "chat info resolved for popup");
+            tracing::debug!("chat info resolved for popup");
             ctx.state
                 .set_chat_info_loaded(ChatInfoPopupState::Loaded(Box::new(info)));
         }
+        Err(e) if e.code == CHAT_INFO_NOT_FOUND => {
+            ctx.state.close_chat_info_popup();
+            ctx.state.set_notification(format!("{title} not found"));
+        }
         Err(e) => {
-            tracing::debug!(chat_id, code = e.code, "chat info resolution failed");
-            let title = ctx
-                .state
-                .chat_info_popup()
-                .map(|p| p.title().to_owned())
-                .unwrap_or_default();
+            tracing::debug!(code = e.code, "chat info resolution failed");
             ctx.state
                 .set_chat_info_loaded(ChatInfoPopupState::Error { title });
         }

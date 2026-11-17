@@ -1,9 +1,16 @@
 use crate::{
     domain::{
-        attachment::OutgoingAttachment, chat::ChatSummary, chat_folder::ChatListKind,
-        chat_info_state::ChatInfo, chat_subtitle::ChatSubtitle, file_picker_state::FileEntry,
-        forum_topic::ForumTopicSummary, message::Message, message_info_state::MessageInfo,
-        message_input_state::OutgoingMessage, reaction_picker_state::AvailableReaction,
+        attachment::OutgoingAttachment,
+        chat::ChatSummary,
+        chat_folder::ChatListKind,
+        chat_info_state::{ChatInfo, ChatInfoSubject},
+        chat_subtitle::ChatSubtitle,
+        file_picker_state::FileEntry,
+        forum_topic::ForumTopicSummary,
+        message::Message,
+        message_info_state::MessageInfo,
+        message_input_state::OutgoingMessage,
+        reaction_picker_state::AvailableReaction,
         update_check::AvailableUpdate,
     },
     usecases::self_update::SelfUpdated,
@@ -107,7 +114,7 @@ pub enum BackgroundTaskResult {
     },
     /// Chat info (title, status, description) resolved for the info popup.
     ChatInfoLoaded {
-        chat_id: i64,
+        subject: ChatInfoSubject,
         result: Result<ChatInfo, BackgroundError>,
     },
     /// Message info (reactions, viewers, read/edit dates) resolved for the info popup.

@@ -15,6 +15,7 @@ use crate::domain::{
     attachment::OutgoingAttachment, chat_folder::ChatListKind, message_input_state::OutgoingMessage,
 };
 
+pub use lifecycle::CHAT_INFO_NOT_FOUND;
 pub use messaging::ATTACHMENT_TOO_LARGE;
 pub use task_result::{BackgroundError, BackgroundTaskResult};
 

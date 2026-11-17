@@ -203,6 +203,7 @@ mod reply_enrichment {
             reaction_count: 0,
             links: Vec::new(),
             is_edited: false,
+            sender: None,
             is_service: false,
         }
     }
@@ -333,6 +334,7 @@ fn reply_sender_name_for_outgoing_message_is_you() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     };
 

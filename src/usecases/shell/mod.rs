@@ -7,6 +7,7 @@ mod chat_updates;
 mod command_popup;
 mod file_updates;
 mod forum;
+mod info_picker;
 mod key_dispatch;
 mod links;
 mod message_actions;

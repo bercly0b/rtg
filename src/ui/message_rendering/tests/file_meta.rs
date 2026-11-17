@@ -111,6 +111,7 @@ fn voice_message_shows_file_metadata() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }];
 
@@ -167,6 +168,7 @@ fn document_message_shows_file_name_and_extension() {
         reaction_count: 0,
         links: Vec::new(),
         is_edited: false,
+        sender: None,
         is_service: false,
     }];
 
@@ -233,6 +235,7 @@ fn document_without_extension_does_not_break_layout() {
             reaction_count: 0,
             links: Vec::new(),
             is_edited: false,
+            sender: None,
             is_service: false,
         }
     }

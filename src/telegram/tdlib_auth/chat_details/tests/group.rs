@@ -91,7 +91,7 @@ fn supergroup_template_fills_every_row() {
     resolver.chats.get_mut(&6).unwrap().has_protected_content = true;
     resolver.chats.insert(7, make_test_chat(7, "Rust News"));
 
-    let info = resolve(&resolver, 6, ChatType::Group).unwrap();
+    let info = resolve(&resolver, 6).unwrap();
 
     assert_eq!(info.status_line, "1234 members");
     assert_eq!(
@@ -130,7 +130,7 @@ fn basic_group_template_counts_admins_among_members() {
     );
     resolver.basic_groups.insert(50, basic_group(50, owner()));
 
-    let info = resolve(&resolver, 5, ChatType::Group).unwrap();
+    let info = resolve(&resolver, 5).unwrap();
 
     assert_eq!(info.status_line, "3 members");
     assert_eq!(
@@ -162,7 +162,7 @@ fn basic_group_failure_leaves_the_role_unknown() {
         .basic_group_full_infos
         .insert(50, basic_group_full_info(vec![member_status()], ""));
 
-    let info = group_info(resolve(&resolver, 5, ChatType::Group).unwrap());
+    let info = group_info(resolve(&resolver, 5).unwrap());
 
     assert_eq!(info.role, None);
     assert_eq!(info.admins, None);
@@ -181,7 +181,7 @@ fn supergroup_failure_leaves_its_rows_unknown() {
         },
     );
 
-    let info = resolve(&resolver, 6, ChatType::Group).unwrap();
+    let info = resolve(&resolver, 6).unwrap();
 
     assert_eq!(info.status_line, "42 members");
     let info = group_info(info);
@@ -212,7 +212,7 @@ fn joining_follows_join_requests_and_the_public_username() {
         };
         let resolver = resolver_with_supergroup(group, supergroup_full_info(1, ""));
 
-        let info = group_info(resolve(&resolver, 6, ChatType::Group).unwrap());
+        let info = group_info(resolve(&resolver, 6).unwrap());
 
         assert_eq!(info.joining, Some(expected));
     }
@@ -226,7 +226,7 @@ fn broadcast_group_kind() {
     };
     let resolver = resolver_with_supergroup(group, supergroup_full_info(1, ""));
 
-    let info = group_info(resolve(&resolver, 6, ChatType::Group).unwrap());
+    let info = group_info(resolve(&resolver, 6).unwrap());
 
     assert_eq!(info.kind, Some(GroupKind::BroadcastGroup));
 }
@@ -240,7 +240,7 @@ fn joined_is_unknown_when_the_user_is_not_a_member() {
     };
     let resolver = resolver_with_supergroup(group, supergroup_full_info(1, ""));
 
-    let info = group_info(resolve(&resolver, 6, ChatType::Group).unwrap());
+    let info = group_info(resolve(&resolver, 6).unwrap());
 
     assert_eq!(info.role, Some(MemberRole::Left));
     assert_eq!(info.joined, None);

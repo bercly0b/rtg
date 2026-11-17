@@ -162,6 +162,7 @@ fn grouped_message_with_reply_shows_reply_line() {
             reaction_count: 0,
             links: Vec::new(),
             is_edited: false,
+            sender: None,
             is_service: false,
         },
     ];

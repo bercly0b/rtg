@@ -45,7 +45,7 @@ fn chat_block_lists_folders_in_the_users_order_then_the_archive() {
         main_list_position: 0,
     };
 
-    let info = resolve_with_folders(&resolver, CHAT_ID, ChatType::Channel, folders).unwrap();
+    let info = resolve_with_folders(&resolver, CHAT_ID, folders).unwrap();
 
     assert_eq!(
         info.chat,
@@ -64,7 +64,7 @@ fn chat_outside_folders_has_none() {
     chat.chat_lists = vec![ChatList::Main];
     let resolver = resolver_with_channel(chat);
 
-    let info = resolve(&resolver, CHAT_ID, ChatType::Channel).unwrap();
+    let info = resolve(&resolver, CHAT_ID).unwrap();
 
     assert_eq!(info.chat.folders, Vec::<String>::new());
 }
@@ -81,7 +81,7 @@ fn muted_follows_the_chats_own_setting() {
         chat.notification_settings.mute_for = mute_for;
         let resolver = resolver_with_channel(chat);
 
-        let info = resolve(&resolver, CHAT_ID, ChatType::Channel).unwrap();
+        let info = resolve(&resolver, CHAT_ID).unwrap();
 
         assert_eq!(info.chat.muted, Some(expected), "mute_for {mute_for}");
         assert!(!resolver.requested("getScopeNotificationSettings"));
@@ -101,7 +101,7 @@ fn muted_falls_back_to_the_settings_of_the_chats_scope() {
         ),
     ];
 
-    let info = resolve(&resolver, CHAT_ID, ChatType::Channel).unwrap();
+    let info = resolve(&resolver, CHAT_ID).unwrap();
 
     assert_eq!(info.chat.muted, Some(MuteState::Forever));
 }
@@ -112,7 +112,7 @@ fn scope_settings_failure_leaves_muted_unknown() {
     chat.notification_settings.use_default_mute_for = true;
     let resolver = resolver_with_channel(chat);
 
-    let info = resolve(&resolver, CHAT_ID, ChatType::Channel).unwrap();
+    let info = resolve(&resolver, CHAT_ID).unwrap();
 
     assert_eq!(info.chat.muted, None);
 }

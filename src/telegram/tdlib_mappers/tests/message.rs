@@ -805,3 +805,18 @@ fn service_message_delete_member_resolves_name() {
     });
     assert_eq!(text, "removed Charlie");
 }
+
+#[test]
+fn sender_is_the_user_or_the_chat_tdlib_names() {
+    use crate::domain::message::MessageSender;
+
+    let from_user = make_test_message(1, "hi", false);
+    let mut from_chat = make_test_message(2, "post", false);
+    from_chat.sender_id =
+        tdlib_rs::enums::MessageSender::Chat(tdlib_rs::types::MessageSenderChat { chat_id: -100 });
+
+    let map = |msg| map_tdlib_message_to_domain(msg, String::new(), None, None, |_: i64| None);
+
+    assert_eq!(map(&from_user).sender, Some(MessageSender::User(1)));
+    assert_eq!(map(&from_chat).sender, Some(MessageSender::Chat(-100)));
+}

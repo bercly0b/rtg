@@ -9,22 +9,22 @@ fn orchestrator_in_messages_pane(
 }
 
 #[test]
-fn i_key_opens_message_info_popup_when_message_selected() {
+fn m_key_opens_message_info_popup_when_message_selected() {
     let mut o =
         orchestrator_in_messages_pane(vec![chat(1, "Alice")], 1, vec![message(10, "hello")]);
-    o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+    o.handle_event(AppEvent::InputKey(KeyInput::new("m", false)))
         .unwrap();
     assert!(o.state().message_info_popup().is_some());
     assert_eq!(o.state().message_info_popup().unwrap().ids(), Some((1, 10)));
 }
 
 #[test]
-fn i_key_does_nothing_when_no_message_selected() {
+fn m_key_does_nothing_when_no_message_selected() {
     let mut o = orchestrator_with_chats(vec![chat(1, "Alice")]);
     o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
         .unwrap();
-    // Chat is open but no messages loaded yet — I should be no-op
-    o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+    // Chat is open but no messages loaded yet — m should be no-op
+    o.handle_event(AppEvent::InputKey(KeyInput::new("m", false)))
         .unwrap();
     assert!(o.state().message_info_popup().is_none());
 }
@@ -33,7 +33,7 @@ fn i_key_does_nothing_when_no_message_selected() {
 fn message_info_popup_closes_on_esc() {
     let mut o =
         orchestrator_in_messages_pane(vec![chat(1, "Alice")], 1, vec![message(10, "hello")]);
-    o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+    o.handle_event(AppEvent::InputKey(KeyInput::new("m", false)))
         .unwrap();
     assert!(o.state().message_info_popup().is_some());
 
@@ -46,7 +46,7 @@ fn message_info_popup_closes_on_esc() {
 fn message_info_popup_closes_on_q() {
     let mut o =
         orchestrator_in_messages_pane(vec![chat(1, "Alice")], 1, vec![message(10, "hello")]);
-    o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+    o.handle_event(AppEvent::InputKey(KeyInput::new("m", false)))
         .unwrap();
     o.handle_event(AppEvent::InputKey(KeyInput::new("q", false)))
         .unwrap();
@@ -57,9 +57,9 @@ fn message_info_popup_closes_on_q() {
 fn message_info_popup_closes_on_second_i() {
     let mut o =
         orchestrator_in_messages_pane(vec![chat(1, "Alice")], 1, vec![message(10, "hello")]);
-    o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+    o.handle_event(AppEvent::InputKey(KeyInput::new("m", false)))
         .unwrap();
-    o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+    o.handle_event(AppEvent::InputKey(KeyInput::new("m", false)))
         .unwrap();
     assert!(o.state().message_info_popup().is_none());
 }
@@ -68,7 +68,7 @@ fn message_info_popup_closes_on_second_i() {
 fn message_info_popup_ignores_other_keys() {
     let mut o =
         orchestrator_in_messages_pane(vec![chat(1, "Alice")], 1, vec![message(10, "hello")]);
-    o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+    o.handle_event(AppEvent::InputKey(KeyInput::new("m", false)))
         .unwrap();
     o.handle_event(AppEvent::InputKey(KeyInput::new("j", false)))
         .unwrap();
@@ -81,7 +81,7 @@ fn message_info_loaded_updates_popup_state() {
 
     let mut o =
         orchestrator_in_messages_pane(vec![chat(1, "Alice")], 1, vec![message(10, "hello")]);
-    o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+    o.handle_event(AppEvent::InputKey(KeyInput::new("m", false)))
         .unwrap();
 
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
@@ -120,7 +120,7 @@ fn message_info_loaded_error_sets_error_state() {
 
     let mut o =
         orchestrator_in_messages_pane(vec![chat(1, "Alice")], 1, vec![message(10, "hello")]);
-    o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+    o.handle_event(AppEvent::InputKey(KeyInput::new("m", false)))
         .unwrap();
 
     o.handle_event(AppEvent::BackgroundTasksCompleted(vec![
@@ -174,7 +174,7 @@ fn message_info_loaded_stale_result_ignored() {
         vec![message(10, "hello"), message(20, "world")],
     );
 
-    o.handle_event(AppEvent::InputKey(KeyInput::new("I", false)))
+    o.handle_event(AppEvent::InputKey(KeyInput::new("m", false)))
         .unwrap();
     assert_eq!(o.state().message_info_popup().unwrap().ids(), Some((1, 20)));
 

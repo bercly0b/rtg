@@ -5,7 +5,7 @@ use crate::usecases::{
     chat_lifecycle::{
         ChatLifecycle, ChatListMover, ChatReadMarker, FileDownloader, MessageDeleter,
     },
-    chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
+    chat_subtitle::{ChatInfoQuery, ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource},
     list_chats::{list_chats, ListChatsQuery, ListChatsSource},
     list_forum_topics::{list_forum_topics, ForumTopicsSource, ListForumTopicsQuery},
     message_info::{MessageInfoQuery, MessageInfoSource},
@@ -17,6 +17,9 @@ use super::{
     error_mapping::{map_list_chats_error, map_list_forum_topics_error},
     BackgroundError, BackgroundTaskResult,
 };
+
+/// Error code of a chat info lookup by a username nobody holds.
+pub const CHAT_INFO_NOT_FOUND: &str = "CHAT_INFO_NOT_FOUND";
 
 pub(super) fn dispatch_chat_list<C: ListChatsSource + Send + Sync + 'static>(
     source: &Arc<C>,
@@ -331,23 +334,29 @@ pub(super) fn dispatch_chat_info<S: ChatSubtitleSource + Send + Sync + 'static>(
     let source = Arc::clone(source);
     let tx = tx.clone();
     let tx_fallback = tx.clone();
-    let chat_id = query.chat_id;
+    let subject_fallback = query.subject.clone();
 
     let spawn_result = std::thread::Builder::new()
         .name("rtg-bg-chat-info".into())
         .spawn(move || {
-            tracing::debug!(chat_id, "background: resolving chat info");
-            let result = source
-                .resolve_chat_info(&query)
-                .map_err(|_| BackgroundError::new("CHAT_INFO_UNAVAILABLE"));
+            tracing::debug!("background: resolving chat info");
+            let result = source.resolve_chat_info(&query).map_err(|error| {
+                BackgroundError::new(match error {
+                    ChatSubtitleError::NotFound => CHAT_INFO_NOT_FOUND,
+                    ChatSubtitleError::Unavailable => "CHAT_INFO_UNAVAILABLE",
+                })
+            });
 
-            let _ = tx.send(BackgroundTaskResult::ChatInfoLoaded { chat_id, result });
+            let _ = tx.send(BackgroundTaskResult::ChatInfoLoaded {
+                subject: query.subject,
+                result,
+            });
         });
 
     if let Err(error) = spawn_result {
         tracing::error!(error = %error, "failed to spawn chat info background thread");
         let _ = tx_fallback.send(BackgroundTaskResult::ChatInfoLoaded {
-            chat_id,
+            subject: subject_fallback,
             result: Err(BackgroundError::new("THREAD_SPAWN_FAILED")),
         });
     }

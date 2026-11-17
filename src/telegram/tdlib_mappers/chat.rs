@@ -46,15 +46,9 @@ pub fn map_chat_to_summary(
         _ => None,
     };
 
-    let title = if chat.title.trim().is_empty() {
-        "Deleted".to_owned()
-    } else {
-        chat.title.clone()
-    };
-
     ChatSummary {
         chat_id: chat.id,
-        title,
+        title: chat_display_title(chat),
         unread_count: chat.unread_count.max(0) as u32,
         last_message_preview,
         last_message_unix_ms,
@@ -72,6 +66,16 @@ pub fn map_chat_to_summary(
         unread_reaction_count: chat.unread_reaction_count.max(0) as u32,
         is_forum,
         unread_topic_count: None,
+    }
+}
+
+/// The title a chat is shown under: TDLib gives an empty one to the chat
+/// with a deleted account.
+pub fn chat_display_title(chat: &TdChat) -> String {
+    if chat.title.trim().is_empty() {
+        "Deleted".to_owned()
+    } else {
+        chat.title.clone()
     }
 }
 

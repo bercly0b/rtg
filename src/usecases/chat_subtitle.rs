@@ -5,7 +5,7 @@
 
 use crate::domain::chat::ChatType;
 use crate::domain::chat_folder::ChatFolders;
-use crate::domain::chat_info_state::ChatInfo;
+use crate::domain::chat_info_state::{ChatInfo, ChatInfoSubject};
 use crate::domain::chat_subtitle::ChatSubtitle;
 
 /// Query for resolving a chat's subtitle.
@@ -18,9 +18,7 @@ pub struct ChatSubtitleQuery {
 /// Query for resolving full chat info (for the info popup).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatInfoQuery {
-    pub chat_id: i64,
-    pub chat_type: ChatType,
-    pub title: String,
+    pub subject: ChatInfoSubject,
     /// The user's folders, to name the ones holding the chat.
     pub folders: ChatFolders,
 }
@@ -29,6 +27,8 @@ pub struct ChatInfoQuery {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatSubtitleError {
     Unavailable,
+    /// Nobody holds the username the chat info was asked for.
+    NotFound,
 }
 
 /// Source that resolves chat subtitles and chat info from the Telegram backend.

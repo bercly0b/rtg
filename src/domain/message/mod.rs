@@ -73,6 +73,14 @@ pub struct ForwardInfo {
     pub sender_name: String,
 }
 
+/// Who sent a message into a chat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageSender {
+    User(i64),
+    /// A chat itself: a channel for its posts, a group for an anonymous admin.
+    Chat(i64),
+}
+
 /// Delivery status of a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MessageStatus {
@@ -86,6 +94,8 @@ pub enum MessageStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     pub id: i64,
+    /// `None` only for the optimistically displayed message.
+    pub sender: Option<MessageSender>,
     pub sender_name: String,
     pub text: String,
     pub timestamp_ms: i64,
