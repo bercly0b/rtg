@@ -589,7 +589,7 @@ check = false
 
         assert_eq!(
             config.attach.dirs,
-            ["~/Desktop", "~/Downloads", "~/Documents", "~/Pictures"]
+            ["~/Desktop", "~/Downloads", "~/Documents"]
         );
         assert_eq!(
             config.attach.list_cmd,
@@ -621,6 +621,6 @@ list_cmd = "fd --type f . {dirs}"
         file.merge_into(&mut config).unwrap();
 
         assert_eq!(config.attach.list_cmd, "my-files");
-        assert_eq!(config.attach.dirs.len(), 4);
+        assert_eq!(config.attach.dirs.len(), 3);
     }
 }

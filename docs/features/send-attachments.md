@@ -29,8 +29,8 @@ and reads its output:
   `[attach] dirs`, one argument each. `~` is the home directory and directories that do not exist
   are left out. A command may leave `{dirs}` out;
 - **defaults** — `find {dirs} -type f -not -path '*/.*'` over `~/Desktop`,
-  `~/Downloads`, `~/Documents` and `~/Pictures`: the whole home directory
-  would take `find` far too long.
+  `~/Downloads` and `~/Documents`: the whole home directory would take
+  `find` far too long.
 
 The command runs anew every time the picker opens, so that a screenshot taken
 a second ago is there; nothing is cached. The picker opens at once and fills

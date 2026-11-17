@@ -29,7 +29,7 @@ api_hash = "replace-me"
 # {dirs}, an argument of its own, is replaced with the directories of `dirs`
 # that exist, one argument each; `~` is the home directory. A command may
 # leave {dirs} out.
-# dirs = ["~/Desktop", "~/Downloads", "~/Documents", "~/Pictures"]
+# dirs = ["~/Desktop", "~/Downloads", "~/Documents"]
 # list_cmd = "find {dirs} -type f -not -path '*/.*'"
 # list_cmd = "fd --type f . {dirs}"
 
