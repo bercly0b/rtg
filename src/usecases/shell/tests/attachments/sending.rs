@@ -76,7 +76,7 @@ fn text_in_the_input_goes_as_the_caption_and_the_input_is_cleared() {
     press(&mut o, "i");
     type_text(&mut o, " Look at this ");
     press(&mut o, "esc");
-    press(&mut o, "a");
+    press(&mut o, "A");
     let listing_id = o.dispatcher.last_file_listing().unwrap().0;
     list_files(&mut o, listing_id, vec![entry("/d/report.pdf", 200)]);
 
@@ -101,7 +101,7 @@ fn reply_target_is_passed_on_with_the_attachment() {
     o.state_mut()
         .message_input_mut()
         .set_reply_to(reply.clone());
-    press(&mut o, "a");
+    press(&mut o, "A");
     let listing_id = o.dispatcher.last_file_listing().unwrap().0;
     list_files(&mut o, listing_id, vec![entry("/d/report.pdf", 200)]);
 
@@ -120,7 +120,7 @@ fn attachment_goes_into_the_open_forum_topic() {
     inject_forum_topics(&mut o, 1, vec![topic(1, 7, "Releases", 1)]);
     press(&mut o, "enter");
     inject_topic_messages(&mut o, 1, Some(7), vec![message(10, "Hello")]);
-    press(&mut o, "a");
+    press(&mut o, "A");
     let listing_id = o.dispatcher.last_file_listing().unwrap().0;
     list_files(&mut o, listing_id, vec![entry("/d/report.pdf", 200)]);
 
@@ -138,7 +138,7 @@ fn failed_send_removes_the_pending_message_and_brings_the_caption_back() {
     press(&mut o, "i");
     type_text(&mut o, "Look");
     press(&mut o, "esc");
-    press(&mut o, "a");
+    press(&mut o, "A");
     let listing_id = o.dispatcher.last_file_listing().unwrap().0;
     list_files(&mut o, listing_id, vec![entry("/d/report.pdf", 200)]);
     press(&mut o, "enter");
@@ -169,7 +169,7 @@ fn failed_send_brings_the_caption_back_even_after_leaving_the_chat() {
     press(&mut o, "i");
     type_text(&mut o, "Look");
     press(&mut o, "esc");
-    press(&mut o, "a");
+    press(&mut o, "A");
     let listing_id = o.dispatcher.last_file_listing().unwrap().0;
     list_files(&mut o, listing_id, vec![entry("/d/report.pdf", 200)]);
     press(&mut o, "enter");

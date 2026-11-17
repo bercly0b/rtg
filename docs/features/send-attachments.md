@@ -7,7 +7,7 @@ that names the files the picker shows (see "Attachments" in
 
 ## Opening the file picker
 
-`a` in the messages panel (rebindable as `attach_file`) opens the file picker
+`A` in the messages panel (rebindable as `attach_file`) opens the file picker
 for the open chat or forum topic. It does not open from the message input:
 leave it with `Esc` first. In a channel it says "Channel is read-only", in a
 closed topic "Topic is closed".

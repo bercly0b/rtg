@@ -22,7 +22,7 @@ api_hash = "replace-me"
 # record_cmd = "ffmpeg -f avfoundation -i ':0' -c:a libopus -b:a 32k {file_path}"
 
 [attach]
-# The file picker (`a` in an open chat) lists the files named by `list_cmd`,
+# The file picker (`A` in an open chat) lists the files named by `list_cmd`,
 # newest first. The command prints one path per line and nothing else: RTG
 # finds out sizes and dates itself. Arguments are split shell-style, no shell
 # is involved.

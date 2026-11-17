@@ -58,7 +58,7 @@ fn open_chat() -> TestOrchestrator {
 /// Chat 1 is open and the file picker lists `entries`.
 fn picker_listing(entries: Vec<FileEntry>) -> TestOrchestrator {
     let mut o = open_chat();
-    press(&mut o, "a");
+    press(&mut o, "A");
     let listing_id = o.dispatcher.last_file_listing().unwrap().0;
     list_files(&mut o, listing_id, entries);
     o

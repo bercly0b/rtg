@@ -1,2 +1,2 @@
-- Send files from the file picker: `a` in an open chat lists local files newest first, typing filters them, `Enter` sends the selected one. Images go as photos, everything else as documents; the text in the input becomes the caption.
+- Send files from the file picker: `A` in an open chat lists local files newest first, typing filters them, `Enter` sends the selected one. Images go as photos, everything else as documents; the text in the input becomes the caption.
 - Choose what the file picker lists with `[attach] dirs` and `[attach] list_cmd` in the config.
