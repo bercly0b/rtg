@@ -594,7 +594,7 @@ fn default_bindings() -> Vec<KeyBinding> {
             context: KeyContext::Messages,
         },
         KeyBinding {
-            pattern: KeyPattern::single("a"),
+            pattern: KeyPattern::single("A"),
             action: Action::AttachFile,
             context: KeyContext::Messages,
         },
@@ -763,15 +763,15 @@ mod tests {
     }
 
     #[test]
-    fn a_attaches_a_file_in_messages_only() {
+    fn shift_a_attaches_a_file_in_messages_only() {
         let mut km = Keymap::default();
 
         assert_eq!(
-            km.resolve("a", false, KeyContext::Messages),
+            km.resolve("A", false, KeyContext::Messages),
             ResolveResult::Action(Action::AttachFile)
         );
         assert_eq!(
-            km.resolve("a", false, KeyContext::ChatList),
+            km.resolve("a", false, KeyContext::Messages),
             ResolveResult::Unmatched
         );
         assert_eq!(Action::from_name("attach_file"), Some(Action::AttachFile));
@@ -1077,7 +1077,7 @@ mod tests {
         );
         assert_eq!(
             km.resolve("A", false, KeyContext::Messages),
-            ResolveResult::Unmatched
+            ResolveResult::Action(Action::AttachFile)
         );
     }
 

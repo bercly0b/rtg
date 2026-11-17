@@ -273,7 +273,7 @@ mod send_rollback {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use crate::domain::attachment::{AttachmentKind, OutgoingAttachment};
+    use crate::domain::attachment::{AttachmentKind, MediaMetadata, OutgoingAttachment};
     use crate::domain::message::Message;
     use crate::domain::message_input_state::{OutgoingMessage, ReplyContext};
     use crate::usecases::background::messaging::{
@@ -283,6 +283,7 @@ mod send_rollback {
         BackgroundError, BackgroundTaskResult, ATTACHMENT_TOO_LARGE,
     };
     use crate::usecases::load_messages::{MessagesSource, MessagesSourceError};
+    use crate::usecases::media_probe::ProbeToolMissing;
     use crate::usecases::send_attachment::{AttachmentSender, SendAttachmentError};
     use crate::usecases::send_message::{MessageSender, SendMessageSourceError};
     use crate::usecases::send_voice::VoiceNoteSender;
@@ -404,9 +405,14 @@ mod send_rollback {
             _chat_id: i64,
             _topic_id: Option<i32>,
             _attachment: &OutgoingAttachment,
+            _metadata: &MediaMetadata,
         ) -> Result<(), SendAttachmentError> {
             Err(self.0.clone())
         }
+    }
+
+    fn never_probed(_path: &str) -> Result<MediaMetadata, ProbeToolMissing> {
+        panic!("a file without metadata must not be probed")
     }
 
     fn failed_attachment_send(error: SendAttachmentError) -> BackgroundTaskResult {
@@ -419,6 +425,7 @@ mod send_rollback {
             1,
             Some(3),
             attachment(),
+            never_probed,
         );
 
         rx.recv_timeout(Duration::from_secs(5))
@@ -446,9 +453,100 @@ mod send_rollback {
                 chat_id: 1,
                 topic_id: Some(3),
                 attachment: attachment(),
+                probe_tool_missing: false,
                 result: Err(BackgroundError::new("SEND_ATTACHMENT_FAILED")),
             }
         );
+    }
+
+    /// Accepts every attachment and remembers the metadata it came with.
+    #[derive(Default)]
+    struct RecordingAttachments(Mutex<Option<MediaMetadata>>);
+
+    impl AttachmentSender for RecordingAttachments {
+        fn send_attachment(
+            &self,
+            _chat_id: i64,
+            _topic_id: Option<i32>,
+            _attachment: &OutgoingAttachment,
+            metadata: &MediaMetadata,
+        ) -> Result<(), SendAttachmentError> {
+            *self.0.lock().unwrap() = Some(metadata.clone());
+            Ok(())
+        }
+    }
+
+    /// Sends a video through `probe`; returns the metadata the sender got
+    /// and whether the result says the probe tool is missing.
+    fn send_video(
+        probe: fn(&str) -> Result<MediaMetadata, ProbeToolMissing>,
+    ) -> (MediaMetadata, bool) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let sender = Arc::new(RecordingAttachments::default());
+
+        dispatch_send_attachment(
+            &sender,
+            &Arc::new(NoMessages),
+            &tx,
+            1,
+            None,
+            OutgoingAttachment {
+                path: "/d/clip.mp4".to_owned(),
+                kind: AttachmentKind::Video,
+                ..attachment()
+            },
+            probe,
+        );
+
+        let BackgroundTaskResult::AttachmentSent {
+            probe_tool_missing,
+            result: Ok(()),
+            ..
+        } = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("send must always deliver a result")
+        else {
+            panic!("the video must have been sent");
+        };
+        let metadata = sender.0.lock().unwrap().clone().unwrap();
+        (metadata, probe_tool_missing)
+    }
+
+    #[test]
+    fn video_is_sent_with_the_metadata_probed_from_its_file() {
+        fn probe(path: &str) -> Result<MediaMetadata, ProbeToolMissing> {
+            assert_eq!(path, "/d/clip.mp4");
+            Ok(MediaMetadata {
+                duration_secs: 12,
+                width: 1920,
+                height: 1080,
+                ..MediaMetadata::default()
+            })
+        }
+
+        let (metadata, probe_tool_missing) = send_video(probe);
+
+        assert_eq!(
+            (metadata.duration_secs, metadata.width, metadata.height),
+            (12, 1920, 1080)
+        );
+        assert!(!probe_tool_missing);
+    }
+
+    #[test]
+    fn video_the_probe_cannot_read_is_sent_without_a_word() {
+        let (metadata, probe_tool_missing) = send_video(|_| Ok(MediaMetadata::default()));
+
+        assert_eq!(metadata, MediaMetadata::default());
+        assert!(!probe_tool_missing);
+    }
+
+    #[test]
+    fn video_is_still_sent_when_the_probe_tool_is_missing() {
+        let (metadata, probe_tool_missing) = send_video(|_| Err(ProbeToolMissing));
+
+        assert_eq!(metadata, MediaMetadata::default());
+        assert!(probe_tool_missing);
     }
 
     #[test]
@@ -459,6 +557,7 @@ mod send_rollback {
                 chat_id: 1,
                 topic_id: Some(3),
                 attachment: attachment(),
+                probe_tool_missing: false,
                 result: Err(BackgroundError::new(ATTACHMENT_TOO_LARGE)),
             }
         );

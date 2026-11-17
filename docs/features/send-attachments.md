@@ -7,7 +7,7 @@ that names the files the picker shows (see "Attachments" in
 
 ## Opening the file picker
 
-`a` in the messages panel (rebindable as `attach_file`) opens the file picker
+`A` in the messages panel (rebindable as `attach_file`) opens the file picker
 for the open chat or forum topic. It does not open from the message input:
 leave it with `Esc` first. In a channel it says "Channel is read-only", in a
 closed topic "Topic is closed".
@@ -29,8 +29,8 @@ and reads its output:
   `[attach] dirs`, one argument each. `~` is the home directory and directories that do not exist
   are left out. A command may leave `{dirs}` out;
 - **defaults** — `find {dirs} -type f -not -path '*/.*'` over `~/Desktop`,
-  `~/Downloads`, `~/Documents` and `~/Pictures`: the whole home directory
-  would take `find` far too long.
+  `~/Downloads` and `~/Documents`: the whole home directory would take
+  `find` far too long.
 
 The command runs anew every time the picker opens, so that a screenshot taken
 a second ago is there; nothing is cached. The picker opens at once and fills
@@ -93,11 +93,35 @@ the query stay as they were.
 `Enter` sends the selected file at once, without a confirmation: a wrong file
 is deleted with `dd`.
 
-- **Photo or document** — a JPEG, PNG or WebP image is sent as a compressed
-  photo. Everything else is sent as a document, including an image outside
-  Telegram's photo limits (over 10 MB, sides over 10000 px in total, or a side
-  ratio over 20), such as a very long screenshot. The format is read from the
-  file content, not from its name.
+- **Attachment kind** — the file name decides whether the file goes as a
+  video, an audio file or an animation, so that it plays in the recipient's
+  client:
+
+  | Kind | Extensions |
+  |------|------------|
+  | Video | `mp4`, `mov`, `m4v` |
+  | Audio | `mp3`, `m4a`, `flac`, `ogg`, `oga`, `opus`, `wav`, `aac` |
+  | Animation | `gif` |
+
+  The case of the extension does not matter. Other video formats (`mkv`,
+  `webm`, `avi`) stay documents: not every Telegram client plays them. An
+  `.ogg` file is an audio file, not a voice note.
+- **Photo or document** — of the remaining files a JPEG, PNG or WebP image is
+  sent as a compressed photo. Everything else is sent as a document, including
+  an image outside Telegram's photo limits (over 10 MB, sides over 10000 px in
+  total, or a side ratio over 20), such as a very long screenshot. A photo is
+  told by the file content, not by its name; the other kinds are told by the
+  name so that they do not depend on `ffprobe` being installed.
+- **Metadata** — a video, an audio file and an animation are sent with their
+  duration; a video and an animation also with their frame size, an audio
+  file with the title and the artist from its tags. RTG reads them with
+  `ffprobe`, which comes with `ffmpeg`, while the message already shows in
+  the chat.
+- **Without `ffprobe`** — the file is still sent as its kind, without the
+  metadata, and the status bar says
+  "ffprobe not found: sent without duration and size". Some clients then
+  show no duration and a wrong frame shape until the file is played. A file
+  `ffprobe` cannot read is sent the same way, silently.
 - **Caption** — the text in the message input becomes the caption and the
   input is cleared. An empty input sends no caption.
 - **Topic** — the attachment goes into the open forum topic.
@@ -122,8 +146,16 @@ is deleted with `dd`.
 
 - A photo is `inputMessagePhoto` with the width and height read from the
   image header; a document is `inputMessageDocument` with content type
-  detection left on. Both go through `sendMessage` with
-  `inputFileLocal`, the same call as text and voice notes.
+  detection left on. A video is `inputMessageVideo`, an audio file
+  `inputMessageAudio`, an animation `inputMessageAnimation`; TDLib takes 0
+  and an empty string for a value that is not known. All go through
+  `sendMessage` with `inputFileLocal`, the same call as text and voice notes.
+- TDLib does not read the metadata of a local file itself, so it comes from
+  one `ffprobe` call in the background task, before `sendMessage`. A video
+  stored with a rotation (a portrait video from a phone) gets its width and
+  height swapped.
+- No thumbnail is passed, and `supports_streaming` is off: streaming needs
+  the index at the start of the file, which RTG does not check.
 - `sendMessage` returns as soon as TDLib has queued the message; TDLib
   uploads the file itself. The refresh after a send replaces the optimistic
   message with TDLib's own pending message.
@@ -139,7 +171,7 @@ is deleted with `dd`.
 
 ## Not covered
 
-One file at a time, no choice
-between photo and document, no video or audio as their own message types, no
-path input in the picker, no pasting from the clipboard, substring search
-only. Each is a separate issue.
+One file at a time, no choice of the attachment kind (a video cannot be sent
+as a document), no thumbnails or album covers, no voice or video notes from
+the picker, no path input in the picker, no pasting from the clipboard,
+substring search only. Each is a separate issue.

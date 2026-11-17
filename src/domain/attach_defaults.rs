@@ -1,7 +1,7 @@
 //! Default constants for the `[attach]` configuration.
 
 /// Directories the file picker searches; `~` stands for the home directory.
-pub const DEFAULT_DIRS: [&str; 4] = ["~/Desktop", "~/Downloads", "~/Documents", "~/Pictures"];
+pub const DEFAULT_DIRS: [&str; 3] = ["~/Desktop", "~/Downloads", "~/Documents"];
 
 /// Default file list command: every file under the directories, except
 /// hidden files and whatever lives in hidden directories.

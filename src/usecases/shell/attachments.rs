@@ -167,10 +167,15 @@ pub(super) fn handle_attachment_sent<D: TaskDispatcher>(
     chat_id: i64,
     topic_id: Option<i32>,
     attachment: OutgoingAttachment,
+    probe_tool_missing: bool,
     result: Result<(), BackgroundError>,
 ) {
     let Err(error) = result else {
         tracing::debug!(chat_id, "background: attachment sent successfully");
+        if probe_tool_missing {
+            ctx.state
+                .set_notification("ffprobe not found: sent without duration and size");
+        }
         return;
     };
     tracing::warn!(

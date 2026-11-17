@@ -1,6 +1,6 @@
 use std::{fs::File, io::BufReader};
 
-use crate::domain::attachment::{AttachmentKind, OutgoingAttachment};
+use crate::domain::attachment::{AttachmentKind, MediaMetadata, OutgoingAttachment};
 
 use super::send_message::SendMessageSourceError;
 
@@ -13,12 +13,14 @@ pub enum SendAttachmentError {
 
 pub trait AttachmentSender {
     /// Sends the attachment to the chat, or to a specific forum topic when
-    /// `topic_id` is `Some`.
+    /// `topic_id` is `Some`. `metadata` matters for a video, an audio file
+    /// and an animation only.
     fn send_attachment(
         &self,
         chat_id: i64,
         topic_id: Option<i32>,
         attachment: &OutgoingAttachment,
+        metadata: &MediaMetadata,
     ) -> Result<(), SendAttachmentError>;
 }
 
@@ -28,15 +30,18 @@ impl<T: AttachmentSender + ?Sized> AttachmentSender for std::sync::Arc<T> {
         chat_id: i64,
         topic_id: Option<i32>,
         attachment: &OutgoingAttachment,
+        metadata: &MediaMetadata,
     ) -> Result<(), SendAttachmentError> {
-        (**self).send_attachment(chat_id, topic_id, attachment)
+        (**self).send_attachment(chat_id, topic_id, attachment, metadata)
     }
 }
 
-/// Decides how the file at `path` is sent: a JPEG, PNG or WebP image within
-/// Telegram's photo limits as a photo, anything else as a document.
+/// Decides how the file at `path` is sent: a video, an audio file or a GIF
+/// by its extension, a JPEG, PNG or WebP image within Telegram's photo
+/// limits as a photo, anything else as a document.
 pub fn attachment_kind(path: &str, size_bytes: u64) -> AttachmentKind {
-    AttachmentKind::for_file(size_bytes, photo_size(path))
+    AttachmentKind::for_extension(path)
+        .unwrap_or_else(|| AttachmentKind::for_file(size_bytes, photo_size(path)))
 }
 
 fn photo_size(path: &str) -> Option<(u32, u32)> {
@@ -114,8 +119,14 @@ mod tests {
     }
 
     #[test]
-    fn gif_is_sent_as_a_document() {
-        assert_eq!(kind_of("anim.gif", GIF_HEADER), AttachmentKind::Document);
+    fn gif_is_sent_as_an_animation() {
+        assert_eq!(kind_of("anim.gif", GIF_HEADER), AttachmentKind::Animation);
+    }
+
+    #[test]
+    fn video_and_audio_are_told_by_the_file_name() {
+        assert_eq!(kind_of("clip.mp4", b"anything"), AttachmentKind::Video);
+        assert_eq!(kind_of("song.mp3", b"anything"), AttachmentKind::Audio);
     }
 
     #[test]

@@ -407,6 +407,7 @@ where
             chat_id,
             topic_id,
             attachment,
+            crate::usecases::media_probe::probe_media,
         );
     }
 

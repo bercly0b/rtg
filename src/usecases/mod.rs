@@ -13,6 +13,7 @@ pub mod list_chats;
 pub mod list_forum_topics;
 pub mod load_messages;
 pub mod logout;
+pub mod media_probe;
 pub mod message_info;
 pub mod message_reactions;
 pub mod pty;

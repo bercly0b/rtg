@@ -80,10 +80,13 @@ pub enum BackgroundTaskResult {
     VoiceSendFailed { chat_id: i64, pending_id: i64 },
     /// Attachment send operation completed; `attachment` is kept to roll back
     /// the pending message and put the caption back into the input on failure.
+    /// `probe_tool_missing` says the attachment went without its metadata
+    /// because the tool that reads it is not installed.
     AttachmentSent {
         chat_id: i64,
         topic_id: Option<i32>,
         attachment: OutgoingAttachment,
+        probe_tool_missing: bool,
         result: Result<(), BackgroundError>,
     },
     /// The file list command of the file picker named more files.

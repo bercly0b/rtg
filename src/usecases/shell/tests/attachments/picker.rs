@@ -3,7 +3,7 @@ use super::*;
 // ── opening the picker ──
 
 #[test]
-fn a_opens_the_file_picker_and_starts_the_file_list_command() {
+fn shift_a_opens_the_file_picker_and_starts_the_file_list_command() {
     let mut o = DefaultShellOrchestrator::new_with_initial_state(
         StubStorageAdapter::default(),
         RecordingOpener::default(),
@@ -21,7 +21,7 @@ fn a_opens_the_file_picker_and_starts_the_file_list_command() {
     press(&mut o, "enter");
     inject_messages(&mut o, 1, vec![message(10, "Hello")]);
 
-    press(&mut o, "a");
+    press(&mut o, "A");
 
     let picker = o.state().file_picker().expect("file picker must be open");
     assert_eq!(picker.listing(), &FileListing::Running);
@@ -36,23 +36,23 @@ fn a_opens_the_file_picker_and_starts_the_file_list_command() {
 }
 
 #[test]
-fn a_does_nothing_without_an_open_chat() {
+fn shift_a_does_nothing_without_an_open_chat() {
     let mut o = orchestrator_with_chats(vec![chat(1, "Chat")]);
     o.state_mut().set_active_pane(ActivePane::Messages);
 
-    press(&mut o, "a");
+    press(&mut o, "A");
 
     assert!(o.state().file_picker().is_none());
     assert_eq!(o.dispatcher.last_file_listing(), None);
 }
 
 #[test]
-fn a_in_a_channel_says_it_is_read_only() {
+fn shift_a_in_a_channel_says_it_is_read_only() {
     let mut o =
         orchestrator_with_open_chat(vec![channel_chat(1, "News")], 1, vec![message(10, "Hello")]);
     assert_eq!(o.state().open_chat().chat_type(), ChatType::Channel);
 
-    press(&mut o, "a");
+    press(&mut o, "A");
 
     assert!(o.state().file_picker().is_none());
     assert_eq!(
@@ -62,7 +62,7 @@ fn a_in_a_channel_says_it_is_read_only() {
 }
 
 #[test]
-fn a_in_a_closed_topic_says_it_is_closed() {
+fn shift_a_in_a_closed_topic_says_it_is_closed() {
     let mut closed = topic(1, 7, "Releases", 1);
     closed.is_closed = true;
     let mut o = orchestrator_with_chats(vec![forum_chat(1, "Forum")]);
@@ -71,7 +71,7 @@ fn a_in_a_closed_topic_says_it_is_closed() {
     press(&mut o, "enter");
     inject_topic_messages(&mut o, 1, Some(7), vec![message(10, "Hello")]);
 
-    press(&mut o, "a");
+    press(&mut o, "A");
 
     assert!(o.state().file_picker().is_none());
     assert_eq!(o.state().active_notification(), Some("Topic is closed"));
@@ -91,10 +91,10 @@ fn listed_files_fill_the_picker_newest_first() {
 #[test]
 fn files_of_a_previous_picker_are_ignored() {
     let mut o = open_chat();
-    press(&mut o, "a");
+    press(&mut o, "A");
     let stale_id = o.dispatcher.last_file_listing().unwrap().0;
     press(&mut o, "esc");
-    press(&mut o, "a");
+    press(&mut o, "A");
 
     list_files(&mut o, stale_id, vec![entry("/d/stale.png", 100)]);
     complete(
@@ -113,7 +113,7 @@ fn files_of_a_previous_picker_are_ignored() {
 #[test]
 fn failed_listing_keeps_the_picker_open_with_the_reason() {
     let mut o = open_chat();
-    press(&mut o, "a");
+    press(&mut o, "A");
     let listing_id = o.dispatcher.last_file_listing().unwrap().0;
 
     complete(
