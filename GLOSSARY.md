@@ -92,6 +92,10 @@ _Avoid_: info selector, sender picker
 A local file the user sends into a chat, as opposed to a file that arrived inside a message.
 _Avoid_: upload, outgoing file
 
+**Attachment kind**:
+The form in which Telegram receives an attachment: photo, video, audio, animation or document.
+_Avoid_: native type, media type, send mode
+
 **File picker**:
 The popup that lists local files and lets the user choose the attachment to send.
 _Avoid_: file selector, file browser, attach dialog
