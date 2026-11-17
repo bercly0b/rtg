@@ -4,13 +4,15 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 
 | Label in mattpocock/skills | Label in our tracker | Meaning                                  |
 | -------------------------- | -------------------- | ---------------------------------------- |
-| `needs-triage`             | `needs-triage`       | Maintainer needs to evaluate this issue  |
+| `needs-triage`             | `needs-grilling`     | Needs grilling before it can be built    |
 | `needs-info`               | `needs-info`         | Waiting on reporter for more information |
 | `ready-for-agent`          | `ready-for-agent`    | Fully specified, ready for an AFK agent  |
 | `ready-for-human`          | `ready-for-human`    | Requires human implementation            |
 | `wontfix`                  | `wontfix`            | Will not be actioned                     |
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
+
+There is no `needs-triage` label in this tracker. Triage answers whether an incoming issue gets done at all, and every rtg issue is filed by the maintainer, so that is already settled. What a fresh issue still lacks is grilling, hence `needs-grilling`.
 
 ## Labels only
 
