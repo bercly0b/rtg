@@ -14,6 +14,13 @@ When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the 
 
 There is no `needs-triage` label in this tracker. Triage answers whether an incoming issue gets done at all, and every rtg issue is filed by the maintainer, so that is already settled. What a fresh issue still lacks is grilling, hence `needs-grilling`.
 
+## Labelling a new issue
+
+`needs-grilling` is not the default for a new issue. When creating one, judge what it still lacks:
+
+- nothing: the description settles what to build and how to verify it, and an agent could implement it without asking anything → `ready-for-agent` (or `ready-for-human` if a human has to do it);
+- open decisions remain (behaviour, scope, design) → `needs-grilling`.
+
 ## Labels only
 
 Triage and grilling change labels only; the issue's state is the user's call. Apply a label with an issue update that touches labels alone: `addLabels` with the new label and `removeLabels` with the previous triage label, both by name (see `docs/agents/issue-tracker.md`).
