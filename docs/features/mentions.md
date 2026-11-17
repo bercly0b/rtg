@@ -45,7 +45,8 @@ list) shows the chat info popup, described in
 - **Without mentions** the popup is about the sender of the message, as TDLib
   names it: a user, or a chat — a channel for its posts, a group for an
   anonymous admin. A forwarded message shows who forwarded it, not its
-  original sender; the current user's own message shows their own profile.
+  original sender; the current user's own message shows the popup about
+  the current user.
 - **With at least one mention** the info picker asks first. Its first row is
   the sender, by name, selected by default; then come the mentions in text
   order, each one once. Links are not listed. A mention of the sender is kept

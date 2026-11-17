@@ -50,7 +50,7 @@ const FOOTER: [&str; 2] = ["j/k navigate, Enter or o open", "Press q or Esc to c
 
 /// Rows are cut to `max_width` rather than wrapped, so that every label
 /// stays on its own line.
-pub(super) fn build_lines(
+fn build_lines(
     labels: &[String],
     selected: Option<usize>,
     footer: &[&'static str; 2],
