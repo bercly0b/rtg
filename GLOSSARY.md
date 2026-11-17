@@ -66,6 +66,10 @@ _Avoid_: unread counter, unread badge, unread messages
 
 ## Messages
 
+**Sender**:
+Whoever sent a message into a chat: a user, or a chat itself — a channel for its posts, a group for an anonymous admin.
+_Avoid_: author
+
 **Mention**:
 An `@username` in the text of a message that points at a user, a bot, a group or a channel.
 _Avoid_: username link, tag, handle
@@ -77,6 +81,10 @@ _Avoid_: URL, hyperlink
 **Link picker**:
 The popup that asks what to open when a message holds more than one link or mention.
 _Avoid_: link selector, target picker
+
+**Info picker**:
+The popup that asks whose chat info popup to show when a message holds a mention: its sender or one of the mentioned.
+_Avoid_: info selector, sender picker
 
 ## Attachments
 
