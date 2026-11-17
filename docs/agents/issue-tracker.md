@@ -17,7 +17,7 @@ Lists are paginated: when a result has `hasNextPage`, fetch the next page with i
 ## Conventions
 
 - **Language**: write issue titles and descriptions in Russian, matching the existing rtg issues.
-- **Create an issue**: team ROZ, project rtg, title and a markdown description. New issues land in `Backlog` and stay there: never pass a state when creating an issue. Only the user moves issues to `Planned`.
+- **Create an issue**: team ROZ, project rtg, title and a markdown description. New issues land in `Backlog` and stay there: never pass a state when creating an issue. Only the user moves issues to `Planned`. Choose the label per **Labelling a new issue** in `docs/agents/triage-labels.md`: a clear issue is `ready-for-agent` straight away, not `needs-grilling`.
 - **Read an issue**: fetch it by identifier for its state, labels and parent. Relations come back only when asked for (`includeRelations`). Sub-issues and comments are not part of the issue: list issues by parent, and list the issue's comments.
 - **List issues**: always filter by project `rtg`. Narrow by label, e.g. `ready-for-agent`, or by state. The state filter takes one state name or state type and cannot negate, so for open only list without it and keep the issues whose `statusType` is `backlog`, `unstarted` or `started`.
 - **Make an issue a sub-issue of a parent**: set the parent when creating the issue, or update the child's parent afterwards.
