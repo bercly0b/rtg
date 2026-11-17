@@ -239,8 +239,8 @@ impl TdLibClient {
         })
     }
 
-    /// Sends a local file to a chat or forum topic, as the message type
-    /// `attachment.kind` names. `metadata` goes along with a video, an audio
+    /// Sends a local file to a chat or forum topic, as the attachment kind
+    /// `attachment.kind`. `metadata` goes along with a video, an audio
     /// file and an animation; zero and empty tell TDLib a value is unknown.
     ///
     /// See [`send_message`](Self::send_message) for the `topic_id` semantics.

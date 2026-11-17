@@ -3,7 +3,7 @@ use super::*;
 // ── opening the picker ──
 
 #[test]
-fn a_opens_the_file_picker_and_starts_the_file_list_command() {
+fn shift_a_opens_the_file_picker_and_starts_the_file_list_command() {
     let mut o = DefaultShellOrchestrator::new_with_initial_state(
         StubStorageAdapter::default(),
         RecordingOpener::default(),
@@ -36,7 +36,7 @@ fn a_opens_the_file_picker_and_starts_the_file_list_command() {
 }
 
 #[test]
-fn a_does_nothing_without_an_open_chat() {
+fn shift_a_does_nothing_without_an_open_chat() {
     let mut o = orchestrator_with_chats(vec![chat(1, "Chat")]);
     o.state_mut().set_active_pane(ActivePane::Messages);
 
@@ -47,7 +47,7 @@ fn a_does_nothing_without_an_open_chat() {
 }
 
 #[test]
-fn a_in_a_channel_says_it_is_read_only() {
+fn shift_a_in_a_channel_says_it_is_read_only() {
     let mut o =
         orchestrator_with_open_chat(vec![channel_chat(1, "News")], 1, vec![message(10, "Hello")]);
     assert_eq!(o.state().open_chat().chat_type(), ChatType::Channel);
@@ -62,7 +62,7 @@ fn a_in_a_channel_says_it_is_read_only() {
 }
 
 #[test]
-fn a_in_a_closed_topic_says_it_is_closed() {
+fn shift_a_in_a_closed_topic_says_it_is_closed() {
     let mut closed = topic(1, 7, "Releases", 1);
     closed.is_closed = true;
     let mut o = orchestrator_with_chats(vec![forum_chat(1, "Forum")]);

@@ -27,7 +27,7 @@ fn probe_with(program: &str, path: &str) -> Result<MediaMetadata, ProbeToolMissi
             "-show_entries",
             "stream=width,height:stream_tags:stream_side_data=rotation:format=duration:format_tags",
             "-of",
-            "default=noprint_wrappers=1",
+            "default",
             "-i",
             path,
         ])
@@ -45,27 +45,34 @@ fn probe_with(program: &str, path: &str) -> Result<MediaMetadata, ProbeToolMissi
     }
 }
 
-/// Parses the `key=value` lines `ffprobe` prints. The first value of a key
-/// wins: streams come before the container, and the video stream decides
-/// the frame size.
+/// Parses the `key=value` lines `ffprobe` prints, streams first and the
+/// file itself last, in a `[FORMAT]` section. The first frame size wins:
+/// it is the one of the video stream. A tag of the file wins over the same
+/// tag of a stream, which may be the title of an album cover; Ogg files
+/// keep their tags on the stream only.
 fn parse_probe_output(output: &str) -> MediaMetadata {
     let mut metadata = MediaMetadata::default();
     let mut rotation = 0;
+    let mut in_format = false;
 
     for line in output.lines() {
+        if line == "[FORMAT]" {
+            in_format = true;
+            continue;
+        }
         let Some((key, value)) = line.split_once('=') else {
             continue;
         };
         match key.to_ascii_lowercase().as_str() {
             "width" if metadata.width == 0 => metadata.width = value.parse().unwrap_or(0),
             "height" if metadata.height == 0 => metadata.height = value.parse().unwrap_or(0),
-            "duration" if metadata.duration_secs == 0 => {
-                metadata.duration_secs = value.parse::<f64>().map_or(0, |secs| secs.round() as i32);
-            }
+            "duration" => metadata.duration_secs = duration_secs(value),
             // Newer ffprobe reports the display matrix, older ones the tag.
             "rotation" | "tag:rotate" if rotation == 0 => rotation = value.parse().unwrap_or(0),
-            "tag:title" if metadata.title.is_empty() => metadata.title = value.to_owned(),
-            "tag:artist" if metadata.performer.is_empty() => {
+            "tag:title" if in_format || metadata.title.is_empty() => {
+                metadata.title = value.to_owned();
+            }
+            "tag:artist" if in_format || metadata.performer.is_empty() => {
                 metadata.performer = value.to_owned();
             }
             _ => {}
@@ -79,6 +86,15 @@ fn parse_probe_output(output: &str) -> MediaMetadata {
     metadata
 }
 
+/// Whole seconds, at least one for anything that lasts: zero would tell
+/// Telegram the duration is unknown.
+fn duration_secs(value: &str) -> i32 {
+    match value.parse::<f64>() {
+        Ok(secs) if secs > 0.0 => (secs.round() as i32).max(1),
+        _ => 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,8 +102,8 @@ mod tests {
     #[test]
     fn video_output_gives_duration_and_frame_size() {
         let output = "width=1920\nheight=1080\nTAG:language=und\nTAG:handler_name=VideoHandler\n\
-                      TAG:language=und\nTAG:handler_name=SoundHandler\nduration=12.400000\n\
-                      TAG:major_brand=isom\n";
+                      TAG:language=und\nTAG:handler_name=SoundHandler\n[FORMAT]\n\
+                      duration=12.400000\nTAG:major_brand=isom\n[/FORMAT]\n";
 
         assert_eq!(
             parse_probe_output(output),
@@ -124,6 +140,23 @@ mod tests {
 
         assert_eq!(metadata.title, "Song");
         assert_eq!(metadata.performer, "Band");
+    }
+
+    #[test]
+    fn the_tags_of_the_file_win_over_the_tags_of_a_stream() {
+        let output = "[STREAM]\n[/STREAM]\n[STREAM]\nwidth=300\nheight=300\n\
+                      TAG:title=Album cover\nTAG:artist=Painter\n[/STREAM]\n\
+                      [FORMAT]\nduration=3.000000\nTAG:title=Song\nTAG:artist=Band\n[/FORMAT]\n";
+
+        let metadata = parse_probe_output(output);
+
+        assert_eq!(metadata.title, "Song");
+        assert_eq!(metadata.performer, "Band");
+    }
+
+    #[test]
+    fn a_clip_shorter_than_a_second_still_has_a_duration() {
+        assert_eq!(parse_probe_output("duration=0.300000\n").duration_secs, 1);
     }
 
     #[test]

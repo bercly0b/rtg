@@ -534,6 +534,14 @@ mod send_rollback {
     }
 
     #[test]
+    fn video_the_probe_cannot_read_is_sent_without_a_word() {
+        let (metadata, probe_tool_missing) = send_video(|_| Ok(MediaMetadata::default()));
+
+        assert_eq!(metadata, MediaMetadata::default());
+        assert!(!probe_tool_missing);
+    }
+
+    #[test]
     fn video_is_still_sent_when_the_probe_tool_is_missing() {
         let (metadata, probe_tool_missing) = send_video(|_| Err(ProbeToolMissing));
 
