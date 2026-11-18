@@ -68,6 +68,7 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
 
 1. `docs/` is for project-wide, high-level documentation (module organization, hotkey conventions, architectural decisions, etc.).
 2. `docs/features/` is for feature-specific documentation (design docs, implementation plans, behavior specs).
+3. Any text that introduces the project (a description, a heading, an announcement, a catalogue submission) follows [docs/NAMING.md](docs/NAMING.md).
 
 ## Rust engineering style
 

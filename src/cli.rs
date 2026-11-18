@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
-#[command(name = "rtg", version, about = "Rust Telegram client (CLI + TUI)")]
+#[command(name = "rtg", version, about = "RTG — Telegram TUI client")]
 pub struct Cli {
     /// Path to config file (default: ~/.config/rtg/config.toml)
     #[arg(short, long, global = true)]
