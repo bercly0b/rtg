@@ -5,7 +5,7 @@
 <h1 align="center">RTG — Telegram TUI client in Rust</h1>
 
 <h3 align="center">
-  Быстрый терминальный клиент Telegram (CLI/TUI) в стиле vim на TDLib и ratatui.
+  Быстрый vim-like клиент Telegram (CLI/TUI) на TDLib и ratatui.
 </h3>
 
 <div align="center">
