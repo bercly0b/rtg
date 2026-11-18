@@ -9,6 +9,7 @@
 [advisories]
 ignore = [
     { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained, not vulnerable; pulled in by ratatui 0.29" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained, not vulnerable; migration tracked in ROZ-239" },
     # zip 8 and its zstd 0.13 come only from tdlib-rs (1.4.0 still requires
     # zip 8), which uses them in its build script to unpack the TDLib archive
     # it downloads from its own GitHub releases. It walks the entries itself
@@ -17,6 +18,10 @@ ignore = [
     { id = "RUSTSEC-2026-0368", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
     { id = "RUSTSEC-2026-0369", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
     { id = "RUSTSEC-2026-0429", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
+    { id = "RUSTSEC-2026-0545", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
+    { id = "RUSTSEC-2026-0546", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
+    { id = "RUSTSEC-2026-0547", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
+    { id = "RUSTSEC-2026-0548", reason = "zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
     { id = "RUSTSEC-2026-0391", reason = "zstd 0.13 via zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
     { id = "RUSTSEC-2026-0398", reason = "zstd-safe 7 via zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
     { id = "RUSTSEC-2026-0403", reason = "zstd-safe 7 via zip 8 via tdlib-rs, build-time unpacking of the TDLib release archive only" },
