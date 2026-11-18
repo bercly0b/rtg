@@ -27,7 +27,7 @@ The project is in early development — the core chat experience is in place and
 new features are landing regularly.
 
 <p align="center">
-  <img src="docs/assets/readme-demo.gif" alt="RTG demo: browsing the Telegram chat list with vim-like keys, searching chats, reading messages and recording a voice message in the terminal" width="800">
+  <img src="docs/assets/readme-demo.gif" alt="RTG demo: browsing the Telegram chat list with vim-like keys, searching chats, reading and sending messages, reacting to a message and viewing chat info in the terminal" width="800">
 </p>
 
 ## Features
