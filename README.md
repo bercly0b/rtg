@@ -2,10 +2,10 @@
   <b>English</b> | <a href="README.ru.md">Русский</a>
 </p>
 
-<h1 align="center">RTG</h1>
+<h1 align="center">RTG — Telegram TUI client in Rust</h1>
 
 <h3 align="center">
-  Fast, vim-like TUI client for Telegram, written in Rust.
+  Fast, vim-like terminal Telegram client (CLI/TUI), built on TDLib and ratatui.
 </h3>
 
 <div align="center">
@@ -18,10 +18,10 @@
 
 </div>
 
-RTG is a fast, keyboard-driven Telegram client for the terminal, built on top of
-[TDLib](https://core.telegram.org/tdlib). It strips Telegram down to its core —
-chats and messages. That's it. No stories. No ads. No notifications. Enjoy the
-silence.
+RTG is a fast, keyboard-driven Telegram client for the terminal on Linux and
+macOS, written in Rust on top of [TDLib](https://core.telegram.org/tdlib). It
+strips Telegram down to its core — chats and messages. That's it. No stories. No
+ads. No notifications. Enjoy the silence.
 
 The project is in early development — the core chat experience is in place and
 new features are landing regularly.
