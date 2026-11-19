@@ -24,7 +24,7 @@ The history was moved from Linear (team ROZ) and renumbered: `ROZ-239` is now `R
 ## Conventions
 
 - **Language**: write issue titles and descriptions in Russian, matching the existing rtg issues.
-- **Create an issue**: `create_task` in project rtg with a title, a markdown description, status `to-do` and priority `no-priority`. New issues stay in `To Do`: only the user moves issues to `Planned`. Choose the label per **Labelling a new issue** in `docs/agents/triage-labels.md`: a clear issue is `ready-for-agent` straight away, not `needs-grilling`.
+- **Create an issue**: `create_task` in project rtg with a title, a markdown description, status `to-do` (the `Backlog` column) and priority `no-priority`. New issues stay in `Backlog`: only the user moves issues to `Planned`. Choose the label per **Labelling a new issue** in `docs/agents/triage-labels.md`: a clear issue is `ready-for-agent` straight away, not `needs-grilling`.
 - **Read an issue**: fetch it by ticket identifier for its status and assignee. Labels, relations, comments and linked resources are not part of the task: read labels as in **Apply / remove labels**, relations with `get_task_relations`, comments with `list_task_comments`.
 - **List issues**: `list_tasks` for project rtg, optionally filtered by status. Each task comes with its labels and `externalLinks`. For open only, keep the tasks in columns that are not final: everything except `done` and `canceled`.
 - **Make an issue a sub-issue of a parent**: `create_task_relation` with type `subtask`, the parent as source and the child as target.
@@ -34,7 +34,7 @@ The history was moved from Linear (team ROZ) and renumbered: `ROZ-239` is now `R
 
   | Column      | Slug          |
   | ----------- | ------------- |
-  | To Do       | `to-do`       |
+  | Backlog     | `to-do`       |
   | Planned     | `plann3d`     |
   | In Progress | `in-progress` |
   | In Review   | `in-review`   |
