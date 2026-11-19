@@ -64,6 +64,11 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
      with the `no-changelog` label: `gh pr create --label no-changelog`;
    - how fragments reach the release notes: [docs/RELEASES.md](docs/RELEASES.md).
 
+6. Link every pull request to its ticket:
+   - right after creating a pull request for a ticket, link it to that ticket as a resource
+     (see "Link a pull request" in [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md));
+   - a comment with the URL does not count, and the task is not finished until the link is there.
+
 ## Documentation rules
 
 1. `docs/` is for project-wide, high-level documentation (module organization, hotkey conventions, architectural decisions, etc.).
@@ -93,11 +98,11 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
 
 ### Issue tracker
 
-Issues live in Linear (team ROZ, project `rtg`), accessed via the Linear MCP server. See `docs/agents/issue-tracker.md`.
+Issues live in a self-hosted Kaneo (project `rtg`, tickets `RTG-<n>`), accessed via the Kaneo MCP server. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Five-label vocabulary (`needs-grilling`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) as ROZ team labels in Linear; triage and grilling change labels only, never the issue's state. See `docs/agents/triage-labels.md`.
+Five-label vocabulary (`needs-grilling`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) as workspace labels in Kaneo; triage and grilling change labels only, never the issue's state. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 

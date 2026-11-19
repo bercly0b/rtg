@@ -105,7 +105,7 @@ run `dist init`, which updates the config and regenerates the workflow.
 
 [`CHANGELOG.md`](../CHANGELOG.md) lists the user-visible changes of each
 release. Between releases the entries wait in `changelog.d/` as fragments, one
-file per pull request (`changelog.d/roz-197.md`), so parallel branches never
+file per pull request (`changelog.d/rtg-118.md`), so parallel branches never
 edit the same lines:
 
 ```markdown
