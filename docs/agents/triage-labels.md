@@ -1,6 +1,6 @@
 # Triage Labels
 
-The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker. The labels are team labels in Linear team ROZ.
+The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker. The labels are workspace labels in Kaneo.
 
 | Label in mattpocock/skills | Label in our tracker | Meaning                                  |
 | -------------------------- | -------------------- | ---------------------------------------- |
@@ -23,7 +23,7 @@ There is no `needs-triage` label in this tracker. Triage answers whether an inco
 
 ## Labels only
 
-Triage and grilling change labels only; the issue's state is the user's call. Apply a label with an issue update that touches labels alone: `addLabels` with the new label and `removeLabels` with the previous triage label, both by name (see `docs/agents/issue-tracker.md`).
+Triage and grilling change labels only; the issue's state is the user's call. Apply a label by touching labels alone: add the new label to the issue and delete the issue's copy of the previous triage label (see **Apply / remove labels** in `docs/agents/issue-tracker.md`).
 
 An issue carries at most one triage label: remove the previous one when applying the next.
 
