@@ -11,7 +11,7 @@ Kaneo calls an issue a **task**; the two words mean the same thing here.
 
 The Kaneo MCP server (`kaneo`, tools named `mcp__kaneo__*`). If its tools are missing, the server is not connected or not authorised: say so and ask the user to run `/mcp`.
 
-The MCP server cannot link a resource to a task. That one operation goes through the Kaneo REST API (see **Link a pull request**), which needs two environment variables: `KANEO_API_URL` (the instance's API root, ending in `/api`) and `KANEO_API_KEY`. If either is unset, say so and ask the user; never print the key. Use the REST API for nothing else.
+The MCP server cannot link a resource to a task. That one operation goes through the Kaneo REST API (see **Link a pull request**), which needs two environment variables: `KANEO_API_URL` (the instance's root URL, without `/api`) and `KANEO_API_KEY`. If either is unset, say so and ask the user; never print the key. Use the REST API for nothing else.
 
 Ticket identifiers look like `RTG-118`: fetch a task by one with `get_task_by_ticket_id`. Every other tool takes the task's id, which that call returns. Tools take ids, not names: use the ids above, a column slug for a status, and the `id` from `whoami` for the current user.
 
@@ -49,7 +49,7 @@ The history was moved from Linear (team ROZ) and renumbered: `ROZ-239` is now `R
 Every pull request made for a ticket is linked to that ticket as a resource, right after `gh pr create`. A comment with the URL does not count. A task can carry several pull requests: link each one.
 
 ```sh
-curl -sS -X POST "$KANEO_API_URL/external-link/task/<task id>" \
+curl -sS -X POST "$KANEO_API_URL/api/external-link/task/<task id>" \
   -H "Authorization: Bearer $KANEO_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"url": "<pull request URL>", "title": "<pull request title>", "resourceType": "pull_request", "metadata": {"state": "open"}}'
