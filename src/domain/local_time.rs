@@ -49,7 +49,7 @@ impl LocalTime {
         let timestamp = TimeZone::system()
             .to_timestamp(civil)
             .expect("local time in range");
-        Self { timestamp, civil }
+        Self::from_timestamp(timestamp)
     }
 
     pub fn date(self) -> LocalDate {
