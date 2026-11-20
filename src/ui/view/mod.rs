@@ -13,7 +13,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::domain::{chat::ChatType, keymap::HelpEntry, shell_state::ShellState};
+use crate::domain::{chat::ChatType, keymap::HelpGroup, shell_state::ShellState};
 
 use super::chat_folder_picker_popup;
 use super::chat_info_popup;
@@ -31,7 +31,7 @@ use super::message_input::{
 use super::reaction_picker_popup;
 use super::styles;
 
-pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_entries: &[HelpEntry]) {
+pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_groups: &[HelpGroup]) {
     let [content_area, status_separator_area, status_area] = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -104,7 +104,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_entries: &[Hel
     }
 
     if state.help_visible() {
-        help_popup::render_help_popup(frame, frame.area(), active_pane, help_entries);
+        help_popup::render_help_popup(frame, frame.area(), state.key_context(), help_groups);
     }
 
     if let Some(info_state) = state.chat_info_popup() {

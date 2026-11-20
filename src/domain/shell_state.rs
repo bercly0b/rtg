@@ -13,6 +13,7 @@ use super::{
     file_picker_state::FilePickerState,
     forum_topic_list_state::ForumTopicListState,
     info_picker_state::{InfoPickerEntry, InfoPickerState},
+    keymap::KeyContext,
     link_picker_state::LinkPickerState,
     message::LinkTarget,
     message_cache::MessageCache,
@@ -226,6 +227,16 @@ impl ShellState {
 
     pub fn active_pane(&self) -> ActivePane {
         self.active_pane
+    }
+
+    /// The hotkeys in force: the forum topic list replaces the chat list in
+    /// the same pane, so the pane alone does not tell them apart.
+    pub fn key_context(&self) -> KeyContext {
+        match self.active_pane {
+            ActivePane::ChatList if self.forum_topic_list.is_some() => KeyContext::ForumTopicList,
+            ActivePane::ChatList => KeyContext::ChatList,
+            ActivePane::Messages | ActivePane::MessageInput => KeyContext::Messages,
+        }
     }
 
     pub fn set_active_pane(&mut self, pane: ActivePane) {
@@ -864,6 +875,28 @@ mod tests {
             }
             _ => panic!("expected Ready state"),
         }
+    }
+
+    #[test]
+    fn key_context_follows_the_focused_pane() {
+        let mut state = ShellState::default();
+        assert_eq!(state.key_context(), KeyContext::ChatList);
+
+        state.set_active_pane(ActivePane::Messages);
+        assert_eq!(state.key_context(), KeyContext::Messages);
+
+        state.set_active_pane(ActivePane::MessageInput);
+        assert_eq!(state.key_context(), KeyContext::Messages);
+    }
+
+    #[test]
+    fn key_context_is_forum_topic_list_while_topics_replace_the_chat_list() {
+        let mut state = ShellState::default();
+        state.enter_forum(100, "Forum");
+        assert_eq!(state.key_context(), KeyContext::ForumTopicList);
+
+        state.set_active_pane(ActivePane::Messages);
+        assert_eq!(state.key_context(), KeyContext::Messages);
     }
 
     #[test]

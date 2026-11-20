@@ -1,6 +1,7 @@
 mod chat_list;
 mod chat_list_item;
 mod forum_topic_list_item;
+mod help_popup;
 mod messages_panel;
 mod status_line;
 mod text_utils;
