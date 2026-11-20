@@ -7,16 +7,22 @@ pub fn help_popup_border_style() -> Style {
     Style::default().fg(Color::White)
 }
 
-/// Style for hotkey labels in the help popup (e.g. "j", "Enter / l").
-pub fn help_popup_key_style() -> Style {
+/// Style for hotkey group headings in the help popup (e.g. "Navigation").
+pub fn help_popup_group_style() -> Style {
     Style::default()
         .fg(Color::Yellow)
         .add_modifier(Modifier::BOLD)
 }
 
+/// Style for hotkey labels in the help popup (e.g. "j", "Enter / l").
+/// No colour: the terminal's own text colour reads on light and dark themes.
+pub fn help_popup_key_style() -> Style {
+    Style::default().add_modifier(Modifier::BOLD)
+}
+
 /// Style for action names in the help popup (e.g. "select_next_chat").
 pub fn help_popup_action_style() -> Style {
-    Style::default().fg(Color::White)
+    Style::default().fg(Color::Gray)
 }
 
 /// Style for the footer hint in the help popup.

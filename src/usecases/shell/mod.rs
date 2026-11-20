@@ -25,7 +25,7 @@ use crate::{
         chat_list_state::ChatListUiState,
         keymap::{KeyContext, Keymap, ResolveResult},
         message_cache::DEFAULT_MIN_DISPLAY_MESSAGES,
-        shell_state::{ActivePane, ShellState},
+        shell_state::ShellState,
     },
     infra::contracts::{ExternalOpener, StorageAdapter},
 };
@@ -299,14 +299,7 @@ where
                     return Ok(());
                 }
 
-                let context = match self.state.active_pane() {
-                    ActivePane::ChatList if self.state.forum_topic_list().is_some() => {
-                        KeyContext::ForumTopicList
-                    }
-                    ActivePane::ChatList => KeyContext::ChatList,
-                    ActivePane::Messages => KeyContext::Messages,
-                    ActivePane::MessageInput => unreachable!(),
-                };
+                let context = self.state.key_context();
 
                 match self.keymap.resolve(&key.key, key.ctrl, context) {
                     ResolveResult::Action(action) => match context {

@@ -306,43 +306,33 @@ impl Keymap {
         !self.pending_keys.is_empty()
     }
 
-    pub fn help_entries(&self, context: KeyContext) -> Vec<HelpEntry> {
-        let mut entries = Vec::new();
-        let mut seen_actions = std::collections::HashSet::new();
-
-        for binding in &self.bindings {
-            if binding.context != context && binding.context != KeyContext::Global {
-                continue;
-            }
-            if !seen_actions.insert(binding.action) {
-                continue;
-            }
-
-            let all_patterns: Vec<&KeyBinding> = self
-                .bindings
-                .iter()
-                .filter(|b| {
-                    b.action == binding.action
-                        && (b.context == context || b.context == KeyContext::Global)
-                })
-                .collect();
-
-            let label = if all_patterns.len() > 1 {
-                all_patterns
+    pub fn help_groups(&self, context: KeyContext) -> Vec<HelpGroup> {
+        HOTKEY_GROUPS
+            .iter()
+            .filter_map(|&(title, actions)| {
+                let entries: Vec<HelpEntry> = actions
                     .iter()
-                    .map(|b| b.pattern.display_label())
-                    .collect::<Vec<_>>()
-                    .join(" / ")
-            } else {
-                binding.pattern.display_label()
-            };
+                    .filter_map(|&action| self.help_entry(action, context))
+                    .collect();
+                (!entries.is_empty()).then_some(HelpGroup { title, entries })
+            })
+            .collect()
+    }
 
-            entries.push(HelpEntry {
-                key_label: label,
-                action_name: binding.action.display_name().to_owned(),
-            });
-        }
-        entries
+    fn help_entry(&self, action: Action, context: KeyContext) -> Option<HelpEntry> {
+        let labels: Vec<String> = self
+            .bindings
+            .iter()
+            .filter(|b| {
+                b.action == action && (b.context == context || b.context == KeyContext::Global)
+            })
+            .map(|b| b.pattern.display_label())
+            .collect();
+
+        (!labels.is_empty()).then(|| HelpEntry {
+            key_label: labels.join(" / "),
+            action_name: action.display_name().to_owned(),
+        })
     }
 
     fn rebind(&mut self, action: Action, new_pattern: KeyPattern) {
@@ -432,6 +422,78 @@ pub struct HelpEntry {
     pub key_label: String,
     pub action_name: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HelpGroup {
+    pub title: &'static str,
+    pub entries: Vec<HelpEntry>,
+}
+
+/// Every action belongs to exactly one hotkey group. The help popup lists
+/// groups and their actions in this order, whatever the bindings are.
+const HOTKEY_GROUPS: &[(&str, &[Action])] = &[
+    (
+        "Navigation",
+        &[
+            Action::SelectNextChat,
+            Action::SelectPreviousChat,
+            Action::SelectFirstChat,
+            Action::OpenChat,
+            Action::ScrollNextMessage,
+            Action::ScrollPreviousMessage,
+            Action::ScrollToLastMessage,
+            Action::BackToChatList,
+            Action::SelectNextTopic,
+            Action::SelectPreviousTopic,
+            Action::SelectFirstTopic,
+            Action::OpenForumTopic,
+            Action::BackFromForum,
+        ],
+    ),
+    (
+        "Chat lists",
+        &[
+            Action::SearchChats,
+            Action::ShowChatFolders,
+            Action::RefreshChatList,
+        ],
+    ),
+    ("Topics", &[Action::ReloadForumTopics]),
+    (
+        "Chat",
+        &[
+            Action::MarkChatAsRead,
+            Action::ToggleChatArchive,
+            Action::ShowChatInfo,
+        ],
+    ),
+    (
+        "Writing",
+        &[
+            Action::EnterMessageInput,
+            Action::ReplyToMessage,
+            Action::EditMessage,
+            Action::AttachFile,
+            Action::RecordVoice,
+        ],
+    ),
+    (
+        "Message",
+        &[
+            Action::OpenMessage,
+            Action::OpenLink,
+            Action::CopyMessage,
+            Action::AddReaction,
+            Action::ShowMessageInfo,
+            Action::DeleteMessage,
+        ],
+    ),
+    ("Files", &[Action::DownloadFile, Action::SaveFile]),
+    (
+        "General",
+        &[Action::ShowHelp, Action::InstallUpdate, Action::Quit],
+    ),
+];
 
 fn default_bindings() -> Vec<KeyBinding> {
     vec![
@@ -773,16 +835,6 @@ mod tests {
     }
 
     #[test]
-    fn help_entries_for_chat_list() {
-        let km = Keymap::default();
-        let entries = km.help_entries(KeyContext::ChatList);
-        assert!(!entries.is_empty());
-        assert!(entries.iter().any(|e| e.action_name == "select_next_chat"));
-        assert!(entries.iter().any(|e| e.action_name == "quit"));
-        assert!(entries.iter().any(|e| e.action_name == "show_help"));
-    }
-
-    #[test]
     fn shift_a_attaches_a_file_in_messages_only() {
         let mut km = Keymap::default();
 
@@ -795,26 +847,6 @@ mod tests {
             ResolveResult::Unmatched
         );
         assert_eq!(Action::from_name("attach_file"), Some(Action::AttachFile));
-    }
-
-    #[test]
-    fn help_entries_for_messages() {
-        let km = Keymap::default();
-        let entries = km.help_entries(KeyContext::Messages);
-        assert!(entries.iter().any(|e| e.action_name == "delete_message"));
-        assert!(entries.iter().any(|e| e.key_label == "dd"));
-    }
-
-    #[test]
-    fn help_entries_merge_duplicate_actions() {
-        let km = Keymap::default();
-        let entries = km.help_entries(KeyContext::ChatList);
-        let open_chat: Vec<_> = entries
-            .iter()
-            .filter(|e| e.action_name == "open_chat")
-            .collect();
-        assert_eq!(open_chat.len(), 1);
-        assert!(open_chat[0].key_label.contains('/'));
     }
 
     #[test]
@@ -1058,16 +1090,6 @@ mod tests {
     }
 
     #[test]
-    fn help_entries_for_forum_topic_list_include_navigation_and_back() {
-        let km = Keymap::default();
-        let entries = km.help_entries(KeyContext::ForumTopicList);
-
-        assert!(entries.iter().any(|e| e.action_name == "select_next_topic"));
-        assert!(entries.iter().any(|e| e.action_name == "open_forum_topic"));
-        assert!(entries.iter().any(|e| e.action_name == "back_from_forum"));
-    }
-
-    #[test]
     fn f_shows_chat_folders_only_in_chat_list() {
         let mut km = Keymap::default();
         assert_eq!(
@@ -1102,21 +1124,159 @@ mod tests {
     }
 
     #[test]
-    fn help_entries_for_chat_list_include_toggle_chat_archive() {
-        let km = Keymap::default();
-        let entries = km.help_entries(KeyContext::ChatList);
-
-        assert!(entries
-            .iter()
-            .any(|e| e.action_name == "toggle_chat_archive" && e.key_label == "A"));
-    }
-
-    #[test]
     fn reload_forum_topics_resolves_in_forum_context() {
         let mut km = Keymap::default();
         assert_eq!(
             km.resolve("R", false, KeyContext::ForumTopicList),
             ResolveResult::Action(Action::ReloadForumTopics)
         );
+    }
+
+    fn group_actions(groups: &[HelpGroup]) -> Vec<(&str, Vec<&str>)> {
+        groups
+            .iter()
+            .map(|g| {
+                let actions = g.entries.iter().map(|e| e.action_name.as_str()).collect();
+                (g.title, actions)
+            })
+            .collect()
+    }
+
+    fn key_label<'a>(groups: &'a [HelpGroup], action_name: &str) -> &'a str {
+        groups
+            .iter()
+            .flat_map(|g| &g.entries)
+            .find(|e| e.action_name == action_name)
+            .map(|e| e.key_label.as_str())
+            .expect("action must be listed")
+    }
+
+    const GENERAL_GROUP: (&str, [&str; 3]) = ("General", ["show_help", "install_update", "quit"]);
+
+    #[test]
+    fn help_groups_for_chat_list() {
+        let groups = Keymap::default().help_groups(KeyContext::ChatList);
+
+        assert_eq!(
+            group_actions(&groups),
+            vec![
+                (
+                    "Navigation",
+                    vec![
+                        "select_next_chat",
+                        "select_previous_chat",
+                        "select_first_chat",
+                        "open_chat",
+                    ]
+                ),
+                (
+                    "Chat lists",
+                    vec!["search_chats", "show_chat_folders", "refresh_chat_list"]
+                ),
+                (
+                    "Chat",
+                    vec!["mark_chat_as_read", "toggle_chat_archive", "show_chat_info"]
+                ),
+                (GENERAL_GROUP.0, GENERAL_GROUP.1.to_vec()),
+            ]
+        );
+    }
+
+    #[test]
+    fn help_groups_for_forum_topic_list() {
+        let groups = Keymap::default().help_groups(KeyContext::ForumTopicList);
+
+        assert_eq!(
+            group_actions(&groups),
+            vec![
+                (
+                    "Navigation",
+                    vec![
+                        "select_next_topic",
+                        "select_previous_topic",
+                        "select_first_topic",
+                        "open_forum_topic",
+                        "back_from_forum",
+                    ]
+                ),
+                ("Topics", vec!["reload_forum_topics"]),
+                (GENERAL_GROUP.0, GENERAL_GROUP.1.to_vec()),
+            ]
+        );
+    }
+
+    #[test]
+    fn help_groups_for_messages() {
+        let groups = Keymap::default().help_groups(KeyContext::Messages);
+
+        assert_eq!(
+            group_actions(&groups),
+            vec![
+                (
+                    "Navigation",
+                    vec![
+                        "scroll_to_next_message",
+                        "scroll_to_previous_message",
+                        "scroll_to_last_message",
+                        "back_to_chat_list",
+                    ]
+                ),
+                ("Chat", vec!["show_chat_info"]),
+                (
+                    "Writing",
+                    vec![
+                        "enter_message_input",
+                        "reply_to_message",
+                        "edit_message",
+                        "attach_file",
+                        "record_voice_message",
+                    ]
+                ),
+                (
+                    "Message",
+                    vec![
+                        "open_message",
+                        "open_link_or_mention",
+                        "copy_message_to_clipboard",
+                        "add_reaction",
+                        "show_message_info",
+                        "delete_message",
+                    ]
+                ),
+                ("Files", vec!["download_file", "save_file_to_downloads"]),
+                (GENERAL_GROUP.0, GENERAL_GROUP.1.to_vec()),
+            ]
+        );
+    }
+
+    #[test]
+    fn help_groups_join_all_keys_of_an_action() {
+        let groups = Keymap::default().help_groups(KeyContext::ChatList);
+
+        assert_eq!(key_label(&groups, "open_chat"), "Enter / l");
+        assert_eq!(key_label(&groups, "toggle_chat_archive"), "A");
+    }
+
+    #[test]
+    fn rebinding_an_action_changes_its_key_label_and_keeps_its_row() {
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("select_next_chat".to_owned(), "n".to_owned());
+        let rebound = Keymap::with_overrides(&overrides).help_groups(KeyContext::ChatList);
+        let default = Keymap::default().help_groups(KeyContext::ChatList);
+
+        assert_eq!(group_actions(&rebound), group_actions(&default));
+        assert_eq!(key_label(&rebound, "select_next_chat"), "n");
+    }
+
+    #[test]
+    fn every_bound_action_belongs_to_exactly_one_hotkey_group() {
+        for binding in default_bindings() {
+            let memberships = HOTKEY_GROUPS
+                .iter()
+                .flat_map(|(_, actions)| actions.iter())
+                .filter(|action| **action == binding.action)
+                .count();
+            assert_eq!(memberships, 1, "{:?}", binding.action);
+        }
     }
 }

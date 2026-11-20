@@ -1,11 +1,8 @@
 use anyhow::Result;
 
-use crate::{
-    domain::keymap::{HelpEntry, KeyContext},
-    usecases::{
-        context::AppContext,
-        contracts::{AppEventSource, ShellEffect, ShellOrchestrator},
-    },
+use crate::usecases::{
+    context::AppContext,
+    contracts::{AppEventSource, ShellEffect, ShellOrchestrator},
 };
 
 use super::{
@@ -30,16 +27,13 @@ pub fn start(
     let mut had_command_popup = false;
 
     while orchestrator.state().is_running() {
-        let help_entries: Vec<HelpEntry> = if orchestrator.state().help_visible() {
-            let context = match orchestrator.state().active_pane() {
-                crate::domain::shell_state::ActivePane::ChatList => KeyContext::ChatList,
-                _ => KeyContext::Messages,
-            };
-            orchestrator.keymap().help_entries(context)
+        let help_groups = if orchestrator.state().help_visible() {
+            let context = orchestrator.state().key_context();
+            orchestrator.keymap().help_groups(context)
         } else {
             Vec::new()
         };
-        terminal.draw(|frame| view::render(frame, orchestrator.state_mut(), &help_entries))?;
+        terminal.draw(|frame| view::render(frame, orchestrator.state_mut(), &help_groups))?;
 
         if let Some(event) = event_source.next_event()? {
             orchestrator.handle_event(event)?;

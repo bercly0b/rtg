@@ -213,3 +213,23 @@ fn connectivity_events_still_processed_while_help_is_open() {
     );
     assert!(o.state().help_visible());
 }
+
+#[test]
+fn help_in_the_forum_topic_list_lists_topic_hotkeys() {
+    let mut o = orchestrator_with_chats(vec![forum_chat(1, "Forum")]);
+    o.handle_event(AppEvent::InputKey(KeyInput::new("enter", false)))
+        .unwrap();
+    o.handle_event(AppEvent::InputKey(KeyInput::new("?", false)))
+        .unwrap();
+    assert!(o.state().help_visible());
+
+    let groups = o.keymap().help_groups(o.state().key_context());
+
+    let action_names: Vec<&str> = groups
+        .iter()
+        .flat_map(|g| &g.entries)
+        .map(|e| e.action_name.as_str())
+        .collect();
+    assert!(action_names.contains(&"select_next_topic"));
+    assert!(!action_names.contains(&"select_next_chat"));
+}

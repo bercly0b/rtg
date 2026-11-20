@@ -35,7 +35,7 @@ use crate::{
         message::Message,
         message_input_state::{OutgoingMessage, ReplyContext},
         open_chat_state::OpenChatUiState,
-        shell_state::ShellState,
+        shell_state::{ActivePane, ShellState},
     },
     infra::{contracts::ExternalOpener, stubs::StubStorageAdapter},
     usecases::{

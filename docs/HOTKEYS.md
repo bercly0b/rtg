@@ -29,7 +29,7 @@ Terminal input (crossterm)
 | `usecases/shell/key_dispatch.rs` | usecases | Maps `Action` to orchestrator calls |
 | `usecases/shell/mod.rs` | usecases | Routes `InputKey` events through `Keymap::resolve()` |
 | `infra/config/app_config.rs` | infra | `KeysConfig` for user overrides from TOML |
-| `ui/help_popup.rs` | ui | Renders help popup from `Keymap::help_entries()` |
+| `ui/help_popup.rs` | ui | Renders help popup from `Keymap::help_groups()` |
 
 ### Contexts
 
@@ -107,7 +107,21 @@ KeyBinding {
 },
 ```
 
-### Step 3: Implement the action
+### Step 3: Put the action in a hotkey group
+
+The help popup lists hotkeys by hotkey group. In `keymap.rs`, add the action to
+exactly one group in `HOTKEY_GROUPS`, at the place where its row should appear:
+the order of the table is the order of the help popup, whatever key the action
+is bound to.
+
+```rust
+("Message", &[/* ...existing actions... */ Action::MyNewAction]),
+```
+
+A bound action that is in no group, or in two, fails the
+`every_bound_action_belongs_to_exactly_one_hotkey_group` test.
+
+### Step 4: Implement the action
 
 In `src/usecases/shell/key_dispatch.rs`, add a match arm in the appropriate
 dispatch function (`dispatch_chat_list_action` or `dispatch_messages_action`):
@@ -118,13 +132,13 @@ Action::MyNewAction => {
 }
 ```
 
-### Step 4: Tests
+### Step 5: Tests
 
 1. Add a unit test in `keymap.rs` to verify the binding resolves correctly.
 2. Add an integration test in `usecases/shell/tests/` to verify the action
    executes the expected side effects through the orchestrator.
 
-### Step 5: Verify
+### Step 6: Verify
 
 ```sh
 mise run quality
@@ -160,3 +174,4 @@ action was originally bound. Invalid action names or key patterns are logged
 as warnings and skipped.
 
 The help popup (`?`) always shows the current (potentially overridden) bindings.
+An override changes the key shown in a row, not the place of the row.
