@@ -30,8 +30,16 @@ pub enum AuthBackendError {
     InvalidCode,
     WrongPassword,
     Timeout,
-    FloodWait { seconds: u32 },
-    Transient { code: &'static str, message: String },
+    FloodWait {
+        seconds: u32,
+    },
+    /// Telegram refused the API credentials themselves (`API_ID_INVALID`,
+    /// `API_ID_PUBLISHED_FLOOD`), whoever signs in.
+    ApiCredentialsRejected,
+    Transient {
+        code: &'static str,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

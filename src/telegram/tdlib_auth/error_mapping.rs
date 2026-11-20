@@ -55,6 +55,11 @@ pub(super) fn map_request_code_error(error: TdLibError) -> AuthBackendError {
         return AuthBackendError::InvalidPhone;
     }
 
+    // Checked before the flood wait: `API_ID_PUBLISHED_FLOOD` is not a wait.
+    if msg_lower.contains("api_id_") {
+        return AuthBackendError::ApiCredentialsRejected;
+    }
+
     if let Some(seconds) = parse_flood_wait_seconds(*code, &msg_lower) {
         return AuthBackendError::FloodWait { seconds };
     }
@@ -359,6 +364,16 @@ mod tests {
             map_request_code_error,
             &[
                 (400, "PHONE_NUMBER_INVALID", AuthBackendError::InvalidPhone),
+                (
+                    400,
+                    "API_ID_PUBLISHED_FLOOD",
+                    AuthBackendError::ApiCredentialsRejected,
+                ),
+                (
+                    400,
+                    "API_ID_INVALID",
+                    AuthBackendError::ApiCredentialsRejected,
+                ),
                 (
                     429,
                     "Too Many Requests: retry after 300",

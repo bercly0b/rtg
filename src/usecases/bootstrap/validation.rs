@@ -10,6 +10,7 @@ pub(super) fn map_telegram_bootstrap_error(error: AuthBackendError) -> AppError 
         AuthBackendError::WrongPassword => "AUTH_WRONG_2FA".to_owned(),
         AuthBackendError::Timeout => "AUTH_TIMEOUT".to_owned(),
         AuthBackendError::FloodWait { .. } => "AUTH_FLOOD_WAIT".to_owned(),
+        AuthBackendError::ApiCredentialsRejected => "AUTH_API_CREDENTIALS_REJECTED".to_owned(),
         AuthBackendError::Transient { code, .. } => sanitize_error_code(code),
     };
 
@@ -33,7 +34,7 @@ pub(super) fn validate_telegram_config(config: &TelegramConfig) -> Result<(), Ap
         return Err(AppError::ConfigValidation {
             code: "TELEGRAM_CONFIG_INVALID",
             details:
-                "telegram.api_id and telegram.api_hash must both be set for real backend bootstrap"
+                "telegram.api_id and telegram.api_hash must both be set to use own credentials"
                     .to_owned(),
         });
     }

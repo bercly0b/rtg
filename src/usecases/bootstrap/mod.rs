@@ -1,7 +1,6 @@
-mod credentials_prompt;
 mod validation;
 
-use std::{io::IsTerminal, path::Path, sync::mpsc::Sender};
+use std::{path::Path, sync::mpsc::Sender};
 
 use crate::{
     domain::{events::ConnectivityStatus, shell_state::ShellState},
@@ -29,7 +28,7 @@ use crate::{
         background::{BackgroundTaskResult, ThreadTaskDispatcher},
         context::AppContext,
         contracts::ShellOrchestrator,
-        guided_auth::{AuthBackendError, AuthTerminal, StdTerminal},
+        guided_auth::AuthBackendError,
         load_messages::CachedMessagesSource,
         self_update::{self_update, SelfUpdateError, SelfUpdated},
         shell::{DefaultShellOrchestrator, OrchestratorConfig},
@@ -217,28 +216,10 @@ fn build_context_with_factories(
     config_adapter: &dyn ConfigAdapter,
     telegram_factory: &dyn TelegramAdapterFactory,
 ) -> Result<AppContext, AppError> {
-    let probe_config = config_adapter.load().map_err(AppError::Other)?;
-    let interactive = std::io::stdin().is_terminal();
-    let mut terminal = StdTerminal::new(probe_config.logging.is_verbose());
-    build_context_with_factories_inner(config_adapter, telegram_factory, &mut terminal, interactive)
-}
-
-fn build_context_with_factories_inner(
-    config_adapter: &dyn ConfigAdapter,
-    telegram_factory: &dyn TelegramAdapterFactory,
-    terminal: &mut dyn AuthTerminal,
-    interactive: bool,
-) -> Result<AppContext, AppError> {
     let mut config = config_adapter.load().map_err(AppError::Other)?;
 
     validate_telegram_config(&config.telegram)?;
-
-    credentials_prompt::ensure_telegram_credentials(
-        &mut config,
-        config_adapter,
-        terminal,
-        interactive,
-    )?;
+    config.telegram = config.telegram.or_built_in();
 
     let telegram = telegram_factory
         .from_config(&config.telegram, config.logging.is_verbose())

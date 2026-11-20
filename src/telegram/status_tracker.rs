@@ -119,10 +119,11 @@ fn map_connectivity(status: ConnectivityStatus) -> ConnectivityHealth {
 fn map_auth_error(error: &AuthBackendError) -> AuthStatus {
     if matches!(
         error,
-        AuthBackendError::Transient {
-            code: "AUTH_BACKEND_UNAVAILABLE",
-            ..
-        }
+        AuthBackendError::ApiCredentialsRejected
+            | AuthBackendError::Transient {
+                code: "AUTH_BACKEND_UNAVAILABLE",
+                ..
+            }
     ) {
         return AuthStatus::FatalFailure;
     }
@@ -137,6 +138,7 @@ fn auth_error_code(error: &AuthBackendError) -> String {
         AuthBackendError::WrongPassword => "AUTH_WRONG_2FA".to_owned(),
         AuthBackendError::Timeout => "AUTH_TIMEOUT".to_owned(),
         AuthBackendError::FloodWait { .. } => "AUTH_FLOOD_WAIT".to_owned(),
+        AuthBackendError::ApiCredentialsRejected => "AUTH_API_CREDENTIALS_REJECTED".to_owned(),
         AuthBackendError::Transient { code, .. } => sanitize_error_code(code),
     }
 }
@@ -169,6 +171,19 @@ mod tests {
             Some("AUTH_INVALID_CODE")
         );
         assert!(snapshot.updated_at_unix_ms > 0);
+    }
+
+    #[test]
+    fn rejected_api_credentials_are_a_fatal_failure() {
+        let tracker = StatusTracker::new();
+        tracker.on_auth_error(&AuthBackendError::ApiCredentialsRejected);
+
+        let snapshot = tracker.snapshot();
+        assert_eq!(snapshot.auth, AuthStatus::FatalFailure);
+        assert_eq!(
+            snapshot.last_error.as_ref().map(|e| e.code.as_str()),
+            Some("AUTH_API_CREDENTIALS_REJECTED")
+        );
     }
 
     #[test]

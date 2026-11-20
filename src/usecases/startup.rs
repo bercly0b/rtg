@@ -105,6 +105,9 @@ fn map_auth_check_error(error: &AuthBackendError) -> String {
         AuthBackendError::FloodWait { seconds } => {
             format!("flood wait ({seconds}s) during auth check")
         }
+        AuthBackendError::ApiCredentialsRejected => {
+            "unexpected: API credentials rejected during auth check".to_owned()
+        }
     }
 }
 

@@ -4,7 +4,6 @@ use crate::infra::config::AppConfig;
 
 pub trait ConfigAdapter {
     fn load(&self) -> Result<AppConfig>;
-    fn save_telegram_credentials(&self, api_id: i32, api_hash: &str) -> Result<()>;
 }
 
 pub trait StorageAdapter {
