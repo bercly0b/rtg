@@ -57,6 +57,8 @@ curl -sS -X POST "$KANEO_API_URL/api/external-link/task/<task id>" \
 
 `<task id>` is the task's id, not the ticket identifier. Verify with `GET` on the same path, or by the task's `externalLinks` in `list_tasks`.
 
+Once the link is verified, move the task to `in-review` (see **Change status**).
+
 ## When a skill says "publish to the issue tracker"
 
 Create a Kaneo task in project rtg.

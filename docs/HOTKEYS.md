@@ -36,8 +36,13 @@ Terminal input (crossterm)
 Hotkeys are context-aware. The `KeyContext` enum defines where a binding applies:
 
 - **`ChatList`** — active when the chat list panel has focus.
+- **`ForumTopicList`** — active when the chat list panel has focus and shows
+  the topics of a forum instead of the chats.
 - **`Messages`** — active when the messages panel has focus.
-- **`Global`** — active in all contexts (ChatList + Messages).
+- **`Global`** — active in all contexts (ChatList + ForumTopicList + Messages).
+
+`ShellState::key_context()` picks the context, for key handling and for the
+help popup alike.
 
 `MessageInput` is handled separately (raw text input, not hotkeys) in
 `usecases/shell/message_input.rs`: `Enter` sends the message, `Shift+Enter`
@@ -103,7 +108,7 @@ In the `default_bindings()` function at the bottom of `keymap.rs`, add a
 KeyBinding {
     pattern: KeyPattern::single("x"),  // or ::sequence(vec!["g", "g"])
     action: Action::MyNewAction,
-    context: KeyContext::Messages,      // or ChatList / Global
+    context: KeyContext::Messages,      // or ChatList / ForumTopicList / Global
 },
 ```
 
@@ -124,7 +129,8 @@ A bound action that is in no group, or in two, fails the
 ### Step 4: Implement the action
 
 In `src/usecases/shell/key_dispatch.rs`, add a match arm in the appropriate
-dispatch function (`dispatch_chat_list_action` or `dispatch_messages_action`):
+dispatch function (`dispatch_chat_list_action`, `dispatch_forum_topic_list_action`
+or `dispatch_messages_action`):
 
 ```rust
 Action::MyNewAction => {
