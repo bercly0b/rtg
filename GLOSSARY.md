@@ -103,3 +103,17 @@ _Avoid_: file selector, file browser, attach dialog
 **File list command**:
 The external command that tells the file picker which local files exist; it only names files, RTG finds out the rest about them itself.
 _Avoid_: file lister, engine, finder
+
+## Telegram API access
+
+**API credentials**:
+The `api_id` and `api_hash` pair under which RTG presents itself to Telegram as an application; not what a user signs in with.
+_Avoid_: app credentials, API keys, Telegram keys
+
+**Built-in credentials**:
+The API credentials that ship with RTG, so a user can sign in without getting their own.
+_Avoid_: default credentials, shared credentials, embedded keys
+
+**Own credentials**:
+The API credentials a user got from Telegram themselves and gave to RTG; they take precedence over the built-in credentials.
+_Avoid_: custom credentials, personal keys, user credentials
