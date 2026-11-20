@@ -7,6 +7,7 @@ use ratatui::{
 };
 
 use crate::domain::{
+    local_time::LocalTime,
     open_chat_state::{OpenChatUiState, SCROLL_MARGIN},
     shell_state::{ActivePane, ShellState},
 };
@@ -181,7 +182,7 @@ pub(super) fn open_chat_title(
     }
 
     let subtitle = open_chat.chat_subtitle();
-    let now = chrono::Local::now();
+    let now = LocalTime::now();
     let subtitle_text = subtitle.format(now);
     if subtitle_text.is_empty() {
         Line::from(Span::styled(name, title_style))

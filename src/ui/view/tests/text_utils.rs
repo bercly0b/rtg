@@ -1,4 +1,5 @@
 use super::super::text_utils;
+use crate::domain::local_time::LocalTime;
 
 #[test]
 fn truncate_to_display_width_fits_ascii() {
@@ -51,25 +52,20 @@ fn truncate_to_display_width_less_than_ellipsis_returns_empty() {
 
 #[test]
 fn format_chat_timestamp_shows_time_for_today() {
-    use chrono::Local;
+    let now = LocalTime::now();
 
-    let now = Local::now();
-    let timestamp_ms = now.timestamp_millis();
+    let formatted = text_utils::format_chat_timestamp(now.unix_millis());
 
-    let formatted = text_utils::format_chat_timestamp(timestamp_ms);
-
-    assert_eq!(formatted.len(), 5);
-    assert!(formatted.contains(':'));
+    assert_eq!(formatted, now.format("%H:%M"));
 }
 
 #[test]
 fn format_chat_timestamp_shows_date_for_past() {
-    let timestamp_ms = 1577836800000_i64;
+    let timestamp_ms = LocalTime::from_local(2020, 3, 7, 12, 0).unix_millis();
 
     let formatted = text_utils::format_chat_timestamp(timestamp_ms);
 
-    assert_eq!(formatted.len(), 5);
-    assert!(formatted.contains('.'));
+    assert_eq!(formatted, "07.03");
 }
 
 #[test]

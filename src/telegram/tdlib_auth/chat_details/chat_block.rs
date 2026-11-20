@@ -1,11 +1,11 @@
 //! The Chat block every info template ends with.
 
-use chrono::{DateTime, Local};
 use tdlib_rs::enums::{ChatList, ChatType as TdChatType, NotificationSettingsScope};
 use tdlib_rs::types::Chat;
 
 use crate::domain::chat_folder::{ChatFolders, ARCHIVE_CHAT_LIST_TITLE};
 use crate::domain::chat_info_state::{ChatBlockInfo, MuteState};
+use crate::domain::local_time::LocalTime;
 
 use super::{optional, ChatInfoResolver};
 
@@ -16,7 +16,7 @@ pub(super) fn resolve(
     resolver: &dyn ChatInfoResolver,
     chat: &Chat,
     folders: &ChatFolders,
-    now: DateTime<Local>,
+    now: LocalTime,
 ) -> ChatBlockInfo {
     ChatBlockInfo {
         chat_id: chat.id,
@@ -68,12 +68,12 @@ fn notification_scope(td_type: &TdChatType) -> NotificationSettingsScope {
     }
 }
 
-fn mute_state(mute_for: i32, now: DateTime<Local>) -> MuteState {
+fn mute_state(mute_for: i32, now: LocalTime) -> MuteState {
     if mute_for <= 0 {
         MuteState::Unmuted
     } else if mute_for > MAX_TIMED_MUTE_SECONDS {
         MuteState::Forever
     } else {
-        MuteState::Until(now.timestamp() + i64::from(mute_for))
+        MuteState::Until(now.unix_seconds() + i64::from(mute_for))
     }
 }

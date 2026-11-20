@@ -3,9 +3,10 @@
 //! Pure helpers with no ratatui dependency: wrapping, date/time formatting,
 //! sender name resolution.
 
-use chrono::{Local, TimeZone};
-
-use crate::domain::message::Message;
+use crate::domain::{
+    local_time::{LocalDate, LocalTime},
+    message::Message,
+};
 
 /// Wraps a text line to fit within `max_width` terminal columns.
 ///
@@ -56,22 +57,17 @@ pub(super) fn effective_sender_name(message: &Message) -> &str {
     }
 }
 
-pub(super) fn timestamp_to_date(timestamp_ms: i64) -> chrono::NaiveDate {
-    match Local.timestamp_millis_opt(timestamp_ms) {
-        chrono::LocalResult::Single(dt) => dt.date_naive(),
-        chrono::LocalResult::Ambiguous(dt, _) => dt.date_naive(),
-        chrono::LocalResult::None => Local::now().date_naive(),
-    }
+pub(super) fn timestamp_to_date(timestamp_ms: i64) -> LocalDate {
+    LocalTime::from_unix_millis(timestamp_ms)
+        .unwrap_or_else(LocalTime::now)
+        .date()
 }
 
-pub(super) fn format_date(date: chrono::NaiveDate) -> String {
-    date.format("%-d %b %Y").to_string()
+pub(super) fn format_date(date: LocalDate) -> String {
+    date.format("%-d %b %Y")
 }
 
 pub(super) fn format_time(timestamp_ms: i64) -> String {
-    match Local.timestamp_millis_opt(timestamp_ms) {
-        chrono::LocalResult::Single(dt) => dt.format("%H:%M").to_string(),
-        chrono::LocalResult::Ambiguous(dt, _) => dt.format("%H:%M").to_string(),
-        chrono::LocalResult::None => "??:??".to_owned(),
-    }
+    LocalTime::from_unix_millis(timestamp_ms)
+        .map_or_else(|| "??:??".to_owned(), |time| time.format("%H:%M"))
 }

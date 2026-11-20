@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use chrono::{DateTime, Local, TimeZone};
 use tdlib_rs::enums::{ChatMemberStatus, MessageSender, NotificationSettingsScope};
 use tdlib_rs::types::{
     AcceptedGiftTypes, BasicGroup, BasicGroupFullInfo, BotInfo, Chat, ChatMember,
@@ -12,6 +11,7 @@ use tdlib_rs::types::{
 
 use crate::domain::chat_folder::ChatFolders;
 use crate::domain::chat_info_state::{ChatInfo, ChatInfoSubject};
+use crate::domain::local_time::LocalTime;
 use crate::telegram::tdlib_cache::tests::{make_test_chat, make_test_user};
 use crate::telegram::tdlib_client::TdLibError;
 use crate::usecases::chat_subtitle::{ChatInfoQuery, ChatSubtitleError};
@@ -173,8 +173,8 @@ impl ChatInfoResolver for FakeResolver {
 // Resolution
 // ---------------------------------------------------------------------------
 
-fn now() -> DateTime<Local> {
-    Local.with_ymd_and_hms(2026, 11, 6, 12, 0, 0).unwrap()
+fn now() -> LocalTime {
+    LocalTime::from_local(2026, 11, 6, 12, 0)
 }
 
 fn resolve(resolver: &FakeResolver, chat_id: i64) -> Result<ChatInfo, ChatSubtitleError> {

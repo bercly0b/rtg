@@ -1,5 +1,7 @@
 use unicode_width::UnicodeWidthStr;
 
+use crate::domain::local_time::LocalTime;
+
 /// Truncates a string to fit within a given display width.
 ///
 /// Returns `(display_text, padding)`:
@@ -37,20 +39,14 @@ pub(super) fn truncate_to_display_width(text: &str, max_width: usize) -> (String
 }
 
 pub(super) fn format_chat_timestamp(timestamp_ms: i64) -> String {
-    use chrono::{Local, TimeZone};
-
-    let datetime = match Local.timestamp_millis_opt(timestamp_ms) {
-        chrono::LocalResult::Single(dt) => dt,
-        chrono::LocalResult::Ambiguous(dt, _) => dt,
-        chrono::LocalResult::None => return "     ".to_owned(),
+    let Some(time) = LocalTime::from_unix_millis(timestamp_ms) else {
+        return "     ".to_owned();
     };
 
-    let today = Local::now().date_naive();
-
-    if datetime.date_naive() == today {
-        datetime.format("%H:%M").to_string()
+    if time.date() == LocalTime::now().date() {
+        time.format("%H:%M")
     } else {
-        datetime.format("%d.%m").to_string()
+        time.format("%d.%m")
     }
 }
 

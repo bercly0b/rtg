@@ -18,6 +18,7 @@ pub mod forum_topic_list_state;
 pub mod info_picker_state;
 pub mod keymap;
 pub mod link_picker_state;
+pub mod local_time;
 pub mod message;
 pub mod message_cache;
 pub mod message_info_state;

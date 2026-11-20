@@ -1,4 +1,3 @@
-use chrono::{Local, NaiveDateTime, TimeZone};
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -10,6 +9,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::domain::{
     file_picker_state::{FileEntry, FileListing, FilePickerState},
+    local_time::LocalTime,
     message::format_file_size,
 };
 
@@ -40,7 +40,7 @@ pub fn render_file_picker(frame: &mut Frame<'_>, area: Rect, state: &FilePickerS
         state,
         usize::from(inner.width),
         usize::from(inner.height).saturating_sub(CHROME_ROWS),
-        Local::now().naive_local(),
+        LocalTime::now(),
     );
 
     frame.render_widget(Clear, popup_area);
@@ -58,7 +58,7 @@ fn build_lines(
     state: &FilePickerState,
     width: usize,
     list_height: usize,
-    now: NaiveDateTime,
+    now: LocalTime,
 ) -> Vec<Line<'static>> {
     let mut lines = vec![
         Line::from(vec![
@@ -101,7 +101,7 @@ fn file_rows(
     state: &FilePickerState,
     width: usize,
     list_height: usize,
-    now: NaiveDateTime,
+    now: LocalTime,
 ) -> Vec<Line<'static>> {
     let selected = state.selected_index().unwrap_or(0);
     let last_offset = state.visible_len().saturating_sub(list_height);
@@ -128,14 +128,12 @@ fn file_rows(
         .collect()
 }
 
-fn file_row(shown_path: &str, entry: &FileEntry, path_width: usize, now: NaiveDateTime) -> String {
+fn file_row(shown_path: &str, entry: &FileEntry, path_width: usize, now: LocalTime) -> String {
     let path = keep_end(shown_path, path_width);
     let padding = " ".repeat(path_width.saturating_sub(path.width()));
     let size = format_file_size(entry.size);
-    let modified = Local
-        .timestamp_opt(entry.modified_unix_s, 0)
-        .single()
-        .map(|modified| format_modified(modified.naive_local(), now))
+    let modified = LocalTime::from_unix_seconds(entry.modified_unix_s)
+        .map(|modified| format_modified(modified, now))
         .unwrap_or_default();
     format!("{path}{padding}{COLUMN_GAP}{size:>SIZE_WIDTH$}{COLUMN_GAP}{modified:>DATE_WIDTH$}")
 }
@@ -162,15 +160,13 @@ fn keep_end(text: &str, max_width: usize) -> String {
 }
 
 /// `Today 14:32` for today, `12 Nov` for this year, `2025-03-01` otherwise.
-fn format_modified(modified: NaiveDateTime, now: NaiveDateTime) -> String {
-    use chrono::Datelike;
-
+fn format_modified(modified: LocalTime, now: LocalTime) -> String {
     if modified.date() == now.date() {
-        modified.format("Today %H:%M").to_string()
+        modified.format("Today %H:%M")
     } else if modified.year() == now.year() {
-        modified.format("%-d %b").to_string()
+        modified.format("%-d %b")
     } else {
-        modified.format("%Y-%m-%d").to_string()
+        modified.format("%Y-%m-%d")
     }
 }
 

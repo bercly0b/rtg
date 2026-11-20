@@ -1,7 +1,6 @@
 //! The User and Bot info templates: private and secret chats.
 
 use base64::Engine;
-use chrono::{DateTime, Local};
 use tdlib_rs::enums::{BlockList, ChatActionBar, ChatType as TdChatType, UserStatus, UserType};
 use tdlib_rs::types::{Chat, User, UserFullInfo, UserTypeBot, Usernames};
 
@@ -11,6 +10,7 @@ use crate::domain::chat_info_state::{
     BusinessInfo, ChatInfoKind, ContactStatus, MonthYear, PhoneNumber, SecretChatInfo,
     SecretChatState, UserInfo, Username,
 };
+use crate::domain::local_time::LocalTime;
 use crate::telegram::tdlib_mappers;
 use crate::usecases::chat_subtitle::ChatSubtitleError;
 
@@ -25,7 +25,7 @@ const COMPARABLE_KEY_HASH_LEN: usize = 32;
 pub(super) fn resolve(
     resolver: &dyn ChatInfoResolver,
     chat: &Chat,
-    now: DateTime<Local>,
+    now: LocalTime,
 ) -> Result<(String, ChatInfoKind), ChatSubtitleError> {
     let Some(user_id) = tdlib_mappers::get_private_chat_user_id(&chat.r#type) else {
         return Err(unexpected_chat_type(ChatType::Private, &chat.r#type));
@@ -52,7 +52,7 @@ fn is_deleted(user: &User) -> bool {
     matches!(user.r#type, UserType::Deleted | UserType::Unknown)
 }
 
-fn user_status_line(user: &User, now: DateTime<Local>) -> String {
+fn user_status_line(user: &User, now: LocalTime) -> String {
     if is_deleted(user) {
         return "deleted account".to_owned();
     }

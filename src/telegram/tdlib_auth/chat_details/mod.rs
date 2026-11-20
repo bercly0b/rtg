@@ -1,4 +1,3 @@
-use chrono::{DateTime, Local};
 use tdlib_rs::enums::NotificationSettingsScope;
 use tdlib_rs::types::{
     BasicGroup, BasicGroupFullInfo, Chat, CountryInfo, ScopeNotificationSettings, SecretChat,
@@ -8,6 +7,7 @@ use tdlib_rs::types::{
 use crate::domain::chat::ChatType;
 use crate::domain::chat_info_state::{Badge, ChatInfo, ChatInfoSubject};
 use crate::domain::chat_subtitle::ChatSubtitle;
+use crate::domain::local_time::LocalTime;
 use crate::telegram::tdlib_client::{TdLibClient, TdLibError};
 use crate::usecases::chat_subtitle::{ChatInfoQuery, ChatSubtitleError};
 
@@ -169,7 +169,7 @@ impl TdLibAuthBackend {
 
     /// Resolves full chat info for the chat info popup.
     pub fn resolve_chat_info(&self, query: &ChatInfoQuery) -> Result<ChatInfo, ChatSubtitleError> {
-        resolve_chat_info(&self.client, query, Local::now())
+        resolve_chat_info(&self.client, query, LocalTime::now())
     }
 }
 
@@ -179,7 +179,7 @@ impl TdLibAuthBackend {
 pub(super) fn resolve_chat_info(
     resolver: &dyn ChatInfoResolver,
     query: &ChatInfoQuery,
-    now: DateTime<Local>,
+    now: LocalTime,
 ) -> Result<ChatInfo, ChatSubtitleError> {
     let chat = subject_chat(resolver, &query.subject)?;
 

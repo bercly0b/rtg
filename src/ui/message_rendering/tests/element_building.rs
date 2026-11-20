@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::local_time::LocalTime;
 use crate::ui::message_rendering::{
     build_message_list_elements, message_index_to_element_index, MessageListElement,
 };
@@ -346,17 +347,46 @@ fn message_index_to_element_index_returns_none_for_empty_elements() {
 
 #[test]
 fn format_date_produces_correct_format() {
-    let date = chrono::NaiveDate::from_ymd_opt(2026, 2, 14).unwrap();
+    let date = LocalTime::from_local(2026, 2, 14, 0, 0).date();
 
     let formatted = crate::ui::message_rendering::text_utils::format_date(date);
 
     assert_eq!(formatted, "14 Feb 2026");
 }
 
+fn local_unix_ms(year: i16, month: i8, day: i8, hour: i8, minute: i8) -> i64 {
+    LocalTime::from_local(year, month, day, hour, minute).unix_millis()
+}
+
 #[test]
 fn format_time_produces_hh_mm() {
-    let time = crate::ui::message_rendering::text_utils::format_time(FEB_14_2026_10AM);
+    let time =
+        crate::ui::message_rendering::text_utils::format_time(local_unix_ms(2026, 2, 14, 9, 5));
 
-    assert_eq!(time.len(), 5);
-    assert!(time.contains(':'));
+    assert_eq!(time, "09:05");
+}
+
+#[test]
+fn format_time_out_of_range_is_question_marks() {
+    let time = crate::ui::message_rendering::text_utils::format_time(i64::MIN);
+
+    assert_eq!(time, "??:??");
+}
+
+#[test]
+fn date_separator_names_the_local_day_of_the_message() {
+    let messages = vec![msg(
+        1,
+        "Alice",
+        "Hi",
+        local_unix_ms(2026, 2, 4, 23, 30),
+        false,
+    )];
+
+    let elements = build_message_list_elements(&messages);
+
+    assert_eq!(
+        elements[0],
+        MessageListElement::DateSeparator("4 Feb 2026".to_owned())
+    );
 }

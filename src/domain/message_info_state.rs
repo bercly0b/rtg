@@ -1,4 +1,4 @@
-use chrono::{Local, TimeZone};
+use super::local_time::LocalTime;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReactionDetail {
@@ -54,10 +54,8 @@ impl MessageInfoPopupState {
 }
 
 pub fn format_unix_timestamp(ts: impl Into<i64>) -> String {
-    Local
-        .timestamp_opt(ts.into(), 0)
-        .single()
-        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+    LocalTime::from_unix_seconds(ts.into())
+        .map(|time| time.format("%Y-%m-%d %H:%M"))
         .unwrap_or_else(|| "unknown".to_owned())
 }
 
@@ -94,9 +92,14 @@ mod tests {
     }
 
     #[test]
-    fn format_unix_timestamp_produces_nonempty_string() {
-        let result = format_unix_timestamp(1700000000);
-        assert!(!result.is_empty());
-        assert!(result.contains("2023"));
+    fn format_unix_timestamp_writes_local_date_and_time() {
+        let ts = LocalTime::from_local(2023, 11, 4, 9, 7).unix_seconds();
+
+        assert_eq!(format_unix_timestamp(ts), "2023-11-04 09:07");
+    }
+
+    #[test]
+    fn format_unix_timestamp_out_of_range_is_unknown() {
+        assert_eq!(format_unix_timestamp(i64::MIN), "unknown");
     }
 }
