@@ -34,6 +34,10 @@ _Avoid_: layout, field set
 What Telegram reveals about a non-contact who wrote first: the country of their phone number, when they registered, and when they last changed their name or photo.
 _Avoid_: new-contact card, widget
 
+**Registration estimate**:
+RTG's own guess at when an account was registered, derived from its user ID; not data from Telegram, unlike the registration date in account info.
+_Avoid_: approximate date, guessed date, account age
+
 ## Chat lists
 
 **Chat list**:
