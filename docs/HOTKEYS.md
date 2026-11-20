@@ -14,9 +14,9 @@ Terminal input (crossterm)
         |
     handle_event()              src/usecases/shell/mod.rs
         |
-    Keymap::resolve()           src/domain/keymap.rs
+    Keymap::resolve()           src/domain/keymap/mod.rs
         |
-    Action enum                 src/domain/keymap.rs
+    Action enum                 src/domain/keymap/mod.rs
         |
     key_dispatch                src/usecases/shell/key_dispatch.rs
 ```
@@ -25,7 +25,7 @@ Terminal input (crossterm)
 
 | Module | Layer | Responsibility |
 |--------|-------|----------------|
-| `domain/keymap.rs` | domain | `Action` enum, `KeyPattern`, `Keymap` (resolve + defaults) |
+| `domain/keymap/mod.rs` | domain | `Action` enum, `KeyPattern`, `Keymap` (resolve + defaults) |
 | `usecases/shell/key_dispatch.rs` | usecases | Maps `Action` to orchestrator calls |
 | `usecases/shell/mod.rs` | usecases | Routes `InputKey` events through `Keymap::resolve()` |
 | `infra/config/app_config.rs` | infra | `KeysConfig` for user overrides from TOML |
@@ -83,7 +83,7 @@ the new key is resolved normally.
 
 ### Step 1: Add the action
 
-In `src/domain/keymap.rs`, add a variant to the `Action` enum:
+In `src/domain/keymap/mod.rs`, add a variant to the `Action` enum:
 
 ```rust
 pub enum Action {
@@ -101,7 +101,7 @@ Self::MyNewAction => "my_new_action",
 
 ### Step 2: Add the default binding
 
-In the `default_bindings()` function at the bottom of `keymap.rs`, add a
+In the `default_bindings()` function at the bottom of `keymap/mod.rs`, add a
 `KeyBinding`:
 
 ```rust
@@ -114,7 +114,7 @@ KeyBinding {
 
 ### Step 3: Put the action in a hotkey group
 
-The help popup lists hotkeys by hotkey group. In `keymap.rs`, add the action to
+The help popup lists hotkeys by hotkey group. In `keymap/mod.rs`, add the action to
 exactly one group in `HOTKEY_GROUPS`, at the place where its row should appear:
 the order of the table is the order of the help popup, whatever key the action
 is bound to.
@@ -140,7 +140,7 @@ Action::MyNewAction => {
 
 ### Step 5: Tests
 
-1. Add a unit test in `keymap.rs` to verify the binding resolves correctly.
+1. Add a unit test in `src/domain/keymap/tests/` to verify the binding resolves correctly.
 2. Add an integration test in `usecases/shell/tests/` to verify the action
    executes the expected side effects through the orchestrator.
 
