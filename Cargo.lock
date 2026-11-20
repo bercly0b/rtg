@@ -2328,6 +2328,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-words",
+ "strum",
  "tdlib-rs",
  "tempfile",
  "thiserror",
