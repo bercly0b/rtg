@@ -1,6 +1,6 @@
 mod adapter;
 mod app_config;
-mod built_in_credentials;
+mod built_in;
 mod file_config;
 mod loader;
 

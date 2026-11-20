@@ -78,7 +78,7 @@ impl TelegramConfig {
         if self.is_configured() {
             self
         } else {
-            super::built_in_credentials::built_in_credentials()
+            super::built_in::built_in_credentials()
         }
     }
 }

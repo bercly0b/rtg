@@ -22,7 +22,7 @@ mod view;
 
 pub(crate) use event_source::{
     ChannelBackgroundResultSource, ChannelChatUpdatesSignalSource, ChannelConnectivityStatusSource,
-    CrosstermEventSource, StubChatUpdatesSignalSource, StubConnectivityStatusSource,
+    CrosstermEventSource,
 };
 
 /// Returns the UI module name for smoke checks.

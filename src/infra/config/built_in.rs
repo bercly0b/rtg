@@ -55,7 +55,7 @@ mod tests {
     #[test]
     fn source_does_not_hold_the_pair_in_plain_text() {
         let credentials = built_in_credentials();
-        let source = include_str!("built_in_credentials.rs");
+        let source = include_str!("built_in.rs");
 
         assert!(!source.contains(&credentials.api_id.to_string()));
         assert!(!source.contains(&credentials.api_hash));

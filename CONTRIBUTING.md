@@ -66,7 +66,7 @@ environment variable or CLI flag for them.
 
 If you distribute a fork as a separate application, please register your own
 API credentials and replace the built-in pair in
-[`src/infra/config/built_in_credentials.rs`](src/infra/config/built_in_credentials.rs).
+[`src/infra/config/built_in.rs`](src/infra/config/built_in.rs).
 The reasoning is in
 [ADR 0003](docs/adr/0003-built-in-credentials-in-source.md).
 
