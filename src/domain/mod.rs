@@ -27,6 +27,7 @@ pub mod open_chat_state;
 pub mod open_defaults;
 pub mod open_handler;
 pub mod reaction_picker_state;
+pub mod registration_estimate;
 pub mod selectable_list;
 pub mod shell_state;
 pub mod status;
