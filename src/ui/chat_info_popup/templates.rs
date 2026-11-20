@@ -6,6 +6,7 @@ use crate::domain::chat_info_state::{
     GroupInfo, MemberRole, PhoneNumber, SecretChatInfo, UserInfo,
 };
 use crate::domain::message_info_state::format_unix_timestamp;
+use crate::domain::registration_estimate::registration_estimate;
 
 use super::format;
 
@@ -84,11 +85,18 @@ fn user_blocks(user: &UserInfo) -> Vec<InfoBlock> {
         Some(PhoneNumber::Hidden) => Value::Hidden,
         None => Value::Missing,
     };
+    let registered = user
+        .account_info
+        .as_ref()
+        .and_then(|info| info.registered)
+        .map(format::month_year)
+        .or_else(|| registration_estimate(user.user_id).map(format::registration_estimate));
     let mut blocks = vec![
         block(
             "Profile",
             vec![
                 row("User ID", user.user_id.to_string()),
+                row("Registered", registered),
                 row("Username", format::usernames(&user.usernames)),
                 row("Phone", phone),
                 row("Birthday", user.birthdate.map(format::birthdate)),
@@ -131,7 +139,6 @@ fn account_info_block(info: &AccountInfo) -> InfoBlock {
     block(
         "Account info",
         vec![
-            row("Registered", info.registered.map(format::month_year)),
             row("Phone from", info.phone_country.clone()),
             row("Name changed", info.name_changed.map(format_unix_timestamp)),
             row(

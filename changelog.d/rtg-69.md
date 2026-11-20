@@ -1,0 +1,1 @@
+- Show an approximate registration year (`~2019`) in the chat info popup for accounts whose exact registration date Telegram does not give; the `Registered` row moved to the Profile block.

@@ -93,6 +93,7 @@ fn user_template_shows_every_block_in_order() {
             String::new(),
             "Profile".into(),
             row("User ID", "123456789"),
+            row("Registered", "March 2021"),
             row("Username", "@alice, @alice_nft (collectible)"),
             row("Phone", "+79001234567"),
             row("Birthday", "12 March 1990"),
@@ -108,7 +109,6 @@ fn user_template_shows_every_block_in_order() {
             row("Note", "Met at RustConf"),
             String::new(),
             "Account info".into(),
-            row("Registered", "March 2021"),
             row("Phone from", "Russia"),
             row("Name changed", &format_unix_timestamp(NAME_CHANGED)),
             row("Photo changed", &format_unix_timestamp(PHOTO_CHANGED)),
@@ -139,6 +139,7 @@ fn user_rows_stay_with_placeholders_and_conditional_blocks_hide() {
             String::new(),
             "Profile".into(),
             row("User ID", "123456789"),
+            row("Registered", "~2015"),
             row("Username", "—"),
             row("Phone", "hidden"),
             row("Birthday", "—"),
@@ -260,4 +261,42 @@ fn unknown_phone_shows_a_dash_rather_than_hidden() {
     let state = loaded("deleted account", ChatInfoKind::User(Box::new(user)));
 
     assert!(rendered_lines(&state).contains(&row("Phone", "—")));
+}
+
+fn registered_row(user: UserInfo) -> String {
+    let state = loaded("online", ChatInfoKind::User(Box::new(user)));
+    rendered_lines(&state)
+        .into_iter()
+        .find(|line| line.trim_start().starts_with("Registered"))
+        .expect("the Registered row is always shown")
+}
+
+#[test]
+fn registered_row_shows_the_registration_estimate_without_a_date_from_telegram() {
+    for (user_id, expected) in [
+        (1_000_000_000, "~2019"),
+        (8_000_000_000, "~2024–2025"),
+        (9_500_000_000, "~2026 or later"),
+        (3_000_000_000, "—"),
+    ] {
+        let user = UserInfo {
+            user_id,
+            ..empty_user()
+        };
+        assert_eq!(registered_row(user), row("Registered", expected));
+    }
+}
+
+#[test]
+fn registered_row_falls_back_to_the_estimate_when_account_info_has_no_date() {
+    let user = UserInfo {
+        account_info: Some(AccountInfo {
+            registered: None,
+            phone_country: Some("Russia".into()),
+            name_changed: None,
+            photo_changed: None,
+        }),
+        ..empty_user()
+    };
+    assert_eq!(registered_row(user), row("Registered", "~2015"));
 }

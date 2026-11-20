@@ -6,6 +6,7 @@ use crate::domain::chat_info_state::{
 };
 use crate::domain::local_time::LocalTime;
 use crate::domain::message_info_state::format_unix_timestamp;
+use crate::domain::registration_estimate::RegistrationEstimate;
 
 const MINUTE: i32 = 60;
 const HOUR: i32 = 60 * MINUTE;
@@ -89,6 +90,14 @@ pub(super) fn month_year(date: MonthYear) -> String {
     match date.month {
         Some(month) => format!("{} {}", month_name(month), date.year),
         None => date.year.to_string(),
+    }
+}
+
+pub(super) fn registration_estimate(estimate: RegistrationEstimate) -> String {
+    match estimate {
+        RegistrationEstimate::Year(year) => format!("~{year}"),
+        RegistrationEstimate::Years { from, to } => format!("~{from}–{to}"),
+        RegistrationEstimate::YearOrLater(year) => format!("~{year} or later"),
     }
 }
 

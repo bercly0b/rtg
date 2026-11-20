@@ -184,6 +184,7 @@ Dates and times use the format of the message info popup (`2026-10-01 14:20`).
 
  Profile
    User ID       123456789
+   Registered    ~2015
    Username      @alice, @alice_dev, @alice (collectible)
    Phone         hidden
    Birthday      12 March 1990
@@ -199,7 +200,6 @@ Dates and times use the format of the message info popup (`2026-10-01 14:20`).
    Note          —
 
  Account info                ← only while TDLib has it
-   Registered    March 2021
    Phone from    Russia
    Name changed  2026-10-01 14:20
    Photo changed 2026-09-12 09:03
@@ -219,6 +219,7 @@ Dates and times use the format of the message info popup (`2026-10-01 14:20`).
 |-----|--------|--------|
 | Status line | `user.status` | As today. A status of `recently`, `within a week` or `within a month` with `by_my_privacy_settings` gets `(you hide yours)`. A deleted account shows `deleted account` |
 | User ID | `user.id` | |
+| Registered | `account_info.registration_month`, `registration_year`; otherwise the [registration estimate](#registration-estimate) from `user.id` | `March 2021` from account info; `~2015` for an estimate; `—` when there is neither |
 | Username | `user.usernames.active_usernames` | All of them; those in `collectible_usernames` get `(collectible)` |
 | Phone | `user.phone_number` | With a leading `+`; `hidden` when empty |
 | Birthday | `userFullInfo.birthdate` | Without the year when it is `0` |
@@ -230,9 +231,36 @@ Dates and times use the format of the message info popup (`2026-10-01 14:20`).
 | Messages | `userFullInfo.outgoing_paid_message_star_count` | `free` or `paid, N stars each` |
 | Blocked | `userFullInfo.block_list` | `no`, `yes`, `stories only` |
 | Note | `userFullInfo.note` | The current user's own note about the contact |
-| Account info rows | `chat.action_bar` = `chatActionBarReportAddBlock.account_info` | `Registered` from month and year; `Phone from` is the country name from `getCountries`, its code if that fails; name and photo change dates. `—` for any `0` or empty field |
+| Account info rows | `chat.action_bar` = `chatActionBarReportAddBlock.account_info` | `Phone from` is the country name from `getCountries`, its code if that fails; name and photo change dates. `—` for any `0` or empty field |
 | Business rows | `userFullInfo.business_info` | Shown when it has a location or opening hours. `Hours` from `opening_hours` with `next_open_in` / `next_close_in` |
 | Secret chat rows | `getSecretChat` | `State`: `pending`, `ready`, `closed`. `Key`: the first 32 bytes of `key_hash` in hex |
+
+### Registration estimate
+
+Telegram gives the registration date only in account info, so for most
+accounts the `Registered` row shows a registration estimate: RTG's guess from
+the user ID. The row is in the User template only. Whether the table holds
+for bots is not confirmed, so the Bot template has no such row.
+
+| Estimate | Shown as |
+|----------|----------|
+| The ID belongs to one year | `~2019` |
+| The ID's block was open across a year boundary | `~2024–2025` |
+| The ID is in the block that was still open when the table was updated, or above it | `~2026 or later` |
+| The ID is in the range Telegram never used (2³¹ to 5·10⁹), or not positive | `—` |
+
+Account info with a registration year of `0` gets the estimate too.
+
+- **Below 7·10⁹** (registered before February 2024) IDs grew with time, so
+  the table keeps the first ID of each year and the estimate is one year.
+- **From 7·10⁹** Telegram hands out IDs at random inside a block that stays
+  open for a few months. The ID says only when its block was open.
+- **The table** is a constant in `src/domain/registration_estimate.rs`,
+  derived from the account-age tables of
+  [LyAdminBot](https://github.com/LyoSU/LyAdminBot) (MIT, copyright (c) 2019
+  Yuri Ly; `packages/adapters/src/account-age.ts` as of 2026-08-05). It is
+  updated by hand in the sources, never downloaded, and not calibrated
+  against account info, which RTG does not store.
 
 ### Bot
 
@@ -375,5 +403,4 @@ client does not have.
 Each of these is a separate task:
 
 - marking strangers and scam accounts in the chat list;
-- scrolling in the chat info popup;
-- an approximate registration date estimated from the user ID (ROZ-190).
+- scrolling in the chat info popup.
