@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 const SEQUENCE_TIMEOUT: Duration = Duration::from_secs(1);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::EnumIter)]
 pub enum Action {
     // ChatList
     SelectNextChat,

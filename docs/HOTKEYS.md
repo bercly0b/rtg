@@ -99,6 +99,9 @@ to include the new variant with a snake_case name:
 Self::MyNewAction => "my_new_action",
 ```
 
+`from_name()` ends with a catch-all arm, so the compiler does not notice a
+missing name; the `every_action_is_found_by_its_config_name` test does.
+
 ### Step 2: Add the default binding
 
 In the `default_bindings()` function at the bottom of `keymap/mod.rs`, add a
@@ -123,8 +126,8 @@ is bound to.
 ("Message", &[/* ...existing actions... */ Action::MyNewAction]),
 ```
 
-A bound action that is in no group, or in two, fails the
-`every_bound_action_belongs_to_exactly_one_hotkey_group` test.
+An action that is in no group, or in two, fails the
+`every_action_belongs_to_exactly_one_hotkey_group` test.
 
 ### Step 4: Implement the action
 

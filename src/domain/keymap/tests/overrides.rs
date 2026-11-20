@@ -87,20 +87,13 @@ fn display_label_for_patterns() {
 }
 
 #[test]
-fn action_round_trip_name() {
-    let actions = [
-        Action::SelectNextChat,
-        Action::SelectFirstChat,
-        Action::ShowChatFolders,
-        Action::ToggleChatArchive,
-        Action::DeleteMessage,
-        Action::Quit,
-        Action::ShowHelp,
-        Action::InstallUpdate,
-    ];
-    for action in actions {
-        let name = action.display_name();
-        assert_eq!(Action::from_name(name), Some(action));
+fn every_action_is_found_by_its_config_name() {
+    for action in Action::iter() {
+        assert_eq!(
+            Action::from_name(action.display_name()),
+            Some(action),
+            "{action:?}"
+        );
     }
 }
 

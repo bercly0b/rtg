@@ -137,13 +137,13 @@ fn rebinding_an_action_changes_its_key_label_and_keeps_its_row() {
 }
 
 #[test]
-fn every_bound_action_belongs_to_exactly_one_hotkey_group() {
-    for binding in default_bindings() {
+fn every_action_belongs_to_exactly_one_hotkey_group() {
+    for action in Action::iter() {
         let memberships = HOTKEY_GROUPS
             .iter()
             .flat_map(|(_, actions)| actions.iter())
-            .filter(|action| **action == binding.action)
+            .filter(|grouped| **grouped == action)
             .count();
-        assert_eq!(memberships, 1, "{:?}", binding.action);
+        assert_eq!(memberships, 1, "{action:?}");
     }
 }
