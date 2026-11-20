@@ -73,7 +73,7 @@ fn chat_outside_folders_has_none() {
 fn muted_follows_the_chats_own_setting() {
     let cases = [
         (0, MuteState::Unmuted),
-        (3600, MuteState::Until(now().timestamp() + 3600)),
+        (3600, MuteState::Until(now().unix_seconds() + 3600)),
         (i32::MAX - 1_800_000_000, MuteState::Forever),
     ];
     for (mute_for, expected) in cases {

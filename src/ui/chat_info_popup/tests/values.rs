@@ -1,7 +1,8 @@
 //! How values are written.
 
 use super::*;
-use crate::domain::chat_info_state::{BusinessHours, MemberRole};
+use crate::domain::chat_info_state::{BusinessHours, MemberRole, MonthYear};
+use crate::domain::local_time::LocalTime;
 use crate::domain::message_info_state::format_unix_timestamp;
 
 #[test]
@@ -101,4 +102,47 @@ fn contact_status_names_the_closest_relation() {
 #[test]
 fn paid_messages_count_stars() {
     assert_eq!(format::paid_messages(1), "paid, 1 star each");
+}
+
+#[test]
+fn date_is_written_as_the_local_day() {
+    let joined = LocalTime::from_local(2026, 11, 6, 12, 0).unix_seconds();
+
+    assert_eq!(format::date(joined as i32), "2026-11-06");
+}
+
+#[test]
+fn months_are_written_by_name() {
+    let names = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    for (month, name) in (1..).zip(names) {
+        let date = MonthYear {
+            month: Some(month),
+            year: 2021,
+        };
+        assert_eq!(format::month_year(date), format!("{name} 2021"));
+    }
+}
+
+#[test]
+fn unknown_month_is_a_question_mark() {
+    for month in [0, 13] {
+        let date = MonthYear {
+            month: Some(month),
+            year: 2021,
+        };
+        assert_eq!(format::month_year(date), "? 2021");
+    }
 }

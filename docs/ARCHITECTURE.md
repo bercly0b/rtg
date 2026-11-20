@@ -49,6 +49,7 @@ The map of `src/` — layers, dependencies, and where new code belongs.
 |------|----------|
 | `domain-no-outer-layers` | `domain/` does not import `usecases`, `telegram`, `ui`, `infra`, `app` or `cli` |
 | `tdlib-only-in-telegram` | `tdlib_rs` is used only in `telegram/` |
+| `jiff-only-in-local-time` | `jiff` is used only in `domain/local_time.rs` |
 | `tui-only-in-ui` | `ratatui` and `crossterm` are used only in `ui/` |
 
 Each rule has valid and invalid examples in `ast-grep/rule-tests/`. When a rule

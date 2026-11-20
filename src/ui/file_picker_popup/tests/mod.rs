@@ -1,23 +1,18 @@
-use chrono::NaiveDate;
-
 use super::*;
 
-fn at(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> NaiveDateTime {
-    NaiveDate::from_ymd_opt(year, month, day)
-        .unwrap()
-        .and_hms_opt(hour, minute, 0)
-        .unwrap()
+fn at(year: i16, month: i8, day: i8, hour: i8, minute: i8) -> LocalTime {
+    LocalTime::from_local(year, month, day, hour, minute)
 }
 
-fn now() -> NaiveDateTime {
+fn now() -> LocalTime {
     at(2026, 11, 16, 18, 0)
 }
 
-fn entry(path: &str, size: u64, modified: NaiveDateTime) -> FileEntry {
+fn entry(path: &str, size: u64, modified: LocalTime) -> FileEntry {
     FileEntry {
         path: path.to_owned(),
         size,
-        modified_unix_s: Local.from_local_datetime(&modified).unwrap().timestamp(),
+        modified_unix_s: modified.unix_seconds(),
     }
 }
 

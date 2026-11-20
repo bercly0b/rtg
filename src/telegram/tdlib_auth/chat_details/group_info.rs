@@ -1,6 +1,5 @@
 //! The Group and Channel info templates.
 
-use chrono::{DateTime, Local};
 use tdlib_rs::enums::{ChatMemberStatus, ChatType as TdChatType};
 use tdlib_rs::types::{Chat, Supergroup};
 
@@ -9,6 +8,7 @@ use crate::domain::chat_info_state::{
     ChannelInfo, ChatInfoKind, GroupInfo, GroupKind, Joining, MemberRole,
 };
 use crate::domain::chat_subtitle::ChatSubtitle;
+use crate::domain::local_time::LocalTime;
 use crate::usecases::chat_subtitle::ChatSubtitleError;
 
 use super::{
@@ -19,7 +19,7 @@ use super::{
 pub(super) fn resolve_group(
     resolver: &dyn ChatInfoResolver,
     chat: &Chat,
-    now: DateTime<Local>,
+    now: LocalTime,
 ) -> Result<(String, ChatInfoKind), ChatSubtitleError> {
     match &chat.r#type {
         TdChatType::BasicGroup(bg) => resolve_basic_group(resolver, chat, bg.basic_group_id, now),
@@ -31,7 +31,7 @@ pub(super) fn resolve_group(
 pub(super) fn resolve_channel(
     resolver: &dyn ChatInfoResolver,
     chat: &Chat,
-    now: DateTime<Local>,
+    now: LocalTime,
 ) -> Result<(String, ChatInfoKind), ChatSubtitleError> {
     let TdChatType::Supergroup(sg) = &chat.r#type else {
         return Err(unexpected_chat_type(ChatType::Channel, &chat.r#type));
@@ -63,7 +63,7 @@ fn resolve_basic_group(
     resolver: &dyn ChatInfoResolver,
     chat: &Chat,
     basic_group_id: i64,
-    now: DateTime<Local>,
+    now: LocalTime,
 ) -> Result<(String, ChatInfoKind), ChatSubtitleError> {
     let full_info = resolver
         .get_basic_group_full_info(basic_group_id)
@@ -106,7 +106,7 @@ fn resolve_supergroup(
     resolver: &dyn ChatInfoResolver,
     chat: &Chat,
     supergroup_id: i64,
-    now: DateTime<Local>,
+    now: LocalTime,
 ) -> Result<(String, ChatInfoKind), ChatSubtitleError> {
     let full_info = resolver
         .get_supergroup_full_info(supergroup_id)

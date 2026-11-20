@@ -400,7 +400,7 @@ impl OpenChatState {
         reply_to: Option<ReplyInfo>,
     ) -> i64 {
         self.last_pending_id -= 1;
-        let now_ms = chrono::Local::now().timestamp_millis();
+        let now_ms = super::local_time::LocalTime::now().unix_millis();
         let pending = Message {
             id: self.last_pending_id,
             sender_name: String::new(),

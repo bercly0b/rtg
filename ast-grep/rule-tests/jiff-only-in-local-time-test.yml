@@ -1,0 +1,10 @@
+id: jiff-only-in-local-time
+valid:
+  - use crate::domain::local_time::LocalTime;
+  - 'const NOISY: &[&str] = &["jiff", "tokio"];'
+  - "// jiff reads the system time zone database"
+invalid:
+  - use jiff::Timestamp;
+  - use jiff::{civil, tz::TimeZone};
+  - "fn f() { jiff::Timestamp::now(); }"
+  - "fn f(_: jiff::civil::Date) {}"

@@ -17,6 +17,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use crate::domain::local_time::LocalDate;
 use crate::domain::message::{
     ForwardInfo, Message, MessageMedia, MessageStatus, ReplyInfo, TextLink,
 };
@@ -63,7 +64,7 @@ pub enum MessageListElement {
 /// Groups consecutive messages from the same sender and inserts date separators.
 pub fn build_message_list_elements(messages: &[Message]) -> Vec<MessageListElement> {
     let mut elements = Vec::new();
-    let mut prev_date: Option<chrono::NaiveDate> = None;
+    let mut prev_date: Option<LocalDate> = None;
     let mut prev_sender: Option<&str> = None;
     let mut prev_time: Option<String> = None;
 

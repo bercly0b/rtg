@@ -6,7 +6,7 @@
 //! - Groups: "N members"
 //! - Channels: "N subscribers"
 
-use chrono::{DateTime, Local};
+use super::local_time::LocalTime;
 
 /// Subtitle displayed in the chat header next to the title.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -39,7 +39,7 @@ impl ChatSubtitle {
     ///
     /// Produces exact output including dynamic timestamps
     /// like "last seen today at 14:03".
-    pub fn format(&self, now: DateTime<Local>) -> String {
+    pub fn format(&self, now: LocalTime) -> String {
         match self {
             Self::None => String::new(),
             Self::Online => "online".to_owned(),
@@ -71,18 +71,17 @@ fn format_subscribers(n: i32) -> String {
     }
 }
 
-fn format_last_seen(unix_ts: i32, now: DateTime<Local>) -> String {
-    let Some(seen_utc) = DateTime::from_timestamp(unix_ts as i64, 0) else {
+fn format_last_seen(unix_ts: i32, now: LocalTime) -> String {
+    let Some(seen) = LocalTime::from_unix_seconds(unix_ts as i64) else {
         return "last seen a long time ago".to_owned();
     };
-    let seen = seen_utc.with_timezone(&Local);
-    let today = now.date_naive();
-    let seen_date = seen.date_naive();
-    let time_str = seen.format("%H:%M").to_string();
+    let today = now.date();
+    let seen_date = seen.date();
+    let time_str = seen.format("%H:%M");
 
     if seen_date == today {
         format!("last seen today at {}", time_str)
-    } else if seen_date == today.pred_opt().unwrap_or(today) {
+    } else if seen_date == today.previous_day().unwrap_or(today) {
         format!("last seen yesterday at {}", time_str)
     } else {
         format!("last seen {}", seen.format("%d.%m.%Y"))
@@ -92,11 +91,9 @@ fn format_last_seen(unix_ts: i32, now: DateTime<Local>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
 
-    fn fixed_now() -> DateTime<Local> {
-        // 2026-03-22 15:30:00 local
-        Local.with_ymd_and_hms(2026, 3, 22, 15, 30, 0).unwrap()
+    fn fixed_now() -> LocalTime {
+        LocalTime::from_local(2026, 3, 22, 15, 30)
     }
 
     #[test]
@@ -172,35 +169,37 @@ mod tests {
         );
     }
 
+    fn local_unix(year: i16, month: i8, day: i8, hour: i8, minute: i8) -> i32 {
+        LocalTime::from_local(year, month, day, hour, minute).unix_seconds() as i32
+    }
+
     #[test]
     fn last_seen_today() {
-        let now = fixed_now();
-        // 2 hours ago in UTC
-        let ts = (now.timestamp() - 7200) as i32;
-        let result = ChatSubtitle::LastSeen(ts).format(now);
-        assert!(result.starts_with("last seen today at"), "got: {result}");
+        let seen = local_unix(2026, 3, 22, 9, 5);
+
+        assert_eq!(
+            ChatSubtitle::LastSeen(seen).format(fixed_now()),
+            "last seen today at 09:05"
+        );
     }
 
     #[test]
     fn last_seen_yesterday() {
-        let now = fixed_now();
-        // 24 + 2 hours ago
-        let ts = (now.timestamp() - 93600) as i32;
-        let result = ChatSubtitle::LastSeen(ts).format(now);
-        assert!(
-            result.starts_with("last seen yesterday at"),
-            "got: {result}"
+        let seen = local_unix(2026, 3, 21, 23, 59);
+
+        assert_eq!(
+            ChatSubtitle::LastSeen(seen).format(fixed_now()),
+            "last seen yesterday at 23:59"
         );
     }
 
     #[test]
     fn last_seen_old_date() {
-        let now = fixed_now();
-        // A week ago
-        let ts = (now.timestamp() - 7 * 86400) as i32;
-        let result = ChatSubtitle::LastSeen(ts).format(now);
-        assert!(result.starts_with("last seen "), "got: {result}");
-        assert!(!result.contains("today"), "got: {result}");
-        assert!(!result.contains("yesterday"), "got: {result}");
+        let seen = local_unix(2026, 3, 5, 12, 0);
+
+        assert_eq!(
+            ChatSubtitle::LastSeen(seen).format(fixed_now()),
+            "last seen 05.03.2026"
+        );
     }
 }

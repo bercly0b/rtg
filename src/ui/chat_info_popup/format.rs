@@ -1,11 +1,10 @@
 //! How the chat info popup writes values.
 
-use chrono::{Local, Month, TimeZone};
-
 use crate::domain::chat_info_state::{
     Badge, Birthdate, BlockState, BotGroupAccess, BusinessHours, ContactStatus, GroupKind, Joining,
     MemberRole, MonthYear, MuteState, SecretChatState, Username,
 };
+use crate::domain::local_time::LocalTime;
 use crate::domain::message_info_state::format_unix_timestamp;
 
 const MINUTE: i32 = 60;
@@ -25,6 +24,21 @@ const UNITS: [(i32, &str, &str); 7] = [
     (HOUR, "h", "h"),
     (MINUTE, "min", "min"),
     (1, "s", "s"),
+];
+
+const MONTH_NAMES: [&str; 12] = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
 ];
 
 pub(super) fn count(n: impl Into<i64>, singular: &str, plural: &str) -> String {
@@ -79,17 +93,17 @@ pub(super) fn month_year(date: MonthYear) -> String {
 }
 
 fn month_name(month: u32) -> &'static str {
-    u8::try_from(month)
+    usize::try_from(month)
         .ok()
-        .and_then(|month| Month::try_from(month).ok())
-        .map_or("?", |month| month.name())
+        .and_then(|month| month.checked_sub(1))
+        .and_then(|index| MONTH_NAMES.get(index))
+        .copied()
+        .unwrap_or("?")
 }
 
 pub(super) fn date(unix_time: i32) -> String {
-    Local
-        .timestamp_opt(i64::from(unix_time), 0)
-        .single()
-        .map(|dt| dt.format("%Y-%m-%d").to_string())
+    LocalTime::from_unix_seconds(i64::from(unix_time))
+        .map(|time| time.format("%Y-%m-%d"))
         .unwrap_or_else(|| "unknown".to_owned())
 }
 

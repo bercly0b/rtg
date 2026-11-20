@@ -4,11 +4,12 @@
 
 use std::process::{Command, Stdio};
 
+use crate::domain::local_time::LocalTime;
 pub use crate::domain::voice_defaults::DEFAULT_RECORD_CMD;
 
 /// Generates a unique file path for a voice recording in the temp directory.
 pub fn generate_voice_file_path() -> String {
-    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let timestamp = LocalTime::now().format("%Y%m%d_%H%M%S");
     format!("{}/voice-{}.oga", std::env::temp_dir().display(), timestamp)
 }
 

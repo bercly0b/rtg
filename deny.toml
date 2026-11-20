@@ -9,7 +9,6 @@
 [advisories]
 ignore = [
     { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained, not vulnerable; pulled in by ratatui 0.29" },
-    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained, not vulnerable; migration tracked in RTG-118" },
     # zip 8 and its zstd 0.13 come only from tdlib-rs (1.4.0 still requires
     # zip 8), which uses them in its build script to unpack the TDLib archive
     # it downloads from its own GitHub releases. It walks the entries itself

@@ -1,0 +1,15 @@
+id: jiff-only-in-local-time
+language: rust
+severity: error
+message: jiff is used outside domain/local_time.rs
+note: |
+  The date-time crate stays behind domain/local_time.rs (docs/ARCHITECTURE.md).
+  Use LocalTime and LocalDate from there, and extend them when something is
+  missing.
+files:
+  - src/**/*.rs
+ignores:
+  - src/domain/local_time.rs
+rule:
+  kind: identifier
+  regex: ^jiff$
