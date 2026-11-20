@@ -34,7 +34,7 @@ use RegistrationEstimate::{Year, YearOrLater, Years};
 /// Updated by hand. When a new block opens: turn the `YearOrLater` entry
 /// into the years its block was open and add the new block as `YearOrLater`
 /// of its opening year.
-const RANGES: [(i64, Option<RegistrationEstimate>); 19] = [
+const RANGES: &[(i64, Option<RegistrationEstimate>)] = &[
     (1, Some(Year(2013))),
     (7_800_236, Some(Year(2014))),
     (82_410_182, Some(Year(2015))),
@@ -71,8 +71,8 @@ const RANGES: [(i64, Option<RegistrationEstimate>); 19] = [
 ];
 
 pub fn registration_estimate(user_id: i64) -> Option<RegistrationEstimate> {
-    let range = RANGES.partition_point(|&(first_id, _)| first_id <= user_id);
-    RANGES.get(range.checked_sub(1)?)?.1
+    let ranges_started = RANGES.partition_point(|&(first_id, _)| first_id <= user_id);
+    RANGES.get(ranges_started.checked_sub(1)?)?.1
 }
 
 #[cfg(test)]
