@@ -76,7 +76,10 @@ pub(super) fn handle_backend_error(
         }
         AuthBackendError::ApiCredentialsRejected => {
             terminal.print_line(
-                "AUTH_API_CREDENTIALS_REJECTED: Telegram rejected the API credentials RTG signs in with. Set your own api_id and api_hash under [telegram] in config.toml; get them at https://my.telegram.org/apps."
+                "AUTH_API_CREDENTIALS_REJECTED: Telegram rejected the API credentials RTG signs in with."
+            )?;
+            terminal.print_line(
+                "If config.toml sets no api_id and api_hash, the built-in credentials are unavailable: get your own at https://my.telegram.org/apps and set both under [telegram]. If it does, check them."
             )?;
             Ok(false)
         }

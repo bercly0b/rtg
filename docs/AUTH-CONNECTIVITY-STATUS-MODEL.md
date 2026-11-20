@@ -30,7 +30,7 @@ Do not redefine equivalent status labels elsewhere.
   Recoverable auth failure (for example temporary backend issue, rate limit, timeout). Retry can be attempted.
 
 - `AUTH_FATAL_FAILURE`  
-  Non-recoverable auth failure for current attempt/config (for example invalid app credentials). Requires configuration or user-action change before retry.
+  Non-recoverable auth failure for current attempt/config (for example API credentials that Telegram rejected). Requires configuration or user-action change before retry.
 
 ## Connectivity status vocabulary
 

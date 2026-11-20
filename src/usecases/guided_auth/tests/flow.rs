@@ -209,6 +209,7 @@ fn rejected_api_credentials_fail_fast_and_point_to_own_credentials() {
 
     let joined = terminal.output.join("\n");
     assert!(joined.contains("AUTH_API_CREDENTIALS_REJECTED"));
+    assert!(joined.contains("built-in credentials are unavailable"));
     assert!(joined.contains("config.toml"));
     assert!(joined.contains("https://my.telegram.org/apps"));
     assert!(!joined.contains("Attempts left:"));
