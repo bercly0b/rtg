@@ -108,6 +108,20 @@ _Avoid_: file selector, file browser, attach dialog
 The external command that tells the file picker which local files exist; it only names files, RTG finds out the rest about them itself.
 _Avoid_: file lister, engine, finder
 
+## Hotkeys
+
+**Hotkey**:
+A key or a short sequence of keys that triggers one action in the panel that has focus.
+_Avoid_: keybinding, shortcut, key mapping
+
+**Help popup**:
+The overlay that lists the hotkeys available in the panel that has focus.
+_Avoid_: help menu, help modal, help screen
+
+**Hotkey group**:
+A named set of hotkeys that serve the same purpose, shown together under one heading in the help popup; every hotkey belongs to exactly one group.
+_Avoid_: section, category, keybinding group
+
 ## Telegram API access
 
 **API credentials**:
