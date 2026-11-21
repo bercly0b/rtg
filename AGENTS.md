@@ -80,7 +80,6 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
    - Hotkeys: adding, changing or removing a default hotkey updates the Hotkeys tables. The forum topic list keys and the list refresh keys (`R`) stay out of the tables.
    - Configuration: every new or changed option is described in `config.example.toml`. The README changes only when a whole config section appears, disappears or changes its purpose (a row of the sections table).
    - Features: a capability that no existing Features item covers gets a new item; an improvement to a listed capability changes nothing. When it is unclear which one a change is, ask the user.
-   - Installation: a change to the install channels or system requirements updates the Installation section.
 
 ## Rust engineering style
 
