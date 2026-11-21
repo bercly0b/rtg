@@ -14,7 +14,7 @@ run = "cargo test"
 run = "cargo fmt --check"
 
 [tasks.clippy]
-run = "cargo clippy -- -D warnings"
+run = "cargo clippy --all-targets -- -D warnings"
 
 [tasks.check]
 run = "cargo check"

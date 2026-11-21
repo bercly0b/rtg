@@ -36,7 +36,6 @@ pub(super) fn inject_chat_list(orchestrator: &mut TestOrchestrator, chats: Vec<C
 }
 
 /// Helper: inject forum topic list as if a background load completed.
-#[allow(dead_code)]
 pub(super) fn inject_forum_topics(
     orchestrator: &mut TestOrchestrator,
     chat_id: i64,
@@ -53,7 +52,6 @@ pub(super) fn inject_forum_topics(
 }
 
 /// Helper: inject a failed forum topics load (transient error).
-#[allow(dead_code)]
 pub(super) fn inject_forum_topics_error(orchestrator: &mut TestOrchestrator, chat_id: i64) {
     orchestrator
         .handle_event(AppEvent::BackgroundTasksCompleted(vec![

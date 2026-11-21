@@ -263,7 +263,7 @@ fn message_sent_error_restores_text_in_input() {
         .unwrap();
 
     for c in "Test message".chars() {
-        o.handle_event(AppEvent::InputKey(KeyInput::new(&c.to_string(), false)))
+        o.handle_event(AppEvent::InputKey(KeyInput::new(c.to_string(), false)))
             .unwrap();
     }
 

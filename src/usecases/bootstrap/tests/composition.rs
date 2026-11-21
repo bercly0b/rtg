@@ -1,6 +1,6 @@
 use crate::{
     domain::events::ConnectivityStatus,
-    infra::config::{AppConfig, TelegramConfig},
+    infra::config::AppConfig,
     telegram::TelegramAdapter,
     usecases::{
         context::AppContext,
@@ -29,12 +29,7 @@ fn composes_shell_dependencies_in_bootstrap_layer() {
 
 #[test]
 fn compose_shell_injects_channel_backed_source_when_telegram_monitor_starts() {
-    let mut config = AppConfig::default();
-    config.telegram = TelegramConfig {
-        api_id: 100,
-        api_hash: "configured".to_owned(),
-    };
-    let context = AppContext::new(config, TelegramAdapter::stub());
+    let context = AppContext::new(AppConfig::default(), TelegramAdapter::stub());
 
     let factory = StubConnectivityMonitorFactory {
         should_fail: false,
@@ -62,12 +57,7 @@ fn compose_shell_injects_channel_backed_source_when_telegram_monitor_starts() {
 
 #[test]
 fn compose_shell_falls_back_when_telegram_monitor_start_fails() {
-    let mut config = AppConfig::default();
-    config.telegram = TelegramConfig {
-        api_id: 100,
-        api_hash: "configured".to_owned(),
-    };
-    let context = AppContext::new(config, TelegramAdapter::stub());
+    let context = AppContext::new(AppConfig::default(), TelegramAdapter::stub());
 
     let factory = StubConnectivityMonitorFactory {
         should_fail: true,
@@ -85,12 +75,7 @@ fn compose_shell_falls_back_when_telegram_monitor_start_fails() {
 
 #[test]
 fn compose_shell_keeps_chat_updates_when_only_connectivity_monitor_fails() {
-    let mut config = AppConfig::default();
-    config.telegram = TelegramConfig {
-        api_id: 100,
-        api_hash: "configured".to_owned(),
-    };
-    let context = AppContext::new(config, TelegramAdapter::stub());
+    let context = AppContext::new(AppConfig::default(), TelegramAdapter::stub());
 
     let factory = StubConnectivityMonitorFactory {
         should_fail: true,
