@@ -26,6 +26,8 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
 
 3. Surgical changes:
    - touch only what the task requires; clean up only your own mess;
+   - code and tests that your change leaves reachable only from tests are your own mess:
+     delete them in the same pull request;
    - do not "improve" neighbouring code, comments, or formatting in passing;
    - do not refactor code that is not broken;
    - match the existing style even if you would write it differently;

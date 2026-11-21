@@ -5,7 +5,7 @@ ast-grep = "0.51.0"
 cargo-deny = "0.20.2"
 cargo-dist = "0.34.0"
 
-# ── Quality gate (mirrors CLAUDE.md rules) ──────────────────────────────────
+# ── Quality gate (mirrors AGENTS.md rules) ──────────────────────────────────
 
 [tasks.test]
 run = "cargo test"

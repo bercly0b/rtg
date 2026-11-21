@@ -115,7 +115,7 @@ that state. It blocks for at most `CLOSE_TIMEOUT` and is a no-op on repeated cal
 
 Module decomposition, file layout, and test layout — see
 [`MODULE-DECOMPOSITION.md`](MODULE-DECOMPOSITION.md). Engineering style and
-workflow rules live in [`CLAUDE.md`](../CLAUDE.md).
+workflow rules live in [`AGENTS.md`](../AGENTS.md).
 
 - **Trait ports** live in `usecases/`; implementations in `telegram/` or `infra/`.
 - **Stubs for testing**: every trait used for DI should have a stub/mock (see `infra/stubs.rs`).
