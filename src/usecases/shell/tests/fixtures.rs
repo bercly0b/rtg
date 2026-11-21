@@ -66,7 +66,6 @@ pub(super) fn message(id: i64, text: &str) -> Message {
 }
 
 /// Helper: build a ChatSummary that's a forum supergroup.
-#[allow(dead_code)]
 pub(super) fn forum_chat(chat_id: i64, title: &str) -> ChatSummary {
     let mut c = chat(chat_id, title);
     c.is_forum = true;
@@ -75,7 +74,6 @@ pub(super) fn forum_chat(chat_id: i64, title: &str) -> ChatSummary {
 }
 
 /// Helper: build a ChatSummary that's a broadcast channel.
-#[allow(dead_code)]
 pub(super) fn channel_chat(chat_id: i64, title: &str) -> ChatSummary {
     let mut c = chat(chat_id, title);
     c.chat_type = crate::domain::chat::ChatType::Channel;
@@ -83,7 +81,6 @@ pub(super) fn channel_chat(chat_id: i64, title: &str) -> ChatSummary {
 }
 
 /// Helper: build a ForumTopicSummary for tests.
-#[allow(dead_code)]
 pub(super) fn topic(
     chat_id: i64,
     topic_id: i32,

@@ -76,13 +76,10 @@ fn rejects_partially_configured_telegram_config() {
 
 #[test]
 fn maps_transient_bootstrap_error_to_safe_validation_error() {
-    let mut config = AppConfig::default();
-    config.telegram = TelegramConfig {
-        api_id: 777,
-        api_hash: "hash".to_owned(),
-    };
-
-    let config_adapter = FixedConfigAdapter::new(config);
+    let config_adapter = FixedConfigAdapter::new(AppConfig {
+        telegram: configured_telegram(),
+        ..AppConfig::default()
+    });
     let telegram_factory = StubTelegramAdapterFactory {
         result: Err(AuthBackendError::Transient {
             code: "AUTH_BACKEND_UNAVAILABLE",
@@ -101,13 +98,10 @@ fn maps_transient_bootstrap_error_to_safe_validation_error() {
 
 #[test]
 fn maps_non_transient_bootstrap_errors_to_stable_codes() {
-    let mut config = AppConfig::default();
-    config.telegram = TelegramConfig {
-        api_id: 777,
-        api_hash: "hash".to_owned(),
-    };
-
-    let config_adapter = FixedConfigAdapter::new(config);
+    let config_adapter = FixedConfigAdapter::new(AppConfig {
+        telegram: configured_telegram(),
+        ..AppConfig::default()
+    });
     let telegram_factory = StubTelegramAdapterFactory {
         result: Err(AuthBackendError::InvalidPhone),
     };

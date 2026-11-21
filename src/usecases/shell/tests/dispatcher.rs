@@ -102,32 +102,22 @@ impl RecordingDispatcher {
             .map(|(chat_id, _, from)| (*chat_id, *from))
     }
 
-    #[allow(dead_code)]
-    pub(super) fn last_older_messages_full(&self) -> Option<(i64, Option<i32>, i64)> {
-        self.dispatched_older_messages.borrow().last().copied()
-    }
-
-    #[allow(dead_code)]
     pub(super) fn last_load_messages(&self) -> Option<(i64, Option<i32>)> {
         self.dispatched_messages.borrow().last().copied()
     }
 
-    #[allow(dead_code)]
     pub(super) fn last_forum_topics_chat_id(&self) -> Option<i64> {
         self.dispatched_forum_topics.borrow().last().copied()
     }
 
-    #[allow(dead_code)]
     pub(super) fn forum_topics_dispatch_count(&self) -> usize {
         self.dispatched_forum_topics.borrow().len()
     }
 
-    #[allow(dead_code)]
     pub(super) fn forum_unread_counts_dispatch_count(&self) -> usize {
         self.dispatched_forum_unread_counts.borrow().len()
     }
 
-    #[allow(dead_code)]
     pub(super) fn last_forum_unread_counts_chat_ids(&self) -> Option<Vec<i64>> {
         self.dispatched_forum_unread_counts.borrow().last().cloned()
     }
@@ -146,7 +136,6 @@ impl RecordingDispatcher {
         })
     }
 
-    #[allow(dead_code)]
     pub(super) fn last_send_full(&self) -> Option<(i64, Option<i32>, String, Option<i64>)> {
         self.dispatched_sends.borrow().last().map(|(c, tid, m)| {
             (
@@ -190,7 +179,6 @@ impl RecordingDispatcher {
             .map(|(c, _, ids)| (*c, ids.clone()))
     }
 
-    #[allow(dead_code)]
     pub(super) fn last_mark_as_read_full(&self) -> Option<(i64, Option<i32>, Vec<i64>)> {
         self.dispatched_mark_as_read.borrow().last().cloned()
     }
@@ -257,14 +245,6 @@ impl RecordingDispatcher {
             .borrow()
             .last()
             .map(|(c, _, f, _)| (*c, f.clone()))
-    }
-
-    #[allow(dead_code)]
-    pub(super) fn last_voice_send_full(&self) -> Option<(i64, Option<i32>, String)> {
-        self.dispatched_voice_sends
-            .borrow()
-            .last()
-            .map(|(c, tid, f, _)| (*c, *tid, f.clone()))
     }
 
     pub(super) fn last_voice_send_pending_id(&self) -> Option<i64> {
