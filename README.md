@@ -21,10 +21,8 @@
 RTG is a fast, keyboard-driven Telegram client for the terminal on Linux and
 macOS, written in Rust on top of [TDLib](https://core.telegram.org/tdlib). It
 strips Telegram down to its core — chats and messages. That's it. No stories. No
-ads. No notifications. Enjoy the silence.
-
-The project is in early development — the core chat experience is in place and
-new features are landing regularly.
+ads. No notifications. Enjoy the silence. Why it exists:
+[rtg — vim-like Telegram client](https://rozov1.xyz/posts/rtg/).
 
 <p align="center">
   <img src="docs/assets/readme-demo.gif" alt="RTG demo: browsing the Telegram chat list with vim-like keys, searching chats, reading and sending messages, reacting to a message and viewing chat info in the terminal" width="800">
@@ -32,104 +30,166 @@ new features are landing regularly.
 
 ## Features
 
-- TUI interface powered by [ratatui](https://github.com/ratatui/ratatui) and `crossterm`
-- TDLib-backed Telegram backend with persisted session
-- Live chat list with connectivity status and unread updates
-- Read, send, reply, edit, delete, and copy messages
-- Message reactions
-- Voice message recording (via configurable `ffmpeg` command)
-- Sending files from a built-in file picker (photos and documents)
-- File downloads with auto-download size limit
-- Open attachments with custom MIME handlers (mailcap-style)
-- Customizable, context-aware keybindings
-- Optimistic UI for instant feedback on user actions
+- Chat list with unread counters, search, folders and archive
+- Forum topics
+- Read, send, reply to, edit, delete and copy messages
+- Reactions
+- Voice messages, recorded with `ffmpeg`
+- Send files from a built-in file picker
+- Download and save files, with a size limit for auto-download
+- Open attachments and links in your own apps (mailcap-style handlers)
+- Chat and message info
+- Vim-like keys, every one remappable
+- Built-in updater: `rtg update`
 
 ## Installation
 
-On macOS and Linux:
+RTG runs on macOS and Linux.
+
+### Install script
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bercly0b/rtg/releases/latest/download/rtg-tui-installer.sh | sh
 ```
 
-The installer puts `rtg` into `~/.cargo/bin` and adds it to your `PATH`. To
-install elsewhere, end the command with `| RTG_TUI_INSTALL_DIR=~/.local sh`:
-`rtg` then goes into `~/.local/bin`. For anything else — archives for each
-platform, checksums — see the
+The script puts `rtg` into `~/.cargo/bin` and adds it to your `PATH`. Archives
+for each platform and checksums are in the
 [latest release](https://github.com/bercly0b/rtg/releases/latest).
 
-Or with [Homebrew](https://brew.sh):
+### Homebrew
 
 ```bash
 brew install bercly0b/rtg/rtg
 ```
 
-Or from [crates.io](https://crates.io/crates/rtg-tui), building `rtg` from
-source with a Rust toolchain:
+### Cargo
 
 ```bash
 cargo install --locked rtg-tui
 ```
 
-On Linux the build needs libc++: `sudo apt install libc++-dev libc++abi-dev`.
+This builds `rtg` from source and needs a Rust toolchain.
 
-On Linux, `rtg` needs Ubuntu 24.04 or newer (glibc 2.39) and the libc++ runtime:
+### Linux requirements
+
+`rtg` needs Ubuntu 24.04 or newer (glibc 2.39) and the libc++ runtime:
 
 - Ubuntu 24.04: `sudo apt install libc++1 libc++abi1`
 - Ubuntu 26.04 and newer: `sudo apt install libc++1 libc++abi1 llvm-libunwind1`
 
-To update an `rtg` installed by the installer, run `rtg update` or press `U` in
-RTG; update a Homebrew install with `brew upgrade rtg` and a crates.io install
-with `cargo install --locked rtg-tui`. When a newer release is out, RTG shows it
-in the status bar.
+Building with Cargo also needs the libc++ headers:
+`sudo apt install libc++-dev libc++abi-dev`.
 
-If you installed an older release with its `install.sh`, remove that copy from
-`/usr/local`:
+### Updating
 
-```bash
-sudo rm -f /usr/local/bin/rtg /usr/local/lib/libtdjson.*
-```
+When a newer release is out, RTG shows it in the status bar.
 
-### Build from source
+| Installed with | Update with |
+| --- | --- |
+| Install script | `rtg update`, or `U` in RTG |
+| Homebrew | `brew upgrade rtg` |
+| Cargo | `cargo install --locked rtg-tui` |
 
-Prerequisites:
+## Getting started
 
-- [mise](https://mise.jdx.dev/installing-mise.html), activated in your shell —
-  installs the Rust toolchain pinned in [`mise.toml`](mise.toml)
-- On Linux, libc++: TDLib is linked into `rtg` statically, but its C++
-  runtime comes from the system:
-  ```bash
-  sudo apt install libc++-dev libc++abi-dev
-  ```
+1. Run `rtg`.
+2. On the first run, enter your phone number and the code Telegram sends you,
+   then your two-step verification password if you have one.
+3. Press `?` to see the hotkeys.
 
-TDLib (~50MB) is downloaded automatically on first build via the
-`download-tdlib` feature of `tdlib-rs`. Supported targets: Linux x86_64/arm64,
-macOS Intel/Apple Silicon, Windows x86_64/arm64. For other platforms see the
-[TDLib build instructions](https://tdlib.github.io/td/build.html).
+`rtg logout` signs you out and removes the local session.
 
-```bash
-git clone https://github.com/bercly0b/rtg.git
-cd rtg
-mise install
-cargo build --release
-./target/release/rtg
-```
+## Hotkeys
+
+Everywhere:
+
+| Key | Action |
+| --- | --- |
+| `?` | Show the hotkeys |
+| `U` | Install the update |
+| `q` | Quit |
+
+In the chat list:
+
+| Key | Action |
+| --- | --- |
+| `j` / `k` | Next / previous chat |
+| `gg` | First chat |
+| `Enter` / `l` | Open the chat |
+| `/` | Search chats |
+| `f` | Pick a folder or the archive |
+| `A` | Archive or unarchive the chat |
+| `r` | Mark the chat as read |
+| `I` | Chat info |
+
+In an open chat:
+
+| Key | Action |
+| --- | --- |
+| `j` / `k` | Next / previous message |
+| `G` | Last message |
+| `h` / `Esc` | Back to the chat list |
+| `i` | Write a message |
+| `r` | Reply to the message |
+| `e` | Edit the message |
+| `dd` | Delete the message |
+| `y` | Copy the message |
+| `R` | React to the message |
+| `l` | Open the attachment |
+| `o` | Open a link from the message |
+| `A` | Attach a file |
+| `v` | Record a voice message |
+| `D` | Download the file |
+| `S` | Save the file to Downloads |
+| `m` | Message info |
+
+While writing a message, `Enter` sends it and `Shift+Enter` starts a new line.
+
+The full list is in RTG itself: press `?`.
 
 ## Configuration
 
 RTG reads its configuration from `~/.config/rtg/config.toml`
-(or `$XDG_CONFIG_HOME/rtg/config.toml` if set).
+(or `$XDG_CONFIG_HOME/rtg/config.toml` if set). The file is optional.
 
-The file is optional: create it to tune the available options —
-logging, voice recording, the file picker, download limits, MIME handlers, and key
-bindings.
+```toml
+[download]
+max_auto_download_size = "10MB"
+
+[open]
+"audio/*" = "mpv {file_path}"
+"image/*" = "imv {file_path}"
+
+[attach]
+dirs = ["~/Downloads", "~/Documents"]
+
+[keys]
+quit = "Q"
+delete_message = "xx"
+```
+
+| Section | What it sets |
+| --- | --- |
+| `[logging]` | Log level and how many log files to keep |
+| `[telegram]` | Your own Telegram API credentials |
+| `[voice]` | The command that records voice messages |
+| `[attach]` | Where the file picker looks for files |
+| `[download]` | The size limit for auto-download |
+| `[open]` | Apps that open attachments, by MIME type |
+| `[updates]` | The daily check for a newer release |
+| `[keys]` | Hotkeys |
+
 See [`config.example.toml`](config.example.toml) for the full reference.
 
 ## Contributing
 
 Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
-opening a pull request, and check the
+opening a pull request — it also covers building from source — and check the
 [open issues](https://github.com/bercly0b/rtg/issues) for areas that need help.
+
+If you like RTG, a star helps: curated lists such as
+[awesome-rust](https://github.com/rust-unofficial/awesome-rust) only accept
+projects with enough of them.
 
 ## License
 

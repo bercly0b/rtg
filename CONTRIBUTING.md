@@ -18,6 +18,9 @@ and where to find more detailed docs.
 
 TDLib is downloaded automatically on first build via the `download-tdlib`
 feature of `tdlib-rs` — no manual install required.
+Supported targets: Linux x86_64/arm64, macOS Intel/Apple Silicon, Windows
+x86_64/arm64. For other platforms see the
+[TDLib build instructions](https://tdlib.github.io/td/build.html).
 
 ### Setting up
 
