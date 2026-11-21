@@ -7,11 +7,12 @@ level = "info"
 # Maximum number of log files to keep (daily rotation)
 max_log_files = 3
 
-[telegram]
-# Telegram app credentials from https://my.telegram.org
-# Keep placeholder values in tracked config files.
-api_id = 0
-api_hash = "replace-me"
+# RTG ships with built-in API credentials, so this section is optional.
+# To run under your own credentials, get them at https://my.telegram.org/apps
+# and set both values.
+# [telegram]
+# api_id = 12345
+# api_hash = "0123456789abcdef0123456789abcdef"
 
 [voice]
 # Override voice recording command. Must contain {file_path} as placeholder for the output path.

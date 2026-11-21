@@ -196,6 +196,26 @@ fn backend_unavailable_fails_fast_with_actionable_message_and_without_leaks() {
 }
 
 #[test]
+fn rejected_api_credentials_fail_fast_and_point_to_own_credentials() {
+    let mut terminal = FakeTerminal::new(vec![Some("+15551234567")]);
+    let mut client = FakeClient::new(vec![Action::RequestCode(Err(
+        AuthBackendError::ApiCredentialsRejected,
+    ))]);
+
+    let result = run_guided_auth(&mut terminal, &mut client, &RetryPolicy::default())
+        .expect("guided auth should complete");
+
+    assert_eq!(result, GuidedAuthOutcome::ExitWithGuidance);
+
+    let joined = terminal.output.join("\n");
+    assert!(joined.contains("AUTH_API_CREDENTIALS_REJECTED"));
+    assert!(joined.contains("built-in credentials are unavailable"));
+    assert!(joined.contains("config.toml"));
+    assert!(joined.contains("https://my.telegram.org/apps"));
+    assert!(!joined.contains("Attempts left:"));
+}
+
+#[test]
 fn status_snapshot_is_printed_for_ui_actions_when_available() {
     let mut terminal = FakeTerminal::new(vec![Some("+15551234567"), Some("12345")]).verbose();
     let snapshot = crate::domain::status::AuthConnectivityStatus {

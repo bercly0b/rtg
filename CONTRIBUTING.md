@@ -48,6 +48,28 @@ feature of `tdlib-rs` — no manual install required.
    cp config.example.toml ~/.config/rtg/config.toml
    ```
 
+### API credentials
+
+RTG ships with built-in API credentials (`api_id` and `api_hash`), so it signs
+in without any setup. To run under your own credentials, get them at
+[my.telegram.org/apps](https://my.telegram.org/apps) and set both values in
+`~/.config/rtg/config.toml`:
+
+```toml
+[telegram]
+api_id = 12345
+api_hash = "0123456789abcdef0123456789abcdef"
+```
+
+Own credentials take precedence over the built-in ones; there is no prompt,
+environment variable or CLI flag for them.
+
+If you distribute a fork as a separate application, please register your own
+API credentials and replace the built-in pair in
+[`src/infra/config/built_in.rs`](src/infra/config/built_in.rs).
+The reasoning is in
+[ADR 0003](docs/adr/0003-built-in-credentials-in-source.md).
+
 ## Development workflow
 
 ### Tooling

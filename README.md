@@ -120,12 +120,7 @@ cargo build --release
 RTG reads its configuration from `~/.config/rtg/config.toml`
 (or `$XDG_CONFIG_HOME/rtg/config.toml` if set).
 
-On first launch RTG will prompt for your Telegram API credentials
-(`api_id` and `api_hash`) — get them from
-[my.telegram.org/apps](https://my.telegram.org/apps). After you enter them,
-RTG creates the config file at the path above with your credentials saved.
-
-You can then edit that file to tune the rest of the available options —
+The file is optional: create it to tune the available options —
 logging, voice recording, the file picker, download limits, MIME handlers, and key
 bindings.
 See [`config.example.toml`](config.example.toml) for the full reference.

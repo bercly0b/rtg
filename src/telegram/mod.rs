@@ -73,10 +73,6 @@ impl TelegramAdapter {
     }
 
     pub fn from_config(config: &TelegramConfig, verbose: bool) -> Result<Self, AuthBackendError> {
-        if !config.is_configured() {
-            return Ok(Self::stub());
-        }
-
         let layout = StorageLayout::resolve().map_err(|error| AuthBackendError::Transient {
             code: "AUTH_SESSION_STORE_UNAVAILABLE",
             message: format!("failed to resolve storage layout: {error}"),
@@ -88,11 +84,6 @@ impl TelegramAdapter {
             tdlib_backend: Some(backend),
             status_tracker: StatusTracker::new(),
         })
-    }
-
-    #[cfg_attr(not(test), allow(dead_code, reason = "used only by tests"))]
-    pub fn uses_real_backend(&self) -> bool {
-        matches!(self.backend_kind, BackendKind::TdLib)
     }
 
     pub fn start_connectivity_monitor(
@@ -199,13 +190,6 @@ mod tests {
         logout::LogoutSession,
         send_message::{MessageSender, SendMessageSourceError},
     };
-
-    #[test]
-    fn uses_stub_backend_when_config_is_not_set() {
-        let adapter =
-            TelegramAdapter::from_config(&TelegramConfig::default(), false).expect("stub adapter");
-        assert!(!adapter.uses_real_backend());
-    }
 
     #[test]
     fn status_stream_emits_initial_payload_contract() {

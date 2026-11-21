@@ -1,7 +1,6 @@
-mod credentials_prompt;
 mod validation;
 
-use std::{io::IsTerminal, path::Path, sync::mpsc::Sender};
+use std::{path::Path, sync::mpsc::Sender};
 
 use crate::{
     domain::{events::ConnectivityStatus, shell_state::ShellState},
@@ -22,14 +21,13 @@ use crate::{
     },
     ui::{
         ChannelBackgroundResultSource, ChannelChatUpdatesSignalSource,
-        ChannelConnectivityStatusSource, CrosstermEventSource, StubChatUpdatesSignalSource,
-        StubConnectivityStatusSource,
+        ChannelConnectivityStatusSource, CrosstermEventSource,
     },
     usecases::{
         background::{BackgroundTaskResult, ThreadTaskDispatcher},
         context::AppContext,
         contracts::ShellOrchestrator,
-        guided_auth::{AuthBackendError, AuthTerminal, StdTerminal},
+        guided_auth::AuthBackendError,
         load_messages::CachedMessagesSource,
         self_update::{self_update, SelfUpdateError, SelfUpdated},
         shell::{DefaultShellOrchestrator, OrchestratorConfig},
@@ -97,51 +95,42 @@ fn compose_shell_with_factory(
 
     let (bg_tx, bg_rx) = std::sync::mpsc::channel::<BackgroundTaskResult>();
 
-    let event_source: Box<CrosstermEventSource> = if context.config.telegram.is_configured() {
-        let (status_tx, status_rx) = std::sync::mpsc::channel::<ConnectivityStatus>();
-        let (updates_tx, updates_rx) =
-            std::sync::mpsc::channel::<crate::domain::events::ChatUpdate>();
+    let (status_tx, status_rx) = std::sync::mpsc::channel::<ConnectivityStatus>();
+    let (updates_tx, updates_rx) = std::sync::mpsc::channel::<crate::domain::events::ChatUpdate>();
 
-        match monitor_factory.start(&context.telegram, status_tx) {
-            Ok(monitor) => {
-                tracing::info!("telegram connectivity monitor started");
-                connectivity_monitor = Some(monitor);
-            }
-            Err(error) => {
-                tracing::warn!(
-                    code = CONNECTIVITY_MONITOR_START_FAILED,
-                    error = %error,
-                    "telegram connectivity monitor failed to start; using safe fallback"
-                );
-            }
+    match monitor_factory.start(&context.telegram, status_tx) {
+        Ok(monitor) => {
+            tracing::info!("telegram connectivity monitor started");
+            connectivity_monitor = Some(monitor);
         }
-
-        match monitor_factory.start_chat_updates(&context.telegram, updates_tx) {
-            Ok(monitor) => {
-                tracing::info!("telegram chat updates monitor wired into event source");
-                chat_updates_monitor = Some(monitor);
-            }
-            Err(error) => {
-                tracing::warn!(
-                    code = CHAT_UPDATES_MONITOR_START_FAILED,
-                    error = %error,
-                    "telegram chat updates monitor failed to start; using safe fallback"
-                );
-            }
+        Err(error) => {
+            tracing::warn!(
+                code = CONNECTIVITY_MONITOR_START_FAILED,
+                error = %error,
+                "telegram connectivity monitor failed to start; using safe fallback"
+            );
         }
+    }
 
-        Box::new(CrosstermEventSource::with_sources(
-            Box::new(ChannelConnectivityStatusSource::new(status_rx)),
-            Box::new(ChannelChatUpdatesSignalSource::new(updates_rx)),
-            Box::new(ChannelBackgroundResultSource::new(bg_rx)),
-        ))
-    } else {
-        Box::new(CrosstermEventSource::with_sources(
-            Box::new(StubConnectivityStatusSource),
-            Box::new(StubChatUpdatesSignalSource),
-            Box::new(ChannelBackgroundResultSource::new(bg_rx)),
-        ))
-    };
+    match monitor_factory.start_chat_updates(&context.telegram, updates_tx) {
+        Ok(monitor) => {
+            tracing::info!("telegram chat updates monitor wired into event source");
+            chat_updates_monitor = Some(monitor);
+        }
+        Err(error) => {
+            tracing::warn!(
+                code = CHAT_UPDATES_MONITOR_START_FAILED,
+                error = %error,
+                "telegram chat updates monitor failed to start; using safe fallback"
+            );
+        }
+    }
+
+    let event_source = Box::new(CrosstermEventSource::with_sources(
+        Box::new(ChannelConnectivityStatusSource::new(status_rx)),
+        Box::new(ChannelChatUpdatesSignalSource::new(updates_rx)),
+        Box::new(ChannelBackgroundResultSource::new(bg_rx)),
+    ));
 
     let dispatcher = ThreadTaskDispatcher::new(
         std::sync::Arc::clone(&context.telegram),
@@ -166,9 +155,8 @@ fn compose_shell_with_factory(
     );
 
     // Provide the cache source to the orchestrator for instant message display.
-    let cache_source = context.config.telegram.is_configured().then(|| {
-        std::sync::Arc::clone(&context.telegram) as std::sync::Arc<dyn CachedMessagesSource>
-    });
+    let cache_source: std::sync::Arc<dyn CachedMessagesSource> =
+        std::sync::Arc::clone(&context.telegram) as _;
 
     ShellComposition {
         event_source,
@@ -177,7 +165,7 @@ fn compose_shell_with_factory(
             BrowserOpener,
             dispatcher,
             initial_state,
-            cache_source,
+            Some(cache_source),
             OrchestratorConfig {
                 min_display_messages: cache_cfg.min_display_messages,
                 voice_record_cmd: context.config.voice.record_cmd.clone(),
@@ -217,28 +205,10 @@ fn build_context_with_factories(
     config_adapter: &dyn ConfigAdapter,
     telegram_factory: &dyn TelegramAdapterFactory,
 ) -> Result<AppContext, AppError> {
-    let probe_config = config_adapter.load().map_err(AppError::Other)?;
-    let interactive = std::io::stdin().is_terminal();
-    let mut terminal = StdTerminal::new(probe_config.logging.is_verbose());
-    build_context_with_factories_inner(config_adapter, telegram_factory, &mut terminal, interactive)
-}
-
-fn build_context_with_factories_inner(
-    config_adapter: &dyn ConfigAdapter,
-    telegram_factory: &dyn TelegramAdapterFactory,
-    terminal: &mut dyn AuthTerminal,
-    interactive: bool,
-) -> Result<AppContext, AppError> {
     let mut config = config_adapter.load().map_err(AppError::Other)?;
 
     validate_telegram_config(&config.telegram)?;
-
-    credentials_prompt::ensure_telegram_credentials(
-        &mut config,
-        config_adapter,
-        terminal,
-        interactive,
-    )?;
+    config.telegram = config.telegram.or_built_in();
 
     let telegram = telegram_factory
         .from_config(&config.telegram, config.logging.is_verbose())

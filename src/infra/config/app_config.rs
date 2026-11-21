@@ -72,6 +72,15 @@ impl TelegramConfig {
     pub fn is_configured(&self) -> bool {
         self.api_id > 0 && !self.api_hash.trim().is_empty() && self.api_hash != "replace-me"
     }
+
+    /// Own credentials when the config sets them, the built-in ones otherwise.
+    pub fn or_built_in(self) -> Self {
+        if self.is_configured() {
+            self
+        } else {
+            super::built_in::built_in()
+        }
+    }
 }
 
 impl Default for TelegramConfig {
@@ -314,6 +323,21 @@ mod tests {
     fn default_telegram_config_is_not_configured() {
         let config = TelegramConfig::default();
         assert!(!config.is_configured());
+    }
+
+    #[test]
+    fn or_built_in_keeps_own_credentials() {
+        let own = TelegramConfig {
+            api_id: 12345,
+            api_hash: "valid-hash".to_owned(),
+        };
+        assert_eq!(own.clone().or_built_in(), own);
+    }
+
+    #[test]
+    fn or_built_in_replaces_placeholders_with_usable_credentials() {
+        let resolved = TelegramConfig::default().or_built_in();
+        assert!(resolved.is_configured());
     }
 
     #[test]
