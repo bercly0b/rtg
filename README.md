@@ -23,8 +23,6 @@ macOS, written in Rust on top of [TDLib](https://core.telegram.org/tdlib). It
 strips Telegram down to its core — chats and messages. That's it. No stories. No
 ads. No notifications. Enjoy the silence.
 
-[A few more words](https://rozov1.xyz/posts/rtg/) on why it exists.
-
 <p align="center">
   <img src="docs/assets/readme-demo.gif" alt="RTG demo: browsing the Telegram chat list with vim-like keys, searching chats, reading and sending messages, reacting to a message and viewing chat info in the terminal" width="800">
 </p>
