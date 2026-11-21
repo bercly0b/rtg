@@ -81,16 +81,6 @@ cargo install --locked rtg-tui
 Для сборки через Cargo нужны ещё заголовки libc++:
 `sudo apt install libc++-dev libc++abi-dev`.
 
-### Обновление
-
-Когда выходит новый релиз, RTG показывает его в строке состояния.
-
-| Способ установки | Как обновить |
-| --- | --- |
-| Скрипт установки | `rtg update` или `U` в RTG |
-| Homebrew | `brew upgrade rtg` |
-| Cargo | `cargo install --locked rtg-tui` |
-
 ## Первый запуск
 
 1. Запустите `rtg`.

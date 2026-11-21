@@ -81,16 +81,6 @@ This builds `rtg` from source and needs a Rust toolchain.
 Building with Cargo also needs the libc++ headers:
 `sudo apt install libc++-dev libc++abi-dev`.
 
-### Updating
-
-When a newer release is out, RTG shows it in the status bar.
-
-| Installed with | Update with |
-| --- | --- |
-| Install script | `rtg update`, or `U` in RTG |
-| Homebrew | `brew upgrade rtg` |
-| Cargo | `cargo install --locked rtg-tui` |
-
 ## Getting started
 
 1. Run `rtg`.
