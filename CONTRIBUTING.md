@@ -18,6 +18,9 @@ and where to find more detailed docs.
 
 TDLib is downloaded automatically on first build via the `download-tdlib`
 feature of `tdlib-rs` — no manual install required.
+Supported targets: Linux x86_64/arm64, macOS Intel/Apple Silicon, Windows
+x86_64/arm64. For other platforms see the
+[TDLib build instructions](https://tdlib.github.io/td/build.html).
 
 ### Setting up
 
@@ -144,7 +147,9 @@ Commit messages must be written in English.
 ### Pull request guidelines
 
 - Keep PRs focused on a single change
-- Update documentation if the change affects user-facing behavior
+- Update documentation if the change affects user-facing behavior; what goes
+  into the README is spelled out in "Documentation rules" of
+  [AGENTS.md](AGENTS.md)
 - Include tests for new logic when feasible
 - Ensure CI is green before requesting review
 
