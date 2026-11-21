@@ -1,2 +1,0 @@
-- The chat info popup estimates the registration year of an account from its user ID (`~2019`) when Telegram does not give the exact date.
-- The `Registered` row of the chat info popup moved to the Profile block and is always shown.

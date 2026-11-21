@@ -3,6 +3,14 @@
 User-visible changes in each RTG release. Releases up to v0.1.14 are listed on
 [GitHub Releases](https://github.com/bercly0b/rtg/releases).
 
+## 0.1.19 - 2026-11-21
+
+- RTG signs in without asking for `api_id` and `api_hash`: your own API credentials are no longer required. Credentials already in `config.toml` keep working and take precedence.
+- The help popup lists hotkeys in groups with headings, and a rebound hotkey keeps its place in the list.
+- Fixed the help popup showing chat list hotkeys while the forum topic list is open.
+- The chat info popup estimates the registration year of an account from its user ID (`~2019`) when Telegram does not give the exact date.
+- The `Registered` row of the chat info popup moved to the Profile block and is always shown.
+
 ## 0.1.18 - 2026-11-17
 
 - Show the chat info popup from an open chat: `I` on a message shows who sent it, and a message with mentions first asks whether to show its sender or one of the mentioned.
