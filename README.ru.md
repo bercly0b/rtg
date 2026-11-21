@@ -178,9 +178,9 @@ delete_message = "xx"
 исходников, — а задачи, где нужна помощь, ищите среди
 [открытых issues](https://github.com/bercly0b/rtg/issues).
 
-Если RTG вам нравится, поставьте звезду: курируемые списки вроде
-[awesome-rust](https://github.com/rust-unofficial/awesome-rust) принимают
-проекты только с достаточным их числом.
+Если вам понравился RTG, поставьте звезду — помогите другим заметить этот
+проект. Списки вроде [awesome-rust](https://github.com/rust-unofficial/awesome-rust)
+принимают проекты только с достаточным числом звёзд.
 
 ## Лицензия
 

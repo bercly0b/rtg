@@ -176,9 +176,9 @@ Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
 opening a pull request — it also covers building from source — and check the
 [open issues](https://github.com/bercly0b/rtg/issues) for areas that need help.
 
-If you like RTG, a star helps: curated lists such as
-[awesome-rust](https://github.com/rust-unofficial/awesome-rust) only accept
-projects with enough of them.
+If you like RTG, give it a star — it helps other people discover the project.
+Lists such as [awesome-rust](https://github.com/rust-unofficial/awesome-rust) only
+accept projects with enough stars.
 
 ## License
 
