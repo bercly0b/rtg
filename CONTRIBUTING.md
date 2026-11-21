@@ -147,7 +147,9 @@ Commit messages must be written in English.
 ### Pull request guidelines
 
 - Keep PRs focused on a single change
-- Update documentation if the change affects user-facing behavior
+- Update documentation if the change affects user-facing behavior; what goes
+  into the README is spelled out in "Documentation rules" of
+  [AGENTS.md](AGENTS.md)
 - Include tests for new logic when feasible
 - Ensure CI is green before requesting review
 

@@ -147,7 +147,12 @@ Action::MyNewAction => {
 2. Add an integration test in `usecases/shell/tests/` to verify the action
    executes the expected side effects through the orchestrator.
 
-### Step 6: Verify
+### Step 6: Update the README
+
+Add the hotkey to the Hotkeys tables of `README.md` and `README.ru.md` (see
+"Documentation rules" in [AGENTS.md](../AGENTS.md) for the keys that stay out).
+
+### Step 7: Verify
 
 ```sh
 mise run quality

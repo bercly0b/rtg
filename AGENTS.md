@@ -76,6 +76,11 @@ Project structure and module layout guide: [docs/ARCHITECTURE.md](docs/ARCHITECT
 1. `docs/` is for project-wide, high-level documentation (module organization, hotkey conventions, architectural decisions, etc.).
 2. `docs/features/` is for feature-specific documentation (design docs, implementation plans, behavior specs).
 3. Any text that introduces the project (a description, a heading, an announcement, a catalogue submission) follows [docs/NAMING.md](docs/NAMING.md).
+4. A user-visible change keeps the README in step, in the same pull request. `README.md` and `README.ru.md` change together, section for section.
+   - Hotkeys: adding, changing or removing a default hotkey updates the Hotkeys tables. The forum topic list keys and the list refresh keys (`R`) stay out of the tables.
+   - Configuration: every new or changed option is described in `config.example.toml`. The README changes only when a whole config section appears, disappears or changes its purpose (a row of the sections table).
+   - Features: a capability that no existing Features item covers gets a new item; an improvement to a listed capability changes nothing. When it is unclear which one a change is, ask the user.
+   - Installation: a change to the install channels or system requirements updates the Installation section.
 
 ## Rust engineering style
 
