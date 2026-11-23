@@ -68,6 +68,16 @@ _Avoid_: folder selector, directory selector
 The number of chats in a chat list that have something unread; it counts chats, not messages.
 _Avoid_: unread counter, unread badge, unread messages
 
+## Search
+
+**Quick search**:
+Moving the selection to the next chat of the current chat list whose title holds the query; it shows no results and asks Telegram nothing.
+_Avoid_: chat search, local search, filter
+
+**Global search**:
+Looking through the whole account and Telegram itself for chats, contacts and messages that match the query, and showing what was found.
+_Avoid_: Telegram search, API search, full search
+
 ## Messages
 
 **Sender**:
