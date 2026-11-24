@@ -1,0 +1,1 @@
+- Long file names wrap onto the next lines instead of pushing a file's download status and size off the screen; the file name now comes last in the file details.

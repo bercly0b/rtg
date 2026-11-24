@@ -279,3 +279,95 @@ fn text_message_has_no_file_metadata() {
         panic!("Expected Message element");
     }
 }
+
+const LONG_FILE_NAME: &str = "quarterly-sales-report-final-version-2-reviewed.pdf";
+
+fn long_named_document(text: &str) -> Message {
+    let mut message = msg_with_media(1, "Alice", text, FEB_14_2026_10AM, MessageMedia::Document);
+    message.file_info = Some(FileInfo {
+        file_id: 1,
+        local_path: None,
+        mime_type: "application/pdf".to_owned(),
+        size: Some(2_500_000),
+        duration: None,
+        file_name: Some(LONG_FILE_NAME.to_owned()),
+        is_listened: false,
+        download_status: DownloadStatus::NotStarted,
+        upload_progress_percent: None,
+    });
+    message
+}
+
+fn rendered_lines_at(message: Message, max_width: usize) -> Vec<String> {
+    let elements = build_message_list_elements(&[message]);
+    element_to_text(&elements[1], max_width)
+        .lines
+        .iter()
+        .map(|line| line.to_string())
+        .collect()
+}
+
+#[test]
+fn long_file_name_wraps_onto_following_lines_instead_of_being_cut() {
+    let lines = rendered_lines_at(long_named_document(""), 60);
+
+    assert_eq!(
+        lines[1..],
+        [
+            "      [Document] type=pdf, download=no, size=2.5MB, name=qua",
+            "      rterly-sales-report-final-version-2-reviewed.pdf",
+        ]
+    );
+}
+
+#[test]
+fn caption_follows_the_wrapped_file_meta() {
+    let lines = rendered_lines_at(long_named_document("see page 3"), 60);
+
+    assert_eq!(
+        lines[1..],
+        [
+            "      [Document] type=pdf, download=no, size=2.5MB, name=qua",
+            "      rterly-sales-report-final-version-2-reviewed.pdf",
+            "      see page 3",
+        ]
+    );
+}
+
+#[test]
+fn file_meta_moves_below_a_media_label_that_fills_the_line() {
+    let lines = rendered_lines_at(long_named_document(""), 16);
+
+    assert_eq!(lines[1..3], ["      [Document]", "      type=pdf, "]);
+}
+
+#[test]
+fn trailing_marker_that_does_not_fit_after_file_meta_takes_its_own_line() {
+    let mut message = long_named_document("");
+    message.is_edited = true;
+
+    let lines = rendered_lines_at(message, 40);
+
+    assert_eq!(
+        lines[1..],
+        [
+            "      [Document] type=pdf, download=no, ",
+            "      size=2.5MB, name=quarterly-sales-r",
+            "      eport-final-version-2-reviewed.pdf",
+            "      edited",
+        ]
+    );
+}
+
+#[test]
+fn trailing_marker_stays_on_the_file_meta_line_when_it_fits() {
+    let mut message = long_named_document("");
+    message.reaction_count = 2;
+
+    let lines = rendered_lines_at(message, 60);
+
+    assert_eq!(
+        lines[2],
+        "      rterly-sales-report-final-version-2-reviewed.pdf [♡×2]"
+    );
+}

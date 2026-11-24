@@ -133,7 +133,7 @@ fn metadata_display_document_with_extension() {
     };
     assert_eq!(
         build_file_metadata_display(MessageMedia::Document, MessageStatus::Delivered, &fi),
-        "name=report.pdf, type=pdf, download=yes, size=2.5MB"
+        "type=pdf, download=yes, size=2.5MB, name=report.pdf"
     );
 }
 
@@ -181,7 +181,7 @@ fn metadata_display_audio_with_name_and_duration() {
     };
     assert_eq!(
         build_file_metadata_display(MessageMedia::Audio, MessageStatus::Delivered, &fi),
-        "name=song.mp3, type=mp3, download=yes, size=4.2MB, duration=3:05"
+        "type=mp3, download=yes, size=4.2MB, duration=3:05, name=song.mp3"
     );
 }
 
@@ -283,7 +283,7 @@ fn metadata_display_of_a_file_being_sent_shows_upload_progress_instead_of_downlo
             MessageStatus::Sending,
             &document_being_sent(Some(5))
         ),
-        "name=123.mp4, type=mp4, sending=5%, size=166.0MB"
+        "type=mp4, sending=5%, size=166.0MB, name=123.mp4"
     );
 }
 
@@ -295,6 +295,6 @@ fn metadata_display_of_a_file_being_sent_has_no_download_state_once_uploaded() {
             MessageStatus::Sending,
             &document_being_sent(None)
         ),
-        "name=123.mp4, type=mp4, size=166.0MB"
+        "type=mp4, size=166.0MB, name=123.mp4"
     );
 }

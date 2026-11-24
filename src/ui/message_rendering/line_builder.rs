@@ -3,7 +3,11 @@
 //! Assembles the visual lines for a single message: header, reply preview,
 //! wrapped content with link highlighting, metadata badges, and status indicators.
 
-use ratatui::text::{Line, Span};
+use ratatui::{
+    style::Style,
+    text::{Line, Span},
+};
+use unicode_width::UnicodeWidthStr;
 
 use crate::domain::message::{ForwardInfo, MessageStatus, ReplyInfo, TextLink};
 use crate::ui::styles;
@@ -113,31 +117,43 @@ pub(super) fn build_message_lines(
         );
     }
 
-    // Append file metadata on the same line as the media label
-    if let Some(meta) = file_meta {
-        append_file_meta_to_media_line(&mut lines[content_start..], media_label, meta);
-    }
+    let meta_ends_message = file_meta.is_some_and(|meta| {
+        append_file_meta(&mut lines, content_start, media_label, meta, max_width)
+    });
+    // Markers after wrapped metadata must not undo the wrap by overflowing
+    // its last line; after message text they keep the same-line placement.
+    let marker_width = if meta_ends_message { max_width } else { 0 };
 
     if reaction_count > 0 {
-        append_reaction_indicator(&mut lines, reaction_count);
+        let badge = if reaction_count == 1 {
+            " [♡]".to_owned()
+        } else {
+            format!(" [♡×{}]", reaction_count)
+        };
+        append_trailing_marker(
+            &mut lines,
+            badge,
+            styles::message_reaction_style(),
+            marker_width,
+        );
     }
 
-    // Append sending status indicator on the same line as the last content line
     if status == MessageStatus::Sending {
-        if let Some(last_line) = lines.last_mut() {
-            last_line
-                .spans
-                .push(Span::styled(" sending...", styles::message_sending_style()));
-        }
+        append_trailing_marker(
+            &mut lines,
+            " sending...".to_owned(),
+            styles::message_sending_style(),
+            marker_width,
+        );
     }
 
-    // Append edited indicator on the same line as the last content line
     if is_edited {
-        if let Some(last_line) = lines.last_mut() {
-            last_line
-                .spans
-                .push(Span::styled(" edited", styles::message_edited_style()));
-        }
+        append_trailing_marker(
+            &mut lines,
+            " edited".to_owned(),
+            styles::message_edited_style(),
+            marker_width,
+        );
     }
 
     lines
@@ -231,39 +247,86 @@ fn build_grouped_message_lines(
     }
 }
 
-fn append_reaction_indicator(lines: &mut [Line<'static>], reaction_count: u32) {
-    if let Some(last_line) = lines.last_mut() {
-        let badge = if reaction_count == 1 {
-            " [♡]".to_owned()
-        } else {
-            format!(" [♡×{}]", reaction_count)
-        };
-        last_line
-            .spans
-            .push(Span::styled(badge, styles::message_reaction_style()));
+/// Appends `marker` (which starts with a space) to the last line, or puts it
+/// on a line of its own when the last line has no room left within
+/// `max_width`. `max_width == 0` always appends.
+fn append_trailing_marker(
+    lines: &mut Vec<Line<'static>>,
+    marker: String,
+    style: Style,
+    max_width: usize,
+) {
+    let Some(last_line) = lines.last_mut() else {
+        return;
+    };
+    if max_width > 0 && last_line.width() + marker.width() > max_width {
+        lines.push(Line::from(vec![
+            Span::raw(MESSAGE_INDENT),
+            Span::styled(marker.trim_start().to_owned(), style),
+        ]));
+    } else {
+        last_line.spans.push(Span::styled(marker, style));
     }
 }
 
-/// `lines` must hold only content lines: header, reply and forward lines may
-/// contain the same label as plain text (e.g. a reply quoting a `[Voice]`).
-fn append_file_meta_to_media_line(
-    lines: &mut [Line<'static>],
+/// Puts `meta` after the media label, wrapping what does not fit onto lines
+/// inserted right below it. Returns whether the metadata ends the message.
+///
+/// Only content lines (from `content_start`) are searched for the label:
+/// header, reply and forward lines may contain the same label as plain text
+/// (e.g. a reply quoting a `[Voice]`).
+fn append_file_meta(
+    lines: &mut Vec<Line<'static>>,
+    content_start: usize,
     media_label: Option<&str>,
     meta: &str,
-) {
-    let meta_span = Span::styled(format!(" {}", meta), styles::message_sending_style());
-    if let Some(label) = media_label {
-        for line in lines.iter_mut() {
-            if line.spans.iter().any(|span| span.content == label) {
-                line.spans.push(meta_span);
-                return;
-            }
+    max_width: usize,
+) -> bool {
+    if lines.len() <= content_start {
+        return false;
+    }
+    // Media without a label (e.g. stickers) get the metadata after the content.
+    let target = media_label
+        .and_then(|label| {
+            lines[content_start..]
+                .iter()
+                .position(|line| line.spans.iter().any(|span| span.content == label))
+        })
+        .map_or(lines.len() - 1, |offset| content_start + offset);
+
+    let style = styles::message_sending_style();
+    let room = max_width.saturating_sub(lines[target].width() + 1);
+    let head = if max_width == 0 {
+        meta
+    } else if room == 0 {
+        ""
+    } else {
+        wrap_line(meta, room)
+            .first()
+            .map_or("", |head| &meta[..head.len()])
+    };
+    if !head.is_empty() {
+        lines[target]
+            .spans
+            .push(Span::styled(format!(" {}", head), style));
+    }
+
+    let rest = &meta[head.len()..];
+    let mut last = target;
+    if !rest.is_empty() {
+        let content_width = max_width.saturating_sub(MESSAGE_INDENT.len());
+        for wrapped in wrap_line(rest, content_width) {
+            last += 1;
+            lines.insert(
+                last,
+                Line::from(vec![
+                    Span::raw(MESSAGE_INDENT),
+                    Span::styled(wrapped, style),
+                ]),
+            );
         }
     }
-    // Fallback: append to the last content line (for media without labels, e.g. stickers)
-    if let Some(last_line) = lines.last_mut() {
-        last_line.spans.push(meta_span);
-    }
+    last == lines.len() - 1
 }
 
 pub(super) fn build_message_header_line(
