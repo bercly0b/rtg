@@ -122,7 +122,7 @@ pub(super) fn build_message_lines(
     });
     // Markers after wrapped metadata must not undo the wrap by overflowing
     // its last line; after message text they keep the same-line placement.
-    let marker_width = if meta_ends_message { max_width } else { 0 };
+    let marker_line_limit = (meta_ends_message && max_width > 0).then_some(max_width);
 
     if reaction_count > 0 {
         let badge = if reaction_count == 1 {
@@ -134,7 +134,7 @@ pub(super) fn build_message_lines(
             &mut lines,
             badge,
             styles::message_reaction_style(),
-            marker_width,
+            marker_line_limit,
         );
     }
 
@@ -143,7 +143,7 @@ pub(super) fn build_message_lines(
             &mut lines,
             " sending...".to_owned(),
             styles::message_sending_style(),
-            marker_width,
+            marker_line_limit,
         );
     }
 
@@ -152,7 +152,7 @@ pub(super) fn build_message_lines(
             &mut lines,
             " edited".to_owned(),
             styles::message_edited_style(),
-            marker_width,
+            marker_line_limit,
         );
     }
 
@@ -248,18 +248,18 @@ fn build_grouped_message_lines(
 }
 
 /// Appends `marker` (which starts with a space) to the last line, or puts it
-/// on a line of its own when the last line has no room left within
-/// `max_width`. `max_width == 0` always appends.
+/// on a line of its own when it would make the last line wider than
+/// `line_limit`.
 fn append_trailing_marker(
     lines: &mut Vec<Line<'static>>,
     marker: String,
     style: Style,
-    max_width: usize,
+    line_limit: Option<usize>,
 ) {
     let Some(last_line) = lines.last_mut() else {
         return;
     };
-    if max_width > 0 && last_line.width() + marker.width() > max_width {
+    if line_limit.is_some_and(|limit| last_line.width() + marker.width() > limit) {
         lines.push(Line::from(vec![
             Span::raw(MESSAGE_INDENT),
             Span::styled(marker.trim_start().to_owned(), style),
