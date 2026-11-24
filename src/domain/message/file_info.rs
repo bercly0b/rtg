@@ -86,7 +86,7 @@ pub fn file_extension(file_name: &str) -> Option<&str> {
 
 /// Builds a metadata display string for a file-bearing message.
 ///
-/// Returns a formatted string like `"name=report.pdf, type=pdf, download=yes, size=15.5KB"`
+/// Returns a formatted string like `"type=pdf, download=yes, size=15.5KB, name=report.pdf"`
 /// for rendering alongside the media label (e.g. `[Document]`).
 pub fn build_file_metadata_display(
     media: super::MessageMedia,
@@ -95,11 +95,9 @@ pub fn build_file_metadata_display(
 ) -> String {
     let mut parts = Vec::new();
 
-    if let Some(name) = info.file_name.as_deref() {
-        parts.push(format!("name={}", name));
-        if let Some(ext) = file_extension(name) {
-            parts.push(format!("type={}", ext));
-        }
+    let name = info.file_name.as_deref();
+    if let Some(ext) = name.and_then(file_extension) {
+        parts.push(format!("type={}", ext));
     }
 
     // A file being sent is the user's own: whether it is downloaded says
@@ -141,6 +139,12 @@ pub fn build_file_metadata_display(
     ) && info.is_listened
     {
         parts.push("listened=yes".to_owned());
+    }
+
+    // The name is the only part of unbounded length: it goes last so that a
+    // long one wraps without pushing the other parts off the first line.
+    if let Some(name) = name {
+        parts.push(format!("name={}", name));
     }
 
     parts.join(", ")

@@ -131,7 +131,7 @@ is deleted with `dd`.
 - **Optimistic UI** — the message appears in the chat at once as being sent;
   Telegram uploads the file in the background.
 - **Upload progress** — while the file uploads, its metadata says how much of
-  it is there: `[Document] name=report.pdf, type=pdf, sending=42%, size=1.2MB`.
+  it is there: `[Document] type=pdf, sending=42%, size=1.2MB, name=report.pdf`.
   Once the upload is over `sending=` goes away, and the `sending...` status
   with it as soon as Telegram accepts the message. A message being sent does
   not say `download=yes`: the file is the user's own. `dd` on such a message
