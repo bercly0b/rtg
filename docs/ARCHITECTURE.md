@@ -120,22 +120,20 @@ workflow rules live in [`AGENTS.md`](../AGENTS.md).
 - **Trait ports** live in `usecases/`; implementations in `telegram/` or `infra/`.
 - **Stubs for testing**: every trait used for DI should have a stub/mock (see `infra/stubs.rs`).
 
-### Directory-based module layout
+## Secrets
 
-When a module is decomposed into a directory, follow this structure:
+Login codes, 2FA passwords, session tokens and free-form backend messages
+(which may carry fragments of them) are secrets. The rules for the sign-in flow:
 
-```
-src/layer/module/
-  mod.rs             — struct, constructors, trait impls, thin delegate methods
-  feature_a.rs       — free functions for feature A (pub(super) visibility)
-  feature_b.rs       — free functions for feature B
-  tests/
-    mod.rs           — #[cfg(test)] gate, shared test doubles, helpers, factories
-    feature_a.rs     — tests for feature A
-    feature_b.rs     — tests for feature B
-```
+1. The 2FA password is read without echo (`AuthTerminal::prompt_secret`).
+2. Secrets never reach terminal output, logs, errors or panic payloads; the
+   panic hook redacts secret-like fragments.
+3. A transient backend failure shows a safe error code and guidance, never the
+   backend's message text.
+4. An error code from outside is sanitized before it is shown.
 
-Sub-module names reflect **responsibility**, not the struct name. Tests exercise the module's **public API**, not internal free functions.
+The redaction helpers live in `infra/secrets.rs`. Tests check that secret-like
+strings from backend errors do not appear in terminal output.
 
 ## Where to put new functionality — decision guide
 
@@ -145,4 +143,4 @@ Sub-module names reflect **responsibility**, not the struct name. Tests exercise
 4. **New visual component or screen** → `ui/`
 5. **New config option, storage path, external tool** → `infra/`
 6. **New CLI subcommand** → `cli.rs` + handler in `app.rs`
-7. **Crosses multiple layers?** → Define the trait in `usecases/`, implement in the appropriate layer, wire in `app.rs` / `bootstrap.rs`.
+7. **Crosses multiple layers?** → Define the trait in `usecases/`, implement in the appropriate layer, wire in `app.rs` / `usecases/bootstrap/`.

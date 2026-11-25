@@ -2,9 +2,8 @@
 
 Design note for splitting `DefaultShellOrchestrator` (`src/usecases/shell/`)
 so its context, constructor, trait and files stop growing with every feature.
-It closes the review backlog findings on `OrchestratorCtx`, the
-`new_with_initial_state` constructor, file sizes, `take_pending_command_rx`,
-`chat_updates.rs` and `ShellState` equality.
+It covers `OrchestratorCtx`, the `new_with_initial_state` constructor, file
+sizes, `take_pending_command_rx`, `chat_updates.rs` and `ShellState` equality.
 
 ## Problems
 
