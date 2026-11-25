@@ -55,21 +55,10 @@ on teardown: `DISAMBIGUATE_ESCAPE_CODES` (kitty keyboard protocol) when
 `modifyOtherKeys=2` (`ESC[>4;2m`). Terminals that honour neither report a plain
 `Enter`, which still sends the message.
 
-### tmux
-
 tmux implements no kitty keyboard protocol, so the `modifyOtherKeys` path is
-used — but tmux only forwards the request when it is configured for extended
-keys, and crossterm parses only the `csi-u` form. Required in `tmux.conf`:
-
-```tmux
-set -s extended-keys on
-set -s extended-keys-format csi-u
-set -as terminal-features 'xterm*:extkeys'
-```
-
-`extended-keys` defaults to `off`; `extkeys` tells tmux to request extended keys
-from the outer terminal (match the pattern against the *outer* `TERM`). Reload
-plus a client detach/attach is needed for the feature to take effect.
+used there. tmux forwards the request only when it is configured for extended
+keys, and crossterm parses only the `csi-u` form: the `tmux.conf` lines are in
+the Hotkeys section of the [README](../README.md#hotkeys).
 
 ### Sequences
 
@@ -157,35 +146,3 @@ Add the hotkey to the Hotkeys tables of `README.md` and `README.ru.md` (see
 ```sh
 mise run quality
 ```
-
-## User configuration
-
-Users can override any hotkey in `~/.config/rtg/config.toml`:
-
-```toml
-[keys]
-select_next_chat = "n"
-delete_message = "xx"
-quit = "Q"
-```
-
-The key is the action name (snake_case), the value is the key pattern string.
-
-### Supported key pattern formats
-
-| Format | Example | Description |
-|--------|---------|-------------|
-| Single key | `"j"`, `"?"`, `"/"` | Single keypress |
-| Ctrl combo | `"Ctrl+C"` | Ctrl + key |
-| Sequence | `"dd"`, `"gg"` | Multiple keys pressed in order |
-| Special key | `"Enter"`, `"Esc"` | Named special keys |
-
-### How overrides work
-
-When a user overrides a binding, the old key is unbound and the action is
-rebound to the new pattern. The override applies to all contexts where the
-action was originally bound. Invalid action names or key patterns are logged
-as warnings and skipped.
-
-The help popup (`?`) always shows the current (potentially overridden) bindings.
-An override changes the key shown in a row, not the place of the row.

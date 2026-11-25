@@ -134,6 +134,18 @@ In an open chat:
 
 While writing a message, `Enter` sends it and `Shift+Enter` starts a new line.
 
+Inside tmux, `Shift+Enter` works only with extended keys turned on in
+`tmux.conf`; without them it sends the message:
+
+```tmux
+set -s extended-keys on
+set -s extended-keys-format csi-u
+set -as terminal-features 'xterm*:extkeys'
+```
+
+`xterm*` is matched against the `TERM` of the terminal tmux runs in. Reload the
+config, then detach and attach again.
+
 The full list is in RTG itself: press `?`.
 
 ## Configuration

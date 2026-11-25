@@ -1,105 +1,67 @@
 # Releases
 
-How RTG releases are cut, what the pipeline produces, and the known caveats.
+How RTG releases are cut and what is not obvious from the release config.
 
 ## Overview
 
 Releases are built and published by [cargo-dist](https://axodotdev.github.io/cargo-dist/)
-([ADR 0002](adr/0002-release-through-cargo-dist.md)). Its config lives in
-[`dist-workspace.toml`](../dist-workspace.toml) and in the `[profile.dist]`
-section of `Cargo.toml`. The [`release.yml`](../.github/workflows/release.yml)
-workflow is generated from that config and is not edited by hand.
+([ADR 0002](adr/0002-release-through-cargo-dist.md)). The targets, installers
+and publish jobs are set in [`dist-workspace.toml`](../dist-workspace.toml) and
+in `[profile.dist]` of `Cargo.toml`.
 
-A release is triggered by pushing a `v*` git tag (e.g. `v0.2.0`). The workflow
-then:
+Pushing a `v*` tag publishes a GitHub Release with an archive per target, the
+release installer `rtg-tui-installer.sh` and the Homebrew formula `rtg.rb`,
+then publishes the formula to the Homebrew tap and the package to crates.io.
+Every pull request runs the same build without publishing, so a broken release
+build shows up before the tag.
 
-1. **Plans** the release. `dist` fails the run if the tag does not match the
-   `Cargo.toml` version or if `release.yml` is out of date with the config.
-2. **Builds** `rtg` with the `dist` profile (`release` plus thin LTO) for four
-   targets:
-   - `aarch64-apple-darwin` (macOS Apple Silicon)
-   - `x86_64-apple-darwin` (macOS Intel, cross-compiled on the ARM runner)
-   - `x86_64-unknown-linux-gnu` (Linux x86_64)
-   - `aarch64-unknown-linux-gnu` (Linux ARM64 — Raspberry Pi, AWS Graviton, Apple Silicon Linux VMs)
-   TDLib, OpenSSL and zlib are linked into the binary statically (the
-   `static` feature of `tdlib-rs`); only libc++ comes from the system. The
-   build log prints the dynamic libraries each binary links against.
-3. **Packages** each target into `rtg-tui-<target>.tar.xz` with a `.sha256`
-   next to it, and builds the release installer `rtg-tui-installer.sh`, the
-   Homebrew formula `rtg.rb`, a combined `sha256.sum` and a source tarball.
-4. **Publishes** a GitHub Release with all of the above. dist writes the
-   release body: the version's section of [`CHANGELOG.md`](../CHANGELOG.md),
-   the install command and a table of downloads.
-5. **Publishes the formula** to the [Homebrew tap](#homebrew-tap).
-6. **Publishes the package** to [crates.io](#cratesio).
+TDLib, OpenSSL and zlib are linked into the binary statically; only libc++
+comes from the system.
 
-Every pull request runs steps 1–3 (`pr-run-mode = "upload"`), so a broken
-release build shows up before the tag; the artifacts are attached to the run
-and nothing is published.
+## Names
+
+The package is `rtg-tui`, because `rtg` was taken on crates.io. The binary and
+the Homebrew formula are `rtg`:
+
+- `cargo install --locked rtg-tui`
+- `brew install bercly0b/rtg/rtg`, from the tap
+  [`bercly0b/homebrew-rtg`](https://github.com/bercly0b/homebrew-rtg)
+
+`exclude` in `Cargo.toml` keeps `docs/assets/` out of the package: crates.io
+rejects packages over 10 MB, and the README demo GIF takes most of that.
 
 ## Release installer
 
-`rtg-tui-installer.sh` downloads the archive for the user's platform, installs
-`rtg` into `~/.cargo/bin` (`RTG_TUI_INSTALL_DIR=<dir>` installs into
-`<dir>/bin`) and adds that directory to `PATH` through the shell profiles. It
-also writes an install receipt, `~/.config/rtg-tui/rtg-tui-receipt.json`
-(under `$XDG_CONFIG_HOME` if set): the receipt tells this install channel apart
-from `cargo install`, which uses the same directory, and is what self-update
+`rtg-tui-installer.sh` installs `rtg` into `~/.cargo/bin`
+(`RTG_TUI_INSTALL_DIR=<dir>` installs into `<dir>/bin`) and writes an install
+receipt, `~/.config/rtg-tui/rtg-tui-receipt.json` (under `$XDG_CONFIG_HOME` if
+set). The receipt tells this install channel apart from `cargo install`, which
+uses the same directory, and is what [self-update](features/self-update.md)
 reads.
-
-The installer in `releases/latest/download/` installs the latest release; the
-installer of any other release (`releases/download/vX.Y.Z/rtg-tui-installer.sh`)
-installs that release.
-
-## Homebrew tap
-
-`brew install bercly0b/rtg/rtg` installs RTG from the tap
-[`bercly0b/homebrew-rtg`](https://github.com/bercly0b/homebrew-rtg). The
-`publish-homebrew-formula` job commits the release's `rtg.rb` to `Formula/` in
-the tap, so the formula always points at the release just published. A
-pre-release leaves the formula as it is.
-
-The formula is named after the binary (`formula = "rtg"`), not after the
-package `rtg-tui`. It downloads the same archives as the release installer, so
-on Linux it needs the same libc++ runtime.
-
-The job pushes to the tap with the `HOMEBREW_TAP_TOKEN` secret of this
-repository, a token with write access to the tap's contents. If the token has
-expired, the job fails after the GitHub Release is already out: renew the
-token, update the secret and re-run the failed job.
 
 An RTG installed with Homebrew does not update itself, as Homebrew requires:
 `rtg update` and the status bar point at `brew upgrade rtg`
 ([install channel](features/update-check.md#install-channel)).
 
-## crates.io
+## Publish tokens
 
-`cargo install --locked rtg-tui` builds RTG from the package
-[`rtg-tui`](https://crates.io/crates/rtg-tui) on crates.io; the name `rtg` was
-taken there, and the binary is still `rtg`. The package is published by
-[`publish-crates.yml`](../.github/workflows/publish-crates.yml), a dist custom
-publish job (`"./publish-crates"` in `publish-jobs`) that runs `cargo publish`
-once the GitHub Release is out. A pre-release is not published.
+| Job | Secret of this repository | What it is |
+| --- | --- | --- |
+| `publish-homebrew-formula` | `HOMEBREW_TAP_TOKEN` | a token with write access to the tap's contents |
+| [`publish-crates.yml`](../.github/workflows/publish-crates.yml) | `CARGO_REGISTRY_TOKEN` | a crates.io token with the `publish-update` scope for `rtg-tui` |
 
-`exclude` in `Cargo.toml` keeps `docs/assets/` out of the package: crates.io
-rejects packages over 10 MB, and the README demo GIF takes most of that.
-
-The job publishes with the `CARGO_REGISTRY_TOKEN` secret of this repository, a
-crates.io token with the `publish-update` scope for `rtg-tui`. If the token has
-expired, the job fails after the GitHub Release is already out: renew the
-token, update the secret and re-run the failed job.
+If a token has expired, its job fails after the GitHub Release is already out:
+renew the token, update the secret and re-run the failed job.
 
 ## Changing the release build
 
-Edit `dist-workspace.toml`, then regenerate the workflow and commit both:
-
-```bash
-dist generate
-```
+[`release.yml`](../.github/workflows/release.yml) is generated and is not
+edited by hand. Edit `dist-workspace.toml`, run `dist generate` and commit
+both; `dist` fails a run whose workflow is out of date with the config.
 
 `dist` is pinned in [`mise.toml`](../mise.toml) to the same version as
 `cargo-dist-version` in `dist-workspace.toml`. To upgrade it, bump the pin and
-run `dist init`, which updates the config and regenerates the workflow.
+run `dist init`.
 
 ## Changelog
 
@@ -122,48 +84,36 @@ a fragment. A pull request without user-visible changes (docs, refactoring, CI,
 tests) carries the `no-changelog` label instead; pull requests from Dependabot
 pass without one.
 
-At release, `mise run release` moves the fragments into a new
-`## X.Y.Z - YYYY-MM-DD` section at the top of `CHANGELOG.md`
+At release, the fragments move into a new `## X.Y.Z - YYYY-MM-DD` section at
+the top of `CHANGELOG.md`
 ([`scripts/release-changelog.sh`](../scripts/release-changelog.sh)). dist puts
-that section into the release body under *Release Notes* and uses its heading
-as the release title. dist silently skips a version that has no section, which
-is why the release task refuses to run without fragments.
+that section into the release body and uses its heading as the release title.
+dist silently skips a version that has no section, which is why the release
+task refuses to run without fragments.
 
 ## Cutting a release
 
-Use the `mise` task from a clean `main`:
+From a clean `main`:
 
 ```bash
 mise run release 0.2.0
 ```
 
-The task:
-1. Checks the working tree is clean and HEAD is on `main`.
-2. Moves the fragments from `changelog.d/` into a `## 0.2.0 - <today>`
-   section of `CHANGELOG.md`; fails if there are none.
-3. Bumps `version = "0.2.0"` in `Cargo.toml` and refreshes `Cargo.lock`
-   via `cargo check`.
-4. Commits as `release: v0.2.0`.
-5. Tags `v0.2.0`.
-6. Pushes the commit and the tag to `origin`.
-
-Then watch the run in [Actions](https://github.com/bercly0b/rtg/actions). A
-full release takes ~10–15 minutes.
+The task moves the changelog fragments, bumps the version, commits, tags and
+pushes (see `[tasks.release]` in [`mise.toml`](../mise.toml)). Then watch the
+run in [Actions](https://github.com/bercly0b/rtg/actions); a full release takes
+~10–15 minutes.
 
 A version with a pre-release suffix (`mise run release 0.2.0-rc.1`) is
-published as a GitHub pre-release. `releases/latest` keeps pointing at the last
-stable release, so try it with its own installer:
-`releases/download/v0.2.0-rc.1/rtg-tui-installer.sh`.
+published as a GitHub pre-release and reaches neither the Homebrew tap nor
+crates.io. `releases/latest` keeps pointing at the last stable release, so try
+it with its own installer: `releases/download/v0.2.0-rc.1/rtg-tui-installer.sh`.
+
+Only repository admins can create, move or delete `v*` tags: a tag ruleset
+(`Settings → Rules → Rulesets`) restricts all three.
 
 ## Known caveats
 
 - **The release binaries are not run in CI.** dist offers no hook after its
   build step, so `tests/static_tdlib.rs` (no `libtdjson` at runtime) runs in
   the quality gate on Linux instead of against each release binary.
-
-## Who can release
-
-Tag creation is restricted via a **tag ruleset** (`Settings → Rules → Rulesets`)
-matching pattern `v*` with `Restrict creations`, `Restrict updates`, and
-`Restrict deletions` enabled. Only `Repository admin` is on the bypass list,
-so only admins can create, move, or delete release tags.

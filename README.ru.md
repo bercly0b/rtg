@@ -134,6 +134,18 @@ cargo install --locked rtg-tui
 
 При наборе сообщения `Enter` отправляет его, `Shift+Enter` переносит строку.
 
+Внутри tmux `Shift+Enter` работает, только если в `tmux.conf` включены
+extended keys; без них он отправляет сообщение:
+
+```tmux
+set -s extended-keys on
+set -s extended-keys-format csi-u
+set -as terminal-features 'xterm*:extkeys'
+```
+
+`xterm*` сопоставляется с `TERM` терминала, в котором запущен tmux. Перечитайте
+конфиг, затем отключитесь от сессии и подключитесь снова.
+
 Полный список — в самом RTG: нажмите `?`.
 
 ## Настройка
