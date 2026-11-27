@@ -311,3 +311,30 @@ fn shift_l_toggles_the_layout_in_every_context() {
         );
     }
 }
+
+#[test]
+fn slash_starts_quick_search_and_s_starts_global_search_only_in_chat_list() {
+    let mut km = Keymap::default();
+    assert_eq!(
+        km.resolve("/", false, KeyContext::ChatList),
+        ResolveResult::Action(Action::QuickSearch)
+    );
+    assert_eq!(
+        km.resolve("s", false, KeyContext::ChatList),
+        ResolveResult::Action(Action::GlobalSearch)
+    );
+    assert_eq!(
+        km.resolve("s", false, KeyContext::ForumTopicList),
+        ResolveResult::Unmatched
+    );
+    assert_eq!(
+        km.resolve("s", false, KeyContext::Messages),
+        ResolveResult::Unmatched
+    );
+}
+
+#[test]
+fn quick_search_has_no_alias_under_its_old_name() {
+    assert_eq!(Action::from_name("quick_search"), Some(Action::QuickSearch));
+    assert_eq!(Action::from_name("search_chats"), None);
+}

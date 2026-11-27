@@ -7,6 +7,7 @@ mod chat_updates;
 mod command_popup;
 mod file_updates;
 mod forum;
+mod global_search;
 mod info_picker;
 mod key_dispatch;
 mod links;
@@ -272,6 +273,7 @@ where
                         false,
                     );
                 }
+                global_search::send_due_network_search(&mut self.as_ctx().shell);
                 self.state.open_chat_mut().typing_state_mut().expire_stale();
                 self.storage.save_last_action("tick")?;
             }

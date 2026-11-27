@@ -42,7 +42,12 @@ fn help_groups_for_chat_list() {
             ),
             (
                 "Chat lists",
-                vec!["search_chats", "show_chat_folders", "refresh_chat_list"]
+                vec![
+                    "quick_search",
+                    "global_search",
+                    "show_chat_folders",
+                    "refresh_chat_list",
+                ]
             ),
             (
                 "Chat",

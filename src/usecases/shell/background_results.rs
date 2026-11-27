@@ -4,7 +4,8 @@ use crate::{
 };
 
 use super::{
-    attachments, chat_list, chat_open, chat_updates, popups, self_update, OrchestratorCtx,
+    attachments, chat_list, chat_open, chat_updates, forum, global_search, popups, self_update,
+    OrchestratorCtx,
 };
 
 pub(super) fn handle_background_result<D: TaskDispatcher>(
@@ -70,6 +71,7 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                         "background: forum topics loaded"
                     );
                     forum_list.set_ready(topics);
+                    forum::title_open_topic(&mut ctx.shell);
                 }
                 Err(error) => {
                     tracing::warn!(
@@ -410,6 +412,16 @@ pub(super) fn handle_background_result<D: TaskDispatcher>(
                 .state
                 .set_notification(format!("Save failed: {error}"));
         }
+        BackgroundTaskResult::ChatsFound {
+            query,
+            scope,
+            result,
+        } => global_search::handle_chats_found(&mut ctx.shell, &query, scope, result),
+        BackgroundTaskResult::MessagesFound {
+            query,
+            offset,
+            result,
+        } => global_search::handle_messages_found(&mut ctx.shell, &query, &offset, result),
         BackgroundTaskResult::UpdateAvailable(update) => {
             ctx.shell.state.set_available_update(update);
         }

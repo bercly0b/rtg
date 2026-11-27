@@ -309,7 +309,7 @@ fn resolve_chat_metadata(
 ///
 /// Populates the cache on successful TDLib fetch. Logs a warning
 /// when the user cannot be resolved from either source.
-fn resolve_user(
+pub(super) fn resolve_user(
     resolver: &dyn ChatDataResolver,
     cache: &TdLibCache,
     user_id: i64,

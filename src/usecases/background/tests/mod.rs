@@ -107,6 +107,15 @@ impl TaskDispatcher for StubTaskDispatcher {
 
     fn dispatch_resolve_mention(&self, _username: String) {}
 
+    fn dispatch_search_chats(
+        &self,
+        _query: String,
+        _scope: crate::domain::global_search_state::ChatScope,
+    ) {
+    }
+
+    fn dispatch_search_messages(&self, _query: String, _offset: String) {}
+
     fn dispatch_self_update(&self) {}
 }
 
@@ -704,6 +713,137 @@ mod add_chat_to_list {
         assert_eq!(
             *mover.calls.lock().unwrap(),
             vec![(7, ChatListKind::Archive)]
+        );
+    }
+}
+
+// ── dispatch_search_chats / dispatch_search_messages ──
+
+mod global_search {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use crate::domain::chat::ChatType;
+    use crate::domain::global_search_state::{ChatScope, FoundChat, FoundMessagesPage};
+    use crate::usecases::background::search::{dispatch_search_chats, dispatch_search_messages};
+    use crate::usecases::background::{BackgroundError, BackgroundTaskResult};
+    use crate::usecases::global_search::{GlobalSearchError, GlobalSearchSource};
+
+    /// Answers every request the same way.
+    struct StubSearchSource {
+        fails: bool,
+    }
+
+    impl StubSearchSource {
+        fn new(fails: bool) -> Arc<Self> {
+            Arc::new(Self { fails })
+        }
+    }
+
+    fn rust_chat() -> FoundChat {
+        FoundChat {
+            chat_id: 7,
+            title: "Rust".to_owned(),
+            username: None,
+            chat_type: ChatType::Group,
+            is_forum: false,
+        }
+    }
+
+    fn last_page() -> FoundMessagesPage {
+        FoundMessagesPage {
+            messages: Vec::new(),
+            next_offset: None,
+        }
+    }
+
+    impl GlobalSearchSource for StubSearchSource {
+        fn search_chats(
+            &self,
+            _query: &str,
+            _scope: ChatScope,
+        ) -> Result<Vec<FoundChat>, GlobalSearchError> {
+            if self.fails {
+                return Err(GlobalSearchError::Unavailable);
+            }
+            Ok(vec![rust_chat()])
+        }
+
+        fn search_messages(
+            &self,
+            _query: &str,
+            _offset: &str,
+        ) -> Result<FoundMessagesPage, GlobalSearchError> {
+            if self.fails {
+                return Err(GlobalSearchError::Unavailable);
+            }
+            Ok(last_page())
+        }
+    }
+
+    fn search_chats(source: &Arc<StubSearchSource>) -> BackgroundTaskResult {
+        let (tx, rx) = std::sync::mpsc::channel();
+        dispatch_search_chats(source, &tx, "rust".to_owned(), ChatScope::Public);
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("found chats should arrive")
+    }
+
+    fn search_messages(source: &Arc<StubSearchSource>) -> BackgroundTaskResult {
+        let (tx, rx) = std::sync::mpsc::channel();
+        dispatch_search_messages(source, &tx, "rust".to_owned(), "p2".to_owned());
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("message search result should arrive")
+    }
+
+    fn unavailable() -> BackgroundError {
+        BackgroundError::new("GLOBAL_SEARCH_UNAVAILABLE")
+    }
+
+    #[test]
+    fn found_chats_are_reported_with_the_query_and_the_scope() {
+        assert_eq!(
+            search_chats(&StubSearchSource::new(false)),
+            BackgroundTaskResult::ChatsFound {
+                query: "rust".to_owned(),
+                scope: ChatScope::Public,
+                result: Ok(vec![rust_chat()]),
+            }
+        );
+    }
+
+    #[test]
+    fn a_failed_chat_search_is_reported_with_the_query_and_the_scope() {
+        assert_eq!(
+            search_chats(&StubSearchSource::new(true)),
+            BackgroundTaskResult::ChatsFound {
+                query: "rust".to_owned(),
+                scope: ChatScope::Public,
+                result: Err(unavailable()),
+            }
+        );
+    }
+
+    #[test]
+    fn found_messages_are_reported_with_the_query_and_the_offset() {
+        assert_eq!(
+            search_messages(&StubSearchSource::new(false)),
+            BackgroundTaskResult::MessagesFound {
+                query: "rust".to_owned(),
+                offset: "p2".to_owned(),
+                result: Ok(last_page()),
+            }
+        );
+    }
+
+    #[test]
+    fn a_failed_message_search_is_reported_with_the_query_and_the_offset() {
+        assert_eq!(
+            search_messages(&StubSearchSource::new(true)),
+            BackgroundTaskResult::MessagesFound {
+                query: "rust".to_owned(),
+                offset: "p2".to_owned(),
+                result: Err(unavailable()),
+            }
         );
     }
 }

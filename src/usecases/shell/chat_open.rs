@@ -85,7 +85,7 @@ pub(super) fn open_selected_chat<D: TaskDispatcher>(
 }
 
 /// Opens a chat by its identity, whether or not the chat list holds it.
-fn open_chat<D: TaskDispatcher>(
+pub(super) fn open_chat<D: TaskDispatcher>(
     ctx: &mut ShellCtx<'_, D>,
     sync: &mut OpenChatSync,
     chat_id: i64,

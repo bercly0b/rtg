@@ -1,0 +1,2 @@
+- Global search: `s` in the chat list looks through the whole account and Telegram for chats, contacts and messages, and opens what you pick.
+- The `/` search is now called quick search. If you remapped it in `[keys]`, rename `search_chats` to `quick_search`: the old name is no longer read.

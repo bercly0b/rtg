@@ -30,6 +30,7 @@ ads. No notifications. Enjoy the silence.
 ## Features
 
 - Chat list with unread counters, search, folders and archive
+- Global search across chats, contacts and messages
 - Forum topics
 - Read, send, reply to, edit, delete and copy messages
 - Reactions
@@ -107,7 +108,8 @@ In the chat list:
 | `j` / `k` | Next / previous chat |
 | `gg` | First chat |
 | `Enter` / `l` | Open the chat |
-| `/` | Search chats |
+| `/` | Quick search: jump to a chat of the list by its title |
+| `s` | Global search across chats, contacts and messages |
 | `f` | Pick a folder or the archive |
 | `A` | Archive or unarchive the chat |
 | `r` | Mark the chat as read |

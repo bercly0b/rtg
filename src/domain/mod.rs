@@ -15,6 +15,7 @@ pub mod events;
 pub mod file_picker_state;
 pub mod forum_topic;
 pub mod forum_topic_list_state;
+pub mod global_search_state;
 pub mod info_picker_state;
 pub mod keymap;
 pub mod layout;
