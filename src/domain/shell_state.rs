@@ -14,6 +14,7 @@ use super::{
     forum_topic_list_state::ForumTopicListState,
     info_picker_state::{InfoPickerEntry, InfoPickerState},
     keymap::KeyContext,
+    layout::{ColumnLayout, LayoutColumns},
     link_picker_state::LinkPickerState,
     message::LinkTarget,
     message_cache::MessageCache,
@@ -70,6 +71,9 @@ pub struct ShellState {
     message_cache: MessageCache,
     message_input: MessageInputState,
     active_pane: ActivePane,
+    layout_columns: LayoutColumns,
+    /// Width of the last drawn frame, in terminal columns.
+    window_width: u16,
     help_visible: bool,
     command_popup: Option<CommandPopupState>,
     notification: Option<Notification>,
@@ -99,6 +103,8 @@ impl Default for ShellState {
             message_cache: MessageCache::default(),
             message_input: MessageInputState::default(),
             active_pane: ActivePane::default(),
+            layout_columns: LayoutColumns::default(),
+            window_width: 0,
             help_visible: false,
             command_popup: None,
             notification: None,
@@ -143,6 +149,11 @@ impl ShellState {
             message_cache: MessageCache::new(max_cached_chats, max_messages_per_chat),
             ..Default::default()
         }
+    }
+
+    pub fn with_layout_columns(mut self, columns: LayoutColumns) -> Self {
+        self.layout_columns = columns;
+        self
     }
 
     pub fn is_running(&self) -> bool {
@@ -241,6 +252,23 @@ impl ShellState {
 
     pub fn set_active_pane(&mut self, pane: ActivePane) {
         self.active_pane = pane;
+    }
+
+    pub fn set_window_width(&mut self, width: u16) {
+        self.window_width = width;
+    }
+
+    pub fn layout(&self) -> ColumnLayout {
+        self.layout_columns.layout_at(self.window_width)
+    }
+
+    /// Switches to the other layout and keeps it whatever the window width
+    /// becomes: there is no way back to `LayoutColumns::Auto`.
+    pub fn toggle_layout(&mut self) {
+        self.layout_columns = match self.layout() {
+            ColumnLayout::SingleColumn => LayoutColumns::Two,
+            ColumnLayout::TwoColumn => LayoutColumns::One,
+        };
     }
 
     pub fn help_visible(&self) -> bool {
@@ -560,6 +588,39 @@ mod tests {
     fn default_active_pane_is_chat_list() {
         let state = ShellState::default();
         assert_eq!(state.active_pane(), ActivePane::ChatList);
+    }
+
+    #[test]
+    fn toggling_the_layout_flips_what_is_shown_and_pins_it_across_resizes() {
+        let mut state = ShellState::default();
+        state.set_window_width(80);
+        assert_eq!(state.layout(), ColumnLayout::SingleColumn);
+
+        state.toggle_layout();
+        assert_eq!(state.layout(), ColumnLayout::TwoColumn);
+
+        state.set_window_width(200);
+        assert_eq!(state.layout(), ColumnLayout::TwoColumn);
+
+        state.toggle_layout();
+        assert_eq!(state.layout(), ColumnLayout::SingleColumn);
+    }
+
+    #[test]
+    fn auto_layout_follows_the_window_width_until_toggled() {
+        let mut state = ShellState::default();
+        state.set_window_width(80);
+        assert_eq!(state.layout(), ColumnLayout::SingleColumn);
+
+        state.set_window_width(200);
+        assert_eq!(state.layout(), ColumnLayout::TwoColumn);
+    }
+
+    #[test]
+    fn configured_columns_override_the_window_width() {
+        let mut state = ShellState::default().with_layout_columns(LayoutColumns::One);
+        state.set_window_width(200);
+        assert_eq!(state.layout(), ColumnLayout::SingleColumn);
     }
 
     #[test]

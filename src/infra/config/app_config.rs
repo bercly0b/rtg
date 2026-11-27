@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::domain::message_cache::{
-    DEFAULT_MAX_CACHED_CHATS, DEFAULT_MAX_MESSAGES_PER_CHAT, DEFAULT_MIN_DISPLAY_MESSAGES,
+use crate::domain::{
+    layout::LayoutColumns,
+    message_cache::{
+        DEFAULT_MAX_CACHED_CHATS, DEFAULT_MAX_MESSAGES_PER_CHAT, DEFAULT_MIN_DISPLAY_MESSAGES,
+    },
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -15,6 +18,7 @@ pub struct AppConfig {
     pub download: DownloadConfig,
     pub keys: KeysConfig,
     pub updates: UpdatesConfig,
+    pub layout: LayoutConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -264,6 +268,11 @@ impl Default for UpdatesConfig {
     fn default() -> Self {
         Self { check: true }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct LayoutConfig {
+    pub columns: LayoutColumns,
 }
 
 #[cfg(test)]

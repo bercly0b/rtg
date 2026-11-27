@@ -38,6 +38,7 @@ ads. No notifications. Enjoy the silence.
 - Download and save files, with a size limit for auto-download
 - Open attachments and links in your own apps (mailcap-style handlers)
 - Chat and message info
+- Single-column layout for narrow windows: only the chat list or the open chat, switched on automatically or with a key
 - Vim-like keys, every one remappable
 - Built-in updater: `rtg update`
 
@@ -95,6 +96,7 @@ Everywhere:
 | Key | Action |
 | --- | --- |
 | `?` | Show the hotkeys |
+| `L` | Switch between one and two columns |
 | `U` | Install the update |
 | `q` | Quit |
 
@@ -178,6 +180,7 @@ delete_message = "xx"
 | `[download]` | The size limit for auto-download |
 | `[open]` | Apps that open attachments, by MIME type |
 | `[updates]` | The daily check for a newer release |
+| `[layout]` | One column or two |
 | `[keys]` | Hotkeys |
 
 See [`config.example.toml`](config.example.toml) for the full reference.

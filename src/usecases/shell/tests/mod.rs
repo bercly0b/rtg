@@ -11,6 +11,7 @@ mod fixtures;
 mod forum;
 mod help_popup;
 mod info_picker;
+mod layout;
 mod lifecycle;
 mod links;
 mod message_actions;

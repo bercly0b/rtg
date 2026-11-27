@@ -295,3 +295,19 @@ fn reload_forum_topics_resolves_in_forum_context() {
         ResolveResult::Action(Action::ReloadForumTopics)
     );
 }
+
+#[test]
+fn shift_l_toggles_the_layout_in_every_context() {
+    let mut km = Keymap::default();
+    for context in [
+        KeyContext::ChatList,
+        KeyContext::ForumTopicList,
+        KeyContext::Messages,
+    ] {
+        assert_eq!(
+            km.resolve("L", false, context),
+            ResolveResult::Action(Action::ToggleLayout),
+            "{context:?}"
+        );
+    }
+}

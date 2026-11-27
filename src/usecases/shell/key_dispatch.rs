@@ -114,6 +114,7 @@ pub(super) fn dispatch_chat_list_action<D: TaskDispatcher>(
         Action::ShowHelp => {
             ctx.shell.state.show_help();
         }
+        Action::ToggleLayout => ctx.shell.state.toggle_layout(),
         Action::InstallUpdate => self_update::start_self_update(&mut ctx.shell),
         _ => {}
     }
@@ -218,6 +219,7 @@ pub(super) fn dispatch_messages_action<D: TaskDispatcher>(
         Action::ShowHelp => {
             ctx.shell.state.show_help();
         }
+        Action::ToggleLayout => ctx.shell.state.toggle_layout(),
         Action::InstallUpdate => self_update::start_self_update(&mut ctx.shell),
         _ => {}
     }
@@ -327,6 +329,7 @@ pub(super) fn dispatch_forum_topic_list_action<D: TaskDispatcher>(
         Action::ShowHelp => {
             ctx.shell.state.show_help();
         }
+        Action::ToggleLayout => ctx.shell.state.toggle_layout(),
         Action::InstallUpdate => self_update::start_self_update(&mut ctx.shell),
         _ => {}
     }

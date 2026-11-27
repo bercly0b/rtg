@@ -13,7 +13,12 @@ use ratatui::{
     Frame,
 };
 
-use crate::domain::{chat::ChatType, keymap::HelpGroup, shell_state::ShellState};
+use crate::domain::{
+    chat::ChatType,
+    keymap::HelpGroup,
+    layout::ColumnLayout,
+    shell_state::{ActivePane, ShellState},
+};
 
 use super::chat_folder_picker_popup;
 use super::chat_info_popup;
@@ -41,58 +46,30 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_groups: &[Help
         ])
         .areas(frame.area());
 
-    // Horizontal split: chat list | separator (1 char) | messages+input
-    let [chats_area, separator_area, messages_with_input_area] = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(30),
-            Constraint::Length(1),
-            Constraint::Percentage(70),
-        ])
-        .areas(content_area);
-
+    state.set_window_width(frame.area().width);
     let active_pane = state.active_pane();
-    chat_list::render_chat_list_panel(frame, chats_area, state, active_pane);
-    render_vertical_separator(frame, separator_area);
+    match state.layout() {
+        ColumnLayout::TwoColumn => {
+            // Horizontal split: chat list | separator (1 char) | messages+input
+            let [chats_area, separator_area, messages_with_input_area] = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(30),
+                    Constraint::Length(1),
+                    Constraint::Percentage(70),
+                ])
+                .areas(content_area);
 
-    if state.open_chat().is_open() {
-        // Compute dynamic input height based on text length and available width.
-        let input_height = status_line::compute_input_height(
-            state.message_input().text(),
-            messages_with_input_area.width,
-        )
-        .saturating_add(reply_preview_height(state.message_input()));
-
-        // Split right panel into messages area, horizontal separator, and input field
-        let [messages_area, input_separator_area, input_area] = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(1),
-                Constraint::Length(1),
-                Constraint::Length(input_height),
-            ])
-            .areas(messages_with_input_area);
-
-        messages_panel::render_messages_panel(frame, messages_area, state, active_pane);
-        render_horizontal_separator(frame, input_separator_area);
-        let placeholder = if state.open_chat().chat_type() == ChatType::Channel {
-            CHANNEL_READONLY_PLACEHOLDER
-        } else if state.open_topic_is_closed() {
-            TOPIC_CLOSED_PLACEHOLDER
-        } else {
-            PLACEHOLDER_TEXT
-        };
-        render_message_input(
-            frame,
-            input_area,
-            state.message_input(),
-            active_pane,
-            placeholder,
-        );
-    } else {
-        // No chat open: hide the input field entirely and give the whole right
-        // panel to the (empty) messages panel.
-        messages_panel::render_messages_panel(frame, messages_with_input_area, state, active_pane);
+            chat_list::render_chat_list_panel(frame, chats_area, state, active_pane);
+            render_vertical_separator(frame, separator_area);
+            render_messages_with_input(frame, messages_with_input_area, state, active_pane);
+        }
+        ColumnLayout::SingleColumn if active_pane == ActivePane::ChatList => {
+            chat_list::render_chat_list_panel(frame, content_area, state, active_pane);
+        }
+        ColumnLayout::SingleColumn => {
+            render_messages_with_input(frame, content_area, state, active_pane);
+        }
     }
 
     render_horizontal_separator(frame, status_separator_area);
@@ -142,6 +119,51 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_groups: &[Help
 
     if let Some(picker_state) = state.file_picker() {
         file_picker_popup::render_file_picker(frame, frame.area(), picker_state);
+    }
+}
+
+fn render_messages_with_input(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &mut ShellState,
+    active_pane: ActivePane,
+) {
+    if state.open_chat().is_open() {
+        // Compute dynamic input height based on text length and available width.
+        let input_height =
+            status_line::compute_input_height(state.message_input().text(), area.width)
+                .saturating_add(reply_preview_height(state.message_input()));
+
+        // Split right panel into messages area, horizontal separator, and input field
+        let [messages_area, input_separator_area, input_area] = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(1),
+                Constraint::Length(1),
+                Constraint::Length(input_height),
+            ])
+            .areas(area);
+
+        messages_panel::render_messages_panel(frame, messages_area, state, active_pane);
+        render_horizontal_separator(frame, input_separator_area);
+        let placeholder = if state.open_chat().chat_type() == ChatType::Channel {
+            CHANNEL_READONLY_PLACEHOLDER
+        } else if state.open_topic_is_closed() {
+            TOPIC_CLOSED_PLACEHOLDER
+        } else {
+            PLACEHOLDER_TEXT
+        };
+        render_message_input(
+            frame,
+            input_area,
+            state.message_input(),
+            active_pane,
+            placeholder,
+        );
+    } else {
+        // No chat open: hide the input field entirely and give the whole right
+        // panel to the (empty) messages panel.
+        messages_panel::render_messages_panel(frame, area, state, active_pane);
     }
 }
 
