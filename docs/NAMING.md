@@ -36,6 +36,7 @@ required pair: "RTG" together with "Telegram TUI" or "Telegram client".
 | `rtg --help` | `about` in `src/cli.rs` |
 | About of `bercly0b/rtg` | repository settings (`gh repo edit --description`) |
 | About of `bercly0b/homebrew-rtg` | repository settings (`gh repo edit --description`) |
+| Project page `rozov1.xyz/projects/rtg/` | `title` and `description` of `content/projects/rtg/index.md` in the blog repository (`bercly0b/rozov1-blog`) |
 | Announcements and catalogue submissions | written per case, following the rule above |
 
 GitHub release titles are an exception and stay as `<version> - <date>`: the
