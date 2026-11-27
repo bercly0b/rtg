@@ -57,8 +57,8 @@ max_log_files = 3
 [layout]
 # How many panels the window shows at once:
 #   "auto"  one column when the window is narrower than 100 columns, two otherwise
-#   "one"   only the panel that has focus: the chat list or the open chat
-#   "two"   the chat list and the open chat side by side
+#   "one"   only the panel that has focus: the chat list panel or the messages panel
+#   "two"   the chat list panel and the messages panel side by side
 # `L` switches to the other layout until RTG is closed.
 # columns = "auto"
 

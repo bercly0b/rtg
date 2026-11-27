@@ -272,7 +272,26 @@ impl Default for UpdatesConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct LayoutConfig {
-    pub columns: LayoutColumns,
+    pub columns: ColumnsConfig,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ColumnsConfig {
+    #[default]
+    Auto,
+    One,
+    Two,
+}
+
+impl From<ColumnsConfig> for LayoutColumns {
+    fn from(columns: ColumnsConfig) -> Self {
+        match columns {
+            ColumnsConfig::Auto => Self::Auto,
+            ColumnsConfig::One => Self::One,
+            ColumnsConfig::Two => Self::Two,
+        }
+    }
 }
 
 #[cfg(test)]

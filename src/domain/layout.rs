@@ -1,8 +1,5 @@
-use serde::{Deserialize, Serialize};
-
-/// The `[layout] columns` setting: how many panels the window shows at once.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+/// How many panels the window is asked to show at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LayoutColumns {
     /// One column in a narrow window, two in a wide one.
     #[default]

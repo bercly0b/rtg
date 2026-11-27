@@ -118,3 +118,15 @@ fn toggling_the_layout_in_a_narrow_window_brings_both_panels_back() {
     assert!(text.contains("A chat"), "{text}");
     assert!(text.contains(MESSAGE), "{text}");
 }
+
+#[test]
+fn narrow_window_with_focus_on_the_topic_list_hides_the_topic_that_stays_open() {
+    let mut state = state_with_open_chat(ActivePane::ChatList);
+    state.enter_forum(2, "Some forum");
+
+    let text = render_at(&mut state, 80);
+
+    assert!(text.contains("Some forum"), "{text}");
+    assert!(!text.contains(MESSAGE), "{text}");
+    assert!(state.open_chat().is_open());
+}

@@ -134,7 +134,7 @@ fn render_messages_with_input(
             status_line::compute_input_height(state.message_input().text(), area.width)
                 .saturating_add(reply_preview_height(state.message_input()));
 
-        // Split right panel into messages area, horizontal separator, and input field
+        // Split the messages panel into messages area, horizontal separator, and input field
         let [messages_area, input_separator_area, input_area] = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -161,8 +161,8 @@ fn render_messages_with_input(
             placeholder,
         );
     } else {
-        // No chat open: hide the input field entirely and give the whole right
-        // panel to the (empty) messages panel.
+        // No chat open: hide the input field entirely and give the whole area
+        // to the (empty) messages panel.
         messages_panel::render_messages_panel(frame, area, state, active_pane);
     }
 }

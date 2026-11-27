@@ -153,7 +153,7 @@ fn compose_shell_with_factory(
         cache_cfg.max_cached_chats,
         cache_cfg.max_messages_per_chat,
     )
-    .with_layout_columns(context.config.layout.columns);
+    .with_layout_columns(context.config.layout.columns.into());
 
     // Provide the cache source to the orchestrator for instant message display.
     let cache_source: std::sync::Arc<dyn CachedMessagesSource> =

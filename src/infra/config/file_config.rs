@@ -1,11 +1,11 @@
 use serde::Deserialize;
 
 use crate::{
-    domain::{command_template::FILE_PATH_PLACEHOLDER, layout::LayoutColumns},
+    domain::command_template::FILE_PATH_PLACEHOLDER,
     infra::{
         config::{
-            AppConfig, AttachConfig, CacheConfig, DownloadConfig, KeysConfig, LayoutConfig,
-            LogConfig, OpenConfig, TelegramConfig, UpdatesConfig, VoiceConfig,
+            AppConfig, AttachConfig, CacheConfig, ColumnsConfig, DownloadConfig, KeysConfig,
+            LayoutConfig, LogConfig, OpenConfig, TelegramConfig, UpdatesConfig, VoiceConfig,
         },
         error::AppError,
     },
@@ -227,7 +227,7 @@ impl FileUpdatesConfig {
 
 #[derive(Debug, Deserialize, Default)]
 pub struct FileLayoutConfig {
-    pub columns: Option<LayoutColumns>,
+    pub columns: Option<ColumnsConfig>,
 }
 
 impl FileLayoutConfig {
@@ -653,15 +653,15 @@ list_cmd = "fd --type f . {dirs}"
         let file: FileConfig = toml::from_str("[layout]\n").unwrap();
         let mut config = AppConfig::default();
         file.merge_into(&mut config).unwrap();
-        assert_eq!(config.layout.columns, LayoutColumns::Auto);
+        assert_eq!(config.layout.columns, ColumnsConfig::Auto);
     }
 
     #[test]
     fn layout_columns_can_be_fixed() {
         for (value, columns) in [
-            ("auto", LayoutColumns::Auto),
-            ("one", LayoutColumns::One),
-            ("two", LayoutColumns::Two),
+            ("auto", ColumnsConfig::Auto),
+            ("one", ColumnsConfig::One),
+            ("two", ColumnsConfig::Two),
         ] {
             let file: FileConfig =
                 toml::from_str(&format!("[layout]\ncolumns = \"{value}\"\n")).unwrap();
