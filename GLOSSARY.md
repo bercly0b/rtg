@@ -38,10 +38,28 @@ _Avoid_: new-contact card, widget
 RTG's own guess at when an account was registered, derived from its user ID; not data from Telegram, unlike the registration date in account info.
 _Avoid_: approximate date, guessed date, account age
 
+## Panels and layout
+
+**Chat list panel**:
+The panel that shows the current chat list, or the topics of a forum once one is opened.
+_Avoid_: left panel, sidebar
+
+**Messages panel**:
+The panel that shows the messages of the open chat together with the field for writing one.
+_Avoid_: right panel, chat panel, conversation
+
+**Two-column layout**:
+The arrangement in which the chat list panel and the messages panel are visible side by side.
+_Avoid_: split view, wide mode
+
+**Single-column layout**:
+The arrangement in which only the panel that has focus is visible and takes the whole width.
+_Avoid_: compact mode, narrow mode, zen mode, hidden chat list
+
 ## Chat lists
 
 **Chat list**:
-The set of chats the left panel shows at a time: the main list, a folder, or the archive.
+The set of chats the chat list panel shows at a time: the main list, a folder, or the archive.
 _Avoid_: view, tab, directory
 
 **Main list**:
@@ -61,7 +79,7 @@ Moving a chat from the main list into the archive; the reverse is unarchiving.
 _Avoid_: hiding
 
 **Folder picker**:
-The popup that switches the left panel between the main list, the folders and the archive.
+The popup that switches the chat list panel between the main list, the folders and the archive.
 _Avoid_: folder selector, directory selector
 
 **Unread chat count**:
