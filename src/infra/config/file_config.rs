@@ -4,8 +4,8 @@ use crate::{
     domain::command_template::FILE_PATH_PLACEHOLDER,
     infra::{
         config::{
-            AppConfig, AttachConfig, CacheConfig, DownloadConfig, KeysConfig, LogConfig,
-            OpenConfig, TelegramConfig, UpdatesConfig, VoiceConfig,
+            AppConfig, AttachConfig, CacheConfig, ColumnsConfig, DownloadConfig, KeysConfig,
+            LayoutConfig, LogConfig, OpenConfig, TelegramConfig, UpdatesConfig, VoiceConfig,
         },
         error::AppError,
     },
@@ -22,6 +22,7 @@ pub struct FileConfig {
     pub download: Option<FileDownloadConfig>,
     pub keys: Option<FileKeysConfig>,
     pub updates: Option<FileUpdatesConfig>,
+    pub layout: Option<FileLayoutConfig>,
 }
 
 impl FileConfig {
@@ -60,6 +61,10 @@ impl FileConfig {
 
         if let Some(updates) = self.updates {
             updates.merge_into(&mut config.updates);
+        }
+
+        if let Some(layout) = self.layout {
+            layout.merge_into(&mut config.layout);
         }
 
         Ok(())
@@ -220,6 +225,19 @@ impl FileUpdatesConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct FileLayoutConfig {
+    pub columns: Option<ColumnsConfig>,
+}
+
+impl FileLayoutConfig {
+    fn merge_into(self, config: &mut LayoutConfig) {
+        if let Some(columns) = self.columns {
+            config.columns = columns;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,6 +318,7 @@ level = "warn"
             download: None,
             keys: None,
             updates: None,
+            layout: None,
         };
 
         let mut config = AppConfig::default();
@@ -343,6 +362,7 @@ level = "warn"
             download: None,
             keys: None,
             updates: None,
+            layout: None,
         };
 
         let mut config = AppConfig::default();
@@ -370,6 +390,7 @@ level = "warn"
             download: None,
             keys: None,
             updates: None,
+            layout: None,
         };
 
         let mut config = AppConfig::default();
@@ -469,6 +490,7 @@ record_cmd = "sox -d {file_path}"
             download: None,
             keys: None,
             updates: None,
+            layout: None,
         };
         let mut config = AppConfig::default();
         file.merge_into(&mut config).unwrap();
@@ -510,6 +532,7 @@ max_auto_download_size = "500KB"
             download: None,
             keys: None,
             updates: None,
+            layout: None,
         };
         let mut config = AppConfig::default();
         file.merge_into(&mut config).unwrap();
@@ -555,6 +578,7 @@ quit = "Q"
             download: None,
             keys: None,
             updates: None,
+            layout: None,
         };
         let mut config = AppConfig::default();
         file.merge_into(&mut config).unwrap();
@@ -622,5 +646,34 @@ list_cmd = "fd --type f . {dirs}"
 
         assert_eq!(config.attach.list_cmd, "my-files");
         assert_eq!(config.attach.dirs.len(), 3);
+    }
+
+    #[test]
+    fn layout_columns_default_to_auto() {
+        let file: FileConfig = toml::from_str("[layout]\n").unwrap();
+        let mut config = AppConfig::default();
+        file.merge_into(&mut config).unwrap();
+        assert_eq!(config.layout.columns, ColumnsConfig::Auto);
+    }
+
+    #[test]
+    fn layout_columns_can_be_fixed() {
+        for (value, columns) in [
+            ("auto", ColumnsConfig::Auto),
+            ("one", ColumnsConfig::One),
+            ("two", ColumnsConfig::Two),
+        ] {
+            let file: FileConfig =
+                toml::from_str(&format!("[layout]\ncolumns = \"{value}\"\n")).unwrap();
+            let mut config = AppConfig::default();
+            file.merge_into(&mut config).unwrap();
+            assert_eq!(config.layout.columns, columns);
+        }
+    }
+
+    #[test]
+    fn unknown_layout_columns_value_is_rejected() {
+        let parsed = toml::from_str::<FileConfig>("[layout]\ncolumns = \"three\"\n");
+        assert!(parsed.is_err());
     }
 }

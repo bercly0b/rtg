@@ -1,0 +1,2 @@
+- Single-column layout: in a window narrower than 100 columns RTG shows only the panel that has focus, the chat list or the open chat, over the whole width.
+- `L` switches between one and two columns until RTG is closed; `[layout] columns` in the config fixes the layout (`"auto"`, `"one"` or `"two"`).

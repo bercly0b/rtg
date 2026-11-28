@@ -19,7 +19,10 @@ fn key_label<'a>(groups: &'a [HelpGroup], action_name: &str) -> &'a str {
         .expect("action must be listed")
 }
 
-const GENERAL_GROUP: (&str, [&str; 3]) = ("General", ["show_help", "install_update", "quit"]);
+const GENERAL_GROUP: (&str, [&str; 4]) = (
+    "General",
+    ["show_help", "toggle_layout", "install_update", "quit"],
+);
 
 #[test]
 fn help_groups_for_chat_list() {

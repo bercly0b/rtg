@@ -54,6 +54,14 @@ max_log_files = 3
 # if there is one, shows it in the status bar with the command to update.
 # check = false
 
+[layout]
+# How many panels the window shows at once:
+#   "auto"  one column when the window is narrower than 100 columns, two otherwise
+#   "one"   only the panel that has focus: the chat list panel or the messages panel
+#   "two"   the chat list panel and the messages panel side by side
+# `L` switches to the other layout until RTG is closed.
+# columns = "auto"
+
 [keys]
 # Override default key bindings. Keys are action names (snake_case),
 # values are key patterns. Action names are listed in the in-app help

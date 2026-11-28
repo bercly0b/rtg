@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::domain::message_cache::{
-    DEFAULT_MAX_CACHED_CHATS, DEFAULT_MAX_MESSAGES_PER_CHAT, DEFAULT_MIN_DISPLAY_MESSAGES,
+use crate::domain::{
+    layout::LayoutColumns,
+    message_cache::{
+        DEFAULT_MAX_CACHED_CHATS, DEFAULT_MAX_MESSAGES_PER_CHAT, DEFAULT_MIN_DISPLAY_MESSAGES,
+    },
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -15,6 +18,7 @@ pub struct AppConfig {
     pub download: DownloadConfig,
     pub keys: KeysConfig,
     pub updates: UpdatesConfig,
+    pub layout: LayoutConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -263,6 +267,30 @@ pub struct UpdatesConfig {
 impl Default for UpdatesConfig {
     fn default() -> Self {
         Self { check: true }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct LayoutConfig {
+    pub columns: ColumnsConfig,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ColumnsConfig {
+    #[default]
+    Auto,
+    One,
+    Two,
+}
+
+impl From<ColumnsConfig> for LayoutColumns {
+    fn from(columns: ColumnsConfig) -> Self {
+        match columns {
+            ColumnsConfig::Auto => Self::Auto,
+            ColumnsConfig::One => Self::One,
+            ColumnsConfig::Two => Self::Two,
+        }
     }
 }
 

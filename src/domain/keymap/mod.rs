@@ -43,6 +43,7 @@ pub enum Action {
     // Global
     Quit,
     ShowHelp,
+    ToggleLayout,
     InstallUpdate,
 }
 
@@ -84,6 +85,7 @@ impl Action {
             Self::ScrollToLastMessage => "scroll_to_last_message",
             Self::Quit => "quit",
             Self::ShowHelp => "show_help",
+            Self::ToggleLayout => "toggle_layout",
             Self::InstallUpdate => "install_update",
         }
     }
@@ -125,6 +127,7 @@ impl Action {
             "scroll_to_last_message" => Some(Self::ScrollToLastMessage),
             "quit" => Some(Self::Quit),
             "show_help" => Some(Self::ShowHelp),
+            "toggle_layout" => Some(Self::ToggleLayout),
             "install_update" => Some(Self::InstallUpdate),
             _ => None,
         }
@@ -491,7 +494,12 @@ const HOTKEY_GROUPS: &[(&str, &[Action])] = &[
     ("Files", &[Action::DownloadFile, Action::SaveFile]),
     (
         "General",
-        &[Action::ShowHelp, Action::InstallUpdate, Action::Quit],
+        &[
+            Action::ShowHelp,
+            Action::ToggleLayout,
+            Action::InstallUpdate,
+            Action::Quit,
+        ],
     ),
 ];
 
@@ -694,6 +702,11 @@ fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding {
             pattern: KeyPattern::single("?"),
             action: Action::ShowHelp,
+            context: KeyContext::Global,
+        },
+        KeyBinding {
+            pattern: KeyPattern::single("L"),
+            action: Action::ToggleLayout,
             context: KeyContext::Global,
         },
         KeyBinding {
