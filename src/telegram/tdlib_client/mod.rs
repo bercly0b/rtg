@@ -10,6 +10,7 @@ mod chats;
 mod log_setup;
 mod messages;
 mod request_guard;
+mod search;
 mod shutdown;
 mod types;
 mod update_loop;

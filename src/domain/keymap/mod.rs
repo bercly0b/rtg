@@ -11,7 +11,8 @@ pub enum Action {
     RefreshChatList,
     MarkChatAsRead,
     ShowChatInfo,
-    SearchChats,
+    QuickSearch,
+    GlobalSearch,
     SelectFirstChat,
     ShowChatFolders,
     ToggleChatArchive,
@@ -56,7 +57,8 @@ impl Action {
             Self::RefreshChatList => "refresh_chat_list",
             Self::MarkChatAsRead => "mark_chat_as_read",
             Self::ShowChatInfo => "show_chat_info",
-            Self::SearchChats => "search_chats",
+            Self::QuickSearch => "quick_search",
+            Self::GlobalSearch => "global_search",
             Self::SelectFirstChat => "select_first_chat",
             Self::ShowChatFolders => "show_chat_folders",
             Self::ToggleChatArchive => "toggle_chat_archive",
@@ -98,7 +100,8 @@ impl Action {
             "refresh_chat_list" => Some(Self::RefreshChatList),
             "mark_chat_as_read" => Some(Self::MarkChatAsRead),
             "show_chat_info" => Some(Self::ShowChatInfo),
-            "search_chats" => Some(Self::SearchChats),
+            "quick_search" => Some(Self::QuickSearch),
+            "global_search" => Some(Self::GlobalSearch),
             "select_first_chat" => Some(Self::SelectFirstChat),
             "show_chat_folders" => Some(Self::ShowChatFolders),
             "toggle_chat_archive" => Some(Self::ToggleChatArchive),
@@ -456,7 +459,8 @@ const HOTKEY_GROUPS: &[(&str, &[Action])] = &[
     (
         "Chat lists",
         &[
-            Action::SearchChats,
+            Action::QuickSearch,
+            Action::GlobalSearch,
             Action::ShowChatFolders,
             Action::RefreshChatList,
         ],
@@ -543,7 +547,12 @@ fn default_bindings() -> Vec<KeyBinding> {
         },
         KeyBinding {
             pattern: KeyPattern::single("/"),
-            action: Action::SearchChats,
+            action: Action::QuickSearch,
+            context: KeyContext::ChatList,
+        },
+        KeyBinding {
+            pattern: KeyPattern::single("s"),
+            action: Action::GlobalSearch,
             context: KeyContext::ChatList,
         },
         KeyBinding {

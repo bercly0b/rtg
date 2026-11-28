@@ -97,7 +97,9 @@ signature every caller and test uses, for the same behaviour.
 
 - `popups.rs` — chat info, message info and help popups and the reaction
   picker: opening them, their keys, and their background results.
-- `chat_search.rs` — chat search keys.
+- `chat_search.rs` — quick search keys.
+- `global_search.rs` — global search: its keys, when Telegram is asked, its
+  background results and opening what was found.
 - `file_updates.rs` — `Downloads` zone, `FileUpdated` handling, auto-download
   and file name resolution, moved out of `chat_updates.rs`.
 - `chat_list.rs` takes over the `ChatListLoaded` and forum badge results from

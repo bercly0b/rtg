@@ -9,6 +9,7 @@ mod dispatcher;
 mod factories;
 mod fixtures;
 mod forum;
+mod global_search;
 mod help_popup;
 mod info_picker;
 mod layout;

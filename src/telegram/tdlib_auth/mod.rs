@@ -15,6 +15,7 @@ mod forum;
 mod message_details;
 mod messages;
 mod reactions;
+mod search;
 
 use std::time::Duration;
 

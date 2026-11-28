@@ -15,12 +15,12 @@ use super::{
     chat_open::{self, OpenChatSync},
     chat_search, command_popup,
     file_updates::Downloads,
-    forum, info_picker, links, message_actions, message_input, popups, self_update, voice,
-    OrchestratorCtx, ShellCtx,
+    forum, global_search, info_picker, links, message_actions, message_input, popups, self_update,
+    voice, OrchestratorCtx, ShellCtx,
 };
 
 /// Routes a key to the surface that captures all input while it is open:
-/// chat search, a popup or the message input. Returns `false` when none is
+/// global or quick search, a popup or the message input. Returns `false` when none is
 /// open and the key goes through the keymap.
 pub(super) fn dispatch_modal_key<D: TaskDispatcher>(
     ctx: &mut OrchestratorCtx<'_, D>,
@@ -30,6 +30,8 @@ pub(super) fn dispatch_modal_key<D: TaskDispatcher>(
     let state = &ctx.shell.state;
     if state.file_picker().is_some() {
         attachments::handle_file_picker_key(&mut ctx.shell, input);
+    } else if state.global_search().is_some() {
+        global_search::handle_global_search_key(&mut ctx.shell, ctx.open_chat_sync, input);
     } else if state.chat_search().is_some() {
         chat_search::handle_chat_search_key(&mut ctx.shell, key);
     } else if state.command_popup().is_some() {
@@ -93,7 +95,8 @@ pub(super) fn dispatch_chat_list_action<D: TaskDispatcher>(
             chat_list::mark_selected_chat_as_read(&mut ctx.shell, ctx.open_chat_sync)
         }
         Action::ShowChatInfo => popups::show_chat_info_popup(&mut ctx.shell),
-        Action::SearchChats => ctx.shell.state.open_chat_search(),
+        Action::QuickSearch => ctx.shell.state.open_chat_search(),
+        Action::GlobalSearch => ctx.shell.state.open_global_search(),
         Action::ShowChatFolders => ctx.shell.state.open_chat_folder_picker(),
         Action::ToggleChatArchive => {
             chat_list::toggle_selected_chat_archive(&mut ctx.shell);

@@ -12,6 +12,7 @@ type AttachmentSendRecord = (
 );
 type FileListingRecord = (u64, String, Vec<String>);
 type MarkAsReadRecord = (i64, Option<i32>, Vec<i64>);
+type ChatScopeRecord = (String, crate::domain::global_search_state::ChatScope);
 
 /// Records what the orchestrator dispatched and allows inspection.
 pub(super) struct RecordingDispatcher {
@@ -40,6 +41,8 @@ pub(super) struct RecordingDispatcher {
     dispatched_add_reactions: RefCell<Vec<(i64, i64, String)>>,
     dispatched_remove_reactions: RefCell<Vec<(i64, i64, String)>>,
     dispatched_mentions: RefCell<Vec<String>>,
+    dispatched_chat_searches: RefCell<Vec<ChatScopeRecord>>,
+    dispatched_message_searches: RefCell<Vec<(String, String)>>,
     dispatched_self_updates: RefCell<usize>,
 }
 
@@ -71,6 +74,8 @@ impl RecordingDispatcher {
             dispatched_add_reactions: RefCell::new(Vec::new()),
             dispatched_remove_reactions: RefCell::new(Vec::new()),
             dispatched_mentions: RefCell::new(Vec::new()),
+            dispatched_chat_searches: RefCell::new(Vec::new()),
+            dispatched_message_searches: RefCell::new(Vec::new()),
             dispatched_self_updates: RefCell::new(0),
         }
     }
@@ -278,6 +283,15 @@ impl RecordingDispatcher {
         self.dispatched_mentions.borrow().clone()
     }
 
+    pub(super) fn dispatched_chat_searches(&self) -> Vec<ChatScopeRecord> {
+        self.dispatched_chat_searches.borrow().clone()
+    }
+
+    /// The query and the offset of every dispatched message search.
+    pub(super) fn dispatched_message_searches(&self) -> Vec<(String, String)> {
+        self.dispatched_message_searches.borrow().clone()
+    }
+
     pub(super) fn self_update_dispatch_count(&self) -> usize {
         *self.dispatched_self_updates.borrow()
     }
@@ -442,6 +456,22 @@ impl TaskDispatcher for RecordingDispatcher {
 
     fn dispatch_resolve_mention(&self, username: String) {
         self.dispatched_mentions.borrow_mut().push(username);
+    }
+
+    fn dispatch_search_chats(
+        &self,
+        query: String,
+        scope: crate::domain::global_search_state::ChatScope,
+    ) {
+        self.dispatched_chat_searches
+            .borrow_mut()
+            .push((query, scope));
+    }
+
+    fn dispatch_search_messages(&self, query: String, offset: String) {
+        self.dispatched_message_searches
+            .borrow_mut()
+            .push((query, offset));
     }
 
     fn dispatch_self_update(&self) {

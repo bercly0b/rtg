@@ -7,12 +7,14 @@ mod error_mapping;
 mod file_ops;
 mod lifecycle;
 mod messaging;
+mod search;
 mod task_result;
 
 use std::sync::{mpsc::Sender, Arc, Mutex, PoisonError};
 
 use crate::domain::{
-    attachment::OutgoingAttachment, chat_folder::ChatListKind, message_input_state::OutgoingMessage,
+    attachment::OutgoingAttachment, chat_folder::ChatListKind, global_search_state::ChatScope,
+    message_input_state::OutgoingMessage,
 };
 
 pub use lifecycle::CHAT_INFO_NOT_FOUND;
@@ -26,6 +28,7 @@ use super::{
     chat_subtitle::{ChatInfoQuery, ChatSubtitleQuery, ChatSubtitleSource},
     edit_message::MessageEditor,
     external_command::{self, FileListEvent, FileListHandle},
+    global_search::GlobalSearchSource,
     list_chats::ListChatsSource,
     list_forum_topics::ForumTopicsSource,
     load_messages::MessagesSource,
@@ -173,6 +176,15 @@ pub trait TaskDispatcher {
     /// the outcome arrives as `MentionResolved`.
     fn dispatch_resolve_mention(&self, username: String);
 
+    /// Asks one scope of global search for the chats matching `query`; the
+    /// answer arrives as `ChatsFound`.
+    fn dispatch_search_chats(&self, query: String, scope: ChatScope);
+
+    /// Asks global search for the page of messages matching `query` that
+    /// starts at `offset` (empty for the first page); the answer arrives as
+    /// `MessagesFound`.
+    fn dispatch_search_messages(&self, query: String, offset: String);
+
     /// Runs `rtg update` in the background; how it ended arrives as
     /// `SelfUpdateFinished`.
     fn dispatch_self_update(&self);
@@ -185,7 +197,13 @@ pub trait TaskDispatcher {
 /// then sends the result through the shared channel.
 pub struct ThreadTaskDispatcher<C, M, MS, L, S>
 where
-    C: ListChatsSource + ForumTopicsSource + MentionSource + Send + Sync + 'static,
+    C: ListChatsSource
+        + ForumTopicsSource
+        + MentionSource
+        + GlobalSearchSource
+        + Send
+        + Sync
+        + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + AttachmentSender + Send + Sync + 'static,
     L: ChatLifecycle
@@ -211,7 +229,13 @@ where
 
 impl<C, M, MS, L, S> ThreadTaskDispatcher<C, M, MS, L, S>
 where
-    C: ListChatsSource + ForumTopicsSource + MentionSource + Send + Sync + 'static,
+    C: ListChatsSource
+        + ForumTopicsSource
+        + MentionSource
+        + GlobalSearchSource
+        + Send
+        + Sync
+        + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + AttachmentSender + Send + Sync + 'static,
     L: ChatLifecycle
@@ -248,7 +272,13 @@ where
 
 impl<C, M, MS, L, S> ThreadTaskDispatcher<C, M, MS, L, S>
 where
-    C: ListChatsSource + ForumTopicsSource + MentionSource + Send + Sync + 'static,
+    C: ListChatsSource
+        + ForumTopicsSource
+        + MentionSource
+        + GlobalSearchSource
+        + Send
+        + Sync
+        + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + AttachmentSender + Send + Sync + 'static,
     L: ChatLifecycle
@@ -270,7 +300,13 @@ where
 
 impl<C, M, MS, L, S> TaskDispatcher for ThreadTaskDispatcher<C, M, MS, L, S>
 where
-    C: ListChatsSource + ForumTopicsSource + MentionSource + Send + Sync + 'static,
+    C: ListChatsSource
+        + ForumTopicsSource
+        + MentionSource
+        + GlobalSearchSource
+        + Send
+        + Sync
+        + 'static,
     M: MessagesSource + Send + Sync + 'static,
     MS: MessageSender + MessageEditor + VoiceNoteSender + AttachmentSender + Send + Sync + 'static,
     L: ChatLifecycle
@@ -466,6 +502,14 @@ where
 
     fn dispatch_resolve_mention(&self, username: String) {
         lifecycle::dispatch_resolve_mention(&self.chats_source, &self.result_tx, username);
+    }
+
+    fn dispatch_search_chats(&self, query: String, scope: ChatScope) {
+        search::dispatch_search_chats(&self.chats_source, &self.result_tx, query, scope);
+    }
+
+    fn dispatch_search_messages(&self, query: String, offset: String) {
+        search::dispatch_search_messages(&self.chats_source, &self.result_tx, query, offset);
     }
 
     fn dispatch_self_update(&self) {

@@ -11,6 +11,7 @@ use crate::{
         },
         chat_subtitle::{ChatInfoQuery, ChatSubtitleError, ChatSubtitleQuery, ChatSubtitleSource},
         edit_message::{EditMessageSourceError, MessageEditor},
+        global_search::{GlobalSearchError, GlobalSearchSource},
         list_chats::{ListChatsSource, ListChatsSourceError},
         list_forum_topics::{ForumTopicsSource, ListForumTopicsSourceError},
         load_messages::{CachedMessagesSource, MessagesSource, MessagesSourceError},
@@ -64,6 +65,30 @@ impl MentionSource for TelegramAdapter {
         match self.tdlib_backend.as_ref() {
             Some(backend) => backend.resolve_mention(username),
             None => Err(MentionSourceError::Unavailable),
+        }
+    }
+}
+
+impl GlobalSearchSource for TelegramAdapter {
+    fn search_chats(
+        &self,
+        query: &str,
+        scope: crate::domain::global_search_state::ChatScope,
+    ) -> Result<Vec<crate::domain::global_search_state::FoundChat>, GlobalSearchError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.search_chats(query, scope),
+            None => Err(GlobalSearchError::Unavailable),
+        }
+    }
+
+    fn search_messages(
+        &self,
+        query: &str,
+        offset: &str,
+    ) -> Result<crate::domain::global_search_state::FoundMessagesPage, GlobalSearchError> {
+        match self.tdlib_backend.as_ref() {
+            Some(backend) => backend.search_messages(query, offset),
+            None => Err(GlobalSearchError::Unavailable),
         }
     }
 }

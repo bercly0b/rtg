@@ -10,7 +10,7 @@ use crate::domain::local_time::LocalTime;
 ///
 /// Uses Unicode display width so that emoji and wide characters are measured
 /// correctly (e.g. 🚀 counts as 2 cells, not 1).
-pub(super) fn truncate_to_display_width(text: &str, max_width: usize) -> (String, usize) {
+pub(in crate::ui) fn truncate_to_display_width(text: &str, max_width: usize) -> (String, usize) {
     use unicode_width::UnicodeWidthChar;
 
     let text_width = text.width();
@@ -50,6 +50,6 @@ pub(super) fn format_chat_timestamp(timestamp_ms: i64) -> String {
     }
 }
 
-pub(super) fn normalize_preview_for_chat_row(preview: &str) -> String {
+pub(in crate::ui) fn normalize_preview_for_chat_row(preview: &str) -> String {
     preview.split_whitespace().collect::<Vec<_>>().join(" ")
 }

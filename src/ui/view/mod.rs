@@ -3,7 +3,7 @@ mod chat_list_item;
 mod forum_topic_list_item;
 mod messages_panel;
 mod status_line;
-mod text_utils;
+pub(super) mod text_utils;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -25,6 +25,7 @@ use super::chat_info_popup;
 use super::chat_search_popup;
 use super::command_popup;
 use super::file_picker_popup;
+use super::global_search_popup;
 use super::help_popup;
 use super::info_picker_popup;
 use super::link_picker_popup;
@@ -98,6 +99,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut ShellState, help_groups: &[Help
 
     if let Some(search_state) = state.chat_search() {
         chat_search_popup::render_chat_search_popup(frame, frame.area(), search_state);
+    }
+
+    if let Some(search_state) = state.global_search() {
+        global_search_popup::render_global_search(frame, frame.area(), search_state);
     }
 
     if let Some(picker_state) = state.chat_folder_picker() {

@@ -109,6 +109,18 @@ pub(super) fn open_selected_topic<D: TaskDispatcher>(
         ctx.state.chat_list_mut().mark_forum_topic_read(chat_id);
     }
 
+    open_topic(ctx, sync, chat_id, topic_id, title);
+}
+
+/// Shows the topic `topic_id` of the entered forum `chat_id` in the messages
+/// panel under `title` and loads its history.
+pub(super) fn open_topic<D: TaskDispatcher>(
+    ctx: &mut ShellCtx<'_, D>,
+    sync: &mut OpenChatSync,
+    chat_id: i64,
+    topic_id: i32,
+    title: String,
+) {
     ctx.state.open_chat_mut().set_loading_with_topic(
         chat_id,
         Some(topic_id),
@@ -151,4 +163,25 @@ pub(super) fn reload_topics<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {
     let chat_id = list.parent_chat_id();
     list.set_loading();
     ctx.dispatcher.dispatch_load_forum_topics(chat_id);
+}
+
+/// Titles the open topic after the loaded topic list. A topic opened from a
+/// found message is shown under the forum's title until then: the search
+/// result does not name the topic.
+pub(super) fn title_open_topic<D: TaskDispatcher>(ctx: &mut ShellCtx<'_, D>) {
+    let Some(forum_list) = ctx.state.forum_topic_list() else {
+        return;
+    };
+    if ctx.state.open_chat().chat_id() != Some(forum_list.parent_chat_id()) {
+        return;
+    }
+    let title = ctx
+        .state
+        .open_chat()
+        .topic_id()
+        .and_then(|topic_id| forum_list.find_topic(topic_id))
+        .map(|topic| format!("{} > {}", forum_list.parent_chat_title(), topic.name));
+    if let Some(title) = title {
+        ctx.state.open_chat_mut().set_chat_title(title);
+    }
 }

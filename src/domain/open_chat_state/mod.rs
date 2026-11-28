@@ -126,6 +126,10 @@ impl OpenChatState {
         &self.chat_title
     }
 
+    pub fn set_chat_title(&mut self, chat_title: String) {
+        self.chat_title = chat_title;
+    }
+
     pub fn chat_subtitle(&self) -> &ChatSubtitle {
         &self.chat_subtitle
     }

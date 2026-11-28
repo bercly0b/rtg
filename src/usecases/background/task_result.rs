@@ -7,6 +7,7 @@ use crate::{
         chat_subtitle::ChatSubtitle,
         file_picker_state::FileEntry,
         forum_topic::ForumTopicSummary,
+        global_search_state::{ChatScope, FoundChat, FoundMessagesPage},
         message::Message,
         message_info_state::MessageInfo,
         message_input_state::OutgoingMessage,
@@ -134,6 +135,19 @@ pub enum BackgroundTaskResult {
     MentionResolved {
         username: String,
         result: Result<Option<ChatSummary>, BackgroundError>,
+    },
+    /// One scope of global search answered `query` with the chats it found.
+    ChatsFound {
+        query: String,
+        scope: ChatScope,
+        result: Result<Vec<FoundChat>, BackgroundError>,
+    },
+    /// Global search found a page of messages for `query`, starting at
+    /// `offset` (empty for the first page).
+    MessagesFound {
+        query: String,
+        offset: String,
+        result: Result<FoundMessagesPage, BackgroundError>,
     },
     /// Platform default file opener failed (non-zero exit code).
     /// The orchestrator should display the error as a notification.

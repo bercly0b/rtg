@@ -8,6 +8,7 @@ pub mod context;
 pub mod contracts;
 pub mod edit_message;
 pub mod external_command;
+pub mod global_search;
 pub mod guided_auth;
 pub mod list_chats;
 pub mod list_forum_topics;

@@ -12,6 +12,7 @@ use super::{
     events::ConnectivityStatus,
     file_picker_state::FilePickerState,
     forum_topic_list_state::ForumTopicListState,
+    global_search_state::GlobalSearchState,
     info_picker_state::{InfoPickerEntry, InfoPickerState},
     keymap::KeyContext,
     layout::{ColumnLayout, LayoutColumns},
@@ -81,6 +82,7 @@ pub struct ShellState {
     message_info_popup: Option<MessageInfoPopupState>,
     reaction_picker: Option<ReactionPickerState>,
     chat_search: Option<ChatSearchState>,
+    global_search: Option<GlobalSearchState>,
     chat_folders: ChatFolders,
     unread_chat_counts: HashMap<ChatListKind, u32>,
     chat_folder_picker: Option<ChatFolderPickerState>,
@@ -112,6 +114,7 @@ impl Default for ShellState {
             message_info_popup: None,
             reaction_picker: None,
             chat_search: None,
+            global_search: None,
             chat_folders: ChatFolders::default(),
             unread_chat_counts: HashMap::new(),
             chat_folder_picker: None,
@@ -378,6 +381,22 @@ impl ShellState {
 
     pub fn close_chat_search(&mut self) {
         self.chat_search = None;
+    }
+
+    pub fn global_search(&self) -> Option<&GlobalSearchState> {
+        self.global_search.as_ref()
+    }
+
+    pub fn global_search_mut(&mut self) -> Option<&mut GlobalSearchState> {
+        self.global_search.as_mut()
+    }
+
+    pub fn open_global_search(&mut self) {
+        self.global_search = Some(GlobalSearchState::default());
+    }
+
+    pub fn close_global_search(&mut self) {
+        self.global_search = None;
     }
 
     pub fn chat_folders(&self) -> &ChatFolders {
